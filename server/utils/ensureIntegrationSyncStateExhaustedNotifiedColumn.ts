@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -16,7 +17,7 @@ export async function ensureIntegrationSyncStateExhaustedNotifiedColumn(): Promi
     await db.execute(sql.raw(
       `ALTER TABLE integration_sync_state ADD COLUMN IF NOT EXISTS exhausted_notified_at timestamp`,
     ));
-    console.log("[migration] integration_sync_state.exhausted_notified_at ensured");
+    logInfo("[migration] integration_sync_state.exhausted_notified_at ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure integration_sync_state.exhausted_notified_at:",

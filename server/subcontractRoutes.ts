@@ -102,7 +102,7 @@
  *         content:
  *           application/pdf: {}
  */
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -521,9 +521,9 @@ router.patch("/subcontracts/:id", requireAuth, requireRoleOrFeature(["SUPER_ADMI
           req.user!.id
         );
         if (result.success) {
-          console.log(`Auto-created payable ${result.paymentId} for completed contract ${contract.contractNumber}`);
+          logInfo(`Auto-created payable ${result.paymentId} for completed contract ${contract.contractNumber}`);
         } else if (result.error) {
-          console.log(`Auto-payable creation skipped: ${result.error}`);
+          logInfo(`Auto-payable creation skipped: ${result.error}`);
         }
       }
     }

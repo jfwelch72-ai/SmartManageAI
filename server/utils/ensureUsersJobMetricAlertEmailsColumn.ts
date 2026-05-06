@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -14,7 +15,7 @@ export async function ensureUsersJobMetricAlertEmailsColumn(): Promise<void> {
       ALTER TABLE users
         ADD COLUMN IF NOT EXISTS receives_job_metric_alert_emails BOOLEAN NOT NULL DEFAULT TRUE
     `);
-    console.log("[migration] users receives_job_metric_alert_emails column ready");
+    logInfo("[migration] users receives_job_metric_alert_emails column ready");
   } catch (err) {
     logError(
       "[migration] ensureUsersJobMetricAlertEmailsColumn failed",

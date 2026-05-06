@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -26,9 +27,9 @@ export async function ensureHeavyCivilEnumValues(): Promise<void> {
     const offAdded = await backfillEnum("offline_entity_type", REQUIRED_OFFLINE_ENTITY_TYPES);
     const total = wfAdded + offAdded;
     if (total > 0) {
-      console.log(`[migration] heavy-civil enums — added ${wfAdded} workflow_entity_type and ${offAdded} offline_entity_type value(s)`);
+      logInfo(`[migration] heavy-civil enums — added ${wfAdded} workflow_entity_type and ${offAdded} offline_entity_type value(s)`);
     } else {
-      console.log("[migration] heavy-civil enums — all values present, skipped");
+      logInfo("[migration] heavy-civil enums — all values present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure heavy-civil enum values:", {}, err instanceof Error ? err : new Error(String(err)));

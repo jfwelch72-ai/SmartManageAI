@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -79,5 +80,5 @@ export async function ensureCrmCallTables(): Promise<void> {
 
   await db.execute(sql`ALTER TABLE "user_dashboard_permissions" ADD COLUMN IF NOT EXISTS "can_log_crm_calls" boolean DEFAULT false`);
 
-  console.log("[migration] crm_call_tables — ensured");
+  logInfo("[migration] crm_call_tables — ensured");
 }

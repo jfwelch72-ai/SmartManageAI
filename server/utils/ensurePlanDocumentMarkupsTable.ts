@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -89,7 +90,7 @@ export async function ensurePlanDocumentMarkupsTable(): Promise<void> {
       ADD COLUMN IF NOT EXISTS "deleted_at" timestamp
     `);
 
-    console.log("[migration] plan_document_markups table ready");
+    logInfo("[migration] plan_document_markups table ready");
   } catch (err) {
     logError(
       "[migration] ensurePlanDocumentMarkupsTable failed",

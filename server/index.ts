@@ -1,5 +1,8 @@
 import { logError, logInfo } from "./utils/logger";
 import { isDevSeedEnabled } from "./utils/devSeedFlag";
+import { initSentry, captureRequestException } from "./sentry";
+import { correlationIdMiddleware } from "./middleware/correlationId";
+import { installCorrelatedFetch } from "./utils/correlatedFetch";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -63,8 +66,20 @@ process.on("unhandledRejection", (reason) => {
 
 const app = express();
 
+// Initialize Sentry as early as possible (no-op when SENTRY_DSN unset).
+initSentry();
+// Install once at boot so every outbound fetch carries the inbound
+// x-request-id header when an ALS correlation context is active. See
+// docs/runbooks/observability.md ("Outbound trace propagation").
+installCorrelatedFetch();
+
 // Trust proxy - Required for accurate IP detection behind Replit proxy
 app.set("trust proxy", 1);
+
+// Assign x-request-id and store it in AsyncLocalStorage so every downstream
+// log/error automatically gets the correlation ID. Must come before any
+// middleware that might log (auth, rate limiter, etc).
+app.use(correlationIdMiddleware);
 
 app.use(compression());
 
@@ -224,22 +239,32 @@ app.use((req, res, next) => {
 (async () => {
   const server = await registerRoutes(app);
 
+  // Final error-handler middleware — registered LAST so it catches anything
+  // that escapes the route layer. Sanitizes responses in production
+  // (no stack traces, generic 5xx message), persists structured rows to
+  // `error_logs`, and forwards to Sentry when configured.
   app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const clientMessage = status >= 500 ? "Internal Server Error" : (err.message || "Internal Server Error");
+    const isServerError = status >= 500;
+    const isProdEnv = process.env.NODE_ENV === "production";
+    const clientMessage = isServerError
+      ? "Internal Server Error"
+      : (err.message || "Bad Request");
     const requestId = (req as any).id || (req as any).requestId || undefined;
     const authUser = (req as any).user;
+    const errObj = err instanceof Error ? err : new Error(String(err));
 
     logError("Unhandled error in request", {
       method: req.method,
       path: req.path,
       requestId,
-    }, err instanceof Error ? err : new Error(String(err)));
+      statusCode: status,
+    }, errObj);
 
     persistErrorLog({
-      level: status >= 500 ? "error" : "warn",
-      message: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined,
+      level: isServerError ? "error" : "warn",
+      message: errObj.message,
+      stack: errObj.stack,
       method: req.method,
       path: req.path,
       statusCode: status,
@@ -250,9 +275,24 @@ app.use((req, res, next) => {
       ip: req.ip,
     }).catch(() => {});
 
-    if (!res.headersSent) {
-      res.status(status).json({ error: clientMessage, ...(requestId ? { requestId } : {}) });
+    // Forward to Sentry (no-op when DSN unset) — typically only 5xx, but we
+    // also forward 4xx that look like programmer errors (TypeError etc).
+    if (isServerError || errObj.name === "TypeError" || errObj.name === "ReferenceError") {
+      captureRequestException(errObj, req, requestId);
     }
+
+    if (res.headersSent) return;
+
+    const body: Record<string, unknown> = {
+      success: false,
+      error: clientMessage,
+    };
+    if (requestId) body.requestId = requestId;
+    if (!isProdEnv) {
+      body.stack = errObj.stack;
+      if (err.details) body.details = err.details;
+    }
+    res.status(status).json(body);
   });
 
   // importantly only setup vite in development and after
@@ -313,7 +353,7 @@ app.use((req, res, next) => {
     const { seedSystemProjectTemplates } = await import("./seedProjectTemplates");
     await seedSystemProjectTemplates();
   } catch (err) {
-    console.error("[startup] Failed to seed project templates:", err);
+    logError("[startup] Failed to seed project templates:", err);
   }
   await backfillMissingFeatureFlags();
   await backfillPresetApplications();

@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, auditLog, billingEvents } from "@shared/schema";
@@ -413,10 +413,10 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
       });
       if (![200, 201, 308].includes(gcsRes.status)) {
         const errBody = await gcsRes.text().catch(() => "");
-        console.error(`[multipart] GCS PUT error: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length} resp=${errBody}`);
+        logError(`[multipart] GCS PUT error: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length} resp=${errBody}`);
         throw new Error(`GCS returned ${gcsRes.status}`);
       }
-      console.log(`[multipart] GCS PUT ok: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length}`);
+      logInfo(`[multipart] GCS PUT ok: status=${gcsRes.status} range=${contentRange} bodyLen=${body.length}`);
       etag = gcsRes.headers.get("etag") ?? etag;
     });
 
@@ -446,10 +446,10 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
           "Content-Range": `bytes */${intent.fileSize}`,
         },
       });
-      console.log(`[multipart-complete] Resumable status check: ${statusRes.status} for ${intent.objectKey}`);
+      logInfo(`[multipart-complete] Resumable status check: ${statusRes.status} for ${intent.objectKey}`);
       if (statusRes.status === 308) {
         const range = statusRes.headers.get("range");
-        console.error(`[multipart-complete] Upload incomplete! range=${range}, expected total=${intent.fileSize}`);
+        logError(`[multipart-complete] Upload incomplete! range=${range}, expected total=${intent.fileSize}`);
         res.status(409).json({ error: "Upload not yet complete on storage backend" });
         return;
       }

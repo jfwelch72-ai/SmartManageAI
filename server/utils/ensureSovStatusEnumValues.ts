@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -28,7 +29,7 @@ export async function ensureSovStatusEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] sov_status enum — added ${added} missing value(s)`);
+      logInfo(`[migration] sov_status enum — added ${added} missing value(s)`);
     }
   } catch (err) {
     // The enum may not exist yet on a brand-new DB; reconcileSchemaDrift will

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -39,7 +40,7 @@ export async function ensureWageDecisionRateChangeAcknowledgements(): Promise<vo
     await db.execute(sql.raw(
       `CREATE INDEX IF NOT EXISTS wage_decision_rate_change_ack_acknowledged_at_idx ON wage_decision_rate_change_acknowledgements(acknowledged_at)`,
     ));
-    console.log("[migration] wage_decision_rate_change_acknowledgements ensured");
+    logInfo("[migration] wage_decision_rate_change_acknowledgements ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure wage_decision_rate_change_acknowledgements:",

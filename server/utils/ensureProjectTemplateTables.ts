@@ -1,3 +1,4 @@
+import { logError, logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -58,8 +59,8 @@ export async function ensureProjectTemplateTables(): Promise<void> {
       ADD COLUMN IF NOT EXISTS "can_manage_project_templates" BOOLEAN DEFAULT FALSE
     `);
   } catch (err) {
-    console.error("[migration] failed to add can_manage_project_templates:", err);
+    logError("[migration] failed to add can_manage_project_templates:", err);
   }
 
-  console.log("[migration] project template tables — created successfully");
+  logInfo("[migration] project template tables — created successfully");
 }

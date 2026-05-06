@@ -15,7 +15,7 @@ import {
 import { eq, desc, and, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
-import { logError, logInfo } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 import { governedAiCall } from "./services/aiGovernance";
@@ -958,7 +958,7 @@ Return JSON with:
                   metadata.multiPassNotes = verifyParsed.reviewNotes;
                 }
               } catch (verifyParseErr) {
-                console.warn("Failed to parse multi-pass verification result:", verifyParseErr);
+                logWarn("Failed to parse multi-pass verification result:", verifyParseErr);
               }
             }
           }

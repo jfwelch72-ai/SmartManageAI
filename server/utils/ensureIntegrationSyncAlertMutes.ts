@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -39,7 +40,7 @@ export async function ensureIntegrationSyncAlertMutes(): Promise<void> {
     await db.execute(sql.raw(
       `CREATE UNIQUE INDEX IF NOT EXISTS integration_sync_alert_mutes_conn_entity_uniq ON integration_sync_alert_mutes(connection_id, COALESCE(entity_type, ''))`,
     ));
-    console.log("[migration] integration_sync_alert_mutes ensured");
+    logInfo("[migration] integration_sync_alert_mutes ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure integration_sync_alert_mutes:",

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -32,7 +33,7 @@ export async function ensureSageAccountMappingsTable(): Promise<void> {
     await db.execute(sql.raw(
       `CREATE UNIQUE INDEX IF NOT EXISTS sage_account_mappings_unique ON sage_account_mappings(organization_id, connection_id, cost_code, mapping_type)`,
     ));
-    console.log("[migration] sage_account_mappings ensured");
+    logInfo("[migration] sage_account_mappings ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure sage_account_mappings:",

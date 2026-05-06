@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { initBrowserSentry } from "./sentry";
 import "./index.css";
+
+initBrowserSentry();
 import "./override-style.css";
 import "./uppy-core.css";
 import "./uppy-dashboard.css";

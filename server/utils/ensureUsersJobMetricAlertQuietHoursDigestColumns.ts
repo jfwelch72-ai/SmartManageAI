@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -26,7 +27,7 @@ export async function ensureUsersJobMetricAlertQuietHoursDigestColumns(): Promis
         ADD COLUMN IF NOT EXISTS job_metric_alert_quiet_hours_digest_csv_enabled BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS job_metric_alert_quiet_hours_digest_max_events INTEGER NOT NULL DEFAULT 100
     `);
-    console.log("[migration] users job_metric_alert_quiet_hours_digest columns ready");
+    logInfo("[migration] users job_metric_alert_quiet_hours_digest columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUsersJobMetricAlertQuietHoursDigestColumns failed",

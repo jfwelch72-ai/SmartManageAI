@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -54,7 +55,7 @@ export async function ensureAuditActionEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] audit_action enum — added ${added} missing value(s)`);
+      logInfo(`[migration] audit_action enum — added ${added} missing value(s)`);
     }
   } catch (err) {
     // The enum may not exist yet on a brand-new DB; reconcileSchemaDrift will

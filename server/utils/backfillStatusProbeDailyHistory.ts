@@ -1,3 +1,4 @@
+import { logInfo, logError } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -37,7 +38,7 @@ export async function backfillStatusProbeDailyHistory(): Promise<void> {
       probe_kind: string;
     }>;
     if (components.length === 0) {
-      console.log("[migration] status_probe_daily backfill — no components, skipped");
+      logInfo("[migration] status_probe_daily backfill — no components, skipped");
       return;
     }
 
@@ -47,14 +48,14 @@ export async function backfillStatusProbeDailyHistory(): Promise<void> {
     }
 
     if (totalInserted > 0) {
-      console.log(
+      logInfo(
         `[migration] status_probe_daily backfill — inserted ${totalInserted} placeholder day rows`,
       );
     } else {
-      console.log("[migration] status_probe_daily backfill — nothing to backfill");
+      logInfo("[migration] status_probe_daily backfill — nothing to backfill");
     }
   } catch (err) {
-    console.error(
+    logError(
       "[migration] status_probe_daily backfill failed:",
       err instanceof Error ? err.message : String(err),
     );

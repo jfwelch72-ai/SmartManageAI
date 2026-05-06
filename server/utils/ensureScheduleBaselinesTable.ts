@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -29,7 +30,7 @@ export async function ensureScheduleBaselinesTable(): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "schedule_baselines_schedule_idx" ON "schedule_baselines" ("schedule_id")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "schedule_baselines_org_idx" ON "schedule_baselines" ("organization_id")`);
-    console.log("[migration] schedule_baselines — table created");
+    logInfo("[migration] schedule_baselines — table created");
   }
 
   const columnCheck = await db.execute(sql`
@@ -43,6 +44,6 @@ export async function ensureScheduleBaselinesTable(): Promise<void> {
   const colExists = (columnCheck.rows[0] as { exists: boolean }).exists;
   if (!colExists) {
     await db.execute(sql`ALTER TABLE "project_schedules" ADD COLUMN "active_baseline_id" varchar`);
-    console.log("[migration] project_schedules.active_baseline_id — column added");
+    logInfo("[migration] project_schedules.active_baseline_id — column added");
   }
 }

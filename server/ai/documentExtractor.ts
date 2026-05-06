@@ -1,4 +1,4 @@
-import {logError, logWarn } from "../utils/logger";
+import { logError, logWarn, logInfo } from "../utils/logger";
 import { objectStorageClient, ObjectStorageService } from "../objectStorage";
 import { createCanvas } from "canvas";
 
@@ -254,7 +254,7 @@ async function processPdf(pdfBuffer: Buffer): Promise<DocumentContentBlock[]> {
   if (imageResults.length > 0 && failedPageTexts.length > 0) {
     const fallbackText = failedPageTexts.join("\n\n");
     const truncated = fallbackText.length > MAX_TEXT_LENGTH ? fallbackText.substring(0, MAX_TEXT_LENGTH) : fallbackText;
-    console.log(`[DocumentExtractor] Rendered ${imageResults.length} pages as images, extracted text from ${failedPageTexts.length} failed pages`);
+    logInfo(`[DocumentExtractor] Rendered ${imageResults.length} pages as images, extracted text from ${failedPageTexts.length} failed pages`);
     return [
       ...imageResults,
       { type: "text", text: `[Text from pages that could not be rendered]\n${truncated}` },
@@ -268,14 +268,14 @@ async function processPdf(pdfBuffer: Buffer): Promise<DocumentContentBlock[]> {
   if (failedPageTexts.length > 0) {
     const fullText = failedPageTexts.join("\n\n");
     const truncated = fullText.length > MAX_TEXT_LENGTH ? fullText.substring(0, MAX_TEXT_LENGTH) : fullText;
-    console.log(`[DocumentExtractor] Rendering failed for all ${renderFailCount} pages, using text fallback (${truncated.length} chars)`);
+    logInfo(`[DocumentExtractor] Rendering failed for all ${renderFailCount} pages, using text fallback (${truncated.length} chars)`);
     return [{ type: "text", text: `[PDF Document Content]\n${truncated}` }];
   }
 
-  console.log(`[DocumentExtractor] No images rendered and no text found, trying full text extraction...`);
+  logInfo(`[DocumentExtractor] No images rendered and no text found, trying full text extraction...`);
   const text = await extractPdfText(pdfBuffer);
   if (text.trim().length > 10) {
-    console.log(`[DocumentExtractor] Full text extraction yielded ${text.length} chars`);
+    logInfo(`[DocumentExtractor] Full text extraction yielded ${text.length} chars`);
     return [{ type: "text", text: `[PDF Document Content]\n${text}` }];
   }
 
@@ -286,25 +286,25 @@ export async function extractDocumentContent(
   documentUrl: string
 ): Promise<DocumentContentBlock[]> {
   try {
-    console.log(`[DocumentExtractor] Processing: ${documentUrl.substring(0, 100)}...`);
+    logInfo(`[DocumentExtractor] Processing: ${documentUrl.substring(0, 100)}...`);
 
     const { buffer, contentType } = await downloadFromGcs(documentUrl);
     const detected = detectFileType(buffer, contentType, documentUrl);
 
-    console.log(`[DocumentExtractor] Detected type: ${detected.type} (${detected.mime}), content-type header: ${contentType || 'none'}, size: ${(buffer.length / 1024).toFixed(0)} KB`);
+    logInfo(`[DocumentExtractor] Detected type: ${detected.type} (${detected.mime}), content-type header: ${contentType || 'none'}, size: ${(buffer.length / 1024).toFixed(0)} KB`);
 
     if (detected.type === "pdf") {
-      console.log(`[DocumentExtractor] Processing PDF...`);
+      logInfo(`[DocumentExtractor] Processing PDF...`);
       const results = await processPdf(buffer);
       const imageCount = results.filter(r => r.type === 'image_url').length;
       const textCount = results.filter(r => r.type === 'text').length;
-      console.log(`[DocumentExtractor] PDF result: ${imageCount} images, ${textCount} text blocks`);
+      logInfo(`[DocumentExtractor] PDF result: ${imageCount} images, ${textCount} text blocks`);
       return results;
     }
 
     if (detected.type === "image") {
       const base64 = buffer.toString("base64");
-      console.log(`[DocumentExtractor] Encoded image as ${detected.mime}`);
+      logInfo(`[DocumentExtractor] Encoded image as ${detected.mime}`);
       return [
         {
           type: "image_url",
@@ -316,18 +316,18 @@ export async function extractDocumentContent(
       ];
     }
 
-    console.warn(`[DocumentExtractor] Could not determine file type for: ${documentUrl}. Content-type: ${contentType}. Trying as PDF...`);
+    logWarn(`[DocumentExtractor] Could not determine file type for: ${documentUrl}. Content-type: ${contentType}. Trying as PDF...`);
     try {
       const results = await processPdf(buffer);
       if (results.length > 0) {
-        console.log(`[DocumentExtractor] Successfully processed as PDF`);
+        logInfo(`[DocumentExtractor] Successfully processed as PDF`);
         return results;
       }
     } catch {
       logWarn("Non-critical operation failed");
     }
 
-    console.warn(`[DocumentExtractor] Unable to process file, skipping`);
+    logWarn(`[DocumentExtractor] Unable to process file, skipping`);
     return [];
   } catch (error) {
     logError(`[DocumentExtractor] Error processing ${documentUrl}:`, {}, error instanceof Error ? error : new Error(String(error)));

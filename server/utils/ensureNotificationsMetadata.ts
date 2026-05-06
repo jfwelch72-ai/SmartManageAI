@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -18,7 +19,7 @@ export async function ensureNotificationsMetadata(): Promise<void> {
       `ALTER TABLE notifications
          ADD COLUMN IF NOT EXISTS metadata jsonb`,
     ));
-    console.log("[migration] notifications.metadata ensured");
+    logInfo("[migration] notifications.metadata ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure notifications.metadata:",

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -26,7 +27,7 @@ export async function ensureLineItemPhotoUrls(): Promise<void> {
       `);
     }
 
-    console.log(colAlreadyExists
+    logInfo(colAlreadyExists
       ? "[migration] estimate_line_items.photo_urls — already present, skipped"
       : "[migration] estimate_line_items.photo_urls — applied and backfilled");
   } catch (err) {

@@ -171,7 +171,7 @@
  */
 import { Router, type Response, type Request } from "express";
 import { z } from "zod";
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { insertBidSchema } from "@shared/schema";
@@ -334,7 +334,7 @@ router.post(
   requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
   async (req: AuthRequest, res, next) => {
     try {
-      console.log("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
+      logInfo("[Create Bid] Received body:", JSON.stringify(req.body, null, 2));
 
       const sanitizedBody = {
         ...req.body,
@@ -343,11 +343,11 @@ router.post(
         description: sanitizeText(req.body.description),
       };
 
-      console.log("[Create Bid] Sanitized body:", JSON.stringify(sanitizedBody, null, 2));
+      logInfo("[Create Bid] Sanitized body:", JSON.stringify(sanitizedBody, null, 2));
 
       const validationResult = createBidSchema.safeParse(sanitizedBody);
       if (!validationResult.success) {
-        console.log(
+        logInfo(
           "[Create Bid] Validation failed:",
           JSON.stringify(validationResult.error.errors, null, 2),
         );
@@ -374,7 +374,7 @@ router.post(
       for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
         try {
           const nextCode = await storage.getNextBidCode();
-          console.log(`[Create Bid] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
+          logInfo(`[Create Bid] Auto-assigned code: ${nextCode} (attempt ${attempt + 1})`);
 
           const newBid = await storage.createBid({
             ...validationResult.data,
@@ -404,7 +404,7 @@ router.post(
           return res.status(201).json(newBid);
         } catch (insertError: any) {
           if (insertError.code === "23505" && attempt < MAX_RETRIES - 1) {
-            console.log(
+            logInfo(
               `[Create Bid] Code conflict, retrying... (attempt ${attempt + 1})`,
             );
             lastError = insertError;
@@ -640,7 +640,7 @@ router.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res, 
     const storage = getBidStorage(req, res);
     if (!storage) return;
     const bidId = req.params.id;
-    console.log(`[GET /api/bids/:id/estimate] Fetching estimate for bid ID: ${bidId}`);
+    logInfo(`[GET /api/bids/:id/estimate] Fetching estimate for bid ID: ${bidId}`);
 
     const bid = await storage.getBidById(bidId);
     if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -663,7 +663,7 @@ router.post(
       const storage = getBidStorage(req, res);
       if (!storage) return;
       const bidId = req.params.id;
-      console.log(`[POST /api/bids/:id/estimate] Creating estimate for bid ID: ${bidId}`);
+      logInfo(`[POST /api/bids/:id/estimate] Creating estimate for bid ID: ${bidId}`);
 
       const bid = await storage.getBidById(bidId);
       if (!bid) return res.status(404).json({ error: "Bid not found" });
@@ -674,7 +674,7 @@ router.post(
       );
 
       if (created) {
-        console.log(`[Estimate Created] New estimate ${estimate.id} created for bid ${bidId}`);
+        logInfo(`[Estimate Created] New estimate ${estimate.id} created for bid ${bidId}`);
         return res.status(201).json({ estimate });
       }
       res.json({ estimate });

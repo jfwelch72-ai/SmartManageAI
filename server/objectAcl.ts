@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { File } from "@google-cloud/storage";
 import { db } from "./db";
 import { filePermissions, objectAclPolicies, projects, bids, vendorEnrollments, vendorUsers, media, planDocuments, bidDocuments, subcontractorBidInvitations, subcontractorBidRequests } from "@shared/schema";
@@ -37,7 +37,7 @@ export async function setObjectAclPolicy(
     const [found] = await objectFile.exists();
     if (found) { exists = true; break; }
     if (attempt < 4) {
-      console.log(`[acl] Object not yet visible (attempt ${attempt + 1}/5), retrying in ${(attempt + 1) * 500}ms: ${objectFile.name}`);
+      logInfo(`[acl] Object not yet visible (attempt ${attempt + 1}/5), retrying in ${(attempt + 1) * 500}ms: ${objectFile.name}`);
       await new Promise(r => setTimeout(r, (attempt + 1) * 500));
     }
   }
@@ -86,7 +86,7 @@ export async function getObjectAclPolicy(
       return JSON.parse(aclPolicyStr as string);
     }
   } catch (gcsErr) {
-    console.warn(
+    logWarn(
       `GCS metadata fetch failed for ${objectFile.name}, falling back to DB:`,
       gcsErr,
     );

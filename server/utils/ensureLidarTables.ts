@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -11,7 +12,7 @@ export async function ensureLidarTables(): Promise<void> {
 
   const row = result.rows[0] as Record<string, boolean>;
   if (row.scans_exist && row.annotations_exist && row.comparisons_exist) {
-    console.log("[migration] lidar tables — already present, skipped");
+    logInfo("[migration] lidar tables — already present, skipped");
     return;
   }
 
@@ -110,5 +111,5 @@ export async function ensureLidarTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "lidar_comparisons_org_idx" ON "lidar_comparisons"("organization_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "lidar_comparisons_scan_a_idx" ON "lidar_comparisons"("scan_a_id")`);
 
-  console.log("[migration] lidar tables — created");
+  logInfo("[migration] lidar tables — created");
 }

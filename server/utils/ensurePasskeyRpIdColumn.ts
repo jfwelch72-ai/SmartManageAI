@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -31,7 +32,7 @@ export async function ensurePasskeyRpIdColumn(): Promise<void> {
       ADD COLUMN IF NOT EXISTS rp_id text
     `);
 
-    console.log(colAlreadyExists
+    logInfo(colAlreadyExists
       ? "[migration] passkey_credentials.rp_id — already present, skipped"
       : "[migration] passkey_credentials.rp_id — applied");
   } catch (err) {

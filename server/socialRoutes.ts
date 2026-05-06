@@ -1301,7 +1301,7 @@ router.get("/auth/facebook/callback", requireAuth, async (req: AuthRequest, res:
         }
       }
     } catch (igErr) {
-      console.warn("Instagram auto-link skipped:", igErr);
+      logWarn("Instagram auto-link skipped:", igErr);
     }
 
     res.redirect("/social-media?connected=FACEBOOK");

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -8,7 +9,7 @@ export async function ensurePermitTables(): Promise<void> {
 
   const row = result.rows[0] as Record<string, boolean>;
   if (row.permits_exist) {
-    console.log("[migration] project_permits table — already present, skipped");
+    logInfo("[migration] project_permits table — already present, skipped");
     return;
   }
 
@@ -53,5 +54,5 @@ export async function ensurePermitTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "project_permits_status_idx" ON "project_permits"("status")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "project_permits_expiry_date_idx" ON "project_permits"("expiry_date")`);
 
-  console.log("[migration] project_permits table — created");
+  logInfo("[migration] project_permits table — created");
 }

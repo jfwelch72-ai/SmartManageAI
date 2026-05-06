@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -27,7 +28,7 @@ export async function ensureRfiOverdueColumns(): Promise<void> {
       ALTER TABLE rfis
         ADD COLUMN IF NOT EXISTS external_assignee_email text
     `);
-    console.log("[migration] rfis overdue + external assignee columns ready");
+    logInfo("[migration] rfis overdue + external assignee columns ready");
   } catch (err) {
     logError(
       "[migration] ensureRfiOverdueColumns failed",

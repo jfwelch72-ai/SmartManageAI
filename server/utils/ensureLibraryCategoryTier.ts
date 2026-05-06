@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -38,7 +39,7 @@ export async function ensureLibraryCategoryTier(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "library_categories_org_idx" ON "library_categories" ("organization_id")`);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "library_categories_trade_idx" ON "library_categories" ("trade_type")`);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "library_categories_library_idx" ON "library_categories" ("library_id")`);
-      console.log("[migration] library_categories table — created");
+      logInfo("[migration] library_categories table — created");
     }
 
     const itemCols = [
@@ -51,7 +52,7 @@ export async function ensureLibraryCategoryTier(): Promise<void> {
       ));
       if (chk.rows[0]?.e !== true) {
         await db.execute(sql.raw(`ALTER TABLE "library_items" ADD COLUMN IF NOT EXISTS "${c.col}" ${c.ddl}`));
-        console.log(`[migration] library_items.${c.col} — applied`);
+        logInfo(`[migration] library_items.${c.col} — applied`);
       }
     }
 
@@ -68,7 +69,7 @@ export async function ensureLibraryCategoryTier(): Promise<void> {
         ADD CONSTRAINT "library_items_category_id_library_categories_id_fk"
         FOREIGN KEY ("category_id") REFERENCES "library_categories"("id") ON DELETE SET NULL
       `);
-      console.log("[migration] library_items.category_id FK — applied");
+      logInfo("[migration] library_items.category_id FK — applied");
     }
 
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "library_items_trade_idx" ON "library_items" ("trade_type")`);

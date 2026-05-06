@@ -1,4 +1,4 @@
-import {logError, logWarn } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { Server as HttpServer } from "http";
 import { WebSocketServer, WebSocket } from "ws";
 import { verifyToken } from "./auth";
@@ -443,5 +443,5 @@ export function setupTakeoffCollaboration(server: HttpServer) {
     });
   }, HEARTBEAT_INTERVAL_MS);
 
-  console.log("[Collab] Takeoff collaboration WebSocket ready");
+  logInfo("[Collab] Takeoff collaboration WebSocket ready");
 }

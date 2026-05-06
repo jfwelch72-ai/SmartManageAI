@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -10,7 +11,7 @@ export async function ensureProjectKpiSnapshotsTable(): Promise<void> {
       )::boolean AS exists
     `);
     if (check.rows[0]?.exists === true) {
-      console.log("[migration] project_kpi_snapshots — already present, skipped");
+      logInfo("[migration] project_kpi_snapshots — already present, skipped");
       return;
     }
 
@@ -37,7 +38,7 @@ export async function ensureProjectKpiSnapshotsTable(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "project_kpi_snap_week_idx" ON "project_kpi_snapshots" ("week_start")`);
     await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS "project_kpi_snap_project_week_uniq" ON "project_kpi_snapshots" ("project_id", "week_start")`);
 
-    console.log("[migration] project_kpi_snapshots — applied");
+    logInfo("[migration] project_kpi_snapshots — applied");
   } catch (err) {
     logError("[migration] Failed to ensure project_kpi_snapshots table:", {}, err instanceof Error ? err : new Error(String(err)));
   }

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -20,7 +21,7 @@ export async function ensureEmailAccountPushColumns(): Promise<void> {
       CREATE INDEX IF NOT EXISTS email_accounts_outlook_sub_idx
         ON email_accounts (outlook_subscription_id)
     `);
-    console.log("[migration] email_accounts push subscription columns ready");
+    logInfo("[migration] email_accounts push subscription columns ready");
   } catch (err) {
     logError(
       "[migration] ensureEmailAccountPushColumns failed",

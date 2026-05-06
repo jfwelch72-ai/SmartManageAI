@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -64,5 +65,5 @@ export async function ensureVideoCallTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "video_call_notes_author_idx" ON "video_call_notes" ("author_id")`);
   await db.execute(sql`ALTER TABLE "projects" ADD COLUMN IF NOT EXISTS "budget_amount" decimal(12, 2)`);
 
-  console.log("Applied video_calls migration: tables and budget_amount column created");
+  logInfo("Applied video_calls migration: tables and budget_amount column created");
 }

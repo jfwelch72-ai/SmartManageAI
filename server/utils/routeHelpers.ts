@@ -1,4 +1,4 @@
-import { logWarn } from "../utils/logger";
+import { logWarn, logInfo } from "./logger";
 import type { Request, Response } from "express";
 import type { AuthRequest } from "../auth";
 
@@ -40,12 +40,12 @@ export function isRedirectUriValid(uri: string): boolean {
 
 export function logOAuthRedirectUris(): void {
   const base = getCanonicalBaseUrl();
-  console.log("[OAuth] Resolved base URL:", base);
-  console.log("[OAuth] Gmail redirect URI:", process.env.GOOGLE_REDIRECT_URI ? `${process.env.GOOGLE_REDIRECT_URI} (env)` : `${base}/api/email/oauth/gmail/callback (auto)`);
-  console.log("[OAuth] Outlook redirect URI:", process.env.MICROSOFT_REDIRECT_URI ? `${process.env.MICROSOFT_REDIRECT_URI} (env)` : `${base}/api/email/oauth/outlook/callback (auto)`);
-  console.log("[OAuth] Outlook config:", (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) ? "configured" : "NOT configured");
-  console.log("[OAuth] Google login redirect URI:", `${base}/api/auth/google/callback`);
-  console.log("[OAuth] Google integration redirect URI:", `${base}/api/integrations/connections/:id/callback`);
+  logInfo("[OAuth] Resolved base URL:", base);
+  logInfo("[OAuth] Gmail redirect URI:", process.env.GOOGLE_REDIRECT_URI ? `${process.env.GOOGLE_REDIRECT_URI} (env)` : `${base}/api/email/oauth/gmail/callback (auto)`);
+  logInfo("[OAuth] Outlook redirect URI:", process.env.MICROSOFT_REDIRECT_URI ? `${process.env.MICROSOFT_REDIRECT_URI} (env)` : `${base}/api/email/oauth/outlook/callback (auto)`);
+  logInfo("[OAuth] Outlook config:", (process.env.MICROSOFT_CLIENT_ID && process.env.MICROSOFT_CLIENT_SECRET) ? "configured" : "NOT configured");
+  logInfo("[OAuth] Google login redirect URI:", `${base}/api/auth/google/callback`);
+  logInfo("[OAuth] Google integration redirect URI:", `${base}/api/integrations/connections/:id/callback`);
 }
 
 export function getOrgId(req: AuthRequest, res: Response): string | null {

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -56,9 +57,9 @@ export async function ensureAccessRequestsTable(): Promise<void> {
         `CREATE INDEX IF NOT EXISTS access_requests_requester_idx
            ON access_requests (requester_user_id)`,
       ));
-      console.log(`[migration] access_requests table — created`);
+      logInfo(`[migration] access_requests table — created`);
     } else {
-      console.log(`[migration] access_requests table — already exists, skipped`);
+      logInfo(`[migration] access_requests table — already exists, skipped`);
     }
   } catch (err) {
     logError(

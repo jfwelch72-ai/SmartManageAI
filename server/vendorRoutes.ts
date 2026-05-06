@@ -333,7 +333,7 @@ If you didn't expect this invitation, you can safely ignore this email.
 SmartManageAI Construction Management Platform
 `,
       });
-      console.log(`Vendor invitation email ${emailSent ? 'sent' : 'logged'} to: ${vendorEmail}`);
+      logInfo(`Vendor invitation email ${emailSent ? 'sent' : 'logged'} to: ${vendorEmail}`);
     } catch (emailError) {
       logError("Failed to send vendor invitation email:", {}, emailError instanceof Error ? emailError : new Error(String(emailError)));
     }

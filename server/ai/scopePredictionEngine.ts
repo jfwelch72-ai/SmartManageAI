@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
@@ -92,7 +92,7 @@ export async function predictRelevantScopeItems(
   limit: number = 20,
   govContext?: { orgId: string; userId: string }
 ): Promise<ScopePredictionResult> {
-  console.log(`[ScopePredictionEngine] Predicting scope for trade: ${context.tradeType}`);
+  logInfo(`[ScopePredictionEngine] Predicting scope for trade: ${context.tradeType}`);
 
   // Get master SOW items for the primary trade and related trades
   const tradesToQuery = [context.tradeType, ...(context.relatedTrades || [])];
@@ -125,7 +125,7 @@ export async function predictRelevantScopeItems(
   }));
 
   if (masterItems.length === 0 && libraryScopeItems.length === 0) {
-    console.log('[ScopePredictionEngine] No master items or library scopes found, returning empty result');
+    logInfo('[ScopePredictionEngine] No master items or library scopes found, returning empty result');
     return {
       predictedItems: [],
       suggestedModifiers: [],
@@ -136,7 +136,7 @@ export async function predictRelevantScopeItems(
   }
 
   if (masterItems.length === 0 && libraryScopeItems.length > 0) {
-    console.log(`[ScopePredictionEngine] No DB items, using ${libraryScopeItems.length} library scopes as candidates`);
+    logInfo(`[ScopePredictionEngine] No DB items, using ${libraryScopeItems.length} library scopes as candidates`);
   }
 
   // Get modifiers for the trade
@@ -276,7 +276,7 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
         })),
     })).filter(cat => cat.modifiers.length > 0);
 
-    console.log(`[ScopePredictionEngine] Predicted ${predictedItems.length} items with ${suggestedModifiers.length} modifier categories`);
+    logInfo(`[ScopePredictionEngine] Predicted ${predictedItems.length} items with ${suggestedModifiers.length} modifier categories`);
 
     return {
       predictedItems,

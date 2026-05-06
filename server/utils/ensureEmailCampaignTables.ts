@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -70,9 +71,9 @@ export async function ensureEmailCampaignTables(): Promise<void> {
       `);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "email_campaign_templates_org_idx" ON "email_campaign_templates" ("organization_id")`);
 
-      console.log("[migration] email campaign tables — applied");
+      logInfo("[migration] email campaign tables — applied");
     } else {
-      console.log("[migration] email campaign tables — already present, skipped");
+      logInfo("[migration] email campaign tables — already present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure email campaign tables:", {}, err instanceof Error ? err : new Error(String(err)));

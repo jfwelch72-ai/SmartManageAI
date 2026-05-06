@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -49,7 +50,7 @@ export async function ensurePlanPinsTable(): Promise<void> {
       WHERE "source_pin_id" IS NOT NULL
     `);
 
-    console.log("[migration] plan_pins table ready");
+    logInfo("[migration] plan_pins table ready");
   } catch (err) {
     logError(
       "[migration] ensurePlanPinsTable failed",

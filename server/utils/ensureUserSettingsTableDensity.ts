@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -12,7 +13,7 @@ export async function ensureUserSettingsTableDensity(): Promise<void> {
       ALTER TABLE user_settings
         ADD COLUMN IF NOT EXISTS table_density TEXT NOT NULL DEFAULT 'COZY'
     `);
-    console.log("[migration] user_settings table_density column ready");
+    logInfo("[migration] user_settings table_density column ready");
   } catch (err) {
     logError(
       "[migration] ensureUserSettingsTableDensity failed",

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -15,14 +16,14 @@ export async function ensureNullablePermissions(): Promise<void> {
     const columnsToFix = result.rows.map((r: Record<string, unknown>) => r.column_name as string);
 
     if (columnsToFix.length === 0) {
-      console.log("[migration] user_dashboard_permissions nullable — already applied, skipped");
+      logInfo("[migration] user_dashboard_permissions nullable — already applied, skipped");
       return;
     }
 
     for (const col of columnsToFix) {
       await db.execute(sql.raw(`ALTER TABLE user_dashboard_permissions ALTER COLUMN "${col}" DROP NOT NULL`));
     }
-    console.log(`[migration] user_dashboard_permissions nullable — applied to ${columnsToFix.length} columns`);
+    logInfo(`[migration] user_dashboard_permissions nullable — applied to ${columnsToFix.length} columns`);
   } catch (err) {
     logError("[migration] Failed to ensure nullable permissions:", {}, err instanceof Error ? err : new Error(String(err)));
   }

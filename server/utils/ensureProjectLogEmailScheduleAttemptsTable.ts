@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -37,7 +38,7 @@ export async function ensureProjectLogEmailScheduleAttemptsTable(): Promise<void
       CREATE INDEX IF NOT EXISTS project_log_email_schedule_attempts_org_idx
         ON project_log_email_schedule_attempts (organization_id)
     `);
-    console.log(
+    logInfo(
       "[migration] project_log_email_schedule_attempts table ready",
     );
   } catch (err) {

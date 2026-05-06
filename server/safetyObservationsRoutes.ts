@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -98,7 +99,7 @@ router.post("/api/safety/observations", requireAuth, async (req: AuthRequest, re
           .where(eq(safetyObservations.id, created.id));
         created.correctiveActionId = punch.id;
       } catch (e) {
-        console.error("Failed to auto-create corrective action", e);
+        logError("Failed to auto-create corrective action", e);
       }
     }
 

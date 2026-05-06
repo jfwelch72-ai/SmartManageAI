@@ -88,7 +88,7 @@
  *     responses:
  *       201: { description: Member added }
  */
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -230,7 +230,7 @@ router.post("/api/crews", requireRole("ADMIN", "MANAGER"), async (req: AuthReque
           }
         }
       } catch (channelErr) {
-        console.warn("Could not auto-create crew channel:", channelErr);
+        logWarn("Could not auto-create crew channel:", channelErr);
       }
     }
 
@@ -401,7 +401,7 @@ router.post("/api/crews/:id/members", requireRole("ADMIN", "MANAGER"), async (re
           .onConflictDoNothing();
       }
     } catch (channelErr) {
-      console.warn("Could not auto-join crew channel for new member:", channelErr);
+      logWarn("Could not auto-join crew channel for new member:", channelErr);
     }
 
     res.status(201).json(newMember);

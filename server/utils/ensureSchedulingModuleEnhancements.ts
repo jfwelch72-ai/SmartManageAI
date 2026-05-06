@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -54,9 +55,9 @@ export async function ensureSchedulingModuleEnhancements(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS schedule_task_deps_successor_idx ON schedule_task_dependencies(successor_task_id)`);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS schedule_task_deps_predecessor_idx ON schedule_task_dependencies(predecessor_task_id)`);
       await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS schedule_task_deps_unique_edge_idx ON schedule_task_dependencies(successor_task_id, predecessor_task_id)`);
-      console.log("[migration] schedule_task_dependencies table — created");
+      logInfo("[migration] schedule_task_dependencies table — created");
     } else {
-      console.log("[migration] schedule_task_dependencies table — already present, skipped");
+      logInfo("[migration] schedule_task_dependencies table — already present, skipped");
     }
 
     // Ensure the unique edge index covers (successor, predecessor) only — older

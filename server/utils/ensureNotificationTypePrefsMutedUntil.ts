@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -21,7 +22,7 @@ export async function ensureNotificationTypePrefsMutedUntil(): Promise<void> {
       `ALTER TABLE notification_type_prefs
          ADD COLUMN IF NOT EXISTS muted_until timestamp`,
     ));
-    console.log("[migration] notification_type_prefs.muted_until ensured");
+    logInfo("[migration] notification_type_prefs.muted_until ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure notification_type_prefs.muted_until:",

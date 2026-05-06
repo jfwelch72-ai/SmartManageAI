@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { logError } from "./logger";
 import { pool } from "../db";
 
@@ -59,7 +60,7 @@ export async function ensurePendingContactReassignmentTable(): Promise<void> {
       CREATE INDEX IF NOT EXISTS pending_contact_reassignment_flush_at_idx
       ON pending_contact_reassignment_notifications (flush_at);
     `);
-    console.log(alreadyExists
+    logInfo(alreadyExists
       ? "[migration] pending_contact_reassignment_notifications table — already present, ensured kind/PK shape"
       : "[migration] pending_contact_reassignment_notifications table — created");
   } catch (err) {

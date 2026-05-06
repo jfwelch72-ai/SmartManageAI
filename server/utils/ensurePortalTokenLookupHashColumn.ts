@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -22,7 +23,7 @@ export async function ensurePortalTokenLookupHashColumn(): Promise<void> {
       CREATE INDEX IF NOT EXISTS sub_portal_tokens_token_lookup_idx
         ON subcontractor_portal_tokens(token_lookup_hash)
     `);
-    console.log("[migration] subcontractor_portal_tokens.token_lookup_hash + index ready");
+    logInfo("[migration] subcontractor_portal_tokens.token_lookup_hash + index ready");
   } catch (err) {
     logError(
       "[migration] ensurePortalTokenLookupHashColumn failed",

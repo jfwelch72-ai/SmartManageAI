@@ -1,16 +1,16 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { db } from "./db";
 import { users, projects, bids, scopeItems, projectNotes, timeEntries, changeOrders, calendarEvents, notifications, organizations, emailAccounts, emailThreads, emailMessages, tasks } from "@shared/schema";
 import { hashPassword } from "./auth";
 import { eq } from "drizzle-orm";
 
 async function seed() {
-  console.log("🌱 Seeding database...");
+  logInfo("🌱 Seeding database...");
 
   const existingUsers = await db.select().from(users).limit(1);
 
   if (existingUsers.length > 0) {
-    console.log("✅ Users already exist, skipping seed");
+    logInfo("✅ Users already exist, skipping seed");
     return;
   }
 
@@ -25,7 +25,7 @@ async function seed() {
     email: "info@tfrconst.com",
   }).returning();
 
-  console.log("✅ Demo organization created");
+  logInfo("✅ Demo organization created");
 
   const adminPasswordHash = await hashPassword("admin123");
   const demoPasswordHash = await hashPassword("password123");
@@ -71,7 +71,7 @@ async function seed() {
 
   const [admin, manager, superintendent, employee] = createdUsers;
 
-  console.log("✅ Demo users created");
+  logInfo("✅ Demo users created");
 
   await db.insert(bids).values([
     {
@@ -107,7 +107,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo bids created");
+  logInfo("✅ Demo bids created");
 
   const createdProjects = await db.insert(projects).values([
     {
@@ -167,7 +167,7 @@ async function seed() {
 
   const [libraryProject, retailProject, medicalProject] = createdProjects;
 
-  console.log("✅ Demo projects created");
+  logInfo("✅ Demo projects created");
 
   await db.insert(scopeItems).values([
     {
@@ -247,7 +247,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo scope items created");
+  logInfo("✅ Demo scope items created");
 
   await db.insert(projectNotes).values([
     {
@@ -270,7 +270,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo project notes created");
+  logInfo("✅ Demo project notes created");
 
   await db.insert(timeEntries).values([
     {
@@ -305,7 +305,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo time entries created");
+  logInfo("✅ Demo time entries created");
 
   await db.insert(changeOrders).values([
     {
@@ -328,7 +328,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo change orders created");
+  logInfo("✅ Demo change orders created");
 
   await db.insert(calendarEvents).values([
     {
@@ -366,7 +366,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo calendar events created");
+  logInfo("✅ Demo calendar events created");
 
   await db.insert(notifications).values([
     {
@@ -399,7 +399,7 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo notifications created");
+  logInfo("✅ Demo notifications created");
 
   const [emailAccount] = await db.insert(emailAccounts).values({
     organizationId: demoOrg.id,
@@ -411,7 +411,7 @@ async function seed() {
     lastSyncedAt: new Date("2024-11-18T08:00:00Z"),
   }).returning();
 
-  console.log("✅ Demo email account created");
+  logInfo("✅ Demo email account created");
 
   const now = new Date();
   const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000);
@@ -546,7 +546,7 @@ async function seed() {
     }))
   ).returning();
 
-  console.log("✅ Demo email threads created");
+  logInfo("✅ Demo email threads created");
 
   const messageData = [
     {
@@ -658,7 +658,7 @@ async function seed() {
     );
   }
 
-  console.log("✅ Demo email messages created");
+  logInfo("✅ Demo email messages created");
 
   await db.insert(tasks).values([
     {
@@ -746,19 +746,19 @@ async function seed() {
     },
   ]);
 
-  console.log("✅ Demo email tasks created");
+  logInfo("✅ Demo email tasks created");
 
-  console.log("\n✅ Demo users created:");
-  console.log("   1. admin@tfrllc.com (ADMIN)");
-  console.log("   2. sarah@tfrconst.com (MANAGER)");
-  console.log("   3. jake@tfrconstructionohio.com (SUPERINTENDENT)");
-  console.log("   4. mike@tfrllc.com (FIELD_WORKER)");
-  console.log("   Credentials use default seed values — change them in production!");
+  logInfo("\n✅ Demo users created:");
+  logInfo("   1. admin@tfrllc.com (ADMIN)");
+  logInfo("   2. sarah@tfrconst.com (MANAGER)");
+  logInfo("   3. jake@tfrconstructionohio.com (SUPERINTENDENT)");
+  logInfo("   4. mike@tfrllc.com (FIELD_WORKER)");
+  logInfo("   Credentials use default seed values — change them in production!");
 }
 
 seed()
   .then(() => {
-    console.log("🎉 Seeding complete!");
+    logInfo("🎉 Seeding complete!");
     process.exit(0);
   })
   .catch((error) => {

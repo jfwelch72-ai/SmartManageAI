@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { logError } from "./logger";
 import { pool } from "../db";
 
@@ -18,7 +19,7 @@ export async function ensureScopeModifierTables(): Promise<void> {
     const coExists = coRows[0].exists;
 
     if (tmExists && coExists) {
-      console.log("[migration] scope modifier junction tables — already present, skipped");
+      logInfo("[migration] scope modifier junction tables — already present, skipped");
       return;
     }
 
@@ -54,7 +55,7 @@ export async function ensureScopeModifierTables(): Promise<void> {
 
     await backfillScopeModifiers(!tmExists, !coExists);
 
-    console.log("[migration] scope modifier junction tables — created and backfilled");
+    logInfo("[migration] scope modifier junction tables — created and backfilled");
   } catch (err) {
     logError("[migration] scope modifier junction tables — failed:", {}, err instanceof Error ? err : new Error(String(err)));
   }
@@ -120,5 +121,5 @@ async function backfillScopeModifiers(backfillTickets: boolean, backfillCOs: boo
     }
   }
 
-  console.log(`[migration] scope modifier backfill: ${ticketCount} tickets, ${coCount} change orders`);
+  logInfo(`[migration] scope modifier backfill: ${ticketCount} tickets, ${coCount} change orders`);
 }

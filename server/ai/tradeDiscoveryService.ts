@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
@@ -136,7 +136,7 @@ Respond with JSON matching this EXACT structure:
 const TRADE_DISCOVERY_PROMPT = buildTradeDiscoveryPrompt();
 
 export async function discoverTradesFromDescription(context: TradeMatchingContext, govContext?: { orgId: string; userId: string }): Promise<TradeDiscoveryResult> {
-  console.log('[TradeDiscoveryService] Analyzing project for trade matching');
+  logInfo('[TradeDiscoveryService] Analyzing project for trade matching');
 
   const userPrompt = `Analyze the following project information and identify the most relevant construction trades:
 
@@ -202,7 +202,7 @@ Identify the primary trade and all related trades that would be involved in this
     
     result.relatedTrades = result.relatedTrades.filter(t => EXTENDED_ALL_TRADES.includes(t.tradeType));
 
-    console.log(`[TradeDiscoveryService] Identified primary trade: ${result.primaryTrade} (${result.primaryTradeConfidence} confidence), ${result.relatedTrades.length} related trades`);
+    logInfo(`[TradeDiscoveryService] Identified primary trade: ${result.primaryTrade} (${result.primaryTradeConfidence} confidence), ${result.relatedTrades.length} related trades`);
     
     return result;
   } catch (error) {

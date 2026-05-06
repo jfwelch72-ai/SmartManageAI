@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -47,7 +48,7 @@ export async function ensureDotPayItemMatchHistory(): Promise<void> {
       CREATE INDEX IF NOT EXISTS dot_pay_item_match_history_org_batch_idx
         ON dot_pay_item_match_history(organization_id, batch_id)
     `);
-    console.log("[migration] dot_pay_item_match_history table ready");
+    logInfo("[migration] dot_pay_item_match_history table ready");
   } catch (err) {
     logError(
       "[migration] ensureDotPayItemMatchHistory failed",

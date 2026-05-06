@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -24,7 +25,7 @@ export async function ensureProjectLogEmailConsecutiveFailures(): Promise<void> 
       ALTER TABLE project_log_email_schedules
         ADD COLUMN IF NOT EXISTS consecutive_failure_count integer NOT NULL DEFAULT 0
     `);
-    console.log(
+    logInfo(
       "[migration] project_log_email_schedules consecutive_failure_count column ready",
     );
   } catch (err) {

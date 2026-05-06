@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -30,7 +31,7 @@ export async function ensureUserSavedViewsTable(): Promise<void> {
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "user_saved_views_user_view_key_idx" ON "user_saved_views"("user_id","view_key")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "user_saved_views_org_shared_view_key_idx" ON "user_saved_views"("organization_id","is_shared","view_key")`);
-    console.log("[migration] user_saved_views table ready");
+    logInfo("[migration] user_saved_views table ready");
   } catch (err) {
     logError(
       "[migration] ensureUserSavedViewsTable failed",

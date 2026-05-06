@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -12,7 +13,7 @@ export async function ensureGanttPdfAlertTables(): Promise<void> {
     const row = check.rows[0] as { recipients_exists: boolean; deliveries_exists: boolean };
 
     if (row.recipients_exists && row.deliveries_exists) {
-      console.log("[migration] gantt_pdf_alert_* tables — already present, skipped");
+      logInfo("[migration] gantt_pdf_alert_* tables — already present, skipped");
       return;
     }
 
@@ -45,7 +46,7 @@ export async function ensureGanttPdfAlertTables(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "gantt_pdf_alert_deliveries_created_at_idx" ON "gantt_pdf_alert_deliveries" ("created_at")`);
     }
 
-    console.log("[migration] gantt_pdf_alert_* tables — applied");
+    logInfo("[migration] gantt_pdf_alert_* tables — applied");
   } catch (err) {
     logError("[migration] Failed to ensure gantt_pdf_alert tables:", {}, err instanceof Error ? err : new Error(String(err)));
   }

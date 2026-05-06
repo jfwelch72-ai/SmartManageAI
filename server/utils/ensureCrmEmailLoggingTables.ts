@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -81,5 +82,5 @@ export async function ensureCrmEmailLoggingTables(): Promise<void> {
   // Permission column on user_dashboard_permissions
   await db.execute(sql`ALTER TABLE "user_dashboard_permissions" ADD COLUMN IF NOT EXISTS "can_view_crm_emails" boolean DEFAULT false`);
 
-  console.log("[migration] crm_email_logging_tables — ensured");
+  logInfo("[migration] crm_email_logging_tables — ensured");
 }

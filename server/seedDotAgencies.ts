@@ -1,3 +1,4 @@
+import { logWarn, logError, logInfo } from "./utils/logger";
 import { db } from "./db";
 import { dotAgencies, dotSpecBooks, dotPayItems } from "@shared/schema";
 import { eq, and, sql } from "drizzle-orm";
@@ -84,7 +85,7 @@ function loadPayItemSets(): Record<string, PayItemSet> {
       const legacy = JSON.parse(readFileSync(LEGACY_SAMPLE_FILE, "utf8")) as Record<string, PayItemSet>;
       Object.assign(sets, legacy);
     } catch (err) {
-      console.warn("[DOTSeed] Failed to parse legacy sample-pay-items.json:", err);
+      logWarn("[DOTSeed] Failed to parse legacy sample-pay-items.json:", err);
     }
   }
   if (existsSync(PAY_ITEMS_DIR)) {
@@ -97,7 +98,7 @@ function loadPayItemSets(): Record<string, PayItemSet> {
           sets[code] = data; // per-agency file wins over legacy
         }
       } catch (err) {
-        console.warn(`[DOTSeed] Failed to parse ${file}:`, err);
+        logWarn(`[DOTSeed] Failed to parse ${file}:`, err);
       }
     }
   }
@@ -107,11 +108,11 @@ function loadPayItemSets(): Record<string, PayItemSet> {
   for (const [code, expectedMin] of Object.entries(AGENCY_MIN_ITEMS)) {
     const set = sets[code];
     if (!set) {
-      console.warn(`[DOTSeed] Missing pay-item catalog for ${code} (expected >=${expectedMin} items).`);
+      logWarn(`[DOTSeed] Missing pay-item catalog for ${code} (expected >=${expectedMin} items).`);
       continue;
     }
     if (set.items.length < expectedMin) {
-      console.warn(
+      logWarn(
         `[DOTSeed] ${code} catalog has only ${set.items.length} items; expected >=${expectedMin}. ` +
         `Investigate the fetcher/generator for this agency.`,
       );
@@ -131,7 +132,7 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
     agenciesData = loadAgencies();
     payItemSets = loadPayItemSets();
   } catch (err) {
-    console.error("[DOTSeed] Failed to read agency seed files:", err);
+    logError("[DOTSeed] Failed to read agency seed files:", err);
     return { agenciesInserted, specBooksInserted, payItemsInserted };
   }
 
@@ -235,6 +236,6 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
     }).where(eq(dotSpecBooks.id, specBookId));
   }
 
-  console.log(`[DOTSeed] Agencies: ${agenciesInserted} inserted | Spec Books: ${specBooksInserted} inserted | Pay Items: ${payItemsInserted} inserted`);
+  logInfo(`[DOTSeed] Agencies: ${agenciesInserted} inserted | Spec Books: ${specBooksInserted} inserted | Pay Items: ${payItemsInserted} inserted`);
   return { agenciesInserted, specBooksInserted, payItemsInserted };
 }

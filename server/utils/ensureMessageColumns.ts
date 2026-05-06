@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -14,9 +15,9 @@ export async function ensureMessageColumns(): Promise<void> {
 
     if (!colAlreadyExists) {
       await db.execute(sql`ALTER TABLE "messages" ADD COLUMN IF NOT EXISTS "is_field_note" boolean NOT NULL DEFAULT false`);
-      console.log("[migration] messages.is_field_note — applied");
+      logInfo("[migration] messages.is_field_note — applied");
     } else {
-      console.log("[migration] messages.is_field_note — already present, skipped");
+      logInfo("[migration] messages.is_field_note — already present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure messages columns:", {}, err instanceof Error ? err : new Error(String(err)));

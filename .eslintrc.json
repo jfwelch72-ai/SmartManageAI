@@ -1,0 +1,27 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module"
+  },
+  "rules": {},
+  "overrides": [
+    {
+      "files": ["server/**/*.ts"],
+      "excludedFiles": [
+        "server/__tests__/**",
+        "server/utils/logger.ts"
+      ],
+      "rules": {
+        "no-console": ["error", { "allow": [] }]
+      }
+    },
+    {
+      "files": ["server/utils/logger.ts"],
+      "rules": {
+        "no-console": ["error", { "allow": ["debug", "info", "warn", "error"] }]
+      }
+    }
+  ]
+}

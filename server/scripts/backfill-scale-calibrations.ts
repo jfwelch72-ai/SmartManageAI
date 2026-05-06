@@ -38,6 +38,7 @@
  * it directly so every tenant gets backfilled without an admin running tsx.
  */
 
+import { logInfo, logError } from "../utils/logger";
 import { sql } from "drizzle-orm";
 import { db, pool } from "../db";
 
@@ -221,7 +222,7 @@ export async function runScaleCalibrationBackfill(
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const stats = await runScaleCalibrationBackfill(opts);
-  console.log(
+  logInfo(
     `[backfill-scale-calibrations] done. inserted=${stats.inserted} ` +
       `alreadyHadStructured=${stats.alreadyHadStructured} ` +
       `missingCalibratedBy=${stats.missingCalibratedBy} ` +
@@ -246,7 +247,7 @@ const isDirectInvocation = (() => {
 if (isDirectInvocation) {
   main()
     .catch((err) => {
-      console.error("[backfill-scale-calibrations] failed", err);
+      logError("[backfill-scale-calibrations] failed", err);
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -21,7 +22,7 @@ export async function ensureDotTables(): Promise<void> {
     presence[t] = await tableExists(t);
   }
   if (required.every((t) => presence[t])) {
-    console.log("[migration] dot_* tables — already present, skipped");
+    logInfo("[migration] dot_* tables — already present, skipped");
     return;
   }
 
@@ -137,5 +138,5 @@ export async function ensureDotTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "org_dot_preferences_org_idx" ON "organization_dot_preferences" ("organization_id")`);
   }
 
-  console.log("[migration] dot_* tables ensured");
+  logInfo("[migration] dot_* tables ensured");
 }

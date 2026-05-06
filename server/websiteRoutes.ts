@@ -2445,7 +2445,7 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response, next:
       return res.status(400).json({ error: "Please set up your website first" });
     }
 
-    console.log("Creating page with request body:", JSON.stringify(req.body));
+    logInfo("Creating page with request body:", { body: JSON.stringify(req.body) });
 
     const { pageType, pageTitle, pageSlug, navigationLabel, showInNavigation, parentPageId, ...rest } = req.body;
 
@@ -2476,7 +2476,7 @@ router.post("/pages", requireAuth, async (req: AuthRequest, res: Response, next:
       organizationId: orgId,
     };
 
-    console.log("Page data to insert:", JSON.stringify(pageData));
+    logInfo("Page data to insert:", { pageData: JSON.stringify(pageData) });
 
     const [page] = await db.insert(organizationWebsitePages)
       .values(pageData)

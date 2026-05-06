@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -35,7 +36,7 @@ export async function ensureProjectLogEmailAttemptTracking(): Promise<void> {
         ADD COLUMN IF NOT EXISTS last_attempt_error text,
         ADD COLUMN IF NOT EXISTS last_attempt_recipient_count integer
     `);
-    console.log(
+    logInfo(
       "[migration] project_log_email_schedules attempt-tracking columns ready",
     );
   } catch (err) {

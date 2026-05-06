@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -38,7 +39,7 @@ export async function ensureWageDecisionRateChanges(): Promise<void> {
     await db.execute(sql.raw(
       `CREATE UNIQUE INDEX IF NOT EXISTS wage_decision_rate_changes_org_decision_class_uniq ON wage_decision_rate_changes(organization_id, decision_number, classification)`,
     ));
-    console.log("[migration] wage_decision_rate_changes ensured");
+    logInfo("[migration] wage_decision_rate_changes ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure wage_decision_rate_changes:",

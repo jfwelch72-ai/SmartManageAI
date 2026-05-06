@@ -1,4 +1,4 @@
-import {logError, logWarn } from "../utils/logger";
+import { logError, logWarn, logInfo } from "../utils/logger";
 import { ImapFlow } from "imapflow";
 import * as nodemailer from "nodemailer";
 import type { EmailAccount } from "@shared/schema";
@@ -71,7 +71,7 @@ function buildSmtpConfig(account: EmailAccount) {
 export async function testImapConnection(account: EmailAccount): Promise<ImapTestResult> {
   const client = new ImapFlow(buildImapConfig(account));
   client.on("error", (err: Error) => {
-    console.warn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
+    logWarn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
   });
 
   try {
@@ -131,13 +131,13 @@ export async function fetchImapMessages(
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     if (attempt > 0) {
       const backoffMs = attempt * 2000;
-      console.log(`IMAP fetch retry ${attempt}/${MAX_RETRIES} for ${account.emailAddress} after ${backoffMs}ms`);
+      logInfo(`IMAP fetch retry ${attempt}/${MAX_RETRIES} for ${account.emailAddress} after ${backoffMs}ms`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
 
     const client = new ImapFlow(buildImapConfig(account));
     client.on("error", (err: Error) => {
-      console.warn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
+      logWarn(`IMAP client error for ${account.emailAddress}: ${err.message}`);
     });
     const messages: ImapFetchedMessage[] = [];
 

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError, logInfo } from "./logger";
@@ -198,7 +199,7 @@ export async function ensureAiTakeoffSuggestionsTables(): Promise<void> {
         `[migration] ai_takeoff_suggestions — backfilled ${backfilledRows} rows from ${backfilledAnalyses} analyses`,
       );
     } else {
-      console.log(`[migration] ai_takeoff_suggestions — table ready, nothing to backfill`);
+      logInfo(`[migration] ai_takeoff_suggestions — table ready, nothing to backfill`);
     }
   } catch (err) {
     logError(

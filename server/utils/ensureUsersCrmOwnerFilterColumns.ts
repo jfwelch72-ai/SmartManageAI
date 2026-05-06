@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -33,7 +34,7 @@ export async function ensureUsersCrmOwnerFilterColumns(): Promise<void> {
         ADD COLUMN IF NOT EXISTS crm_contact_owner_filter TEXT,
         ADD COLUMN IF NOT EXISTS crm_org_owner_filter TEXT
     `);
-    console.log("[migration] users crm_contact_owner_filter / crm_org_owner_filter columns ready");
+    logInfo("[migration] users crm_contact_owner_filter / crm_org_owner_filter columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUsersCrmOwnerFilterColumns failed",

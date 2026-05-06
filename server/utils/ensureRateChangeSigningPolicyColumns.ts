@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -24,7 +25,7 @@ export async function ensureRateChangeSigningPolicyColumns(): Promise<void> {
       ALTER TABLE projects
       ADD COLUMN IF NOT EXISTS rate_change_signing_policy text
     `);
-    console.log("[migration] rate_change_signing_policy columns — applied");
+    logInfo("[migration] rate_change_signing_policy columns — applied");
   } catch (err) {
     logError(
       "[migration] Failed to ensure rate_change_signing_policy columns:",

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -83,9 +84,9 @@ export async function ensureNotificationEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] notification_type enum — added ${added} missing value(s)`);
+      logInfo(`[migration] notification_type enum — added ${added} missing value(s)`);
     } else {
-      console.log("[migration] notification_type enum — all values present, skipped");
+      logInfo("[migration] notification_type enum — all values present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure notification_type enum values:", {}, err instanceof Error ? err : new Error(String(err)));

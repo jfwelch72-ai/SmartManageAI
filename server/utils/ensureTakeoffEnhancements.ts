@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -15,9 +16,9 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
     if (!colAlreadyExists) {
       await db.execute(sql`ALTER TABLE "quantity_categories" ADD COLUMN IF NOT EXISTS "waste_factor" double precision NOT NULL DEFAULT 0`);
       await db.execute(sql`ALTER TABLE "quantity_categories" ADD COLUMN IF NOT EXISTS "unit_cost" double precision`);
-      console.log("[migration] quantity_categories waste_factor/unit_cost — applied");
+      logInfo("[migration] quantity_categories waste_factor/unit_cost — applied");
     } else {
-      console.log("[migration] quantity_categories waste_factor/unit_cost — already present, skipped");
+      logInfo("[migration] quantity_categories waste_factor/unit_cost — already present, skipped");
     }
 
     const deductionsCheck = await db.execute(sql`
@@ -30,9 +31,9 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
 
     if (!deductionsExists) {
       await db.execute(sql`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "deductions" text`);
-      console.log("[migration] takeoff_measurements deductions — applied");
+      logInfo("[migration] takeoff_measurements deductions — applied");
     } else {
-      console.log("[migration] takeoff_measurements deductions — already present, skipped");
+      logInfo("[migration] takeoff_measurements deductions — already present, skipped");
     }
     const conditionCols = [
       { table: "takeoff_conditions", col: "is_favorite", ddl: `boolean NOT NULL DEFAULT false` },
@@ -46,7 +47,7 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
       ));
       if (chk.rows[0]?.e !== true) {
         await db.execute(sql.raw(`ALTER TABLE "${c.table}" ADD COLUMN IF NOT EXISTS "${c.col}" ${c.ddl}`));
-        console.log(`[migration] ${c.table}.${c.col} — applied`);
+        logInfo(`[migration] ${c.table}.${c.col} — applied`);
       }
     }
 
@@ -69,7 +70,7 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
         )
       `);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "saved_scale_templates_org_idx" ON "saved_scale_templates" ("organization_id")`);
-      console.log("[migration] saved_scale_templates table — created");
+      logInfo("[migration] saved_scale_templates table — created");
     } else {
       const scaleColChecks = [
         { col: "name", ddl: "text NOT NULL DEFAULT ''" },
@@ -83,7 +84,7 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
         ));
         if (colChk.rows[0]?.e !== true) {
           await db.execute(sql.raw(`ALTER TABLE "saved_scale_templates" ADD COLUMN IF NOT EXISTS "${sc.col}" ${sc.ddl}`));
-          console.log(`[migration] saved_scale_templates.${sc.col} — applied`);
+          logInfo(`[migration] saved_scale_templates.${sc.col} — applied`);
         }
       }
     }

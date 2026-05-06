@@ -1,4 +1,4 @@
-import { logError, logWarn } from "../utils/logger";
+import { logError, logWarn, logInfo } from "../utils/logger";
 import { governedAiCall } from "../services/aiGovernance";
 import { db } from "../db";
 import { 
@@ -76,10 +76,10 @@ Always provide:
 Respond with valid JSON matching the required structure.`;
 
 export async function analyzeSchedulingModule(projectId?: string, organizationId?: string): Promise<ModuleAnalysisResult> {
-  console.log(`🗓️ [AI Scheduling] Starting analysis...`);
+  logInfo(`🗓️ [AI Scheduling] Starting analysis...`);
   
   if (!organizationId) {
-    console.log('[AI Scheduling] Skipping - organization context required for security');
+    logInfo('[AI Scheduling] Skipping - organization context required for security');
     return { insights: [] };
   }
   
@@ -214,10 +214,10 @@ Respond with JSON in this format:
 }
 
 export async function analyzeDelaysModule(projectId?: string, organizationId?: string): Promise<ModuleAnalysisResult> {
-  console.log(`⏰ [AI Delays] Starting analysis...`);
+  logInfo(`⏰ [AI Delays] Starting analysis...`);
   
   if (!organizationId) {
-    console.log('[AI Delays] Skipping - organization context required for security');
+    logInfo('[AI Delays] Skipping - organization context required for security');
     return { insights: [] };
   }
 
@@ -349,10 +349,10 @@ Respond with JSON in this format:
 }
 
 export async function analyzeCostsModule(projectId?: string, organizationId?: string): Promise<ModuleAnalysisResult> {
-  console.log(`💰 [AI Costs] Starting analysis...`);
+  logInfo(`💰 [AI Costs] Starting analysis...`);
   
   if (!organizationId) {
-    console.log('[AI Costs] Skipping - organization context required for security');
+    logInfo('[AI Costs] Skipping - organization context required for security');
     return { insights: [] };
   }
 
@@ -504,10 +504,10 @@ Respond with JSON in this format:
 }
 
 export async function analyzeEquipmentModule(organizationId?: string): Promise<ModuleAnalysisResult> {
-  console.log(`🚜 [AI Equipment] Starting analysis...`);
+  logInfo(`🚜 [AI Equipment] Starting analysis...`);
   
   if (!organizationId) {
-    console.log('[AI Equipment] Skipping - no organization context');
+    logInfo('[AI Equipment] Skipping - no organization context');
     return { insights: [] };
   }
   
@@ -645,10 +645,10 @@ Respond with JSON in this format:
 }
 
 export async function analyzeVendorPricingModule(organizationId?: string): Promise<ModuleAnalysisResult> {
-  console.log(`💲 [AI Vendor Pricing] Starting analysis...`);
+  logInfo(`💲 [AI Vendor Pricing] Starting analysis...`);
   
   if (!organizationId) {
-    console.log('[AI Vendor Pricing] Skipping - no organization context');
+    logInfo('[AI Vendor Pricing] Skipping - no organization context');
     return { insights: [] };
   }
   
@@ -790,7 +790,7 @@ Respond with JSON in this format:
 }
 
 export async function analyzeProjectHealthModule(projectId: string): Promise<ModuleAnalysisResult> {
-  console.log(`❤️ [AI Project Health] Starting analysis for project ${projectId}...`);
+  logInfo(`❤️ [AI Project Health] Starting analysis for project ${projectId}...`);
   
   const [project] = await db
     .select()
@@ -936,7 +936,7 @@ export async function runComprehensiveAnalysis(
   projectId?: string,
   modules?: string[]
 ): Promise<ModuleAnalysisResult> {
-  console.log(`🔬 [AI Comprehensive] Running analysis for modules: ${modules?.join(', ') || 'ALL'}`);
+  logInfo(`🔬 [AI Comprehensive] Running analysis for modules: ${modules?.join(', ') || 'ALL'}`);
   
   const allModules = modules || ['SCHEDULING', 'DELAYS', 'COSTS', 'EQUIPMENT', 'VENDOR_PRICING'];
   const results: ModuleAnalysisResult = {

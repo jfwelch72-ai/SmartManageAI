@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -49,7 +50,7 @@ export async function ensureMyWorkSavedViewsTable(): Promise<void> {
     `);
     const hasLegacy = (legacyExists.rows[0] as { exists: boolean } | undefined)?.exists === true;
     if (!hasLegacy) {
-      console.log("[migration] my_work_saved_views table ready (no legacy table to backfill)");
+      logInfo("[migration] my_work_saved_views table ready (no legacy table to backfill)");
       return;
     }
 
@@ -64,9 +65,9 @@ export async function ensureMyWorkSavedViewsTable(): Promise<void> {
     `);
     const copied = (result as { rowCount?: number }).rowCount ?? 0;
     if (copied > 0) {
-      console.log(`[migration] my_work_saved_views table ready — applied (backfilled ${copied} legacy my-work view${copied === 1 ? "" : "s"})`);
+      logInfo(`[migration] my_work_saved_views table ready — applied (backfilled ${copied} legacy my-work view${copied === 1 ? "" : "s"})`);
     } else {
-      console.log("[migration] my_work_saved_views table ready");
+      logInfo("[migration] my_work_saved_views table ready");
     }
   } catch (err) {
     logError(

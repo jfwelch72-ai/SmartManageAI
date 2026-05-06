@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -23,7 +24,7 @@ export async function ensureDocOverdueReminderSettings(): Promise<void> {
       ALTER TABLE organizations
         ADD COLUMN IF NOT EXISTS doc_overdue_reminder_interval_hours integer NOT NULL DEFAULT 22
     `);
-    console.log("[migration] organizations.doc_overdue_reminder_* columns ready");
+    logInfo("[migration] organizations.doc_overdue_reminder_* columns ready");
   } catch (err) {
     logError(
       "[migration] ensureDocOverdueReminderSettings failed",

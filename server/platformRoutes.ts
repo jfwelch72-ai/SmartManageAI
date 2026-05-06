@@ -136,7 +136,7 @@
  *     responses:
  *       201: { description: Announcement created }
  */
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, organizations, auditLog, projects, bids, timeClockShifts, organizationSowItems, organizationWorkTypes, organizationSubscriptions, passwordResetTokens, conversations, conversationParticipants, messages, tasks, notifications, insertUserSchema, aiActionAudit, uploadIntents, aiRuns, media, integrationConnections, platformAnnouncements, announcementDismissals, globalWorkflowTemplates, equipment, contracts, hiringJobTemplates, insertHiringJobTemplateSchema } from "@shared/schema";
@@ -1071,7 +1071,7 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
       newValue: JSON.stringify({ adminPasswordReset: true, targetEmail: user.email }),
     }, req);
 
-    console.log(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
+    logInfo(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });
   } catch (error: any) {
     next(error);
@@ -1124,7 +1124,7 @@ router.post("/platform/users/:userId/impersonate", requireAuth, requireSuperAdmi
       }),
     }, req);
 
-    console.log(`SECURITY: Admin ${req.user!.email} impersonating user ${user.email} (${user.id})`);
+    logInfo(`SECURITY: Admin ${req.user!.email} impersonating user ${user.email} (${user.id})`);
     
     res.json({ 
       code,
@@ -1204,7 +1204,7 @@ router.post("/platform/users/:userId/restore", requireAuth, requireSuperAdmin, a
       newValue: JSON.stringify({ isActive: true, restored: true }),
     }, req);
 
-    console.log(`User restored: ${user.email} by admin: ${req.user!.email}`);
+    logInfo(`User restored: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been restored and reactivated` });
   } catch (error: any) {
     next(error);
@@ -1239,7 +1239,7 @@ router.post("/platform/users/:userId/soft-delete", requireAuth, requireSuperAdmi
       newValue: JSON.stringify({ isActive: false, softDeleted: true }),
     }, req);
 
-    console.log(`User soft-deleted: ${user.email} by admin: ${req.user!.email}`);
+    logInfo(`User soft-deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been deactivated and archived` });
   } catch (error: any) {
     next(error);
@@ -1313,7 +1313,7 @@ router.delete("/platform/users/:userId", requireAuth, requireSuperAdmin, async (
       newValue: JSON.stringify({ permanentlyDeleted: true }),
     }, req);
 
-    console.log(`User permanently deleted: ${user.email} by admin: ${req.user!.email}`);
+    logInfo(`User permanently deleted: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `User ${user.email} has been permanently deleted` });
   } catch (error: any) {
     next(error);
@@ -2190,7 +2190,7 @@ router.post("/platform/organizations/:orgId/delete-all-data", requireAuth, requi
       newValue: JSON.stringify({ fullDataDeletion: true, deletedAt: new Date().toISOString() }),
     }, req);
 
-    console.log(`COMPLIANCE: Full data deletion for org "${org.name}" (${orgId}) by admin: ${req.user!.email}`);
+    logInfo(`COMPLIANCE: Full data deletion for org "${org.name}" (${orgId}) by admin: ${req.user!.email}`);
     res.json({ message: `All data for organization "${org.name}" has been permanently deleted` });
   } catch (error: any) {
     next(error);

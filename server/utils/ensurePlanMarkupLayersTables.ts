@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -99,7 +100,7 @@ export async function ensurePlanMarkupLayersTables(): Promise<void> {
       END$$;
     `);
 
-    console.log("[migration] plan_markup_layers + visibility ready");
+    logInfo("[migration] plan_markup_layers + visibility ready");
   } catch (err) {
     logError(
       "[migration] ensurePlanMarkupLayersTables failed",

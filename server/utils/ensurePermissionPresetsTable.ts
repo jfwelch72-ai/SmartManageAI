@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -27,9 +28,9 @@ export async function ensurePermissionPresetsTable(): Promise<void> {
       `));
       await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS permission_presets_org_idx ON permission_presets(organization_id)`));
       await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS permission_presets_role_idx ON permission_presets(target_role)`));
-      console.log(`[migration] permission_presets table — created`);
+      logInfo(`[migration] permission_presets table — created`);
     } else {
-      console.log(`[migration] permission_presets table — already exists, skipped`);
+      logInfo(`[migration] permission_presets table — already exists, skipped`);
     }
   } catch (err) {
     logError(`[migration] Failed to ensure permission_presets table:`, {}, err instanceof Error ? err : new Error(String(err)));

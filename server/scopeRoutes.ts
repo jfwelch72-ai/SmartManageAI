@@ -1,4 +1,4 @@
-import {logError, logWarn } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { organizations, organizationSowItems, masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers, insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema, insertScopeModifierCategorySchema, insertScopeModifierSchema, tradeTypeEnum, bids, bidModifierSelections, estimateLineItems, estimates, modifiers as modifiersTable, projects, users, scopeItems, insertScopeItemSchema, dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets, notifications } from "@shared/schema";
@@ -91,7 +91,7 @@ router.get("/api/scope/work-types", requireAuth, async (req: AuthRequest, res, n
     // If still no org-specific or trade-specific items, return empty array
     // Note: Legacy fallback to shared scope tables removed for multi-tenant isolation
     if (sowItems.length === 0) {
-      console.log(`[WorkTypes] No SOW items found for organization ${organizationId} (trade: ${org.tradeType})`);
+      logInfo(`[WorkTypes] No SOW items found for organization ${organizationId} (trade: ${org.tradeType})`);
       res.json([]);
       return;
     }
@@ -226,7 +226,7 @@ router.get("/api/scope/modifiers", requireAuth, async (req: AuthRequest, res, ne
 
     // No trade-specific modifiers found - return empty array for multi-tenant isolation
     // Note: Legacy fallback to shared tables removed to prevent cross-trade data leakage
-    console.log(`[Modifiers] No trade-specific modifiers found for trade: ${org.tradeType}`);
+    logInfo(`[Modifiers] No trade-specific modifiers found for trade: ${org.tradeType}`);
     res.json([]);
   } catch (error) {
     next(error);
@@ -1141,7 +1141,7 @@ function mapCategoryToLegacyEnum(categoryName: string): { legacyEnum: string; is
   
   // Fallback to OTHER for unmatched categories
   const partCount = inputTokens.length;
-  console.log(`[WorkCategories] Unmapped category: "${categoryName}" (${partCount} parts) -> defaulting to OTHER`);
+  logInfo(`[WorkCategories] Unmapped category: "${categoryName}" (${partCount} parts) -> defaulting to OTHER`);
   return { legacyEnum: "OTHER", isInferred: true };
 }
 
@@ -1449,7 +1449,7 @@ router.post("/api/organization/update-trade-type", requireAuth, requireRole("ADM
       newTradeType: newTradeType,
     });
 
-    console.log(`[TradeConfig] Trade type updated for org ${orgId}: ${previousTradeType} -> ${newTradeType}`);
+    logInfo(`[TradeConfig] Trade type updated for org ${orgId}: ${previousTradeType} -> ${newTradeType}`);
 
     res.json({ 
       success: true, 
@@ -1546,7 +1546,7 @@ router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMI
 
       // Safety check: Abort if no master items found for this trade type
       if (masterItems.length === 0) {
-        console.warn(`[SOW] No master SOW items found for trade type ${tradeType} - reactivating deactivated items`);
+        logWarn(`[SOW] No master SOW items found for trade type ${tradeType} - reactivating deactivated items`);
         
         // Reactivate the items we just deactivated
         await db
@@ -1624,7 +1624,7 @@ router.post("/api/organization/reinitialize-sow", requireAuth, requireRole("ADMI
       itemCount: newItemsCreated,
     });
 
-    console.log(`[SOW] Reinitialized SOW for org ${orgId}: ${deactivatedCount} deactivated, ${newItemsCreated} created, ${newCategories.length} categories`);
+    logInfo(`[SOW] Reinitialized SOW for org ${orgId}: ${deactivatedCount} deactivated, ${newItemsCreated} created, ${newCategories.length} categories`);
 
     res.json({
       success: true,
@@ -2528,7 +2528,7 @@ router.patch("/api/scope-items/:id/materials", requireAuth, requireRole("ADMIN",
       }
     }
 
-    console.log(`Material update for scope item ${req.params.id} by user ${req.user!.id}:`, {
+    logInfo(`Material update for scope item ${req.params.id} by user ${req.user!.id}:`, {
       actualMaterials: { actualConcrete, actualStone, actualExcavation },
       overages: { hasConcreteOverage, hasStoneOverage, hasExcavationOverage },
       actionStatus: overageActionStatus,

@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { db } from "./db";
 import { insertNotification } from "./services/notificationService";
 import { 
@@ -168,7 +168,7 @@ export async function captureProductionRateFromShift(
         .where(eq(dailyScopeProgress.id, entry.id));
     }
     
-    console.log(`Production rate data captured for project ${projectId} on ${workDateStr}: ${totalProjectLaborHours}hrs, $${totalProjectLaborCost.toFixed(2)} across ${progressEntries.length} scope items`);
+    logInfo(`Production rate data captured for project ${projectId} on ${workDateStr}: ${totalProjectLaborHours}hrs, $${totalProjectLaborCost.toFixed(2)} across ${progressEntries.length} scope items`);
   } catch (error) {
     logError("Error capturing production rate data:", {}, error instanceof Error ? error : new Error(String(error)));
   }
@@ -359,7 +359,7 @@ export async function checkAndNotifyWeeklyReport(
         .where(eq(weeklyPayrollReports.id, report.id));
     }
 
-    console.log(`Auto-generated weekly payroll report for org ${organizationId}: ${weekStartStr} to ${weekEndStr}`);
+    logInfo(`Auto-generated weekly payroll report for org ${organizationId}: ${weekStartStr} to ${weekEndStr}`);
   } catch (error) {
     logError("Error checking weekly report:", {}, error instanceof Error ? error : new Error(String(error)));
   }

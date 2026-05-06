@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -208,7 +209,7 @@ export async function ensureStatusPageTables(): Promise<void> {
         ON CONFLICT ("key") DO NOTHING
       `);
     }
-    console.log("[migration] status_page — seeded default components");
+    logInfo("[migration] status_page — seeded default components");
   }
 
   // Upgrade legacy "web" component from local self-check to real outbound HTTP probe
@@ -238,5 +239,5 @@ export async function ensureStatusPageTables(): Promise<void> {
     ON CONFLICT DO NOTHING
   `);
 
-  console.log("[migration] status_page — tables ready");
+  logInfo("[migration] status_page — tables ready");
 }

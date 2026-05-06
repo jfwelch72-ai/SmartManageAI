@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -23,9 +24,9 @@ export async function ensureFieldWorkerPermColumns(): Promise<void> {
         await db.execute(
           sql.raw(`ALTER TABLE "${col.table}" ADD COLUMN IF NOT EXISTS "${col.name}" boolean NOT NULL DEFAULT false`)
         );
-        console.log(`[migration] ${col.table}.${col.name} — applied`);
+        logInfo(`[migration] ${col.table}.${col.name} — applied`);
       } else {
-        console.log(`[migration] ${col.table}.${col.name} — already present, skipped`);
+        logInfo(`[migration] ${col.table}.${col.name} — already present, skipped`);
       }
     } catch (err) {
       logError(`[migration] Failed to ensure ${col.table}.${col.name}:`, {}, err instanceof Error ? err : new Error(String(err)));
@@ -53,7 +54,7 @@ async function ensureProjectScopeColumn(): Promise<void> {
       await db.execute(sql.raw(
         `ALTER TABLE "${table}" ADD COLUMN IF NOT EXISTS "project_scope" text NOT NULL DEFAULT 'ALL'`
       ));
-      console.log(`[migration] ${table}.project_scope — column added`);
+      logInfo(`[migration] ${table}.project_scope — column added`);
     }
 
     const oldColCheck = await db.execute(sql`
@@ -70,11 +71,11 @@ async function ensureProjectScopeColumn(): Promise<void> {
       await db.execute(sql.raw(
         `ALTER TABLE "${table}" DROP COLUMN "can_access_active_projects_only"`
       ));
-      console.log(`[migration] ${table}.project_scope — backfilled and dropped legacy column`);
+      logInfo(`[migration] ${table}.project_scope — backfilled and dropped legacy column`);
     } else if (!newColExists) {
-      console.log(`[migration] ${table}.project_scope — applied`);
+      logInfo(`[migration] ${table}.project_scope — applied`);
     } else {
-      console.log(`[migration] ${table}.project_scope — already present, skipped`);
+      logInfo(`[migration] ${table}.project_scope — already present, skipped`);
     }
   } catch (err) {
     logError(`[migration] Failed to ensure ${table}.project_scope:`, {}, err instanceof Error ? err : new Error(String(err)));
@@ -120,9 +121,9 @@ async function ensureFinancialsAccessColumn(table: string, defaultVal: string): 
           `));
         }
       }
-      console.log(`[migration] ${table}.financials_access — applied`);
+      logInfo(`[migration] ${table}.financials_access — applied`);
     } else {
-      console.log(`[migration] ${table}.financials_access — already present, skipped`);
+      logInfo(`[migration] ${table}.financials_access — already present, skipped`);
     }
 
     await db.execute(sql.raw(`

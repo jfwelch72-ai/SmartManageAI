@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -25,7 +26,7 @@ export async function ensureSwpppCorrectiveActionStatus(): Promise<void> {
          AND status = 'OPEN'
     `);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS swppp_status_idx ON swppp_inspections(status)`);
-    console.log("[migration] swppp_inspections status/resolved columns ready");
+    logInfo("[migration] swppp_inspections status/resolved columns ready");
   } catch (err) {
     logError(
       "[migration] ensureSwpppCorrectiveActionStatus failed",

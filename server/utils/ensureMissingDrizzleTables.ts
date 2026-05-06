@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -18,7 +19,7 @@ export async function ensureMissingDrizzleTables(): Promise<void> {
     const allExist = row.bim_extractions_exist && row.fuel_logs_exist && row.listings_exist && row.rental_requests_exist && row.rev_rec_exist && row.cost_txn_exist;
 
     if (allExist) {
-      console.log("[migration] missing drizzle tables — already present, skipped");
+      logInfo("[migration] missing drizzle tables — already present, skipped");
       return;
     }
 
@@ -211,7 +212,7 @@ export async function ensureMissingDrizzleTables(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "cost_transactions_reference_idx" ON "cost_transactions" ("reference_id")`);
     }
 
-    console.log("[migration] missing drizzle tables — created");
+    logInfo("[migration] missing drizzle tables — created");
   } catch (err) {
     logError("[migration] Failed to ensure missing drizzle tables:", {}, err instanceof Error ? err : new Error(String(err)));
   }

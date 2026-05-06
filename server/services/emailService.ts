@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import { Resend } from 'resend';
 import {
   captureOutboundEmail,
@@ -157,7 +157,7 @@ export async function sendEmailWithResult(
         lastError = error;
         if (attempt < MAX_RETRIES && isTransientError(error)) {
           const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-          console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
+          logInfo(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
           await sleep(delay);
           continue;
         }
@@ -165,14 +165,14 @@ export async function sendEmailWithResult(
         return { ok: false, error: summarizeSendError(error), recipientCount };
       }
 
-      console.log(`Email sent successfully via Resend (${recipientCount} recipient(s))`, data?.id);
+      logInfo(`Email sent successfully via Resend (${recipientCount} recipient(s))`, data?.id);
       return { ok: true, recipientCount };
     } catch (error: any) {
       lastError = error;
       const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
       if (attempt < MAX_RETRIES && isTransientError(error)) {
         const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-        console.log(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
+        logInfo(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
         await sleep(delay);
         continue;
       }

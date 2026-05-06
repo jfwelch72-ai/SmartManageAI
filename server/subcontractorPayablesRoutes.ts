@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router, Response, Request, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
@@ -891,7 +891,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
     for (const contract of completedContractsWithoutPayments) {
       // Skip contracts without an organization ID
       if (!contract.organizationId) {
-        console.log(`Backfill: Skipping contract ${contract.contractNumber} - no gcOrganizationId on project`);
+        logInfo(`Backfill: Skipping contract ${contract.contractNumber} - no gcOrganizationId on project`);
         results.push({
           contractNumber: contract.contractNumber,
           payableId: "",
@@ -949,7 +949,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
           status: "created"
         });
 
-        console.log(`Backfill: Created payable ${newPayment.id} for contract ${contract.contractNumber}`);
+        logInfo(`Backfill: Created payable ${newPayment.id} for contract ${contract.contractNumber}`);
       } catch (err) {
         logError(`Backfill: Failed to create payable for contract ${contract.contractNumber}:`, {}, err instanceof Error ? err : new Error(String(err)));
         results.push({

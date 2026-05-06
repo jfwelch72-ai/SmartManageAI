@@ -1,3 +1,4 @@
+import { logWarn } from "./utils/logger";
 import type { Response } from "express";
 
 const MAX_JSON_PARSE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -24,7 +25,7 @@ export function safeJsonParse<T = any>(
 ): T | null {
   if (!raw) return fallback;
   if (raw.length > MAX_JSON_PARSE_SIZE) {
-    console.warn(`JSON payload too large (${raw.length} bytes), skipping parse`);
+    logWarn(`JSON payload too large (${raw.length} bytes), skipping parse`);
     return fallback;
   }
   try {

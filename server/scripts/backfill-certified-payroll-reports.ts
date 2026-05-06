@@ -27,6 +27,7 @@
  * it directly so every tenant gets backfilled without an admin running tsx.
  */
 
+import { logInfo, logError } from "../utils/logger";
 import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { db, pool } from "../db";
@@ -154,7 +155,7 @@ export async function runCertifiedPayrollBackfill(
     const orgRows = await db.select({ id: organizations.id }).from(organizations);
     orgIds = orgRows.map((r) => r.id);
   }
-  console.log(`[backfill-cpr] bucket=${bucketName} basePrefix=${basePrefix} orgs=${orgIds.length} dryRun=${dryRun}`);
+  logInfo(`[backfill-cpr] bucket=${bucketName} basePrefix=${basePrefix} orgs=${orgIds.length} dryRun=${dryRun}`);
 
   const bucket = objectStorageClient.bucket(bucketName);
 
@@ -204,7 +205,7 @@ export async function runCertifiedPayrollBackfill(
     }
   }
   stats.orgsScanned = candidatesByOrg.size;
-  console.log(`[backfill-cpr] listed ${stats.totalListed} object(s) across ${stats.orgsScanned} org(s) with PDFs`);
+  logInfo(`[backfill-cpr] listed ${stats.totalListed} object(s) across ${stats.orgsScanned} org(s) with PDFs`);
 
   for (const [orgId, candidates] of candidatesByOrg) {
     if (candidates.length === 0) continue;
@@ -253,7 +254,7 @@ export async function runCertifiedPayrollBackfill(
     if (toInsert.length === 0) continue;
 
     if (dryRun) {
-      console.log(`[backfill-cpr] org=${orgId} would insert ${toInsert.length} row(s)`);
+      logInfo(`[backfill-cpr] org=${orgId} would insert ${toInsert.length} row(s)`);
       stats.inserted += toInsert.length;
       continue;
     }
@@ -265,10 +266,10 @@ export async function runCertifiedPayrollBackfill(
       await db.insert(certifiedPayrollReports).values(slice);
       stats.inserted += slice.length;
     }
-    console.log(`[backfill-cpr] org=${orgId} inserted ${toInsert.length} row(s)`);
+    logInfo(`[backfill-cpr] org=${orgId} inserted ${toInsert.length} row(s)`);
   }
 
-  console.log(
+  logInfo(
     `[backfill-cpr] done. inserted=${stats.inserted} alreadyPresent=${stats.alreadyPresent} ` +
       `missingPayRun=${stats.missingPayRun} skippedNonMatching=${stats.skippedNonMatching} dryRun=${dryRun}`,
   );
@@ -280,7 +281,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const stats = await runCertifiedPayrollBackfill(opts);
   if (stats.skippedReason === "no_private_dir") {
-    console.error("PRIVATE_OBJECT_DIR is not set; nothing to scan.");
+    logError("PRIVATE_OBJECT_DIR is not set; nothing to scan.");
     process.exit(1);
   }
 }
@@ -300,7 +301,7 @@ const isDirectInvocation = (() => {
 if (isDirectInvocation) {
   main()
     .catch((err) => {
-      console.error("[backfill-cpr] failed", err);
+      logError("[backfill-cpr] failed", err);
       process.exitCode = 1;
     })
     .finally(async () => {

@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { users, organizations, auditLog, organizationSubscriptions, organizationAddOns, organizationUsage, subscriptionEvents, organizationSowItems, scopeItems, estimateLineItems, dailyScopeProgress } from "@shared/schema";
@@ -880,7 +880,7 @@ router.post("/platform/backfill-sow-links", requireAuth, requireSuperAdmin, asyn
       newValue: JSON.stringify(results),
     }, req);
 
-    console.log("SOW backfill completed:", results);
+    logInfo("SOW backfill completed:", results);
     res.json({
       message: "SOW link backfill completed",
       ...results,

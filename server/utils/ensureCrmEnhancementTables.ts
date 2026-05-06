@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -198,5 +199,5 @@ export async function ensureCrmEnhancementTables(): Promise<void> {
   await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "won_at" timestamp`);
   await db.execute(sql`ALTER TABLE "crm_opportunities" ADD COLUMN IF NOT EXISTS "lost_at" timestamp`);
 
-  console.log("[migration] crm_enhancement_tables — ensured (quotes, line_items, tasks, assignment_rules, catalog_items, quote_templates, template_items, acceptance_tokens, lead_scoring_rules + opp columns)");
+  logInfo("[migration] crm_enhancement_tables — ensured (quotes, line_items, tasks, assignment_rules, catalog_items, quote_templates, template_items, acceptance_tokens, lead_scoring_rules + opp columns)");
 }

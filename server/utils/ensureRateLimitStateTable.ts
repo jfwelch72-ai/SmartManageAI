@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -23,7 +24,7 @@ export async function ensureRateLimitStateTable(): Promise<void> {
         last_invoked_at timestamptz NOT NULL DEFAULT now()
       )
     `);
-    console.log("[migration] rate_limit_state table ready");
+    logInfo("[migration] rate_limit_state table ready");
   } catch (err) {
     logError(
       "[migration] ensureRateLimitStateTable failed",

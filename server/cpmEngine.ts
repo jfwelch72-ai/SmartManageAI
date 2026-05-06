@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
 import { db } from "./db";
 import {
   projectScheduleTasks,
@@ -349,7 +349,7 @@ function topologicalSort(taskMap: Map<string, TaskNode>): string[] {
   function visit(id: string) {
     if (visited.has(id)) return;
     if (visiting.has(id)) {
-      console.warn(`CPM: Cycle detected involving task ${id}, breaking cycle`);
+      logWarn(`CPM: Cycle detected involving task ${id}, breaking cycle`);
       return;
     }
     visiting.add(id);

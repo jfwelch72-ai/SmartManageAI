@@ -1,6 +1,7 @@
 // Side-effect import: applies `.env.test` overrides (when the file exists)
 // before any of this module's code runs. Same module is also wired up as a
 // vitest `setupFiles` entry so the override propagates to test workers too.
+import { logInfo } from "../utils/logger";
 import "./loadEnvTest";
 
 import { spawnSync } from "node:child_process";
@@ -167,7 +168,7 @@ async function rebuildSchema(client: Client, schemaSql: string, hash: string): P
 export default async function globalSetup() {
   if (!process.env.DATABASE_URL) {
     if (process.env.SKIP_TEST_DB_PUSH === "1") {
-      console.log(
+      logInfo(
         "[vitest globalSetup] SKIP_TEST_DB_PUSH=1 and no DATABASE_URL — skipping schema sync entirely.",
       );
       return;
@@ -179,7 +180,7 @@ export default async function globalSetup() {
   }
 
   if (process.env.SKIP_TEST_DB_PUSH === "1") {
-    console.log(
+    logInfo(
       "[vitest globalSetup] SKIP_TEST_DB_PUSH=1 set; skipping test schema sync.",
     );
     return;
@@ -200,20 +201,20 @@ export default async function globalSetup() {
     if (!force) {
       const appliedHash = await readAppliedHash(client);
       if (appliedHash === expectedHash) {
-        console.log(
+        logInfo(
           "[vitest globalSetup] Test DB schema hash matches — skipping rebuild.",
         );
         return;
       }
     }
 
-    console.log(
+    logInfo(
       "[vitest globalSetup] Rebuilding test DB schema from `drizzle-kit export`...",
     );
     const start = Date.now();
     const sql = exportSchemaSql();
     await rebuildSchema(client, sql, expectedHash);
-    console.log(
+    logInfo(
       `[vitest globalSetup] Test DB schema rebuilt in ${((Date.now() - start) / 1000).toFixed(1)}s (hash ${expectedHash.slice(0, 12)}).`,
     );
   } finally {

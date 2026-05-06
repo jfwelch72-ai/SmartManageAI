@@ -9,7 +9,7 @@ import { type AuthRequest, requireAuth, requireRole, requireFeaturePermission, r
 import { sensitiveLimiter } from "./rateLimiter";
 import { logUpdate, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
-import { logError, logWarn } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { runAIAnalysis, getLatestAIRun, getAIRunById, getTasksForRole, updateTaskStatus } from "./ai/orchestrator";
 import { openai, AI_MODEL_GPT5, AI_MODEL_GPT4O } from "./ai/openaiClient";
 import { analyzeSchedulingModule, analyzeDelaysModule, analyzeCostsModule, analyzeEquipmentModule, analyzeVendorPricingModule, analyzeProjectHealthModule, runComprehensiveAnalysis, saveAnalysisResults } from "./ai/moduleAnalyzers";
@@ -509,7 +509,7 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
     const { module, projectId, saveResults } = validationResult.data;
     const organizationId = req.user.organizationId;
 
-    console.log(`[AI Analysis] User ${req.user.email} triggered ${module || 'ALL'} analysis`);
+    logInfo(`[AI Analysis] User ${req.user.email} triggered ${module || 'ALL'} analysis`);
 
     let result;
     

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -36,5 +37,5 @@ export async function ensureSiteLeaveTable(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS site_leaves_user_idx ON site_leaves(user_id)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS site_leaves_project_idx ON site_leaves(project_id)`);
 
-  console.log("[migration] site_leaves table — created");
+  logInfo("[migration] site_leaves table — created");
 }

@@ -1,4 +1,4 @@
-import { logInfo, logError, logWarn } from "./logger";
+import { logInfo, logError, logWarn, captureConsoleDuring } from "./logger";
 import { reconcileSchemaDrift } from "./schemaDriftDetector";
 
 import { ensureVideoCallTables } from "./ensureVideoCallTables";
@@ -508,51 +508,47 @@ const migrations: MigrationStep[] = [
 export async function runStartupMigrations(): Promise<void> {
   const start = Date.now();
   const failed: string[] = [];
-
-  const originalLog = console.log;
-  const originalError = console.error;
   const capturedLogs: string[] = [];
   let appliedCount = 0;
 
-  console.log = (...args: unknown[]) => {
-    const msg = args.map(String).join(" ");
-    if (msg.includes("[migration]") || msg.includes("ensureErrorLogsTable")) {
-      capturedLogs.push(msg);
-      if (msg.includes("— applied") || msg.includes("— created") || msg.includes("added") || msg.includes("table ready")) {
-        appliedCount++;
-        originalLog(msg);
+  await captureConsoleDuring(
+    {
+      onLog: (msg, forward) => {
+        if (msg.includes("[migration]") || msg.includes("ensureErrorLogsTable")) {
+          capturedLogs.push(msg);
+          if (msg.includes("— applied") || msg.includes("— created") || msg.includes("added") || msg.includes("table ready")) {
+            appliedCount++;
+            forward(msg);
+          }
+        } else {
+          forward(msg);
+        }
+      },
+      onError: (msg, _args, forward) => {
+        if (msg.includes("[migration]")) {
+          capturedLogs.push(msg);
+        }
+        forward(msg);
+      },
+    },
+    async ({ log: forwardLog, error: forwardError }) => {
+      for (const step of migrations) {
+        const stepStart = Date.now();
+        try {
+          await step.fn();
+          const stepElapsed = Date.now() - stepStart;
+          if (stepElapsed > 5000) {
+            forwardLog(`[migration] ${step.name} (${step.category}) completed in ${stepElapsed}ms (slow)`);
+          }
+        } catch (err) {
+          const stepElapsed = Date.now() - stepStart;
+          failed.push(step.name);
+          forwardError(`[migration] ${step.name} (${step.category}) failed after ${stepElapsed}ms:`, err);
+          logError(`Migration step failed: ${step.name} (${step.category})`, { stepElapsed }, err instanceof Error ? err : new Error(String(err)));
+        }
       }
-    } else {
-      originalLog(...args);
-    }
-  };
-
-  console.error = (...args: unknown[]) => {
-    const msg = args.map(String).join(" ");
-    if (msg.includes("[migration]")) {
-      capturedLogs.push(msg);
-    }
-    originalError(...args);
-  };
-
-  for (const step of migrations) {
-    const stepStart = Date.now();
-    try {
-      await step.fn();
-      const stepElapsed = Date.now() - stepStart;
-      if (stepElapsed > 5000) {
-        originalLog(`[migration] ${step.name} (${step.category}) completed in ${stepElapsed}ms (slow)`);
-      }
-    } catch (err) {
-      const stepElapsed = Date.now() - stepStart;
-      failed.push(step.name);
-      originalError(`[migration] ${step.name} (${step.category}) failed after ${stepElapsed}ms:`, err);
-      logError(`Migration step failed: ${step.name} (${step.category})`, { stepElapsed }, err instanceof Error ? err : new Error(String(err)));
-    }
-  }
-
-  console.log = originalLog;
-  console.error = originalError;
+    },
+  );
 
   const elapsed = Date.now() - start;
   const total = migrations.length;

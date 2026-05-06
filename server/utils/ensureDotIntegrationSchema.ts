@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -17,7 +18,7 @@ export async function ensureDotIntegrationSchema(): Promise<void> {
     for (const v of wanted) {
       if (!existing.has(v)) {
         await db.execute(sql.raw(`ALTER TYPE integration_provider ADD VALUE IF NOT EXISTS '${v}'`));
-        console.log(`[migration] integration_provider enum — added '${v}' value`);
+        logInfo(`[migration] integration_provider enum — added '${v}' value`);
       }
     }
 

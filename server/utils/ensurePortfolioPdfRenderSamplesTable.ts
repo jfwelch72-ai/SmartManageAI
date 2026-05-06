@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -24,6 +25,6 @@ export async function ensurePortfolioPdfRenderSamplesTable(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "portfolio_pdf_render_samples_started_at_idx"
       ON "portfolio_pdf_render_samples" ("started_at")
     `);
-    console.log("[migration] portfolio_pdf_render_samples — table created");
+    logInfo("[migration] portfolio_pdf_render_samples — table created");
   }
 }

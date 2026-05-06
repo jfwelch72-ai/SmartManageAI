@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -52,9 +53,9 @@ export async function ensureGeofenceEnhancements(): Promise<void> {
         CREATE INDEX IF NOT EXISTS "geofence_zones_project_id_idx" ON "project_geofence_zones" ("project_id")
       `);
 
-      console.log("[migration] geofence enhancements — applied");
+      logInfo("[migration] geofence enhancements — applied");
     } else {
-      console.log("[migration] geofence enhancements — already present, skipped");
+      logInfo("[migration] geofence enhancements — already present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure geofence enhancements:", {}, err instanceof Error ? err : new Error(String(err)));

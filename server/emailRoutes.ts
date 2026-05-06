@@ -364,10 +364,10 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       testFullConnection(newAccount).then(async (testResult) => {
         if (testResult.success) {
           const syncResult = await syncImapAccount(newAccount, req.user.id);
-          console.log(`Initial IMAP sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+          logInfo(`Initial IMAP sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
         } else {
           const errorMsg = testResult.imap.error || testResult.smtp.error || "Connection test failed";
-          console.log(`Skipping initial sync for ${newAccount.emailAddress}: ${errorMsg}`);
+          logInfo(`Skipping initial sync for ${newAccount.emailAddress}: ${errorMsg}`);
           await db
             .update(emailAccounts)
             .set({ lastSyncError: errorMsg.substring(0, 500), updatedAt: new Date() })
@@ -378,7 +378,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       });
     } else if (newAccount.provider === "OUTLOOK" && newAccount.accessToken) {
       syncOutlookAccount(newAccount, req.user.id).then((syncResult) => {
-        console.log(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+        logInfo(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
         backfillCrmEmailLogging(newAccount.id, 90).catch(() => {});
       }).catch((err) => {
         logError(`Initial Outlook sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
@@ -534,7 +534,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
         const threadIds = threads.map((t) => t.id);
 
         const messageCount = await tx.select({ count: sql<number>`count(*)` }).from(emailMessages).where(eq(emailMessages.emailAccountId, existing.id));
-        console.log(`[Delete Account ${existing.id}] Found ${threadIds.length} threads, ${messageCount[0]?.count ?? 0} messages to clean up`);
+        logInfo(`[Delete Account ${existing.id}] Found ${threadIds.length} threads, ${messageCount[0]?.count ?? 0} messages to clean up`);
 
         if (threadIds.length > 0) {
           // Process in batches to avoid exceeding DB parameter limits
@@ -1313,7 +1313,7 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
 
     if (savedAccount) {
       syncOutlookAccount(savedAccount, userInfo.userId).then((syncResult) => {
-        console.log(`Initial Outlook OAuth sync for ${emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
+        logInfo(`Initial Outlook OAuth sync for ${emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
         backfillCrmEmailLogging(savedAccount.id, 90).catch(() => {});
       }).catch((err) => {
         logError(`Initial Outlook OAuth sync failed for ${emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -27,7 +28,7 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "job_metric_alert_rules_job_kind_idx"
       ON "job_metric_alert_rules" ("job", "kind")
     `);
-    console.log("[migration] job_metric_alert_rules — table created");
+    logInfo("[migration] job_metric_alert_rules — table created");
   }
 
   const emailColumnExists = await db.execute(sql`
@@ -43,7 +44,7 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       ALTER TABLE "job_metric_alert_rules"
       ADD COLUMN "email_when_above" numeric(12,4)
     `);
-    console.log("[migration] job_metric_alert_rules.email_when_above — column added");
+    logInfo("[migration] job_metric_alert_rules.email_when_above — column added");
   }
 
   const eventsExists = await db.execute(sql`
@@ -75,7 +76,7 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "job_metric_alert_events_triggered_idx"
       ON "job_metric_alert_events" ("triggered_at")
     `);
-    console.log("[migration] job_metric_alert_events — table created");
+    logInfo("[migration] job_metric_alert_events — table created");
   }
 
   // Task #739 — track email escalation outcome per event so the
@@ -93,7 +94,7 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       ALTER TABLE "job_metric_alert_events"
       ADD COLUMN "emailed" boolean NOT NULL DEFAULT false
     `);
-    console.log("[migration] job_metric_alert_events.emailed — column added");
+    logInfo("[migration] job_metric_alert_events.emailed — column added");
   }
   const eventEmailedCountExists = await db.execute(sql`
     SELECT EXISTS (
@@ -108,7 +109,7 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       ALTER TABLE "job_metric_alert_events"
       ADD COLUMN "emailed_recipient_count" integer NOT NULL DEFAULT 0
     `);
-    console.log("[migration] job_metric_alert_events.emailed_recipient_count — column added");
+    logInfo("[migration] job_metric_alert_events.emailed_recipient_count — column added");
   }
 
   // Task #760 — ledger of quiet-hours digest emails so the dashboard can
@@ -142,6 +143,6 @@ export async function ensureJobMetricAlertTables(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "job_metric_alert_quiet_hours_digest_sends_sent_idx"
       ON "job_metric_alert_quiet_hours_digest_sends" ("sent_at")
     `);
-    console.log("[migration] job_metric_alert_quiet_hours_digest_sends — table created");
+    logInfo("[migration] job_metric_alert_quiet_hours_digest_sends — table created");
   }
 }

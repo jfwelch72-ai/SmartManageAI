@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -31,7 +32,7 @@ export async function ensureOauthStateTable(): Promise<void> {
       CREATE INDEX IF NOT EXISTS oauth_state_expires_at_idx
         ON oauth_state (expires_at)
     `);
-    console.log("[migration] oauth_state table ready");
+    logInfo("[migration] oauth_state table ready");
   } catch (err) {
     logError(
       "[migration] ensureOauthStateTable failed",

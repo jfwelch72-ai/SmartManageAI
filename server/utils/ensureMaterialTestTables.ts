@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -51,9 +52,9 @@ export async function ensureMaterialTestTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "material_tests_test_type_idx" ON "material_tests"("test_type")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "material_tests_test_date_idx" ON "material_tests"("test_date")`);
 
-    console.log("[migration] material_tests table — created");
+    logInfo("[migration] material_tests table — created");
   } else {
-    console.log("[migration] material_tests table — already present, skipped");
+    logInfo("[migration] material_tests table — already present, skipped");
   }
 
   if (!row.ppe_exist) {
@@ -88,9 +89,9 @@ export async function ensureMaterialTestTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "ppe_compliance_logs_check_date_idx" ON "ppe_compliance_logs"("check_date")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "ppe_compliance_logs_status_idx" ON "ppe_compliance_logs"("compliance_status")`);
 
-    console.log("[migration] ppe_compliance_logs table — created");
+    logInfo("[migration] ppe_compliance_logs table — created");
   } else {
-    console.log("[migration] ppe_compliance_logs table — already present, skipped");
+    logInfo("[migration] ppe_compliance_logs table — already present, skipped");
   }
 
   await db.execute(sql`

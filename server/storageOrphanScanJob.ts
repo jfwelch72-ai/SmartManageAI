@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import cron from "node-cron";
 import { db } from "./db";
@@ -138,13 +138,13 @@ export async function runOrphanScan(): Promise<OrphanScanResult> {
 }
 
 function logScanResult(result: OrphanScanResult) {
-  console.log(
+  logInfo(
     `[OrphanScan] ${result.scannedAt.toISOString()} — ` +
       `scanned ${result.totalGcsObjects} GCS objects, ` +
       `found ${result.orphanedObjects.length} orphan(s)`
   );
   if (result.orphanedObjects.length > 0) {
-    console.warn(
+    logWarn(
       "[OrphanScan] Orphaned GCS objects (no matching DB record):\n" +
         result.orphanedObjects.map((k) => `  - ${k}`).join("\n")
     );
@@ -160,7 +160,7 @@ export function startOrphanScanScheduler() {
   if (cronJob) return;
 
   cronJob = cron.schedule("0 2 * * *", async () => {
-    console.log("[OrphanScan] Nightly scan starting...");
+    logInfo("[OrphanScan] Nightly scan starting...");
     try {
       const result = await runOrphanScan();
       logScanResult(result);
@@ -169,7 +169,7 @@ export function startOrphanScanScheduler() {
     }
   });
 
-  console.log("[OrphanScan] Nightly orphan scan scheduled (02:00 daily)");
+  logInfo("[OrphanScan] Nightly orphan scan scheduled (02:00 daily)");
 }
 
 export function stopOrphanScanScheduler() {

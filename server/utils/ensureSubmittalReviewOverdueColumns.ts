@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -24,7 +25,7 @@ export async function ensureSubmittalReviewOverdueColumns(): Promise<void> {
       ALTER TABLE submittal_reviews
         ADD COLUMN IF NOT EXISTS reviewer_email text
     `);
-    console.log("[migration] submittal_reviews overdue + reviewer email columns ready");
+    logInfo("[migration] submittal_reviews overdue + reviewer email columns ready");
   } catch (err) {
     logError(
       "[migration] ensureSubmittalReviewOverdueColumns failed",

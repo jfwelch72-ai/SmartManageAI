@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -29,9 +30,9 @@ export async function ensurePeerRatingColumns(): Promise<void> {
         await db.execute(
           sql.raw(`ALTER TABLE "${col.table}" ADD COLUMN IF NOT EXISTS "${col.name}" ${col.type}`)
         );
-        console.log(`[migration] ${col.table}.${col.name} — applied`);
+        logInfo(`[migration] ${col.table}.${col.name} — applied`);
       } else {
-        console.log(`[migration] ${col.table}.${col.name} — already present, skipped`);
+        logInfo(`[migration] ${col.table}.${col.name} — already present, skipped`);
       }
     } catch (err) {
       logError(`[migration] Failed to ensure ${col.table}.${col.name}:`, {}, err instanceof Error ? err : new Error(String(err)));

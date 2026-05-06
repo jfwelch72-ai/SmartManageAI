@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -28,7 +29,7 @@ export async function ensureCalendarEventTypeEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] calendar_event_type enum — added ${added} missing value(s)`);
+      logInfo(`[migration] calendar_event_type enum — added ${added} missing value(s)`);
     }
   } catch (err) {
     logError(

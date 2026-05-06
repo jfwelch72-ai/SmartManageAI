@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -24,7 +25,7 @@ export async function ensureProjectLogEmailFailureThresholdSetting(): Promise<vo
       ALTER TABLE organizations
         ADD COLUMN IF NOT EXISTS project_log_email_failure_threshold integer
     `);
-    console.log(
+    logInfo(
       "[migration] organizations.project_log_email_failure_threshold column ready",
     );
   } catch (err) {

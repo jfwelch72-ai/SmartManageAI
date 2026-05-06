@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { db } from "./db";
 import {
   timeClockShifts,
@@ -164,7 +164,7 @@ export async function aggregateTimeTrackingToProductionRates(
       processed++;
     }
 
-    console.log(`[DataPipeline] Aggregated ${processed} shifts into ${shiftsByProjectAndDate.size} project-date combinations`);
+    logInfo(`[DataPipeline] Aggregated ${processed} shifts into ${shiftsByProjectAndDate.size} project-date combinations`);
 
     return { processed, errors };
   } catch (error) {
@@ -529,7 +529,7 @@ export async function syncMaterialCalculatorToEstimate(
       })
       .where(eq(estimateLineItems.id, lineItemId));
 
-    console.log(`[DataPipeline] Synced material calculator data for line item ${lineItemId}`);
+    logInfo(`[DataPipeline] Synced material calculator data for line item ${lineItemId}`);
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -544,7 +544,7 @@ export async function linkCRMContactToProject(
   role: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    console.log(`[DataPipeline] Linking contact ${contactId} to project ${projectId} as ${role}`);
+    logInfo(`[DataPipeline] Linking contact ${contactId} to project ${projectId} as ${role}`);
     return { success: true };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -666,7 +666,7 @@ export async function aggregateEquipmentHoursForProduction(
       equipmentCount: data.equipment.size,
     }));
 
-    console.log(`[DataPipeline] Aggregated equipment hours: ${totalHours} total across ${byProject.length} projects`);
+    logInfo(`[DataPipeline] Aggregated equipment hours: ${totalHours} total across ${byProject.length} projects`);
 
     return {
       byProject,

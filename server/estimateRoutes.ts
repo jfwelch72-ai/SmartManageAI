@@ -1,4 +1,4 @@
-import {logError, logWarn } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import multer from "multer";
 import { db } from "./db";
@@ -441,13 +441,13 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   // Create new estimate for project
   router.post("/api/projects/:projectId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
-      console.log("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
+      logInfo("[Estimate] Create estimate request:", { projectId: req.params.projectId, user: req.user?.email });
       const { projectId } = req.params;
       const userId = req.user!.id;
 
       // Check if user has estimate access (ADMIN, MANAGER, ESTIMATOR only)
       if (!hasEstimateAccess(req.user!.role)) {
-        console.log("[Estimate] Permission denied:", req.user!.role);
+        logInfo("[Estimate] Permission denied:", req.user!.role);
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -469,7 +469,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         : 1;
 
       // Create estimate
-      console.log("[Estimate] Creating estimate with version:", versionNumber);
+      logInfo("[Estimate] Creating estimate with version:", versionNumber);
       const [newEstimate] = await db.insert(estimates).values({
         projectId,
         versionNumber,
@@ -477,7 +477,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         createdById: userId,
       }).returning();
 
-      console.log("[Estimate] Created estimate:", newEstimate.id);
+      logInfo("[Estimate] Created estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
       next(error);
@@ -560,12 +560,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   // Create new estimate for bid
   router.post("/api/bids/:bidId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
-      console.log("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
+      logInfo("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
       const { bidId } = req.params;
       const userId = req.user!.id;
 
       if (!hasEstimateAccess(req.user!.role)) {
-        console.log("[Estimate] Permission denied:", req.user!.role);
+        logInfo("[Estimate] Permission denied:", req.user!.role);
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
@@ -587,7 +587,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         : 1;
 
       // Create estimate
-      console.log("[Estimate] Creating bid estimate with version:", versionNumber);
+      logInfo("[Estimate] Creating bid estimate with version:", versionNumber);
       const [newEstimate] = await db.insert(estimates).values({
         bidId,
         projectId: null,
@@ -596,7 +596,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         createdById: userId,
       }).returning();
 
-      console.log("[Estimate] Created bid estimate:", newEstimate.id);
+      logInfo("[Estimate] Created bid estimate:", newEstimate.id);
       res.status(201).json(newEstimate);
     } catch (error) {
       next(error);
@@ -1726,7 +1726,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation'];
         const rawCosts: Record<string, any> = {};
         for (const f of costFields) rawCosts[f] = { value: lineItem[f], type: typeof lineItem[f] };
-        console.log("[DEBUG:LineItem:POST] Raw request body values:", JSON.stringify(rawCosts));
+        logInfo("[DEBUG:LineItem:POST] Raw request body values:", JSON.stringify(rawCosts));
       }
 
       if (!hasEstimateAccess(req.user!.role)) {
@@ -1840,7 +1840,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost'];
         const parsedCosts: Record<string, any> = {};
         for (const f of costFields) parsedCosts[f] = { value: (validatedData as any)[f], type: typeof (validatedData as any)[f] };
-        console.log("[DEBUG:LineItem:POST] After parse+coercion:", JSON.stringify(parsedCosts));
+        logInfo("[DEBUG:LineItem:POST] After parse+coercion:", JSON.stringify(parsedCosts));
       }
 
       const [newLineItem] = await db.insert(estimateLineItems).values(validatedData).returning();
@@ -3300,7 +3300,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           }
         }
 
-        console.log(`[Estimate Approval] Created ${procurementItemsCreated} procurement items and ${scopeItemsCreated} scope items for project ${estimate.projectId}`);
+        logInfo(`[Estimate Approval] Created ${procurementItemsCreated} procurement items and ${scopeItemsCreated} scope items for project ${estimate.projectId}`);
         
         res.json({ 
           success: true, 
@@ -3871,7 +3871,7 @@ Provide comprehensive financial analysis and recommendations.`
         ))
         .returning();
 
-      console.log(`[MaterialSync] Synced material data for line item ${lineItemId}`);
+      logInfo(`[MaterialSync] Synced material data for line item ${lineItemId}`);
 
       try {
         await createEstimateSnapshot(estimateId, req.user!.id);

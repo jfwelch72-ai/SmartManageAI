@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import OpenAI from 'openai';
 
 let openaiInstance: OpenAI | null = null;
@@ -240,7 +240,7 @@ Provide at least:
 - 3-5 vendor categories`;
 
 export async function researchCustomTrade(tradeName: string): Promise<TradeResearchResult> {
-  console.log(`[Trade Research] Researching trade: ${tradeName}`);
+  logInfo(`[Trade Research] Researching trade: ${tradeName}`);
   
   const userPrompt = `Research the following construction trade and provide comprehensive industry information:
 
@@ -267,7 +267,7 @@ If this is a very specialized or niche trade, do your best to provide relevant i
     }
 
     const parsed = JSON.parse(content);
-    console.log(`[Trade Research] Successfully researched ${tradeName}: ${parsed.scopeOfWorkItems?.length || 0} SOW items, ${parsed.commonMaterials?.length || 0} materials`);
+    logInfo(`[Trade Research] Successfully researched ${tradeName}: ${parsed.scopeOfWorkItems?.length || 0} SOW items, ${parsed.commonMaterials?.length || 0} materials`);
     
     return parsed as TradeResearchResult;
   } catch (error) {

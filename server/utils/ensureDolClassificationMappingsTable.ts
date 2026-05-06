@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -34,7 +35,7 @@ export async function ensureDolClassificationMappingsTable(): Promise<void> {
         ON "dol_classification_mappings"("project_id")
     `);
 
-    console.log("[migration] dol_classification_mappings table ready");
+    logInfo("[migration] dol_classification_mappings table ready");
   } catch (err) {
     logError(
       "[migration] ensureDolClassificationMappingsTable failed",

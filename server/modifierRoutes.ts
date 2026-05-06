@@ -1,4 +1,4 @@
-import { logError, logWarn } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { sendValidationError } from "./utils/validation";
 import { Router, type Response, NextFunction } from "express";
 import { eq, and, or, isNull, asc, inArray } from "drizzle-orm";
@@ -86,7 +86,7 @@ async function seedModifiersIfNeeded() {
   const existing = await db.select({ id: modifiers.id }).from(modifiers).limit(1);
   if (existing.length > 0) return;
 
-  console.log("[Modifiers] Seeding modifier data...");
+  logInfo("[Modifiers] Seeding modifier data...");
 
   const allModifierData: SeedModifier[] = [
     ...(universalModifiers as SeedModifier[]),
@@ -124,7 +124,7 @@ async function seedModifiersIfNeeded() {
     await db.insert(modifiers).values(row);
   }
 
-  console.log(`[Modifiers] Seeded ${insertRows.length} modifiers`);
+  logInfo(`[Modifiers] Seeded ${insertRows.length} modifiers`);
 
   const allInserted = await db.select({ id: modifiers.id, name: modifiers.name }).from(modifiers);
   const nameToId = new Map(allInserted.map((m) => [m.name, m.id]));
@@ -148,7 +148,7 @@ async function seedModifiersIfNeeded() {
     await db.insert(scopeModifierRules).values(rule);
   }
 
-  console.log(`[Modifiers] Seeded ${ruleRows.length} scope modifier rules`);
+  logInfo(`[Modifiers] Seeded ${ruleRows.length} scope modifier rules`);
 }
 
 seedModifiersIfNeeded().catch((err: unknown) => {

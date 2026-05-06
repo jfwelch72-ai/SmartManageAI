@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -22,7 +23,7 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
         AND n.organization_id IS NULL
         AND u.organization_id IS NOT NULL
     `);
-    console.log(colAlreadyExists
+    logInfo(colAlreadyExists
       ? "[migration] notifications.organization_id — already present, skipped"
       : "[migration] notifications.organization_id — applied");
   } catch (err) {
@@ -60,7 +61,7 @@ export async function ensureEstimateSubcontractorTables(): Promise<void> {
       EXCEPTION WHEN duplicate_table OR duplicate_object THEN NULL;
       END $$
     `);
-    console.log(tblAlreadyExists
+    logInfo(tblAlreadyExists
       ? "[migration] estimate_line_item_subcontractors — already present, skipped"
       : "[migration] estimate_line_item_subcontractors — applied");
   } catch (err) {

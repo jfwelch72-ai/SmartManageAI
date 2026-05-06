@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { pool } from "../db";
 
 export async function ensureReportsTables(): Promise<void> {
@@ -42,7 +43,7 @@ export async function ensureReportsTables(): Promise<void> {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
     `);
-    console.log("[migration] project_reports table ready");
+    logInfo("[migration] project_reports table ready");
   } finally {
     client.release();
   }

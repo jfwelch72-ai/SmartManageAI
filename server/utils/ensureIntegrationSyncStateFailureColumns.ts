@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -19,7 +20,7 @@ export async function ensureIntegrationSyncStateFailureColumns(): Promise<void> 
     await db.execute(sql.raw(
       `ALTER TABLE integration_sync_state ADD COLUMN IF NOT EXISTS last_error text`,
     ));
-    console.log("[migration] integration_sync_state failure tracking columns ensured");
+    logInfo("[migration] integration_sync_state failure tracking columns ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure integration_sync_state failure tracking columns:",

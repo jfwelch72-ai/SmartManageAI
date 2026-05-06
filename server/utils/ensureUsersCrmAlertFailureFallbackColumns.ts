@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -21,7 +22,7 @@ export async function ensureUsersCrmAlertFailureFallbackColumns(): Promise<void>
         ADD COLUMN IF NOT EXISTS crm_alert_failure_fallback_enabled BOOLEAN NOT NULL DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS crm_alert_failure_fallback_muted_channels TEXT[] NOT NULL DEFAULT '{}'::text[]
     `);
-    console.log("[migration] users crm_alert_failure_fallback_* columns ready");
+    logInfo("[migration] users crm_alert_failure_fallback_* columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUsersCrmAlertFailureFallbackColumns failed",

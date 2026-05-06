@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -48,7 +49,7 @@ export async function ensureProjectEmailDistributionLists(): Promise<void> {
         WHERE "project_id" IS NULL
     `);
 
-    console.log("[migration] project_email_distribution_lists table ready");
+    logInfo("[migration] project_email_distribution_lists table ready");
   } catch (err) {
     logError(
       "[migration] ensureProjectEmailDistributionLists failed",

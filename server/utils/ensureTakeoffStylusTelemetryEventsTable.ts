@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -44,7 +45,7 @@ export async function ensureTakeoffStylusTelemetryEventsTable(): Promise<void> {
       CREATE INDEX IF NOT EXISTS "takeoff_stylus_telemetry_event_type_idx"
         ON "takeoff_stylus_telemetry_events" ("event_type")
     `);
-    console.log("[migration] takeoff_stylus_telemetry_events table ready");
+    logInfo("[migration] takeoff_stylus_telemetry_events table ready");
   } catch (err) {
     logError(
       "[migration] failed ensuring takeoff_stylus_telemetry_events table",

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -11,7 +12,7 @@ export async function ensureMaterialCertColumns(): Promise<void> {
       )::boolean AS table_exists
     `);
     if (tableCheck.rows[0]?.table_exists !== true) {
-      console.log("[migration] material_certifications submit columns — table absent, skipped");
+      logInfo("[migration] material_certifications submit columns — table absent, skipped");
       return;
     }
 
@@ -37,9 +38,9 @@ export async function ensureMaterialCertColumns(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] material_certifications submit columns — added ${added} column(s)`);
+      logInfo(`[migration] material_certifications submit columns — added ${added} column(s)`);
     } else {
-      console.log("[migration] material_certifications submit columns — already present, skipped");
+      logInfo("[migration] material_certifications submit columns — already present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure material_certifications columns:", {}, err instanceof Error ? err : new Error(String(err)));

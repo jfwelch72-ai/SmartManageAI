@@ -856,7 +856,7 @@ export async function extractThemeFromWebsite(organizationId: string, websiteUrl
       html = result.buffer.toString('utf8');
     } catch (err: any) {
       if (err instanceof SafeDownloadError) {
-        console.log(`Theme extraction: ${err.message}`);
+        logInfo(`Theme extraction: ${err.message}`);
         return;
       }
       throw err;
@@ -899,7 +899,7 @@ export async function extractThemeFromWebsite(organizationId: string, websiteUrl
       });
 
       if (governed.blocked) {
-        console.log(`Theme extraction blocked: ${governed.reason}`);
+        logInfo(`Theme extraction blocked: ${governed.reason}`);
         return;
       }
 
@@ -915,7 +915,7 @@ export async function extractThemeFromWebsite(organizationId: string, websiteUrl
           })
           .where(eq(organizations.id, organizationId));
         
-        console.log(`Theme extracted for org ${organizationId}:`, themeColors);
+        logInfo(`Theme extracted for org ${organizationId}:`, themeColors);
       }
     }
   } catch (error: any) {
@@ -939,7 +939,7 @@ router.post("/ai/onboarding/research-trade", sensitiveLimiter, requireAuth, asyn
       return res.status(400).json({ error: "Trade name is required" });
     }
     
-    console.log(`[Trade Research API] Researching trade: ${tradeName}`);
+    logInfo(`[Trade Research API] Researching trade: ${tradeName}`);
     const research = await researchCustomTrade(tradeName);
     
     res.json({

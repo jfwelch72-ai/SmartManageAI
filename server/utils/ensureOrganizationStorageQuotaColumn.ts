@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -20,7 +21,7 @@ export async function ensureOrganizationStorageQuotaColumn(): Promise<void> {
       ALTER TABLE organizations
         ADD COLUMN IF NOT EXISTS storage_quota_bytes bigint NOT NULL DEFAULT 107374182400
     `);
-    console.log("[migration] organizations.storage_quota_bytes column ready");
+    logInfo("[migration] organizations.storage_quota_bytes column ready");
   } catch (err) {
     logError(
       "[migration] ensureOrganizationStorageQuotaColumn failed",

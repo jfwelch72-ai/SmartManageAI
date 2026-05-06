@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import * as cron from "node-cron";
 import { aiNotesService } from "./aiNotesService";
 import { withSchedulerLock } from "./utils/schedulerLock";
@@ -17,7 +17,7 @@ export class AINotesScheduler {
    * - Daily: Analyze notes from last 24 hours (comprehensive daily analysis)
    */
   start() {
-    console.log("[AI Notes Scheduler] Starting automated note analysis...");
+    logInfo("[AI Notes Scheduler] Starting automated note analysis...");
 
     // Run hourly at :00 minutes
     // Analyzes notes from the last 2 hours to catch urgent items quickly
@@ -26,10 +26,10 @@ export class AINotesScheduler {
         // Task #2427 — only the leader replica runs the work; peers
         // observe `ran=false` and skip silently.
         await withSchedulerLock("ai-notes:hourly", async () => {
-          console.log("[AI Notes Scheduler] Running hourly note analysis...");
+          logInfo("[AI Notes Scheduler] Running hourly note analysis...");
           const cutoffDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // Last 2 hours
           const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
-          console.log(`[AI Notes Scheduler] Hourly analysis complete: ${result.insightsCount} insights generated`);
+          logInfo(`[AI Notes Scheduler] Hourly analysis complete: ${result.insightsCount} insights generated`);
         });
       } catch (error) {
         logError("[AI Notes Scheduler] Hourly analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -41,19 +41,19 @@ export class AINotesScheduler {
     this.dailyTask = cron.schedule("0 18 * * *", async () => {
       try {
         await withSchedulerLock("ai-notes:daily", async () => {
-          console.log("[AI Notes Scheduler] Running daily note analysis...");
+          logInfo("[AI Notes Scheduler] Running daily note analysis...");
           const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
           const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
-          console.log(`[AI Notes Scheduler] Daily analysis complete: ${result.insightsCount} insights generated`);
+          logInfo(`[AI Notes Scheduler] Daily analysis complete: ${result.insightsCount} insights generated`);
         });
       } catch (error) {
         logError("[AI Notes Scheduler] Daily analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
       }
     });
 
-    console.log("[AI Notes Scheduler] Scheduled tasks:");
-    console.log("  - Hourly analysis: Every hour at :00 (analyzes last 2 hours)");
-    console.log("  - Daily analysis: Every day at 6:00 PM (analyzes last 24 hours)");
+    logInfo("[AI Notes Scheduler] Scheduled tasks:");
+    logInfo("  - Hourly analysis: Every hour at :00 (analyzes last 2 hours)");
+    logInfo("  - Daily analysis: Every day at 6:00 PM (analyzes last 24 hours)");
   }
 
   /**
@@ -68,17 +68,17 @@ export class AINotesScheduler {
       this.dailyTask.stop();
       this.dailyTask = null;
     }
-    console.log("[AI Notes Scheduler] Stopped automated note analysis");
+    logInfo("[AI Notes Scheduler] Stopped automated note analysis");
   }
 
   /**
    * Run an immediate analysis (useful for testing or manual trigger)
    */
   async runNow(hoursBack = 24): Promise<void> {
-    console.log(`[AI Notes Scheduler] Running immediate analysis (last ${hoursBack} hours)...`);
+    logInfo(`[AI Notes Scheduler] Running immediate analysis (last ${hoursBack} hours)...`);
     const cutoffDate = new Date(Date.now() - hoursBack * 60 * 60 * 1000);
     const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
-    console.log(`[AI Notes Scheduler] Immediate analysis complete: ${result.insightsCount} insights generated`);
+    logInfo(`[AI Notes Scheduler] Immediate analysis complete: ${result.insightsCount} insights generated`);
   }
 }
 

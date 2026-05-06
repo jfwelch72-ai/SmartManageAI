@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { leaveTypes, leaveRequests, users, calendarEvents, organizations } from "@shared/schema";
@@ -160,7 +160,7 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res, nex
   try {
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin: isSA } = getOrgIdForFilter(req);
     if (mustDenyAccess) {
-      console.warn("Leave balances access denied for user:", req.user?.id, "role:", req.user?.role);
+      logWarn("Leave balances access denied for user:", req.user?.id, "role:", req.user?.role);
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -179,12 +179,12 @@ router.get("/api/leave/balances", requireAuth, async (req: AuthRequest, res, nex
       const [employee] = await db.select({ organizationId: users.organizationId }).from(users).where(eq(users.id, employeeId)).limit(1);
       effectiveOrgId = employee?.organizationId || null;
       if (effectiveOrgId) {
-        console.log("Leave balances: resolved orgId from employee record for user:", req.user!.id, "orgId:", effectiveOrgId);
+        logInfo("Leave balances: resolved orgId from employee record for user:", req.user!.id, "orgId:", effectiveOrgId);
       }
     }
 
     if (!effectiveOrgId) {
-      console.warn("Leave balances: no organization found for user:", req.user!.id, "employeeId:", employeeId);
+      logWarn("Leave balances: no organization found for user:", req.user!.id, "employeeId:", employeeId);
       return res.json([]);
     }
 

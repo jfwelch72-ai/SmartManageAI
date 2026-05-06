@@ -1,3 +1,4 @@
+import { logInfo } from "./utils/logger";
 import { db } from "./db";
 import { masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
@@ -145,7 +146,7 @@ const civilSiteSowItems = [
 ] as const;
 
 async function seedCivilSiteSowItems() {
-  console.log("🌱 Seeding Civil/Site/Environmental Master SOW Items...");
+  logInfo("🌱 Seeding Civil/Site/Environmental Master SOW Items...");
   
   let inserted = 0;
   let skipped = 0;
@@ -177,7 +178,7 @@ async function seedCivilSiteSowItems() {
     inserted++;
   }
   
-  console.log(`✅ Civil/Site SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  logInfo(`✅ Civil/Site SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
   return { inserted, skipped };
 }
 
@@ -262,7 +263,7 @@ const concreteSowItems = [
 ] as const;
 
 async function seedConcreteSowItems() {
-  console.log("🏗️ Seeding CONCRETE Trade Master SOW Items...");
+  logInfo("🏗️ Seeding CONCRETE Trade Master SOW Items...");
   
   let inserted = 0;
   let skipped = 0;
@@ -294,7 +295,7 @@ async function seedConcreteSowItems() {
     inserted++;
   }
   
-  console.log(`✅ CONCRETE SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  logInfo(`✅ CONCRETE SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
   return { inserted, skipped };
 }
 
@@ -393,7 +394,7 @@ const structuralBuildingSowItems = [
 ] as const;
 
 async function seedStructuralBuildingSowItems() {
-  console.log("🏗️ Seeding Structural/Building Master SOW Items...");
+  logInfo("🏗️ Seeding Structural/Building Master SOW Items...");
   
   let inserted = 0;
   let skipped = 0;
@@ -425,7 +426,7 @@ async function seedStructuralBuildingSowItems() {
     inserted++;
   }
   
-  console.log(`✅ Structural/Building SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  logInfo(`✅ Structural/Building SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
   return { inserted, skipped };
 }
 
@@ -548,7 +549,7 @@ const supportServicesSowItems = [
 ] as const;
 
 async function seedMepSpecialtySowItems() {
-  console.log("⚡ Seeding MEP/Specialty Master SOW Items...");
+  logInfo("⚡ Seeding MEP/Specialty Master SOW Items...");
   
   let inserted = 0;
   let skipped = 0;
@@ -580,12 +581,12 @@ async function seedMepSpecialtySowItems() {
     inserted++;
   }
   
-  console.log(`✅ MEP/Specialty SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  logInfo(`✅ MEP/Specialty SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
   return { inserted, skipped };
 }
 
 async function seedSupportServicesSowItems() {
-  console.log("🔧 Seeding Support/Services Master SOW Items...");
+  logInfo("🔧 Seeding Support/Services Master SOW Items...");
   
   let inserted = 0;
   let skipped = 0;
@@ -617,13 +618,13 @@ async function seedSupportServicesSowItems() {
     inserted++;
   }
   
-  console.log(`✅ Support/Services SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
+  logInfo(`✅ Support/Services SOW Items: ${inserted} inserted, ${skipped} skipped (already exist)`);
   return { inserted, skipped };
 }
 
 // Combined seed function for all new trades
 async function seedAllNewTradeSowItems() {
-  console.log("🚀 Seeding ALL new trade SOW items...\n");
+  logInfo("🚀 Seeding ALL new trade SOW items...\n");
   
   const concrete = await seedConcreteSowItems();
   const civil = await seedCivilSiteSowItems();
@@ -636,7 +637,7 @@ async function seedAllNewTradeSowItems() {
     skipped: concrete.skipped + civil.skipped + structural.skipped + mep.skipped + support.skipped,
   };
   
-  console.log(`\n📊 TOTAL: ${total.inserted} inserted, ${total.skipped} skipped`);
+  logInfo(`\n📊 TOTAL: ${total.inserted} inserted, ${total.skipped} skipped`);
   return total;
 }
 
@@ -1318,7 +1319,7 @@ const newTradeModifierCategories: ModifierCategoryDef[] = [
 ];
 
 async function seedNewTradeModifiers() {
-  console.log("🏷️ Seeding Master Modifier Categories and Modifiers for new trades...\n");
+  logInfo("🏷️ Seeding Master Modifier Categories and Modifiers for new trades...\n");
   
   let categoriesInserted = 0;
   let categoriesSkipped = 0;
@@ -1378,8 +1379,8 @@ async function seedNewTradeModifiers() {
     }
   }
   
-  console.log(`✅ Modifier Categories: ${categoriesInserted} inserted, ${categoriesSkipped} skipped`);
-  console.log(`✅ Modifiers: ${modifiersInserted} inserted, ${modifiersSkipped} skipped`);
+  logInfo(`✅ Modifier Categories: ${categoriesInserted} inserted, ${categoriesSkipped} skipped`);
+  logInfo(`✅ Modifiers: ${modifiersInserted} inserted, ${modifiersSkipped} skipped`);
   
   return { categoriesInserted, categoriesSkipped, modifiersInserted, modifiersSkipped };
 }
@@ -1479,7 +1480,7 @@ const coreTradeModifierCategories: Array<{ tradeType: string; name: string; desc
 ];
 
 async function seedCoreTradeModifierCategories() {
-  console.log("Seeding core trade modifier categories...");
+  logInfo("Seeding core trade modifier categories...");
   let inserted = 0;
   let skipped = 0;
 
@@ -1507,7 +1508,7 @@ async function seedCoreTradeModifierCategories() {
     inserted++;
   }
 
-  console.log(`Core modifier categories: ${inserted} inserted, ${skipped} skipped`);
+  logInfo(`Core modifier categories: ${inserted} inserted, ${skipped} skipped`);
   return { inserted, skipped };
 }
 
@@ -2449,13 +2450,13 @@ async function seedScopeModifiersForTrade(tradeType: string): Promise<{ modCatsI
 }
 
 async function seedScopeStandardizationForTrade(tradeType: string) {
-  console.log(`[ScopeSeed] Seeding scope work types and modifiers for trade: ${tradeType}`);
+  logInfo(`[ScopeSeed] Seeding scope work types and modifiers for trade: ${tradeType}`);
 
   const wtResult = await seedScopeWorkTypesForTrade(tradeType);
   const modResult = await seedScopeModifiersForTrade(tradeType);
 
-  console.log(`[ScopeSeed] Work Type Categories: ${wtResult.workTypeCatsInserted} inserted | Work Types: ${wtResult.workTypesInserted} inserted`);
-  console.log(`[ScopeSeed] Modifier Categories: ${modResult.modCatsInserted} inserted | Modifiers: ${modResult.modifiersInserted} inserted`);
+  logInfo(`[ScopeSeed] Work Type Categories: ${wtResult.workTypeCatsInserted} inserted | Work Types: ${wtResult.workTypesInserted} inserted`);
+  logInfo(`[ScopeSeed] Modifier Categories: ${modResult.modCatsInserted} inserted | Modifiers: ${modResult.modifiersInserted} inserted`);
 
   return {
     ...wtResult,

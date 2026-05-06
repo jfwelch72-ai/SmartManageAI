@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -40,7 +41,7 @@ export async function ensureOneShotJobRuns(): Promise<void> {
     await db.execute(sql.raw(
       `ALTER TABLE one_shot_job_runs ADD COLUMN IF NOT EXISTS details jsonb`,
     ));
-    console.log("[migration] one_shot_job_runs ensured");
+    logInfo("[migration] one_shot_job_runs ensured");
   } catch (err) {
     logError(
       "[migration] Failed to ensure one_shot_job_runs:",

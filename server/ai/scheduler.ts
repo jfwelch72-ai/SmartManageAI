@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 import * as cron from 'node-cron';
 import { db } from "../db";
 import { aiSettings, changeOrders, projects, users, notifications, projectDbeGoals, organizations } from "@shared/schema";
@@ -14,13 +14,13 @@ let weeklyAlertTask: cron.ScheduledTask | null = null;
 let dailyDbeRiskTask: cron.ScheduledTask | null = null;
 
 export async function initializeAIScheduler() {
-  console.log('🤖 Initializing AI PM + CFO scheduler...');
+  logInfo('🤖 Initializing AI PM + CFO scheduler...');
 
   // Get or create AI settings
   let [settings] = await db.select().from(aiSettings).limit(1);
 
   if (!settings) {
-    console.log('📝 Creating default AI settings...');
+    logInfo('📝 Creating default AI settings...');
     [settings] = await db.insert(aiSettings).values({}).returning();
   }
 
@@ -30,7 +30,7 @@ export async function initializeAIScheduler() {
   initializeDailyDbeRiskJob();
 
   if (!settings.dailyRunsEnabled) {
-    console.log('⏸️  Daily AI runs are disabled in settings');
+    logInfo('⏸️  Daily AI runs are disabled in settings');
     return;
   }
 
@@ -43,7 +43,7 @@ export async function initializeAIScheduler() {
 
   const cronExpression = `${minute} ${hour} * * *`;
 
-  console.log(`⏰ Scheduling daily AI runs at ${settings.dailyRunTime} (${cronExpression})`);
+  logInfo(`⏰ Scheduling daily AI runs at ${settings.dailyRunTime} (${cronExpression})`);
 
   if (scheduledTask) {
     scheduledTask.stop();
@@ -53,9 +53,9 @@ export async function initializeAIScheduler() {
     try {
       // Task #2427 — only the leader replica runs the daily AI orchestrator.
       await withSchedulerLock('ai:pm-cfo-daily', async () => {
-        console.log('🚀 Triggering scheduled AI PM + CFO analysis...');
+        logInfo('🚀 Triggering scheduled AI PM + CFO analysis...');
         await runAIAnalysis(null);
-        console.log('✅ Scheduled AI analysis completed successfully');
+        logInfo('✅ Scheduled AI analysis completed successfully');
       });
     } catch (error) {
       logError('❌ Scheduled AI analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
@@ -64,7 +64,7 @@ export async function initializeAIScheduler() {
     timezone: 'America/New_York',
   });
 
-  console.log('✅ AI scheduler initialized successfully');
+  logInfo('✅ AI scheduler initialized successfully');
   
   // Initialize weekly change order alert (every Monday at 8:00 AM)
   await initializeWeeklyChangeOrderAlerts();
@@ -77,7 +77,7 @@ export async function initializeAIScheduler() {
  */
 function initializeDailyDbeRiskJob() {
   if (dailyDbeRiskTask) dailyDbeRiskTask.stop();
-  console.log('📊 Scheduling daily DBE risk job (06:00 EST)...');
+  logInfo('📊 Scheduling daily DBE risk job (06:00 EST)...');
   dailyDbeRiskTask = cron.schedule('0 6 * * *', async () => {
     try {
       // Task #2427 — single-leader so DBE alerts aren't duplicated.
@@ -89,7 +89,7 @@ function initializeDailyDbeRiskJob() {
 }
 
 async function runDailyDbeRiskJob() {
-  console.log('📊 Running daily DBE risk job...');
+  logInfo('📊 Running daily DBE risk job...');
 
   // Find every org that has DBE_TRACKING enabled (flag stored in organizations.featureFlags JSON)
   const allOrgs = await db.select({ id: organizations.id }).from(organizations);
@@ -98,7 +98,7 @@ async function runDailyDbeRiskJob() {
     if (await isFeatureEnabled(o.id, 'DBE_TRACKING')) orgIds.push(o.id);
   }
   if (orgIds.length === 0) {
-    console.log('📊 No orgs with DBE_TRACKING enabled');
+    logInfo('📊 No orgs with DBE_TRACKING enabled');
     return;
   }
 
@@ -146,7 +146,7 @@ async function runDailyDbeRiskJob() {
       logError('❌ DBE risk computation failed for project', { projectId: row.projectId }, err instanceof Error ? err : new Error(String(err)));
     }
   }
-  console.log(`✅ Daily DBE risk job completed — ${projectsWithGoals.length} projects scanned, ${highRisk} high-risk alerts issued`);
+  logInfo(`✅ Daily DBE risk job completed — ${projectsWithGoals.length} projects scanned, ${highRisk} high-risk alerts issued`);
 }
 
 /**
@@ -154,7 +154,7 @@ async function runDailyDbeRiskJob() {
  * Runs every Monday at 8:00 AM to alert managers about stale change orders
  */
 async function initializeWeeklyChangeOrderAlerts() {
-  console.log('📋 Initializing weekly change order alerts...');
+  logInfo('📋 Initializing weekly change order alerts...');
   
   if (weeklyAlertTask) {
     weeklyAlertTask.stop();
@@ -165,9 +165,9 @@ async function initializeWeeklyChangeOrderAlerts() {
     try {
       // Task #2427 — leader-only so the weekly alert isn't fanned out.
       await withSchedulerLock('ai:change-order-weekly', async () => {
-        console.log('📋 Running weekly change order status check...');
+        logInfo('📋 Running weekly change order status check...');
         await checkStaleChangeOrders();
-        console.log('✅ Weekly change order check completed');
+        logInfo('✅ Weekly change order check completed');
       });
     } catch (error) {
       logError('❌ Weekly change order check failed:', {}, error instanceof Error ? error : new Error(String(error)));
@@ -176,7 +176,7 @@ async function initializeWeeklyChangeOrderAlerts() {
     timezone: 'America/New_York',
   });
   
-  console.log('✅ Weekly change order alerts scheduled (Monday 8:00 AM EST)');
+  logInfo('✅ Weekly change order alerts scheduled (Monday 8:00 AM EST)');
 }
 
 /**
@@ -221,11 +221,11 @@ async function checkStaleChangeOrders() {
   });
   
   if (staleOrders.length === 0) {
-    console.log('📋 No stale change orders found');
+    logInfo('📋 No stale change orders found');
     return;
   }
   
-  console.log(`📋 Found ${staleOrders.length} stale change order(s)`);
+  logInfo(`📋 Found ${staleOrders.length} stale change order(s)`);
   
   // Categorize by severity
   const critical = staleOrders.filter(co => {
@@ -290,7 +290,7 @@ async function checkStaleChangeOrders() {
   if (notificationsToCreate.length > 0) {
     try {
       await insertNotifications(notificationsToCreate);
-      console.log(`📋 Created ${notificationsToCreate.length} weekly CO alert notification(s)`);
+      logInfo(`📋 Created ${notificationsToCreate.length} weekly CO alert notification(s)`);
     } catch (insertError) {
       logError('❌ Failed to insert weekly CO alert notifications:', {}, insertError instanceof Error ? insertError : new Error(String(insertError)));
     }
@@ -301,22 +301,22 @@ export function stopAIScheduler() {
   if (scheduledTask) {
     scheduledTask.stop();
     scheduledTask = null;
-    console.log('⏸️  AI scheduler stopped');
+    logInfo('⏸️  AI scheduler stopped');
   }
   if (weeklyAlertTask) {
     weeklyAlertTask.stop();
     weeklyAlertTask = null;
-    console.log('⏸️  Weekly alert scheduler stopped');
+    logInfo('⏸️  Weekly alert scheduler stopped');
   }
   if (dailyDbeRiskTask) {
     dailyDbeRiskTask.stop();
     dailyDbeRiskTask = null;
-    console.log('⏸️  Daily DBE risk scheduler stopped');
+    logInfo('⏸️  Daily DBE risk scheduler stopped');
   }
 }
 
 export async function rescheduleAIRuns() {
-  console.log('🔄 Rescheduling AI runs based on updated settings...');
+  logInfo('🔄 Rescheduling AI runs based on updated settings...');
   stopAIScheduler();
   await initializeAIScheduler();
 }

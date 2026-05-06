@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -27,7 +28,7 @@ export async function ensureUserSettingsTakeoffStylusPrefs(): Promise<void> {
       ALTER TABLE user_settings
         ADD COLUMN IF NOT EXISTS stylus_long_press_ms INTEGER NOT NULL DEFAULT 500
     `);
-    console.log("[migration] user_settings takeoff stylus prefs columns ready");
+    logInfo("[migration] user_settings takeoff stylus prefs columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUserSettingsTakeoffStylusPrefs failed",

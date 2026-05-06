@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -21,6 +22,6 @@ export async function ensureCertifiedPayrollArchivedRetention(): Promise<void> {
       ALTER TABLE organization_payroll_settings
         ADD COLUMN archived_report_retention_days integer NOT NULL DEFAULT 1095
     `);
-    console.log("[migration] organization_payroll_settings.archived_report_retention_days — applied");
+    logInfo("[migration] organization_payroll_settings.archived_report_retention_days — applied");
   }
 }

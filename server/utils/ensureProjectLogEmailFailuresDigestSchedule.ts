@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -32,7 +33,7 @@ export async function ensureProjectLogEmailFailuresDigestSchedule(): Promise<voi
         ADD COLUMN IF NOT EXISTS project_log_email_failures_digest_hour integer NOT NULL DEFAULT 8,
         ADD COLUMN IF NOT EXISTS project_log_email_failures_digest_timezone text NOT NULL DEFAULT 'UTC'
     `);
-    console.log(
+    logInfo(
       "[migration] organizations.project_log_email_failures_digest_* columns ready",
     );
   } catch (err) {

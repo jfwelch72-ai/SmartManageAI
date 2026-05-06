@@ -471,7 +471,7 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
           })
           .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
 
-        console.log(`AI bid document analysis completed for: ${fileName}`);
+        logInfo(`AI bid document analysis completed for: ${fileName}`);
       } catch (error) {
         logError("Background AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -556,7 +556,7 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
           })
           .where(eq(aiBidDocumentAnalysis.id, id));
 
-        console.log(`AI bid document reanalysis completed for: ${existing.documentName}`);
+        logInfo(`AI bid document reanalysis completed for: ${existing.documentName}`);
       } catch (error) {
         logError("Background AI reanalysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -890,7 +890,7 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTI
           })
           .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
 
-        console.log(`AI bid document analysis completed for: ${documentName}`);
+        logInfo(`AI bid document analysis completed for: ${documentName}`);
       } catch (error) {
         logError("Background AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -981,7 +981,7 @@ router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(
           })
           .where(eq(aiBidDocumentAnalysis.id, id));
 
-        console.log(`AI bid document re-analysis completed for: ${existingAnalysis.documentName}`);
+        logInfo(`AI bid document re-analysis completed for: ${existingAnalysis.documentName}`);
       } catch (error) {
         logError("Background AI re-analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -1111,7 +1111,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
       tradeType = org?.tradeType || undefined;
     }
 
-    console.log(`[AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
+    logInfo(`[AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
 
     const allDocumentContent: Array<{type: 'image_url', image_url: {url: string, detail: string}} | {type: 'text', text: string}> = [];
     for (const doc of documents) {
@@ -1125,7 +1125,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
 
     const imageCount = allDocumentContent.filter(c => c.type === 'image_url').length;
     const textCount = allDocumentContent.filter(c => c.type === 'text').length;
-    console.log(`[AI Bid Wizard] Extracted ${imageCount} page images and ${textCount} text blocks from ${documents.length} documents`);
+    logInfo(`[AI Bid Wizard] Extracted ${imageCount} page images and ${textCount} text blocks from ${documents.length} documents`);
 
     const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
     const documentNames = documents.map(d => `- ${d.name}`).join('\n');
@@ -1231,7 +1231,7 @@ Be thorough in extracting scope items. Include quantities and units when availab
 
       const result = governed.result;
       
-      console.log(`[AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
+      logInfo(`[AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
       
       res.json(result);
     } catch (aiError) {
@@ -1290,7 +1290,7 @@ router.post("/ai-bid-wizard/analyze-text", requireAuth, requireRole("ADMIN", "MA
       tradeType = org?.tradeType || undefined;
     }
 
-    console.log(`[AI Bid Text Analysis] Analyzing text description for org:${orgId}`);
+    logInfo(`[AI Bid Text Analysis] Analyzing text description for org:${orgId}`);
 
     const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
 
@@ -1376,7 +1376,7 @@ Be thorough in suggesting scope items based on the project type described. Inclu
       }
 
       const result = governed.result;
-      console.log(`[AI Bid Text Analysis] Extracted ${result.scopeItems?.length || 0} scope items`);
+      logInfo(`[AI Bid Text Analysis] Extracted ${result.scopeItems?.length || 0} scope items`);
       res.json(result);
     } catch (aiError) {
       logError('[AI Bid Text Analysis] AI analysis error', {}, aiError instanceof Error ? aiError : new Error(String(aiError)));
@@ -1887,10 +1887,10 @@ router.post("/ai-contract-document/analyze", requireAuth, requireRole("SUPER_ADM
           })
           .where(eq(aiContractDocumentAnalysis.id, newAnalysis.id));
 
-        console.log(`AI contract document analysis completed for: ${fileName}`);
+        logInfo(`AI contract document analysis completed for: ${fileName}`);
       } catch (error) {
         if ((error as any)?.governed) {
-          console.warn("AI contract analysis blocked by governance:", (error as any).reason);
+          logWarn("AI contract analysis blocked by governance:", (error as any).reason);
         }
         logError("Background AI contract analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -1993,10 +1993,10 @@ router.post("/ai-contract-document/:id/reanalyze", requireAuth, requireRole("SUP
           })
           .where(eq(aiContractDocumentAnalysis.id, id));
 
-        console.log(`AI contract document reanalysis completed for: ${existing.documentName}`);
+        logInfo(`AI contract document reanalysis completed for: ${existing.documentName}`);
       } catch (error) {
         if ((error as any)?.governed) {
-          console.warn("AI contract reanalysis blocked by governance:", (error as any).reason);
+          logWarn("AI contract reanalysis blocked by governance:", (error as any).reason);
         }
         logError("Background AI contract reanalysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -2230,10 +2230,10 @@ router.post("/ai/contract-document-analysis", requireAuth, requireRole("SUPER_AD
           })
           .where(eq(aiContractDocumentAnalysis.id, newAnalysis.id));
 
-        console.log(`AI contract document analysis completed for: ${documentName}`);
+        logInfo(`AI contract document analysis completed for: ${documentName}`);
       } catch (error) {
         if ((error as any)?.governed) {
-          console.warn("AI contract analysis blocked by governance:", (error as any).reason);
+          logWarn("AI contract analysis blocked by governance:", (error as any).reason);
         }
         logError("Background AI contract analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db
@@ -2347,10 +2347,10 @@ router.post("/ai/contract-document-analysis/:id/reanalyze", requireAuth, require
           })
           .where(eq(aiContractDocumentAnalysis.id, id));
 
-        console.log(`AI contract document re-analysis completed for: ${existingAnalysis.documentName}`);
+        logInfo(`AI contract document re-analysis completed for: ${existingAnalysis.documentName}`);
       } catch (error) {
         if ((error as any)?.governed) {
-          console.warn("AI contract re-analysis blocked by governance:", (error as any).reason);
+          logWarn("AI contract re-analysis blocked by governance:", (error as any).reason);
         }
         logError("Background AI contract re-analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
         await db

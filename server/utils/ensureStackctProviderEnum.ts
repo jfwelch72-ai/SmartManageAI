@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -11,7 +12,7 @@ export async function ensureStackctProviderEnum(): Promise<void> {
 
     if (!existing.has("stackct")) {
       await db.execute(sql.raw(`ALTER TYPE integration_provider ADD VALUE IF NOT EXISTS 'stackct'`));
-      console.log("[migration] integration_provider enum — added 'stackct' value");
+      logInfo("[migration] integration_provider enum — added 'stackct' value");
     }
   } catch (err) {
     logError("[migration] ensureStackctProviderEnum failed:", {}, err instanceof Error ? err : new Error(String(err)));

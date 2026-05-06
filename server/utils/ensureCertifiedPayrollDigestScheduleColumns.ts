@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -31,34 +32,34 @@ export async function ensureCertifiedPayrollDigestScheduleColumns(): Promise<voi
       ALTER TABLE organization_payroll_settings
       ADD COLUMN certified_payroll_digest_cadence text NOT NULL DEFAULT 'WEEKLY'
     `);
-    console.log("[migration] organization_payroll_settings.certified_payroll_digest_cadence — applied");
+    logInfo("[migration] organization_payroll_settings.certified_payroll_digest_cadence — applied");
   }
   if (!present.has("certified_payroll_digest_weekday")) {
     await db.execute(sql`
       ALTER TABLE organization_payroll_settings
       ADD COLUMN certified_payroll_digest_weekday integer NOT NULL DEFAULT 1
     `);
-    console.log("[migration] organization_payroll_settings.certified_payroll_digest_weekday — applied");
+    logInfo("[migration] organization_payroll_settings.certified_payroll_digest_weekday — applied");
   }
   if (!present.has("certified_payroll_digest_hour")) {
     await db.execute(sql`
       ALTER TABLE organization_payroll_settings
       ADD COLUMN certified_payroll_digest_hour integer NOT NULL DEFAULT 8
     `);
-    console.log("[migration] organization_payroll_settings.certified_payroll_digest_hour — applied");
+    logInfo("[migration] organization_payroll_settings.certified_payroll_digest_hour — applied");
   }
   if (!present.has("certified_payroll_digest_timezone")) {
     await db.execute(sql`
       ALTER TABLE organization_payroll_settings
       ADD COLUMN certified_payroll_digest_timezone text NOT NULL DEFAULT 'UTC'
     `);
-    console.log("[migration] organization_payroll_settings.certified_payroll_digest_timezone — applied");
+    logInfo("[migration] organization_payroll_settings.certified_payroll_digest_timezone — applied");
   }
   if (!present.has("certified_payroll_digest_last_sent_at")) {
     await db.execute(sql`
       ALTER TABLE organization_payroll_settings
       ADD COLUMN certified_payroll_digest_last_sent_at timestamp
     `);
-    console.log("[migration] organization_payroll_settings.certified_payroll_digest_last_sent_at — applied");
+    logInfo("[migration] organization_payroll_settings.certified_payroll_digest_last_sent_at — applied");
   }
 }

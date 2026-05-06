@@ -1,4 +1,4 @@
-import {logError, logWarn } from "../utils/logger";
+import { logError, logWarn, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from "../services/aiGovernance";
 import { db } from '../db';
@@ -665,7 +665,7 @@ export async function createTaskFromEmail(
     matchedEntities.projectId
   );
 
-  console.log(`[EmailAI] Task assignment resolved: classification=${analysis.classification}, assignedToId=${assignedToId || 'UNASSIGNED'}`);
+  logInfo(`[EmailAI] Task assignment resolved: classification=${analysis.classification}, assignedToId=${assignedToId || 'UNASSIGNED'}`);
 
   const [task] = await db
     .insert(emailTasks)

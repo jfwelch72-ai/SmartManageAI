@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -17,7 +18,7 @@ export async function ensurePortfolioPdfAlertTables(): Promise<void> {
     };
 
     if (row.samples_exists && row.recipients_exists && row.deliveries_exists) {
-      console.log("[migration] portfolio_pdf_alert_* tables — already present, skipped");
+      logInfo("[migration] portfolio_pdf_alert_* tables — already present, skipped");
       return;
     }
 
@@ -67,7 +68,7 @@ export async function ensurePortfolioPdfAlertTables(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "portfolio_pdf_alert_deliveries_created_at_idx" ON "portfolio_pdf_alert_deliveries" ("created_at")`);
     }
 
-    console.log("[migration] portfolio_pdf_alert_* tables — applied");
+    logInfo("[migration] portfolio_pdf_alert_* tables — applied");
   } catch (err) {
     logError("[migration] Failed to ensure portfolio_pdf_alert tables:", {}, err instanceof Error ? err : new Error(String(err)));
   }

@@ -3,7 +3,7 @@
  * Pre-built material calculators for all 19 construction trades
  */
 
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { db } from "./db";
 import { masterCalculators, tradeTypeEnum } from "@shared/schema";
 import { sql } from "drizzle-orm";
@@ -752,7 +752,7 @@ const calculatorSeeds: CalculatorSeed[] = [
 ];
 
 export async function seedMasterCalculators(): Promise<void> {
-  console.log('Seeding master calculators...');
+  logInfo('Seeding master calculators...');
   
   try {
     // Clear existing calculators
@@ -775,7 +775,7 @@ export async function seedMasterCalculators(): Promise<void> {
       });
     }
     
-    console.log(`✓ Seeded ${calculatorSeeds.length} master calculators`);
+    logInfo(`✓ Seeded ${calculatorSeeds.length} master calculators`);
   } catch (error) {
     logError('Error seeding master calculators:', {}, error instanceof Error ? error : new Error(String(error)));
     throw error;

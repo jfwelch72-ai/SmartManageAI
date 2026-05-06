@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -14,7 +15,7 @@ export async function ensureUserSettingsCrmBirthdayDigestOptOut(): Promise<void>
       ALTER TABLE user_settings
         ADD COLUMN IF NOT EXISTS crm_birthday_digest_opt_out BOOLEAN NOT NULL DEFAULT FALSE
     `);
-    console.log("[migration] user_settings crm_birthday_digest_opt_out column ready");
+    logInfo("[migration] user_settings crm_birthday_digest_opt_out column ready");
   } catch (err) {
     logError(
       "[migration] ensureUserSettingsCrmBirthdayDigestOptOut failed",

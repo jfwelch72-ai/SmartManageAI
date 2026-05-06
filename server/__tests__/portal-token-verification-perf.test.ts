@@ -21,6 +21,7 @@
 //      ratio would be ~30x, with the indexed lookup it should be ~1x
 //      (we assert <5x to leave generous slack for CI noise).
 
+import { logInfo } from "../utils/logger";
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 import bcrypt from "bcrypt";
 import type { Express, ErrorRequestHandler } from "express";
@@ -344,7 +345,7 @@ describe("Task #1626 — portal-token verification stays O(1) as active set grow
     const ratio = largeMs / Math.max(smallMs, 1);
     if (process.env.PORTAL_PERF_DEBUG) {
       // eslint-disable-next-line no-console
-      console.log(
+      logInfo(
         `[portal-perf] small=${smallMs.toFixed(1)}ms large=${largeMs.toFixed(1)}ms ratio=${ratio.toFixed(2)}x`,
       );
     }

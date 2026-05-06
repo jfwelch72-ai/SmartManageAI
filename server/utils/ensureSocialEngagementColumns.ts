@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -20,9 +21,9 @@ export async function ensureSocialEngagementColumns(): Promise<void> {
       await db.execute(sql`ALTER TABLE "social_media_posts" ADD COLUMN IF NOT EXISTS "engagement_impressions" integer DEFAULT 0`);
       await db.execute(sql`ALTER TABLE "social_media_posts" ADD COLUMN IF NOT EXISTS "engagement_clicks" integer DEFAULT 0`);
       await db.execute(sql`ALTER TABLE "social_media_posts" ADD COLUMN IF NOT EXISTS "engagement_updated_at" timestamp`);
-      console.log("[migration] social engagement columns — applied");
+      logInfo("[migration] social engagement columns — applied");
     } else {
-      console.log("[migration] social engagement columns — already present, skipped");
+      logInfo("[migration] social engagement columns — already present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure social engagement columns:", {}, err instanceof Error ? err : new Error(String(err)));

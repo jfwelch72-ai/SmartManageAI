@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { logError } from "./logger";
 import { pool } from "../db";
 
@@ -29,7 +30,7 @@ export async function ensureErrorLogsTable(): Promise<void> {
     await pool.query(`CREATE INDEX IF NOT EXISTS error_logs_created_at_idx ON error_logs (created_at);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS error_logs_level_idx ON error_logs (level);`);
     await pool.query(`CREATE INDEX IF NOT EXISTS error_logs_user_id_idx ON error_logs (user_id);`);
-    console.log(alreadyExists
+    logInfo(alreadyExists
       ? "[migration] error_logs table — already present, skipped"
       : "[migration] error_logs table — created");
   } catch (err) {

@@ -5,7 +5,7 @@ import {
   type NotificationRecord,
 } from "./notificationDelivery";
 import { createQboEntityLabelCache } from "./qboEntityLabels";
-import { logError } from "../utils/logger";
+import { logError, logInfo } from "../utils/logger";
 
 export async function insertNotification(values: InsertNotification): Promise<void> {
   const [inserted] = await db.insert(notifications).values(values).returning();
@@ -372,7 +372,7 @@ export async function sweepStaleContactReassignments(
   }
 
   if (claimed > 0) {
-    console.log(
+    logInfo(
       `[notifications] Swept ${claimed} stale owner reassignment buffer(s) past flush_at`,
     );
   }
@@ -416,7 +416,7 @@ export async function recoverPendingContactReassignments(): Promise<void> {
       scheduleLocalFlush(row.kind as ReassignmentKind, row.recipient_user_id, row.flush_at);
     }
     if (rows.length > 0) {
-      console.log(
+      logInfo(
         `[notifications] Recovered ${rows.length} pending owner reassignment buffer(s) after restart`,
       );
     }

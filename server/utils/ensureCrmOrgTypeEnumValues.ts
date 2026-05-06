@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -18,9 +19,9 @@ export async function ensureCrmOrgTypeEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] crm_organisation_type enum — ${added} value(s) added`);
+      logInfo(`[migration] crm_organisation_type enum — ${added} value(s) added`);
     } else {
-      console.log("[migration] crm_organisation_type enum — all values present, skipped");
+      logInfo("[migration] crm_organisation_type enum — all values present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure crm_organisation_type enum values:", {}, err instanceof Error ? err : new Error(String(err)));

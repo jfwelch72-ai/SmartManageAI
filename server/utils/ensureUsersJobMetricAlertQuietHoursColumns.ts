@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -21,7 +22,7 @@ export async function ensureUsersJobMetricAlertQuietHoursColumns(): Promise<void
         ADD COLUMN IF NOT EXISTS job_metric_alert_quiet_hours_timezone TEXT,
         ADD COLUMN IF NOT EXISTS job_metric_alert_quiet_hours_weekdays INTEGER[]
     `);
-    console.log("[migration] users job_metric_alert_quiet_hours columns ready");
+    logInfo("[migration] users job_metric_alert_quiet_hours columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUsersJobMetricAlertQuietHoursColumns failed",

@@ -44,7 +44,7 @@ import type {
   HandoffPacket,
   BidEquipmentSelection,
 } from "@shared/schema";
-import { logError } from "../utils/logger";
+import { logError, logInfo, logWarn } from "../utils/logger";
 import { queueWageDecisionSync } from "../integrations/providers/dol_davis_bacon/sync";
 
 import {
@@ -930,7 +930,7 @@ export class BidStorageDrizzle implements IBidStorage {
       .from(estimates)
       .where(eq(estimates.bidId, bid.id));
 
-    console.log(
+    logInfo(
       `[Bid Conversion] Found ${bidEstimates.length} estimates to transfer`,
     );
 
@@ -974,8 +974,8 @@ export class BidStorageDrizzle implements IBidStorage {
           if (!bid.bidAmount) {
             contractAmount = totalContract.toFixed(2);
           }
-          console.log(`[Bid Conversion] Budget (direct costs): $${directCostBudget}`);
-          console.log(
+          logInfo(`[Bid Conversion] Budget (direct costs): $${directCostBudget}`);
+          logInfo(
             `[Bid Conversion] Contract amount (with ${OVERHEAD_PERCENT}% overhead + ${PROFIT_MARGIN_PERCENT}% profit): $${contractAmount}`,
           );
         }
@@ -1044,7 +1044,7 @@ export class BidStorageDrizzle implements IBidStorage {
           .from(estimateLineItems)
           .where(eq(estimateLineItems.estimateId, estimate.id));
 
-        console.log(
+        logInfo(
           `[Bid Conversion] Syncing ${lineItems.length} line items to scope of work`,
         );
 
@@ -1093,7 +1093,7 @@ export class BidStorageDrizzle implements IBidStorage {
             }
           }
         }
-        console.log(
+        logInfo(
           `[Bid Conversion] Created material budgets for project ${createdProject.code}`,
         );
       }
@@ -1134,7 +1134,7 @@ export class BidStorageDrizzle implements IBidStorage {
           if (dotFields.dotPayItemId) {
             const check = await validateDotPayItemLink(dotFields);
             if (!check.ok) {
-              console.warn(
+              logWarn(
                 `[Bid Conversion] Dropping invalid DOT pay-item link on estimate line ${li.id}: ${check.error}`,
               );
               dotFields.dotPayItemId = null;
@@ -1156,7 +1156,7 @@ export class BidStorageDrizzle implements IBidStorage {
             specSection: dotFields.specSection,
           });
         }
-        console.log(
+        logInfo(
           `[Bid Conversion] Seeded SOV ${newSov.sovNumber} with ${sovSeedLineItems.length} line items for project ${createdProject.code}`,
         );
       }
@@ -1255,7 +1255,7 @@ export class BidStorageDrizzle implements IBidStorage {
         }
         if (budgetSeedRows.length > 0) {
           await tx.insert(budgetLineItems).values(budgetSeedRows);
-          console.log(
+          logInfo(
             `[Bid Conversion] Seeded ${budgetSeedRows.length} granular budget line(s) for project ${createdProject.code}`,
           );
         }
@@ -1304,7 +1304,7 @@ export class BidStorageDrizzle implements IBidStorage {
                 burdenMultiplier: "1.0000",
                 notes: `Seeded from estimate classifications — ${classificationSummary}`,
               });
-              console.log(
+              logInfo(
                 `[Bid Conversion] Seeded project labor rate from primary classification: ${primary.name}`,
               );
             }
@@ -1325,7 +1325,7 @@ export class BidStorageDrizzle implements IBidStorage {
       }
       const selectedSubQuotes = allSubQuotes.filter((q) => q.isSelected);
       const pendingSubQuotes = allSubQuotes.filter((q) => !q.isSelected);
-      console.log(
+      logInfo(
         `[Bid Conversion] Transferred ${allSubQuotes.length} subcontractor quotes to project (${selectedSubQuotes.length} selected, ${pendingSubQuotes.length} pending)`,
       );
 
@@ -1409,7 +1409,7 @@ export class BidStorageDrizzle implements IBidStorage {
       }
       const selectedMatQuotes = allMatQuotes.filter((q) => q.isSelected);
       const pendingMatQuotes = allMatQuotes.filter((q) => !q.isSelected);
-      console.log(
+      logInfo(
         `[Bid Conversion] Transferred ${allMatQuotes.length} material quotes to project (${selectedMatQuotes.length} selected, ${pendingMatQuotes.length} pending)`,
       );
       for (const quote of selectedMatQuotes) {
@@ -1450,7 +1450,7 @@ export class BidStorageDrizzle implements IBidStorage {
             updatedAt: new Date(),
           })
           .where(eq(handoffTable.id, existingPacket.id));
-        console.log(`[Bid Conversion] Transferred handoff packet to project`);
+        logInfo(`[Bid Conversion] Transferred handoff packet to project`);
       }
 
       // Equipment selections → equipment plans
@@ -1481,7 +1481,7 @@ export class BidStorageDrizzle implements IBidStorage {
             createdById: actorId,
           });
         }
-        console.log(
+        logInfo(
           `[Bid Conversion] Transferred ${bidEquipSelections.length} equipment selections to project equipment plans`,
         );
       }
@@ -1505,7 +1505,7 @@ export class BidStorageDrizzle implements IBidStorage {
             uploadedById: doc.uploadedById,
           });
         }
-        console.log(
+        logInfo(
           `[Bid Conversion] Transferred ${bidDocs.length} bid documents to project plan_documents`,
         );
       }
@@ -1731,7 +1731,7 @@ export class BidStorageDrizzle implements IBidStorage {
           }
         }
       }
-      console.log(
+      logInfo(
         `[Bid Conversion] Duplicated ${bidSheets.length} takeoff sheets with ${measurementsCopied} measurements, ${bidCategories.length} categories, ${bidGroups.length} groups to project`,
       );
 
@@ -1790,7 +1790,7 @@ export class BidStorageDrizzle implements IBidStorage {
         changeNote: "Auto-created from bid conversion",
       });
       draftContractCreated = true;
-      console.log(
+      logInfo(
         `[Bid Conversion] Auto-created draft contract ${contractNum} for project ${newProject.code}`,
       );
     } catch (contractErr) {
@@ -1818,7 +1818,7 @@ export class BidStorageDrizzle implements IBidStorage {
         relatedEntityId: newProject.id,
         relatedEntityType: "project",
       });
-      console.log(
+      logInfo(
         `[Bid Conversion] Created PROJECT_ASSIGNMENT notification for ${t.role.toLowerCase()} ${t.id}`,
       );
     }

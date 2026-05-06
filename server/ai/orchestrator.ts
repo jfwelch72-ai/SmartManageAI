@@ -1,4 +1,4 @@
-import { logError } from "../utils/logger";
+import { logError, logInfo, logWarn } from "../utils/logger";
 import { randomUUID } from "crypto";
 import { db } from "../db";
 import { aiSettings, aiRuns, aiTasks, projects } from "@shared/schema";
@@ -11,7 +11,7 @@ import { detectAndCreateChangeOrderDrafts, ChangeOrderSuggestion } from "./chang
 import { getSubcontractorRecommendations } from "./subRecommendationEngine";
 
 export async function runAIAnalysis(triggeredById: string | null = null, organizationId?: string | null): Promise<string> {
-  console.log('🤖 Starting AI PM + CFO analysis run...');
+  logInfo('🤖 Starting AI PM + CFO analysis run...');
 
   const runId = randomUUID();
   
@@ -24,11 +24,11 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
     });
 
     // Step 1: Build data snapshot
-    console.log('📊 Building data snapshot...');
+    logInfo('📊 Building data snapshot...');
     const snapshot = await buildDataSnapshot();
 
     // Step 2: Calculate profitability for all projects
-    console.log('💰 Calculating project profitability...');
+    logInfo('💰 Calculating project profitability...');
     const profitability = await calculateAllProjectsProfitability();
 
     // Step 3: Get AI settings
@@ -45,7 +45,7 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
     const userPrompt = buildUserPrompt(snapshot, profitability, settings);
 
     // Step 5: Call OpenAI
-    console.log('🧠 Calling OpenAI for analysis...');
+    logInfo('🧠 Calling OpenAI for analysis...');
     const aiResponse = await callOpenAIForAnalysis(
       AI_PM_SYSTEM_PROMPT,
       userPrompt,
@@ -65,16 +65,16 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
       .where(eq(aiRuns.id, runId));
 
     // Step 7: Create tasks from AI response with sub recommendation enrichment
-    console.log('📝 Creating AI-generated tasks...');
+    logInfo('📝 Creating AI-generated tasks...');
     await createTasksFromAIResponse(runId, aiResponse, organizationId || null);
 
     // Step 8: Auto-generate change order drafts from detected delays/issues
-    console.log('📋 Auto-detecting change order opportunities...');
+    logInfo('📋 Auto-detecting change order opportunities...');
     try {
       const coSuggestions: ChangeOrderSuggestion[] = aiResponse.change_order_suggestions || [];
       const draftsCreated = await detectAndCreateChangeOrderDrafts(snapshot, profitability, coSuggestions, organizationId || undefined);
       if (draftsCreated > 0) {
-        console.log(`📋 Created ${draftsCreated} auto-generated change order drafts`);
+        logInfo(`📋 Created ${draftsCreated} auto-generated change order drafts`);
       }
     } catch (coError) {
       logError('⚠️ Change order automation error (non-fatal):', {}, coError instanceof Error ? coError : new Error(String(coError)));
@@ -82,10 +82,10 @@ export async function runAIAnalysis(triggeredById: string | null = null, organiz
 
     // Step 9: Persist cost overrun predictions from AI response
     if (aiResponse.cost_overrun_predictions && aiResponse.cost_overrun_predictions.length > 0) {
-      console.log(`📊 AI flagged ${aiResponse.cost_overrun_predictions.length} cost overrun predictions`);
+      logInfo(`📊 AI flagged ${aiResponse.cost_overrun_predictions.length} cost overrun predictions`);
     }
 
-    console.log(`✅ AI analysis completed successfully. Run ID: ${runId}`);
+    logInfo(`✅ AI analysis completed successfully. Run ID: ${runId}`);
     return runId;
 
   } catch (error: any) {
@@ -206,7 +206,7 @@ async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisRe
           };
         }
       } catch (err) {
-        console.warn('⚠️ Failed to enrich task with sub recommendations:', err);
+        logWarn('⚠️ Failed to enrich task with sub recommendations:', err);
       }
 
       if (task.project_code && aiSubRecsByProject.has(task.project_code)) {
@@ -245,7 +245,7 @@ async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisRe
 
   if (tasksToInsert.length > 0) {
     await db.insert(aiTasks).values(tasksToInsert);
-    console.log(`✅ Created ${tasksToInsert.length} AI-generated tasks`);
+    logInfo(`✅ Created ${tasksToInsert.length} AI-generated tasks`);
   }
 }
 

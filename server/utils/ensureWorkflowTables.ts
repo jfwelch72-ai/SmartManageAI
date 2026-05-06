@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -15,7 +16,7 @@ export async function ensureWorkflowTables(): Promise<void> {
   const allExist = row.templates_exist && row.stages_exist && row.approval_steps_exist && row.notification_rules_exist && row.instances_exist;
 
   if (allExist) {
-    console.log("[migration] workflow tables — already present, skipped");
+    logInfo("[migration] workflow tables — already present, skipped");
     return;
   }
 
@@ -152,5 +153,5 @@ export async function ensureWorkflowTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "workflow_instances_entity_idx" ON "workflow_instances"("entity_type", "entity_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "workflow_instances_status_idx" ON "workflow_instances"("status")`);
 
-  console.log("[migration] workflow tables — created successfully");
+  logInfo("[migration] workflow tables — created successfully");
 }

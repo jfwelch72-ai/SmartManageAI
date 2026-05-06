@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -15,7 +16,7 @@ export async function ensureSwpppOverdueNotificationColumn(): Promise<void> {
       ALTER TABLE swppp_inspections
         ADD COLUMN IF NOT EXISTS last_overdue_notified_at timestamp
     `);
-    console.log("[migration] swppp_inspections.last_overdue_notified_at ready");
+    logInfo("[migration] swppp_inspections.last_overdue_notified_at ready");
   } catch (err) {
     logError(
       "[migration] ensureSwpppOverdueNotificationColumn failed",

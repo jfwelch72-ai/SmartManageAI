@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -22,7 +23,7 @@ export async function ensureUserSettingsBirthdayDigestSchedule(): Promise<void> 
       ALTER TABLE user_settings
         ADD COLUMN IF NOT EXISTS birthday_digest_hour INTEGER NOT NULL DEFAULT 8
     `);
-    console.log("[migration] user_settings birthday_digest_weekday/hour columns ready");
+    logInfo("[migration] user_settings birthday_digest_weekday/hour columns ready");
   } catch (err) {
     logError(
       "[migration] ensureUserSettingsBirthdayDigestSchedule failed",

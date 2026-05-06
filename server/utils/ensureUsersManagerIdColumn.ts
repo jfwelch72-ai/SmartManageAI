@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -20,9 +21,9 @@ export async function ensureUsersManagerIdColumn(): Promise<void> {
       await db.execute(sql`
         CREATE INDEX IF NOT EXISTS users_manager_id_idx ON "users"("manager_id")
       `);
-      console.log("[migration] users.manager_id — applied");
+      logInfo("[migration] users.manager_id — applied");
     } else {
-      console.log("[migration] users.manager_id — already present, skipped");
+      logInfo("[migration] users.manager_id — already present, skipped");
     }
   } catch (err) {
     logError(

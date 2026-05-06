@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -48,9 +49,9 @@ export async function ensureEstimateCategoryEnumValues(): Promise<void> {
     }
 
     if (added > 0) {
-      console.log(`[migration] estimate_item_category enum — added ${added} missing value(s)`);
+      logInfo(`[migration] estimate_item_category enum — added ${added} missing value(s)`);
     } else {
-      console.log("[migration] estimate_item_category enum — all values present, skipped");
+      logInfo("[migration] estimate_item_category enum — all values present, skipped");
     }
   } catch (err) {
     logError("[migration] Failed to ensure estimate_item_category enum values:", {}, err instanceof Error ? err : new Error(String(err)));

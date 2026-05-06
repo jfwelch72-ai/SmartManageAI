@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -23,7 +24,7 @@ export async function ensureRateLimitStateCounters(): Promise<void> {
         ON "rate_limit_state" ("window_expires_at")
         WHERE "window_expires_at" IS NOT NULL
     `);
-    console.log("[migration] rate_limit_state counter columns ready");
+    logInfo("[migration] rate_limit_state counter columns ready");
   } catch (err) {
     logError(
       "[migration] ensureRateLimitStateCounters failed",

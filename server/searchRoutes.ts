@@ -1,3 +1,4 @@
+import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import {
@@ -472,7 +473,7 @@ router.get(
       res.json({ results: capped });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Unknown error";
-      console.error("Search error:", message);
+      logError("Search error:", message);
       res.status(500).json({ error: "Search failed" });
     }
   },

@@ -94,7 +94,7 @@ import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprova
 import { eq, and, desc, sql } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
 import { logAudit } from "./auditLogger";
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
 import { verifyOrgAccess } from "./orgFilter";
 import { isValidTransition, getChangeOrderById, checkOrgAccess, notifyStatusChange, createRevision } from "./changeOrderHelpers";
 
@@ -452,7 +452,7 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["A
             costBreakdownData = typeof co.costBreakdownJson === 'string' ? safeJsonParse(co.costBreakdownJson, null) : co.costBreakdownJson;
           }
         } catch (parseErr) {
-          console.warn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
+          logWarn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
         }
 
         let costCodeLabel: string | null = null;

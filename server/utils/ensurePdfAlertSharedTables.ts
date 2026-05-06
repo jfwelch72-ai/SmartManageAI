@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -128,9 +129,9 @@ export async function ensurePdfAlertSharedTables(): Promise<void> {
     }
 
     if (createdAny) {
-      console.log("[migration] pdf_alert_* shared tables — applied");
+      logInfo("[migration] pdf_alert_* shared tables — applied");
     } else {
-      console.log("[migration] pdf_alert_* shared tables — already present, skipped");
+      logInfo("[migration] pdf_alert_* shared tables — already present, skipped");
     }
   } catch (err) {
     logError(

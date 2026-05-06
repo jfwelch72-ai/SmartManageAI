@@ -11,6 +11,7 @@
  * - Cross-trade consistency
  */
 
+import { logInfo } from "./utils/logger";
 import {
   calculateConcreteSlabCY,
   calculateConcreteFootingCY,
@@ -1282,39 +1283,39 @@ export function runAllVerificationTests(): VerificationSummary {
 }
 
 export function printVerificationReport(summary: VerificationSummary): void {
-  console.log('\n========================================');
-  console.log('MATERIAL CALCULATOR VERIFICATION REPORT');
-  console.log('========================================\n');
+  logInfo('\n========================================');
+  logInfo('MATERIAL CALCULATOR VERIFICATION REPORT');
+  logInfo('========================================\n');
   
-  console.log(`Total Tests: ${summary.totalTests}`);
-  console.log(`Passed: ${summary.passed}`);
-  console.log(`Failed: ${summary.failed}`);
-  console.log(`Pass Rate: ${summary.passRate}\n`);
+  logInfo(`Total Tests: ${summary.totalTests}`);
+  logInfo(`Passed: ${summary.passed}`);
+  logInfo(`Failed: ${summary.failed}`);
+  logInfo(`Pass Rate: ${summary.passRate}\n`);
   
-  console.log('By Trade:');
-  console.log('----------------------------------------');
+  logInfo('By Trade:');
+  logInfo('----------------------------------------');
   Object.entries(summary.byTrade).forEach(([trade, stats]) => {
     const status = stats.failed === 0 ? '✓' : '✗';
-    console.log(`${status} ${trade}: ${stats.passed}/${stats.total} passed`);
+    logInfo(`${status} ${trade}: ${stats.passed}/${stats.total} passed`);
   });
   
   if (summary.failed > 0) {
-    console.log('\n----------------------------------------');
-    console.log('FAILED TESTS:');
-    console.log('----------------------------------------');
+    logInfo('\n----------------------------------------');
+    logInfo('FAILED TESTS:');
+    logInfo('----------------------------------------');
     summary.results.filter(r => r.result === 'FAIL').forEach(r => {
-      console.log(`\n[${r.trade}] – ${r.scope} – TEST #${r.testNumber}`);
-      console.log(`INPUTS: ${JSON.stringify(r.inputs)}`);
-      console.log(`EXPECTED: ${r.expected}`);
-      console.log(`ACTUAL: ${r.actual}`);
-      console.log(`RESULT: ${r.result}`);
-      if (r.note) console.log(`NOTE: ${r.note}`);
+      logInfo(`\n[${r.trade}] – ${r.scope} – TEST #${r.testNumber}`);
+      logInfo(`INPUTS: ${JSON.stringify(r.inputs)}`);
+      logInfo(`EXPECTED: ${r.expected}`);
+      logInfo(`ACTUAL: ${r.actual}`);
+      logInfo(`RESULT: ${r.result}`);
+      if (r.note) logInfo(`NOTE: ${r.note}`);
     });
   }
   
-  console.log('\n========================================');
-  console.log('END OF VERIFICATION REPORT');
-  console.log('========================================\n');
+  logInfo('\n========================================');
+  logInfo('END OF VERIFICATION REPORT');
+  logInfo('========================================\n');
 }
 
 // Export the complete verification suite

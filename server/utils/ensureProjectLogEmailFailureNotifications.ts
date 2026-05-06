@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError } from "./logger";
@@ -44,7 +45,7 @@ export async function ensureProjectLogEmailFailureNotifications(): Promise<void>
       ALTER TABLE project_log_email_schedules
         ADD COLUMN IF NOT EXISTS last_failure_notified_status text
     `);
-    console.log(
+    logInfo(
       "[migration] project_log_email_schedules failure-notification columns ready",
     );
   } catch (err) {

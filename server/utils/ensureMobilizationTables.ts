@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -11,7 +12,7 @@ export async function ensureMobilizationTables(): Promise<void> {
 
   const row = result.rows[0] as Record<string, boolean>;
   if (row.checklists_exist && row.items_exist && row.statements_exist) {
-    console.log("[migration] mobilization tables — already present, skipped");
+    logInfo("[migration] mobilization tables — already present, skipped");
     return;
   }
 
@@ -108,5 +109,5 @@ export async function ensureMobilizationTables(): Promise<void> {
     `);
   }
 
-  console.log("[migration] mobilization tables — created successfully");
+  logInfo("[migration] mobilization tables — created successfully");
 }

@@ -1,3 +1,4 @@
+import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
@@ -18,18 +19,18 @@ export async function ensureCertifiedPayrollArchiveColumns(): Promise<void> {
 
   if (!present.has("archived_at")) {
     await db.execute(sql`ALTER TABLE certified_payroll_reports ADD COLUMN archived_at timestamp`);
-    console.log("[migration] certified_payroll_reports.archived_at — applied");
+    logInfo("[migration] certified_payroll_reports.archived_at — applied");
   }
   if (!present.has("archived_by_id")) {
     await db.execute(sql`
       ALTER TABLE certified_payroll_reports
       ADD COLUMN archived_by_id varchar REFERENCES users(id)
     `);
-    console.log("[migration] certified_payroll_reports.archived_by_id — applied");
+    logInfo("[migration] certified_payroll_reports.archived_by_id — applied");
   }
   if (!present.has("archive_reason")) {
     await db.execute(sql`ALTER TABLE certified_payroll_reports ADD COLUMN archive_reason text`);
-    console.log("[migration] certified_payroll_reports.archive_reason — applied");
+    logInfo("[migration] certified_payroll_reports.archive_reason — applied");
   }
 
   await db.execute(sql`

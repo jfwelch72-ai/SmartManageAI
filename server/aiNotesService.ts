@@ -1,4 +1,4 @@
-import { logError } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
@@ -200,7 +200,7 @@ Return format: { "insights": [ ... ] }`;
       }
 
       const validInsights = this.parseAndValidateAIResponse(responseText, notes);
-      console.log(`[AI Notes] Successfully validated ${validInsights.length} insights from OpenAI`);
+      logInfo(`[AI Notes] Successfully validated ${validInsights.length} insights from OpenAI`);
 
       return validInsights;
     } catch (error) {
@@ -222,7 +222,7 @@ Return format: { "insights": [ ... ] }`;
       throw new Error("Invalid JSON response from OpenAI");
     }
 
-    console.log("[AI Notes] OpenAI response structure:", Object.keys(parsed));
+    logInfo("[AI Notes] OpenAI response structure:", Object.keys(parsed));
     
     // Try multiple possible response structures
     let insights = parsed.insights || parsed.items || parsed.results || parsed.data;
@@ -233,9 +233,9 @@ Return format: { "insights": [ ... ] }`;
       const arrayValues = Object.values(parsed).filter(Array.isArray);
       if (arrayValues.length > 0) {
         insights = arrayValues[0];
-        console.log("[AI Notes] Found insights in array property");
+        logInfo("[AI Notes] Found insights in array property");
       } else {
-        console.warn("[AI Notes] No array found in response, returning empty array");
+        logWarn("[AI Notes] No array found in response, returning empty array");
         return [];
       }
     }
@@ -257,12 +257,12 @@ Return format: { "insights": [ ... ] }`;
       try {
         // Validate required fields
         if (!rawInsight.sourceNoteId || typeof rawInsight.sourceNoteId !== 'string') {
-          console.warn(`[AI Notes] Insight ${index}: Missing or invalid sourceNoteId`);
+          logWarn(`[AI Notes] Insight ${index}: Missing or invalid sourceNoteId`);
           continue;
         }
 
         if (!rawInsight.summary || typeof rawInsight.summary !== 'string') {
-          console.warn(`[AI Notes] Insight ${index}: Missing or invalid summary`);
+          logWarn(`[AI Notes] Insight ${index}: Missing or invalid summary`);
           continue;
         }
 
@@ -270,14 +270,14 @@ Return format: { "insights": [ ... ] }`;
         const categoryValue = rawInsight.category;
         const category = typeof categoryValue === 'string' ? categoryValue.toUpperCase() : '';
         if (!validCategories.includes(category)) {
-          console.warn(`[AI Notes] Insight ${index}: Invalid category "${rawInsight.category}", defaulting to OTHER`);
+          logWarn(`[AI Notes] Insight ${index}: Invalid category "${rawInsight.category}", defaulting to OTHER`);
         }
 
         // Validate and normalize severity
         const severityValue = rawInsight.severity;
         const severity = typeof severityValue === 'string' ? severityValue.toUpperCase() : '';
         if (!validSeverities.includes(severity)) {
-          console.warn(`[AI Notes] Insight ${index}: Invalid severity "${rawInsight.severity}", defaulting to MEDIUM`);
+          logWarn(`[AI Notes] Insight ${index}: Invalid severity "${rawInsight.severity}", defaulting to MEDIUM`);
         }
 
         // Validate recipients
@@ -286,7 +286,7 @@ Return format: { "insights": [ ... ] }`;
           : [];
         
         if (Array.isArray(rawInsight.recipients) && recipients.length !== rawInsight.recipients.length) {
-          console.warn(`[AI Notes] Insight ${index}: Filtered out invalid recipients`);
+          logWarn(`[AI Notes] Insight ${index}: Filtered out invalid recipients`);
         }
 
         // Validate recommended actions
@@ -297,7 +297,7 @@ Return format: { "insights": [ ... ] }`;
         // Find source note
         const sourceNote = notes.find(n => n.id === rawInsight.sourceNoteId);
         if (!sourceNote) {
-          console.warn(`[AI Notes] Insight ${index}: Source note not found for ID ${rawInsight.sourceNoteId}`);
+          logWarn(`[AI Notes] Insight ${index}: Source note not found for ID ${rawInsight.sourceNoteId}`);
           continue;
         }
 
@@ -343,7 +343,7 @@ Return format: { "insights": [ ... ] }`;
 
       // Skip if duplicate
       if (existing.length > 0) {
-        console.log(`[AI Notes Service] Skipping duplicate insight for note ${insight.sourceNoteId}, category ${insight.category}`);
+        logInfo(`[AI Notes Service] Skipping duplicate insight for note ${insight.sourceNoteId}, category ${insight.category}`);
         continue;
       }
 
@@ -422,7 +422,7 @@ Return format: { "insights": [ ... ] }`;
 
       // Log warning if all insights were deduplicated
       if (aiGeneratedInsights.length > 0 && persistedInsights.length === 0) {
-        console.warn(`[AI Notes Service] AI generated ${aiGeneratedInsights.length} insights but all were duplicates - none persisted`);
+        logWarn(`[AI Notes Service] AI generated ${aiGeneratedInsights.length} insights but all were duplicates - none persisted`);
       }
 
       // Update run status

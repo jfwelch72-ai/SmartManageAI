@@ -1,3 +1,4 @@
+import { logWarn } from "./utils/logger";
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import {
@@ -87,14 +88,14 @@ function resolveSnapshotTradeType(raw: string | null | undefined): DbTradeType |
       dbValue = resolveBaseTradeType(normalized);
     }
     if (isDbTradeType(dbValue) && dbValue !== "OTHER") {
-      console.warn(
+      logWarn(
         `[projectTemplateInstantiate] Remapped snapshot tradeType "${trimmed}" → "${dbValue}"`,
       );
       return dbValue;
     }
   }
 
-  console.warn(
+  logWarn(
     `[projectTemplateInstantiate] Unrecognised snapshot tradeType "${trimmed}", storing null`,
   );
   return null;
