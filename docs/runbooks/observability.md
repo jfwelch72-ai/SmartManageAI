@@ -150,9 +150,19 @@ throw err;
 ```
 
 **Express 4 does NOT auto-forward rejected promises** from async route
-handlers. A bare `async (req, res) => { throw … }` will time the request
-out and Sentry will never see the error. Always either `try/catch(err) {
-next(err) }` or wrap the handler in the shared `asyncHandler`:
+handlers — but at boot we install a shim
+(`server/utils/expressAsyncShim.ts`, mirroring the popular
+`express-async-errors` package) that monkey-patches
+`Layer.prototype.handle_request` so any handler returning a rejected
+promise is forwarded to `next(err)` automatically. That means a bare
+`async (req, res) => { throw … }` in this app will already reach the
+central error middleware, persist to `error_logs`, and surface in
+Sentry.
+
+You should still prefer one of the explicit patterns below for new
+code — it documents intent and keeps the codebase portable to
+environments where the shim hasn't been installed (tests built
+ad-hoc, scripts spinning up their own Express apps, etc):
 
 ```ts
 import { asyncHandler } from "@/server/utils/asyncHandler"; // or define inline

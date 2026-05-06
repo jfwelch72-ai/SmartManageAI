@@ -3,6 +3,7 @@ import { isDevSeedEnabled } from "./utils/devSeedFlag";
 import { initSentry, captureRequestException } from "./sentry";
 import { correlationIdMiddleware } from "./middleware/correlationId";
 import { installCorrelatedFetch } from "./utils/correlatedFetch";
+import { installAsyncErrorShim } from "./utils/expressAsyncShim";
 import express, { type Request, Response, NextFunction } from "express";
 import compression from "compression";
 import cookieParser from "cookie-parser";
@@ -65,6 +66,13 @@ process.on("unhandledRejection", (reason) => {
 });
 
 const app = express();
+
+// Patch Express's Layer prototype so async route handlers that throw or
+// reject without try/catch are forwarded to the central error middleware
+// (and Sentry / error_logs) instead of hanging the request. Must run
+// before any router/middleware is constructed. See
+// `server/utils/expressAsyncShim.ts` and Task #2438.
+installAsyncErrorShim();
 
 // Initialize Sentry as early as possible (no-op when SENTRY_DSN unset).
 initSentry();

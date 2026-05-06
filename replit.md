@@ -45,6 +45,7 @@ SmartManageAI is a white-label SaaS platform that centralizes and streamlines th
 *   **AI Provider Routing for Takeoff Features**: Uses a configurable abstraction (`server/ai/providers/`) for OpenAI and Anthropic Claude, with per-org routing via feature flags and automatic fallback.
 *   **Domain-Specific Storage Seams**: Gradually breaking up monolithic storage logic into domain-specific modules to improve maintainability and enforce access control (e.g., `server/bids/storage.ts`).
 *   **Scalable PDF Handling for Takeoffs**: Implemented range-based GCS downloads and device-aware tile caching to efficiently manage large (up to 32 GB) PDF plans.
+*   **Express Async Error Shim**: `server/utils/expressAsyncShim.ts` patches `Layer.prototype.handle_request` at boot so async route handlers that throw without try/catch are forwarded to the central error middleware (Express 4 does not do this natively). `asyncHandler` is still exported for explicit, self-documenting wrapping.
 
 ## Product
 
