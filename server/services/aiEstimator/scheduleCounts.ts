@@ -233,7 +233,7 @@ export async function extractScheduleSymbolsForBid(opts: {
       fn: async () => {
         const completion = await routedChatCompletion({
           orgId: opts.organizationId,
-          featureKey: "ai_estimator.sheet_index",
+          featureKey: "ai_estimator.schedule_extract",
           request: {
             messages: [
               { role: "system", content: sysPrompt },

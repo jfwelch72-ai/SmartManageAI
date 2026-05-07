@@ -88,6 +88,12 @@ export type TakeoffFeatureKey =
   | "ai_estimator.chat"
   | "ai_estimator.estimate_generate"
   | "ai_estimator.sheet_index"
+  // Task #2591 — dedicated key for the schedule symbol extractor
+  // (door/window/fixture/panel schedules). Split out from
+  // `ai_estimator.sheet_index` so per-feature spend caps and AI-router
+  // overrides can target schedule-extraction calls independently of
+  // sheet classification calls.
+  | "ai_estimator.schedule_extract"
   // Task #2414 — Claude-written narrative summary for each indexed
   // knowledge row. Runs at the end of `runIngestion()` for orgs that
   // have AI_PROVIDER_TAKEOFF enabled.
