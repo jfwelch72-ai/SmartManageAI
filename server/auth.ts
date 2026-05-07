@@ -92,6 +92,23 @@ export interface AuthRequest extends Request {
   user?: SanitizedUser;
 }
 
+/**
+ * Narrows req.user.organizationId to a non-null string. Returns the
+ * organizationId, or sends a 401 and returns null if the request is
+ * unauthenticated or the user has no organization context.
+ *
+ * Use this at the top of route handlers that operate on tenant-scoped
+ * data, after requireAuth has run.
+ */
+export function requireOrgUser(req: AuthRequest, res: Response): string | null {
+  const orgId = req.user?.organizationId;
+  if (!req.user || !orgId) {
+    res.status(401).json({ error: "Authentication required" });
+    return null;
+  }
+  return orgId;
+}
+
 export function getUserIdFromRequest(req: Request): string | null {
   const token = req.cookies?.[COOKIE_NAME];
   if (!token) return null;

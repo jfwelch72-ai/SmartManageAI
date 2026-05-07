@@ -173,6 +173,8 @@ export const projectDbeGoals = pgTable("project_dbe_goals", {
   certificationType: dbeCertificationTypeEnum("certification_type").notNull(),
   goalPercent: decimal("goal_percent", { precision: 5, scale: 2 }).notNull(),
   goalDollars: decimal("goal_dollars", { precision: 14, scale: 2 }),
+  actualPercent: decimal("actual_percent", { precision: 5, scale: 2 }),
+  actualDollars: decimal("actual_dollars", { precision: 14, scale: 2 }),
   notes: text("notes"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

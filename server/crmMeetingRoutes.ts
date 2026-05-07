@@ -261,7 +261,7 @@ router.post("/api/public/meeting-links/:slug/book", async (req, res, next) => {
           await sendEmail({
             to: parsed.data.inviteeEmail,
             subject: `Meeting confirmed: ${link.name}`,
-            html: `<p>Your meeting <strong>${link.name}</strong> with ${owner.fullName ?? owner.email} is confirmed for ${startAt.toLocaleString()}.</p>`,
+            html: `<p>Your meeting <strong>${link.name}</strong> with ${[owner.firstName, owner.lastName].filter(Boolean).join(" ") || owner.email} is confirmed for ${startAt.toLocaleString()}.</p>`,
             text: `Your meeting ${link.name} is confirmed for ${startAt.toLocaleString()}.`,
           });
         }

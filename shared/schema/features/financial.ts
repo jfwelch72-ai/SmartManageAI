@@ -98,6 +98,7 @@ export const sovLineItems = pgTable("sov_line_items", {
 
   // DOT pay item linking — carries through to DOT progress estimate format
   dotPayItemId: varchar("dot_pay_item_id"),
+  dotSpecBookId: varchar("dot_spec_book_id"),
   payItemNumber: varchar("pay_item_number", { length: 64 }),
   specSection: varchar("spec_section", { length: 32 }),
 
