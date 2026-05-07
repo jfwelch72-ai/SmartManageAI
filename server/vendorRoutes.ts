@@ -1488,7 +1488,7 @@ const createImportJobSchema = z.object({
 
 router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1496,7 +1496,7 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next
     const offset = parseInt(req.query.offset as string) || 0;
     const statusFilter = req.query.status as string;
 
-    const conditions = [eq(pricebookImportJobs.organizationId, req.user.organizationId)];
+    const conditions = [eq(pricebookImportJobs.organizationId, req.user!.organizationId)];
     if (statusFilter && ["PENDING", "PROCESSING", "COMPLETED", "FAILED"].includes(statusFilter)) {
       conditions.push(eq(pricebookImportJobs.status, statusFilter as any));
     }
@@ -1550,7 +1550,7 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next
 
 router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1578,7 +1578,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
         )
       )
       .limit(1);
@@ -1604,7 +1604,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
 
 router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1625,7 +1625,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
       .where(
         and(
           eq(crmOrganisations.id, crmOrganisationId),
-          eq(crmOrganisations.organizationId, req.user.organizationId)
+          eq(crmOrganisations.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1637,7 +1637,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
     const fileName = req.file.originalname;
     const timestamp = Date.now();
     const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const fileRef = `pricebooks/${req.user.organizationId}/${crmOrganisationId}/${timestamp}_${sanitizedFileName}`;
+    const fileRef = `pricebooks/${req.user!.organizationId}/${crmOrganisationId}/${timestamp}_${sanitizedFileName}`;
 
     let storageAvailable = false;
     try {
@@ -1650,9 +1650,9 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
         await file.save(fileBuffer, {
           contentType: 'application/pdf',
           metadata: {
-            organizationId: req.user.organizationId,
+            organizationId: req.user!.organizationId,
             crmOrganisationId,
-            uploadedBy: req.user.id,
+            uploadedBy: req.user!.id,
           },
         });
         storageAvailable = true;
@@ -1663,14 +1663,14 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
     }
 
     const [importJob] = await db.insert(pricebookImportJobs).values({
-      organizationId: req.user.organizationId,
+      organizationId: req.user!.organizationId,
       crmOrganisationId,
       fileRef: storageAvailable ? fileRef : `local:${fileName}`,
       fileName,
       status: "PENDING",
       effectiveQuarter: effectiveQuarter || getCurrentQuarter(),
       effectiveDate: effectiveDate ? new Date(effectiveDate) : new Date(),
-      createdById: req.user.id,
+      createdById: req.user!.id,
     }).returning();
 
     logInfo(`[VendorPricebook] Import job created: ${importJob.id} for vendor ${crmOrganisationId}`);
@@ -1687,7 +1687,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
 
 router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1699,7 +1699,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1789,7 +1789,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
 
 router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1801,7 +1801,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1827,7 +1827,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
       .update(vendorPricingCatalogs)
       .set({
         approvalStatus: "APPROVED",
-        approvedByUserId: req.user.id,
+        approvedByUserId: req.user!.id,
         approvedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -1859,7 +1859,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
 
 router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1871,7 +1871,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1901,7 +1901,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
 
 router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1913,7 +1913,7 @@ router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: Au
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1925,7 +1925,7 @@ router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: Au
       .update(vendorPricingCatalogs)
       .set({
         approvalStatus: "APPROVED",
-        approvedByUserId: req.user.id,
+        approvedByUserId: req.user!.id,
         approvedAt: new Date(),
         updatedAt: new Date(),
       })

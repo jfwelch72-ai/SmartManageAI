@@ -437,7 +437,7 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
     if (status === "SUBMITTED" && req.user?.organizationId) {
       try {
         const admins = await db.select({ id: users.id }).from(users)
-          .where(and(eq(users.organizationId, req.user.organizationId), eq(users.isActive, true)))
+          .where(and(eq(users.organizationId, req.user!.organizationId), eq(users.isActive, true)))
           .limit(20);
         const approvers = admins.filter(a => a.id !== req.user?.id);
         if (approvers.length > 0) {
@@ -460,7 +460,7 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
         if (project?.clientContactEmail) {
           const clientUserConditions = [eq(users.email, project.clientContactEmail)];
           if (req.user?.organizationId) {
-            clientUserConditions.push(eq(users.organizationId, req.user.organizationId));
+            clientUserConditions.push(eq(users.organizationId, req.user!.organizationId));
           }
           const clientUsers = await db.select({ id: users.id }).from(users)
             .where(and(...clientUserConditions)).limit(1);

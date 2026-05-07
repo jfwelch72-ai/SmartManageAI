@@ -223,7 +223,7 @@ router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthReques
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -234,7 +234,7 @@ router.get("/accounts", requireAuth, requireInternalRole, async (req: AuthReques
       .where(
         and(
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id)
+          eq(emailAccounts.userId, req.user!.id)
         )
       )
       .orderBy(desc(emailAccounts.createdAt));
@@ -255,7 +255,7 @@ router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRe
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -267,7 +267,7 @@ router.get("/accounts/:id", requireAuth, requireInternalRole, async (req: AuthRe
         and(
           eq(emailAccounts.id, req.params.id),
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id)
+          eq(emailAccounts.userId, req.user!.id)
         )
       )
       .limit(1);
@@ -289,7 +289,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -309,7 +309,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       .where(
         and(
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id),
+          eq(emailAccounts.userId, req.user!.id),
           eq(emailAccounts.emailAddress, data.emailAddress ?? '')
         )
       )
@@ -331,7 +331,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
       .insert(emailAccounts)
       .values({
         organizationId: orgId,
-        userId: req.user.id,
+        userId: req.user!.id,
         provider: data.provider,
         emailAddress: data.emailAddress ?? '',
         displayName: data.displayName,
@@ -353,7 +353,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
 
     // Audit log
     await logCreate(
-      req.user.id,
+      req.user!.id,
       "EMAIL_ACCOUNT",
       newAccount.id,
       { provider: newAccount.provider, emailAddress: newAccount.emailAddress },
@@ -363,7 +363,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
     if (newAccount.provider === "IMAP" && newAccount.imapHost) {
       testFullConnection(newAccount).then(async (testResult) => {
         if (testResult.success) {
-          const syncResult = await syncImapAccount(newAccount, req.user.id);
+          const syncResult = await syncImapAccount(newAccount, req.user!.id);
           logInfo(`Initial IMAP sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
         } else {
           const errorMsg = testResult.imap.error || testResult.smtp.error || "Connection test failed";
@@ -377,7 +377,7 @@ router.post("/accounts", requireAuth, requireInternalRole, async (req: AuthReque
         logError(`Initial IMAP sync failed for ${newAccount.emailAddress}:`, {}, err instanceof Error ? err : new Error(String(err)));
       });
     } else if (newAccount.provider === "OUTLOOK" && newAccount.accessToken) {
-      syncOutlookAccount(newAccount, req.user.id).then((syncResult) => {
+      syncOutlookAccount(newAccount, req.user!.id).then((syncResult) => {
         logInfo(`Initial Outlook sync for ${newAccount.emailAddress}: ${syncResult.messagesImported} messages, ${syncResult.errors.length} errors`);
         backfillCrmEmailLogging(newAccount.id, 90).catch(() => {});
       }).catch((err) => {
@@ -405,7 +405,7 @@ router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: Auth
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -418,7 +418,7 @@ router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: Auth
         and(
           eq(emailAccounts.id, req.params.id),
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id)
+          eq(emailAccounts.userId, req.user!.id)
         )
       )
       .limit(1);
@@ -447,7 +447,7 @@ router.patch("/accounts/:id", requireAuth, requireInternalRole, async (req: Auth
 
     // Audit log
     await logUpdate(
-      req.user.id,
+      req.user!.id,
       "EMAIL_ACCOUNT",
       updated.id,
       { isActive: existing.isActive },
@@ -468,7 +468,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -481,7 +481,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
         and(
           eq(emailAccounts.id, req.params.id),
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id)
+          eq(emailAccounts.userId, req.user!.id)
         )
       )
       .limit(1);
@@ -655,7 +655,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
     // Audit log (isolated so failures don't affect the success response)
     try {
       await logDelete(
-        req.user.id,
+        req.user!.id,
         "EMAIL_ACCOUNT",
         deleted.id,
         { provider: deleted.provider, emailAddress: deleted.emailAddress },
@@ -677,7 +677,7 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
 router.post("/accounts/:id/resync", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const [existing] = await db
@@ -686,7 +686,7 @@ router.post("/accounts/:id/resync", requireAuth, requireInternalRole, async (req
       .where(and(
         eq(emailAccounts.id, req.params.id),
         eq(emailAccounts.organizationId, orgId),
-        eq(emailAccounts.userId, req.user.id),
+        eq(emailAccounts.userId, req.user!.id),
       ))
       .limit(1);
     if (!existing) return res.status(404).json({ error: "Email account not found" });
@@ -716,7 +716,7 @@ router.post("/accounts/:id/resync", requireAuth, requireInternalRole, async (req
 router.post("/accounts/:id/reconnect-push", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const [account] = await db
@@ -725,7 +725,7 @@ router.post("/accounts/:id/reconnect-push", requireAuth, requireInternalRole, as
       .where(and(
         eq(emailAccounts.id, req.params.id),
         eq(emailAccounts.organizationId, orgId),
-        eq(emailAccounts.userId, req.user.id),
+        eq(emailAccounts.userId, req.user!.id),
       ))
       .limit(1);
     if (!account) return res.status(404).json({ error: "Email account not found" });
@@ -830,7 +830,7 @@ router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: 
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -842,7 +842,7 @@ router.post("/accounts/:id/test", requireAuth, requireInternalRole, async (req: 
         and(
           eq(emailAccounts.id, req.params.id),
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id)
+          eq(emailAccounts.userId, req.user!.id)
         )
       )
       .limit(1);
@@ -961,8 +961,8 @@ router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req
 
     // Store user info in session for callback
     const state = Buffer.from(JSON.stringify({
-      userId: req.user.id,
-      organizationId: req.user.organizationId,
+      userId: req.user!.id,
+      organizationId: req.user!.organizationId,
       timestamp: Date.now()
     })).toString("base64url");
 
@@ -1156,8 +1156,8 @@ router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (r
 
     // Store user info in state for callback
     const state = Buffer.from(JSON.stringify({
-      userId: req.user.id,
-      organizationId: req.user.organizationId,
+      userId: req.user!.id,
+      organizationId: req.user!.organizationId,
       timestamp: Date.now()
     })).toString("base64url");
 
@@ -1357,7 +1357,7 @@ router.get("/threads", requireAuth, requireInternalRole, async (req: AuthRequest
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1398,7 +1398,7 @@ router.get("/threads/:id", requireAuth, requireInternalRole, async (req: AuthReq
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1451,7 +1451,7 @@ router.patch("/threads/bulk", requireAuth, requireInternalRole, async (req: Auth
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1570,7 +1570,7 @@ router.patch("/threads/bulk", requireAuth, requireInternalRole, async (req: Auth
           .returning();
 
         await logUpdate(
-          req.user.id,
+          req.user!.id,
           "EMAIL_THREAD",
           updated.id,
           { status: existing.status },
@@ -1613,7 +1613,7 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1778,7 +1778,7 @@ router.patch("/threads/:id", requireAuth, requireInternalRole, async (req: AuthR
       .returning();
 
     await logUpdate(
-      req.user.id,
+      req.user!.id,
       "EMAIL_THREAD",
       updated.id,
       { status: existing.status },
@@ -1798,7 +1798,7 @@ router.get("/messages", requireAuth, requireInternalRole, async (req: AuthReques
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1831,7 +1831,7 @@ router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRe
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -1869,7 +1869,7 @@ router.get("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRe
 router.patch("/messages/:id", requireAuth, requireInternalRole, async (req: AuthRequest, res, next) => {
   try {
     if (!req.user) return res.status(401).json({ error: "Unauthorized" });
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const bodySchema = z.object({
@@ -4112,7 +4112,7 @@ router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, 
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4123,7 +4123,7 @@ router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, 
       .where(
         and(
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id),
+          eq(emailAccounts.userId, req.user!.id),
           eq(emailAccounts.isActive, true)
         )
       );
@@ -4141,19 +4141,19 @@ router.post("/sync", requireAuth, requireInternalRole, async (req: AuthRequest, 
     for (const account of accounts) {
       try {
         if (account.provider === "GMAIL") {
-          const accountResult = await syncGmailAccount(account, req.user.id);
+          const accountResult = await syncGmailAccount(account, req.user!.id);
           syncResults.push({
             account: account.emailAddress,
             ...accountResult,
           });
         } else if (account.provider === "OUTLOOK") {
-          const accountResult = await syncOutlookAccount(account, req.user.id);
+          const accountResult = await syncOutlookAccount(account, req.user!.id);
           syncResults.push({
             account: account.emailAddress,
             ...accountResult,
           });
         } else if (account.provider === "IMAP") {
-          const accountResult = await syncImapAccount(account, req.user.id);
+          const accountResult = await syncImapAccount(account, req.user!.id);
           syncResults.push({
             account: account.emailAddress,
             ...accountResult,
@@ -4203,7 +4203,7 @@ router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (re
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4225,7 +4225,7 @@ router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (re
 
     const governedAnalysis = await governedAiCall<EmailAnalysisResult>({
       orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       actionType: "email_message_analysis",
       inputRefs: { messageId: message.id },
       fn: async () => {
@@ -4283,12 +4283,12 @@ router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (re
         message.id,
         message.threadId,
         orgId,
-        req.user.id,
+        req.user!.id,
         matchedEntities
       );
 
       if (taskId) {
-        await logCreate(req.user.id, "EMAIL_TASK", taskId, {
+        await logCreate(req.user!.id, "EMAIL_TASK", taskId, {
           source: "AI_ANALYSIS",
           messageId: message.id,
         }, req);
@@ -4296,7 +4296,7 @@ router.post("/messages/:id/analyze", requireAuth, requireInternalRole, async (re
     }
 
     await logAudit({
-      userId: req.user.id,
+      userId: req.user!.id,
       entityType: "EMAIL_MESSAGE",
       entityId: message.id,
       action: "UPDATE",
@@ -4321,7 +4321,7 @@ router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, asy
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4350,7 +4350,7 @@ router.post("/messages/:id/suggest-reply", requireAuth, requireInternalRole, asy
 
     const governedReplies = await governedAiCall<import("./ai/emailAi").ReplyDraft[]>({
       orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       actionType: "email_suggest_reply",
       inputRefs: { messageId: message.id },
       fn: async () => {
@@ -4397,7 +4397,7 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4416,7 +4416,7 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
         and(
           eq(emailAccounts.id, data.accountId),
           eq(emailAccounts.organizationId, orgId),
-          eq(emailAccounts.userId, req.user.id),
+          eq(emailAccounts.userId, req.user!.id),
           eq(emailAccounts.isActive, true)
         )
       )
@@ -4564,7 +4564,7 @@ router.post("/send", requireAuth, requireInternalRole, async (req: AuthRequest, 
       .where(eq(emailThreads.id, targetThreadId));
 
     await logAudit({
-      userId: req.user.id,
+      userId: req.user!.id,
       entityType: "EMAIL_MESSAGE",
       entityId: data.accountId,
       action: "CREATE",
@@ -4584,7 +4584,7 @@ router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (r
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4616,7 +4616,7 @@ router.post("/threads/:id/summarize", requireAuth, requireInternalRole, async (r
 
     const governedSummary = await governedAiCall<import("./ai/emailAi").ThreadSummaryResult>({
       orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       actionType: "email_thread_summary",
       inputRefs: { threadId: thread.id },
       fn: async () => {
@@ -4660,7 +4660,7 @@ router.post("/summary/daily", requireAuth, requireInternalRole, async (req: Auth
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4701,7 +4701,7 @@ router.post("/summary/daily", requireAuth, requireInternalRole, async (req: Auth
 
     const governedDaily = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
       orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       actionType: "email_daily_summary",
       inputRefs: { messageCount: recentMessages.length },
       fn: async () => {
@@ -4728,7 +4728,7 @@ router.post("/summary/daily", requireAuth, requireInternalRole, async (req: Auth
 
     await db.insert(emailSummaries).values({
       organizationId: orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       summaryType: 'DAILY',
       periodStart: oneDayAgo,
       periodEnd: new Date(),
@@ -4750,7 +4750,7 @@ router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: Aut
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4791,7 +4791,7 @@ router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: Aut
 
     const governedWeekly = await governedAiCall<import("./ai/emailAi").EmailSummaryDigest>({
       orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       actionType: "email_weekly_summary",
       inputRefs: { messageCount: recentMessages.length },
       fn: async () => {
@@ -4818,7 +4818,7 @@ router.post("/summary/weekly", requireAuth, requireInternalRole, async (req: Aut
 
     await db.insert(emailSummaries).values({
       organizationId: orgId,
-      userId: req.user.id,
+      userId: req.user!.id,
       summaryType: 'WEEKLY',
       periodStart: oneWeekAgo,
       periodEnd: new Date(),
@@ -4840,7 +4840,7 @@ router.get("/summary/latest", requireAuth, requireInternalRole, async (req: Auth
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4851,7 +4851,7 @@ router.get("/summary/latest", requireAuth, requireInternalRole, async (req: Auth
       .where(
         and(
           eq(emailSummaries.organizationId, orgId),
-          eq(emailSummaries.userId, req.user.id)
+          eq(emailSummaries.userId, req.user!.id)
         )
       )
       .orderBy(desc(emailSummaries.createdAt))
@@ -4873,7 +4873,7 @@ router.get("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest, 
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4918,7 +4918,7 @@ router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest,
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -4948,7 +4948,7 @@ router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest,
       .insert(tasks)
       .values({
         organizationId: orgId,
-        createdById: req.user.id,
+        createdById: req.user!.id,
         title: data.title,
         description: data.description,
         priority: data.priority,
@@ -4964,7 +4964,7 @@ router.post("/tasks", requireAuth, requireInternalRole, async (req: AuthRequest,
       })
       .returning();
 
-    await logCreate(req.user.id, "TASK", task.id, { title: task.title, sourceType: task.sourceType }, req);
+    await logCreate(req.user!.id, "TASK", task.id, { title: task.title, sourceType: task.sourceType }, req);
 
     return res.status(201).json(task);
   } catch (error) {
@@ -4978,7 +4978,7 @@ router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthReq
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(403).json({ error: "Organization required" });
     }
@@ -5035,12 +5035,12 @@ router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthReq
 
     if (data.status === 'COMPLETED') {
       updateData.completedAt = new Date();
-      updateData.completedById = req.user.id;
+      updateData.completedById = req.user!.id;
     }
 
     if (data.status === 'DISMISSED') {
       updateData.dismissedAt = new Date();
-      updateData.dismissedById = req.user.id;
+      updateData.dismissedById = req.user!.id;
     }
 
     const [updated] = await db
@@ -5050,7 +5050,7 @@ router.patch("/tasks/:id", requireAuth, requireInternalRole, async (req: AuthReq
       .returning();
 
     await logUpdate(
-      req.user.id,
+      req.user!.id,
       "TASK",
       updated.id,
       { status: existing.status },

@@ -128,6 +128,7 @@ router.post("/api/projects/:projectId/material-usage", requireAuth, async (req: 
     }
 
     const data = validationResult.data;
+    const orgId = req.user!.organizationId;
     if (!data.totalCost && data.quantityUsed && data.unitCost) {
       data.totalCost = (Number(data.quantityUsed) * Number(data.unitCost)).toFixed(2);
     }

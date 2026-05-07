@@ -157,7 +157,7 @@ const router = Router();
 // ========================================
 
 function requireSuperAdmin(req: AuthRequest, res: any, next: any) {
-  if (!req.user || req.user.role !== "SUPER_ADMIN") {
+  if (!req.user || req.user!.role !== "SUPER_ADMIN") {
     return res.status(403).json({ error: "Access denied. Platform admin access required." });
   }
   next();

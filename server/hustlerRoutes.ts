@@ -20,7 +20,7 @@ const switchOrganizationSchema = z.object({
 // HUSTLER EXECUTIVE DASHBOARD - Portfolio Overview
 // Aggregates KPIs across all linked organizations
 // ============================================================================
-// SECURITY NOTE: These endpoints query hustlerOrganizations directly by req.user.id
+// SECURITY NOTE: These endpoints query hustlerOrganizations directly by req.user!.id
 // at request time, NOT from session/token data. This ensures:
 // 1. Only ACTIVE links are included (isActive=true check)
 // 2. Revoked links are immediately excluded (fresh DB query each request)
@@ -39,7 +39,7 @@ router.get("/hustler/portfolio/stats", requireAuth, requireRole("HUSTLER"), asyn
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -196,7 +196,7 @@ router.get("/hustler/portfolio/ai-summary", requireAuth, requireRole("HUSTLER"),
       .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -317,12 +317,12 @@ router.get("/hustler/organizations", requireAuth, requireRole("HUSTLER"), async 
       .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
 
-    const currentOrgId = req.user.organizationId;
+    const currentOrgId = req.user!.organizationId;
 
     res.json({
       organizations: linkedOrgs,
@@ -353,7 +353,7 @@ router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"),
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.organizationId, organizationId),
           eq(hustlerOrganizations.isActive, true)
         )
@@ -375,9 +375,9 @@ router.post("/hustler/switch-organization", requireAuth, requireRole("HUSTLER"),
     await db
       .update(users)
       .set({ organizationId })
-      .where(eq(users.id, req.user.id));
+      .where(eq(users.id, req.user!.id));
 
-    logInfo( `[Hustler] Switched org: user=${req.user.id} from=${req.user.organizationId} to=${organizationId}`);
+    logInfo( `[Hustler] Switched org: user=${req.user!.id} from=${req.user!.organizationId} to=${organizationId}`);
 
     res.json({
       success: true,
@@ -404,7 +404,7 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
 
     const { organizationId } = req.params;
 
-    if (req.user.organizationId === organizationId) {
+    if (req.user!.organizationId === organizationId) {
       return res.status(400).json({ error: "Cannot unlink your current active organization. Switch to another organization first." });
     }
 
@@ -413,7 +413,7 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.organizationId, organizationId)
         )
       );
@@ -430,8 +430,8 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
     // Task #2495 — HUSTLER oversight revoke: write a ROLE_REVOKED audit
     // row so removing a HUSTLER link is traceable in the central trail.
     await logRoleChange(
-      req.user.id,
-      req.user.id,
+      req.user!.id,
+      req.user!.id,
       link.roleOverride || "HUSTLER",
       null,
       "HUSTLER_ORG",
@@ -439,7 +439,7 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
       req,
     );
 
-    logInfo( `[Hustler] Unlinked org: user=${req.user.id} org=${organizationId}`);
+    logInfo( `[Hustler] Unlinked org: user=${req.user!.id} org=${organizationId}`);
 
     res.json({
       success: true,
@@ -452,7 +452,7 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
 
 router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(400).json({ error: "No active organization" });
     }
 
@@ -461,18 +461,18 @@ router.get("/hustler/current-role", requireAuth, requireRole("HUSTLER"), async (
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
-          eq(hustlerOrganizations.organizationId, req.user.organizationId),
+          eq(hustlerOrganizations.userId, req.user!.id),
+          eq(hustlerOrganizations.organizationId, req.user!.organizationId),
           eq(hustlerOrganizations.isActive, true)
         )
       );
 
-    const effectiveRole = link?.roleOverride || req.user.role;
+    const effectiveRole = link?.roleOverride || req.user!.role;
 
     res.json({
-      userId: req.user.id,
-      organizationId: req.user.organizationId,
-      baseRole: req.user.role,
+      userId: req.user!.id,
+      organizationId: req.user!.organizationId,
+      baseRole: req.user!.role,
       effectiveRole,
       isHustler: true,
     });
@@ -505,12 +505,12 @@ function generateInviteToken(): { token: string; hash: string } {
 // Admin invites a HUSTLER to have oversight of their organization
 router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
     // Only admins can invite
-    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
       return res.status(403).json({ error: "Only admins can invite HUSTLERs" });
     }
 
@@ -533,7 +533,7 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
       .from(hustlerLinkRequests)
       .where(
         and(
-          eq(hustlerLinkRequests.organizationId, req.user.organizationId),
+          eq(hustlerLinkRequests.organizationId, req.user!.organizationId),
           eq(hustlerLinkRequests.hustlerEmail, hustlerEmail.toLowerCase()),
           eq(hustlerLinkRequests.status, "PENDING")
         )
@@ -551,7 +551,7 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
         .where(
           and(
             eq(hustlerOrganizations.userId, hustlerUser.id),
-            eq(hustlerOrganizations.organizationId, req.user.organizationId),
+            eq(hustlerOrganizations.organizationId, req.user!.organizationId),
             eq(hustlerOrganizations.isActive, true)
           )
         );
@@ -568,8 +568,8 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
     const [newRequest] = await db.insert(hustlerLinkRequests).values({
       hustlerUserId: hustlerUser?.id || null,
       hustlerEmail: hustlerEmail.toLowerCase(),
-      organizationId: req.user.organizationId,
-      initiatedByUserId: req.user.id,
+      organizationId: req.user!.organizationId,
+      initiatedByUserId: req.user!.id,
       requestType: "INVITE",
       status: "PENDING",
       inviteToken: token, // Store plain token temporarily for response
@@ -579,11 +579,11 @@ router.post("/hustler/link-requests/invite", requireAuth, async (req: AuthReques
       expiresAt,
     }).returning();
 
-    logInfo(`[Hustler] Invite created: org=${req.user.organizationId} email=${hustlerEmail}`);
+    logInfo(`[Hustler] Invite created: org=${req.user!.organizationId} email=${hustlerEmail}`);
 
-    const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, req.user.organizationId));
+    const [org] = await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, req.user!.organizationId));
     const orgName = org?.name || "an organization";
-    const inviterName = [req.user.firstName, req.user.lastName].filter(Boolean).join(" ") || req.user.email;
+    const inviterName = [req.user!.firstName, req.user!.lastName].filter(Boolean).join(" ") || req.user!.email;
     const baseUrl = process.env.REPLIT_DEV_DOMAIN
       ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : process.env.APP_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
@@ -676,8 +676,8 @@ router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthReques
       .where(
         and(
           or(
-            eq(hustlerLinkRequests.hustlerUserId, req.user.id),
-            eq(hustlerLinkRequests.hustlerEmail, req.user.email.toLowerCase())
+            eq(hustlerLinkRequests.hustlerUserId, req.user!.id),
+            eq(hustlerLinkRequests.hustlerEmail, req.user!.email.toLowerCase())
           ),
           eq(hustlerLinkRequests.status, "PENDING"),
           eq(hustlerLinkRequests.requestType, "INVITE")
@@ -694,11 +694,11 @@ router.get("/hustler/link-requests/pending", requireAuth, async (req: AuthReques
 // Get all link requests for an organization (for admins only)
 router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -716,7 +716,7 @@ router.get("/hustler/link-requests/organization", requireAuth, async (req: AuthR
         respondedAt: hustlerLinkRequests.respondedAt,
       })
       .from(hustlerLinkRequests)
-      .where(eq(hustlerLinkRequests.organizationId, req.user.organizationId))
+      .where(eq(hustlerLinkRequests.organizationId, req.user!.organizationId))
       .orderBy(desc(hustlerLinkRequests.createdAt));
 
     res.json({ requests });
@@ -750,8 +750,8 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
     }
 
     // Verify user owns this request
-    const isOwner = request.hustlerUserId === req.user.id || 
-      request.hustlerEmail?.toLowerCase() === req.user.email.toLowerCase();
+    const isOwner = request.hustlerUserId === req.user!.id || 
+      request.hustlerEmail?.toLowerCase() === req.user!.email.toLowerCase();
     
     if (!isOwner) {
       return res.status(403).json({ error: "This invite is not for you" });
@@ -775,7 +775,7 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
         .from(hustlerOrganizations)
         .where(
           and(
-            eq(hustlerOrganizations.userId, req.user.id),
+            eq(hustlerOrganizations.userId, req.user!.id),
             eq(hustlerOrganizations.organizationId, request.organizationId)
           )
         );
@@ -788,7 +788,7 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
       } else {
         // Create new link
         await db.insert(hustlerOrganizations).values({
-          userId: req.user.id,
+          userId: req.user!.id,
           organizationId: request.organizationId,
           roleOverride: request.roleOverride,
           isActive: true,
@@ -800,8 +800,8 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
         .set({ 
           status: "APPROVED", 
           respondedAt: new Date(),
-          respondedByUserId: req.user.id,
-          hustlerUserId: req.user.id, // Link the user if it was by email
+          respondedByUserId: req.user!.id,
+          hustlerUserId: req.user!.id, // Link the user if it was by email
           updatedAt: new Date(),
         })
         .where(eq(hustlerLinkRequests.id, requestId));
@@ -809,8 +809,8 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
       // Task #2495 — HUSTLER grant audit: a new (or reactivated) link
       // gives the HUSTLER user oversight access to another org's data.
       await logRoleChange(
-        req.user.id,
-        req.user.id,
+        req.user!.id,
+        req.user!.id,
         existingLink ? (existingLink.roleOverride || null) : null,
         request.roleOverride || "HUSTLER",
         "HUSTLER_ORG",
@@ -818,7 +818,7 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
         req,
       );
 
-      logInfo(`[Hustler] Invite accepted: user=${req.user.id} org=${request.organizationId}`);
+      logInfo(`[Hustler] Invite accepted: user=${req.user!.id} org=${request.organizationId}`);
 
       res.json({
         success: true,
@@ -830,12 +830,12 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
         .set({ 
           status: "REJECTED", 
           respondedAt: new Date(),
-          respondedByUserId: req.user.id,
+          respondedByUserId: req.user!.id,
           updatedAt: new Date(),
         })
         .where(eq(hustlerLinkRequests.id, requestId));
 
-      logInfo(`[Hustler] Invite rejected: user=${req.user.id} org=${request.organizationId}`);
+      logInfo(`[Hustler] Invite rejected: user=${req.user!.id} org=${request.organizationId}`);
 
       res.json({
         success: true,
@@ -1006,8 +1006,8 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
       return res.status(400).json({ error: `Invite already ${request.status.toLowerCase()}` });
     }
 
-    const isRecipient = (request.hustlerUserId && request.hustlerUserId === req.user.id) ||
-      (request.hustlerEmail && request.hustlerEmail.toLowerCase() === req.user.email.toLowerCase());
+    const isRecipient = (request.hustlerUserId && request.hustlerUserId === req.user!.id) ||
+      (request.hustlerEmail && request.hustlerEmail.toLowerCase() === req.user!.email.toLowerCase());
     if (!isRecipient) {
       return res.status(403).json({ error: "This invite is not for you" });
     }
@@ -1025,7 +1025,7 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.organizationId, request.organizationId)
         )
       );
@@ -1036,7 +1036,7 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
         .where(eq(hustlerOrganizations.id, existingLink.id));
     } else {
       await db.insert(hustlerOrganizations).values({
-        userId: req.user.id,
+        userId: req.user!.id,
         organizationId: request.organizationId,
         roleOverride: request.roleOverride,
         isActive: true,
@@ -1048,8 +1048,8 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
       .set({ 
         status: "APPROVED", 
         respondedAt: new Date(),
-        respondedByUserId: req.user.id,
-        hustlerUserId: req.user.id,
+        respondedByUserId: req.user!.id,
+        hustlerUserId: req.user!.id,
         inviteToken: null, // Clear token after use
         updatedAt: new Date(),
       })
@@ -1063,8 +1063,8 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
 
     // Task #2495 — HUSTLER grant via authenticated accept-token flow.
     await logRoleChange(
-      req.user.id,
-      req.user.id,
+      req.user!.id,
+      req.user!.id,
       existingLink ? (existingLink.roleOverride || null) : null,
       request.roleOverride || "HUSTLER",
       "HUSTLER_ORG",
@@ -1072,7 +1072,7 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
       req,
     );
 
-    logInfo(`[Hustler] Token invite accepted: user=${req.user.id} org=${request.organizationId}`);
+    logInfo(`[Hustler] Token invite accepted: user=${req.user!.id} org=${request.organizationId}`);
 
     res.json({
       success: true,
@@ -1091,11 +1091,11 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
 // Revoke an invite (admin only)
 router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user.organizationId) {
+    if (!req.user || !req.user!.organizationId) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
-    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
+    if (!["ADMIN", "SUPER_ADMIN"].includes(req.user!.role)) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -1107,7 +1107,7 @@ router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req:
       .where(
         and(
           eq(hustlerLinkRequests.id, requestId),
-          eq(hustlerLinkRequests.organizationId, req.user.organizationId)
+          eq(hustlerLinkRequests.organizationId, req.user!.organizationId)
         )
       );
 
@@ -1127,7 +1127,7 @@ router.post("/hustler/link-requests/:requestId/revoke", requireAuth, async (req:
       })
       .where(eq(hustlerLinkRequests.id, requestId));
 
-    logInfo(`[Hustler] Invite revoked: request=${requestId} by=${req.user.id}`);
+    logInfo(`[Hustler] Invite revoked: request=${requestId} by=${req.user!.id}`);
 
     res.json({
       success: true,
@@ -1182,7 +1182,7 @@ router.get("/hustler/delegates", requireAuth, requireRole("HUSTLER"), async (req
       })
       .from(hustlerDelegates)
       .leftJoin(users, eq(hustlerDelegates.delegateUserId, users.id))
-      .where(eq(hustlerDelegates.hustlerUserId, req.user.id))
+      .where(eq(hustlerDelegates.hustlerUserId, req.user!.id))
       .orderBy(desc(hustlerDelegates.createdAt));
 
     res.json({ delegates });
@@ -1211,7 +1211,7 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
       .from(hustlerDelegates)
       .where(
         and(
-          eq(hustlerDelegates.hustlerUserId, req.user.id),
+          eq(hustlerDelegates.hustlerUserId, req.user!.id),
           eq(hustlerDelegates.delegateEmail, email),
           eq(hustlerDelegates.status, "PENDING")
         )
@@ -1234,7 +1234,7 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
     expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
 
     await db.insert(hustlerDelegates).values({
-      hustlerUserId: req.user.id,
+      hustlerUserId: req.user!.id,
       delegateUserId: existingUser?.id || null,
       delegateEmail: email,
       delegateRole,
@@ -1248,7 +1248,7 @@ router.post("/hustler/delegates/invite", requireAuth, requireRole("HUSTLER"), as
       expiresAt,
     });
 
-    logInfo(`[Hustler] Delegate invited: email=${email} role=${delegateRole} by=${req.user.id}`);
+    logInfo(`[Hustler] Delegate invited: email=${email} role=${delegateRole} by=${req.user!.id}`);
 
     res.json({
       success: true,
@@ -1290,8 +1290,8 @@ router.get("/hustler/delegates/invites", requireAuth, async (req: AuthRequest, r
       .where(
         and(
           or(
-            eq(hustlerDelegates.delegateUserId, req.user.id),
-            eq(hustlerDelegates.delegateEmail, req.user.email)
+            eq(hustlerDelegates.delegateUserId, req.user!.id),
+            eq(hustlerDelegates.delegateEmail, req.user!.email)
           ),
           eq(hustlerDelegates.status, "PENDING")
         )
@@ -1319,8 +1319,8 @@ router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: Au
         and(
           eq(hustlerDelegates.id, delegateId),
           or(
-            eq(hustlerDelegates.delegateUserId, req.user.id),
-            eq(hustlerDelegates.delegateEmail, req.user.email)
+            eq(hustlerDelegates.delegateUserId, req.user!.id),
+            eq(hustlerDelegates.delegateEmail, req.user!.email)
           ),
           eq(hustlerDelegates.status, "PENDING")
         )
@@ -1339,7 +1339,7 @@ router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: Au
 
     await db.update(hustlerDelegates)
       .set({
-        delegateUserId: req.user.id,
+        delegateUserId: req.user!.id,
         status: "APPROVED",
         acceptedAt: new Date(),
         inviteToken: null,
@@ -1348,7 +1348,7 @@ router.post("/hustler/delegates/:delegateId/accept", requireAuth, async (req: Au
       })
       .where(eq(hustlerDelegates.id, delegateId));
 
-    logInfo(`[Hustler] Delegate accepted: delegateId=${delegateId} userId=${req.user.id}`);
+    logInfo(`[Hustler] Delegate accepted: delegateId=${delegateId} userId=${req.user!.id}`);
 
     res.json({
       success: true,
@@ -1375,8 +1375,8 @@ router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: A
         and(
           eq(hustlerDelegates.id, delegateId),
           or(
-            eq(hustlerDelegates.delegateUserId, req.user.id),
-            eq(hustlerDelegates.delegateEmail, req.user.email)
+            eq(hustlerDelegates.delegateUserId, req.user!.id),
+            eq(hustlerDelegates.delegateEmail, req.user!.email)
           ),
           eq(hustlerDelegates.status, "PENDING")
         )
@@ -1395,7 +1395,7 @@ router.post("/hustler/delegates/:delegateId/decline", requireAuth, async (req: A
       })
       .where(eq(hustlerDelegates.id, delegateId));
 
-    logInfo(`[Hustler] Delegate declined: delegateId=${delegateId} userId=${req.user.id}`);
+    logInfo(`[Hustler] Delegate declined: delegateId=${delegateId} userId=${req.user!.id}`);
 
     res.json({
       success: true,
@@ -1421,7 +1421,7 @@ router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("H
       .where(
         and(
           eq(hustlerDelegates.id, delegateId),
-          eq(hustlerDelegates.hustlerUserId, req.user.id)
+          eq(hustlerDelegates.hustlerUserId, req.user!.id)
         )
       );
 
@@ -1439,7 +1439,7 @@ router.post("/hustler/delegates/:delegateId/revoke", requireAuth, requireRole("H
       })
       .where(eq(hustlerDelegates.id, delegateId));
 
-    logInfo(`[Hustler] Delegate revoked: delegateId=${delegateId} by=${req.user.id}`);
+    logInfo(`[Hustler] Delegate revoked: delegateId=${delegateId} by=${req.user!.id}`);
 
     res.json({
       success: true,
@@ -1470,7 +1470,7 @@ router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async 
       .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -1672,7 +1672,7 @@ router.post("/hustler/notifications/:notificationId/read", requireAuth, requireR
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -1722,7 +1722,7 @@ router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HU
       .from(hustlerOrganizations)
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -1743,7 +1743,7 @@ router.post("/hustler/notifications/mark-all-read", requireAuth, requireRole("HU
         )
       );
 
-    logInfo(`[Hustler] Marked all notifications read for user=${req.user.id}`);
+    logInfo(`[Hustler] Marked all notifications read for user=${req.user!.id}`);
 
     res.json({ success: true });
   } catch (error: any) {
@@ -1773,7 +1773,7 @@ router.get("/hustler/benchmarking", requireAuth, requireRole("HUSTLER"), async (
       .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );
@@ -1908,7 +1908,7 @@ router.get("/hustler/portfolio/export", requireAuth, requireRole("HUSTLER"), asy
       .innerJoin(organizations, eq(hustlerOrganizations.organizationId, organizations.id))
       .where(
         and(
-          eq(hustlerOrganizations.userId, req.user.id),
+          eq(hustlerOrganizations.userId, req.user!.id),
           eq(hustlerOrganizations.isActive, true)
         )
       );

@@ -391,7 +391,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
     const validationResult = onboardingCompleteSchema.safeParse(req.body);
     if (!validationResult.success) {
-      logError(`[Onboarding] Validation failed for user ${req.user.id}: ${fromZodError(validationResult.error).toString()}`);
+      logError(`[Onboarding] Validation failed for user ${req.user!.id}: ${fromZodError(validationResult.error).toString()}`);
       return res.status(400).json({ 
         error: "Invalid input", 
         details: fromZodError(validationResult.error).toString() 
@@ -405,16 +405,16 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
     const validTradeTypes = tradeTypeEnum.enumValues;
     if (!validTradeTypes.includes(tradeType as any)) {
-      logError(`[Onboarding] INVALID trade type attempted: "${tradeType}" by user ${req.user.id}`);
+      logError(`[Onboarding] INVALID trade type attempted: "${tradeType}" by user ${req.user!.id}`);
       return res.status(400).json({ 
         error: "Invalid trade type", 
         message: `Trade type "${tradeType}" is not valid. Valid options: ${validTradeTypes.join(', ')}` 
       });
     }
 
-    logInfo(`[Onboarding] Starting for user ${req.user.id} | trade: ${tradeType} | company: ${companyName}`);
+    logInfo(`[Onboarding] Starting for user ${req.user!.id} | trade: ${tradeType} | company: ${companyName}`);
 
-    const isHustler = req.user.role === 'HUSTLER';
+    const isHustler = req.user!.role === 'HUSTLER';
     const isCustomTrade = tradeType === 'OTHER';
     const orgName = companyName || 'My Company';
     const sanitizedMaterials = materials || [];
@@ -422,13 +422,13 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
     let newOrg: typeof organizations.$inferSelect;
     
-    if (req.user.organizationId && !isHustler) {
+    if (req.user!.organizationId && !isHustler) {
       const existingOrg = await db.query.organizations.findFirst({
-        where: eq(organizations.id, req.user.organizationId),
+        where: eq(organizations.id, req.user!.organizationId),
       });
       
       if (existingOrg && existingOrg.onboardingStatus === 'NOT_STARTED') {
-        logInfo(`[Onboarding] Updating existing org ${existingOrg.id} for user ${req.user.id}`);
+        logInfo(`[Onboarding] Updating existing org ${existingOrg.id} for user ${req.user!.id}`);
         
         const baseSlug = orgName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-');
         const slug = `${baseSlug}-${Date.now().toString(36)}`;
@@ -459,7 +459,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
         
         newOrg = updatedOrg;
       } else {
-        logWarn(`[Onboarding] Non-Hustler user ${req.user.id} already has completed org ${req.user.organizationId}`);
+        logWarn(`[Onboarding] Non-Hustler user ${req.user!.id} already has completed org ${req.user!.organizationId}`);
         return res.status(400).json({ error: "You already belong to an organization" });
       }
     } else {
@@ -492,22 +492,22 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
     if (isHustler) {
       await db.insert(hustlerOrganizations).values({
-        userId: req.user.id,
+        userId: req.user!.id,
         organizationId: newOrg.id,
         roleOverride: 'ADMIN',
         isActive: true,
       }).onConflictDoNothing();
       
-      if (!req.user.organizationId) {
+      if (!req.user!.organizationId) {
         await db.update(users)
           .set({ 
             organizationId: newOrg.id,
             isActive: true 
           })
-          .where(eq(users.id, req.user.id));
+          .where(eq(users.id, req.user!.id));
       }
       
-      logInfo(`[Onboarding] Hustler ${req.user.id} linked to new org ${newOrg.id}`);
+      logInfo(`[Onboarding] Hustler ${req.user!.id} linked to new org ${newOrg.id}`);
     } else {
       await db.update(users)
         .set({ 
@@ -515,7 +515,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
           role: 'ADMIN',
           isActive: true 
         })
-        .where(eq(users.id, req.user.id));
+        .where(eq(users.id, req.user!.id));
     }
 
     try {
@@ -814,7 +814,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
     }
 
     if (websiteUrl) {
-      extractThemeFromWebsite(newOrg.id, websiteUrl, req.user.id).catch(err => {
+      extractThemeFromWebsite(newOrg.id, websiteUrl, req.user!.id).catch(err => {
         logError("Theme extraction failed:", {}, err instanceof Error ? err : new Error(String(err)));
       });
     }
@@ -1037,8 +1037,8 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
     messages.push({ role: 'user', content: message || '' });
 
     const governed = await governedAiCall({
-      orgId: req.user.organizationId!,
-      userId: req.user.id,
+      orgId: req.user!.organizationId!,
+      userId: req.user!.id,
       actionType: "onboarding_chat",
       inputRefs: { messageLength: message?.length },
       fn: async () => {
@@ -1077,7 +1077,7 @@ router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res, 
       role: users.role,
       organizationId: users.organizationId,
       firstName: users.firstName,
-    }).from(users).where(eq(users.id, req.user.id));
+    }).from(users).where(eq(users.id, req.user!.id));
 
     if (!freshUser) {
       return res.status(404).json({ error: "User not found" });
@@ -1128,12 +1128,12 @@ router.get("/ai/walkthrough/status", requireAuth, async (req: AuthRequest, res, 
 
 router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user.organizationId) {
+    if (!req.user!.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 
-    const firstName = req.user.firstName || 'there';
-    const walkthrough = getPersonalizedWalkthrough(req.user.role, firstName);
+    const firstName = req.user!.firstName || 'there';
+    const walkthrough = getPersonalizedWalkthrough(req.user!.role, firstName);
     if (!walkthrough) {
       return res.status(400).json({ error: "No walkthrough available for this role" });
     }
@@ -1145,8 +1145,8 @@ router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res, 
         walkthroughCompleted: false,
       })
       .where(and(
-        eq(users.id, req.user.id),
-        eq(users.organizationId, req.user.organizationId)
+        eq(users.id, req.user!.id),
+        eq(users.organizationId, req.user!.organizationId)
       ));
 
     const firstStep = walkthrough.steps[0] || null;
@@ -1166,7 +1166,7 @@ router.post("/ai/walkthrough/start", requireAuth, async (req: AuthRequest, res, 
 
 router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user.organizationId) {
+    if (!req.user!.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 
@@ -1175,8 +1175,8 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, n
       role: users.role,
       firstName: users.firstName,
     }).from(users).where(and(
-      eq(users.id, req.user.id),
-      eq(users.organizationId, req.user.organizationId)
+      eq(users.id, req.user!.id),
+      eq(users.organizationId, req.user!.organizationId)
     ));
 
     if (!user) {
@@ -1194,8 +1194,8 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, n
           walkthroughStep: totalSteps,
         })
         .where(and(
-          eq(users.id, req.user.id),
-          eq(users.organizationId, req.user.organizationId)
+          eq(users.id, req.user!.id),
+          eq(users.organizationId, req.user!.organizationId)
         ));
 
       const walkthrough = getPersonalizedWalkthrough(user.role, firstName);
@@ -1210,8 +1210,8 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, n
       await db.update(users)
         .set({ walkthroughStep: nextStep })
         .where(and(
-          eq(users.id, req.user.id),
-          eq(users.organizationId, req.user.organizationId)
+          eq(users.id, req.user!.id),
+          eq(users.organizationId, req.user!.organizationId)
         ));
 
       const rawStep = getWalkthroughStep(user.role, nextStep);
@@ -1238,11 +1238,11 @@ router.post("/ai/walkthrough/next", requireAuth, async (req: AuthRequest, res, n
 
 router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user.organizationId) {
+    if (!req.user!.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 
-    const totalSteps = getTotalStepsForRole(req.user.role);
+    const totalSteps = getTotalStepsForRole(req.user!.role);
 
     await db.update(users)
       .set({
@@ -1250,8 +1250,8 @@ router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, re
         walkthroughStep: totalSteps,
       })
       .where(and(
-        eq(users.id, req.user.id),
-        eq(users.organizationId, req.user.organizationId)
+        eq(users.id, req.user!.id),
+        eq(users.organizationId, req.user!.organizationId)
       ));
 
     res.json({
@@ -1265,7 +1265,7 @@ router.post("/ai/walkthrough/complete", requireAuth, async (req: AuthRequest, re
 
 router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user.organizationId) {
+    if (!req.user!.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 
@@ -1276,8 +1276,8 @@ router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res, 
         walkthroughStartedAt: null,
       })
       .where(and(
-        eq(users.id, req.user.id),
-        eq(users.organizationId, req.user.organizationId)
+        eq(users.id, req.user!.id),
+        eq(users.organizationId, req.user!.organizationId)
       ));
 
     res.json({
@@ -1292,7 +1292,7 @@ router.post("/ai/walkthrough/reset", requireAuth, async (req: AuthRequest, res, 
 router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res, next) => {
   try {
 
-    if (!req.user.organizationId) {
+    if (!req.user!.organizationId) {
       return res.status(400).json({ error: "Please complete organization setup first" });
     }
 

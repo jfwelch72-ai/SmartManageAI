@@ -963,7 +963,7 @@ const upload = multer({
         const [org] = await db
           .select({ name: organizations.name, onboardingStatus: organizations.onboardingStatus })
           .from(organizations)
-          .where(eq(organizations.id, req.user.organizationId))
+          .where(eq(organizations.id, req.user!.organizationId))
           .limit(1);
         organizationName = org?.name || null;
         organizationOnboardingStatus = org?.onboardingStatus || null;
@@ -1810,6 +1810,7 @@ const upload = multer({
       }
 
       const { requestId } = req.params;
+      const orgId = req.user!.organizationId;
       const actionSchema = z.object({ action: z.enum(["approve", "reject"]) });
       const parsed = actionSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid action", details: parsed.error.errors }); return; }
@@ -2399,7 +2400,7 @@ router.get("/api/auth/mobile-exchange", async (req: AuthRequest, res, next) => {
     const [u] = await db
       .select({ id: users.id, tokenVersion: users.tokenVersion })
       .from(users)
-      .where(eq(users.id, req.user.id))
+      .where(eq(users.id, req.user!.id))
       .limit(1);
     if (!u) {
       res.status(401).json({ error: "User not found" });

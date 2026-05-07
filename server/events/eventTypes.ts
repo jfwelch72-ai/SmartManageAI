@@ -265,7 +265,13 @@ export type DomainEvent =
   | SuretyBondExpiringEvent
   | DbeGoalChangedEvent
   | CrmCertificationCreatedEvent
-  | CrmCertificationDeletedEvent;
+  | CrmCertificationDeletedEvent
+  | HaulTicketSubmittedEvent
+  | InspectorReportSubmittedEvent
+  | InspectorReportApprovedEvent
+  | InspectorReportRejectedEvent
+  | SuretyBondActivatedEvent
+  | CrmCallLoggedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -612,5 +618,67 @@ export interface CrmCertificationDeletedEvent extends EventEnvelope {
     certificationId: string;
     crmOrganisationId: string;
     deletedBy: string;
+  };
+}
+
+// Task #2490 — additional domain event variants used by route code
+// (dotRoutes / crmCallsRoutes) that were previously masked by the
+// typecheck backlog. Distinct from the *.created / *.approved /
+// *.released variants so consumers can subscribe to the moment a
+// human (or workflow) actually transitioned the entity.
+export interface HaulTicketSubmittedEvent extends EventEnvelope {
+  type: "haul_ticket.submitted";
+  payload: {
+    haulTicketId: string;
+    projectId: string | null;
+    ticketNumber: string | null;
+  };
+}
+
+export interface InspectorReportSubmittedEvent extends EventEnvelope {
+  type: "inspector_report.submitted";
+  payload: {
+    reportId: string;
+    projectId: string;
+    reportDate: string;
+  };
+}
+
+export interface InspectorReportApprovedEvent extends EventEnvelope {
+  type: "inspector_report.approved";
+  payload: {
+    reportId: string;
+    projectId: string;
+    reportDate: string;
+  };
+}
+
+export interface InspectorReportRejectedEvent extends EventEnvelope {
+  type: "inspector_report.rejected";
+  payload: {
+    reportId: string;
+    projectId: string;
+    reportDate: string;
+    reason: string | null;
+  };
+}
+
+export interface SuretyBondActivatedEvent extends EventEnvelope {
+  type: "surety_bond.activated";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    bondNumber: string | null;
+  };
+}
+
+export interface CrmCallLoggedEvent extends EventEnvelope {
+  type: "crm.call_logged";
+  payload: {
+    callId: string;
+    opportunityId: string | null;
+    contactId: string | null;
+    direction: string;
+    outcome: string | null;
   };
 }

@@ -1036,7 +1036,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       if (lineItemsToCreate.length > 0) {
         let newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         if (req.user?.organizationId) {
-          await matchVendorPricing(newLineItems, req.user.organizationId);
+          await matchVendorPricing(newLineItems, req.user!.organizationId);
           const lineItemIds = newLineItems.map(li => li.id);
           newLineItems = await db.query.estimateLineItems.findMany({
             where: inArray(estimateLineItems.id, lineItemIds),
@@ -1632,7 +1632,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       if (lineItemsToCreate.length > 0) {
         let newLineItems = await db.insert(estimateLineItems).values(lineItemsToCreate).returning();
         if (req.user?.organizationId) {
-          await matchVendorPricing(newLineItems, req.user.organizationId);
+          await matchVendorPricing(newLineItems, req.user!.organizationId);
           const lineItemIds = newLineItems.map(li => li.id);
           newLineItems = await db.query.estimateLineItems.findMany({
             where: inArray(estimateLineItems.id, lineItemIds),
@@ -1883,7 +1883,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }
 
       if (req.user?.organizationId) {
-        matchVendorPricing([newLineItem], req.user.organizationId).catch(() => {});
+        matchVendorPricing([newLineItem], req.user!.organizationId).catch(() => {});
       }
 
       try {
@@ -2045,7 +2045,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       });
 
       if (req.user?.organizationId) {
-        matchVendorPricing(inserted, req.user.organizationId).catch(() => {});
+        matchVendorPricing(inserted, req.user!.organizationId).catch(() => {});
       }
 
       try {

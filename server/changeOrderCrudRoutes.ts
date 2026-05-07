@@ -846,7 +846,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRoleOrFeature(["ADMIN", 
           message: `Change order ${updatedOrder.changeOrderNumber} pricing was approved and has been submitted to the client`,
           relatedEntityId: updatedOrder.id,
           relatedEntityType: "changeOrder",
-        }, orgId);
+        }, project?.gcOrganizationId ?? req.user!.organizationId);
       } catch (e) { logError("[changeOrder] submitter notification failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
@@ -998,7 +998,7 @@ router.post("/:id/void", requireAuth, requireRole("ADMIN"), async (req: AuthRequ
       try {
         await insertNotifications([{
           userId: order.approvedById,
-          organizationId: orgId,
+          organizationId: project?.gcOrganizationId ?? req.user!.organizationId,
           type: "GENERAL" as const,
           title: "Change Order Voided",
           message: `CO ${updatedOrder.changeOrderNumber} that you approved has been voided: ${voidReason}`,

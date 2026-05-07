@@ -36,7 +36,7 @@ router.get("/cfo/equipment-metrics", requireAuth, async (req: AuthRequest, res, 
     const latestRun = await getLatestAIRun();
 
     if (!latestRun || !latestRun.snapshotData) {
-      const allEquipment = await db.select().from(equipmentTable).where(eq(equipmentTable.organizationId, req.user.organizationId)).limit(500);
+      const allEquipment = await db.select().from(equipmentTable).where(eq(equipmentTable.organizationId, req.user!.organizationId)).limit(500);
       const totalCount = allEquipment.length;
       const assignedCount = allEquipment.filter((e: any) => e.status === 'ASSIGNED').length;
 

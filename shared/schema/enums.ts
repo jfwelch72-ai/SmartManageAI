@@ -172,6 +172,9 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "MEASUREMENT_REVIEW_REQUESTED",
   "MEASUREMENT_REVIEW_APPROVED",
   "MEASUREMENT_REVIEW_REJECTED",
+  // Task #2490: previously-untyped notification kinds used by route code.
+  "CRM_TASK_REMINDER",
+  "action_required",
 ]);
 
 // Task #2321 — review-status state machine for individual takeoff
@@ -254,7 +257,18 @@ export const auditActionEnum = pgEnum("audit_action", [
   "LOGIN", "LOGOUT", "LOGIN_FAILED",
   "PASSWORD_CHANGE", "PASSWORD_RESET", "PASSWORD_RESET_REQUESTED",
   "ROLE_CHANGED", "ROLE_GRANTED", "ROLE_REVOKED",
-  "MFA_ENABLED", "MFA_DISABLED"
+  "MFA_ENABLED", "MFA_DISABLED",
+  // Task #2490: explicit additional actions used by routes that were
+  // previously masked by the typecheck backlog. Lowercase
+  // "password_change" superseded by HEAD's uppercase PASSWORD_CHANGE
+  // above and intentionally dropped during rebase.
+  "EXECUTE", "MERGE",
+  "EXTERNAL_EMAIL_SENT", "EXTERNAL_EMAIL_FAILED",
+  "CLOCK_IN_BLOCKED", "CLOCK_OUT_BLOCKED", "CLOCK_IN_OVERRIDE",
+  "SITE_LEAVE_STARTED", "SITE_LEAVE_RETURNED",
+  "UPDATE_COST_CODE",
+  "AI_REVIEW_COMPLETED"
+
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

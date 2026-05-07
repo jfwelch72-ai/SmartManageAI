@@ -76,9 +76,9 @@ const router = Router();
 function requireOrgFeatureFlag(flag: FeatureFlagKey) {
   return async (req: AuthRequest, res: Response, next: () => void): Promise<void> => {
     if (!req.user) { res.status(401).json({ error: "Authentication required" }); return; }
-    if (req.user.role === "SUPER_ADMIN") { next(); return; }
-    if (!req.user.organizationId) { res.status(403).json({ error: "Organization required" }); return; }
-    const enabled = await isFeatureEnabled(req.user.organizationId, flag);
+    if (req.user!.role === "SUPER_ADMIN") { next(); return; }
+    if (!req.user!.organizationId) { res.status(403).json({ error: "Organization required" }); return; }
+    const enabled = await isFeatureEnabled(req.user!.organizationId, flag);
     if (!enabled) {
       res.status(403).json({ error: `Feature disabled: ${flag}`, featureFlag: flag, upgradeRequired: true });
       return;
@@ -646,7 +646,7 @@ router.get(
   requireFeaturePermission("canViewDbeGoals"),
   async (req: AuthRequest, res: Response) => {
     if (!req.user?.organizationId) return res.status(403).json({ error: "Organization required" });
-    const snap = getDbeRiskSnapshot(req.user.organizationId, req.params.projectId);
+    const snap = getDbeRiskSnapshot(req.user!.organizationId, req.params.projectId);
     if (!snap) return res.status(404).json({ error: "No snapshot yet — run risk score first" });
     res.json(snap);
   },
@@ -659,7 +659,7 @@ router.get(
   requireFeaturePermission("canViewDbeGoals"),
   async (req: AuthRequest, res: Response) => {
     if (!req.user?.organizationId) return res.status(403).json({ error: "Organization required" });
-    res.json(listDbeRiskSnapshots(req.user.organizationId));
+    res.json(listDbeRiskSnapshots(req.user!.organizationId));
   },
 );
 
@@ -676,7 +676,7 @@ router.post(
       const data = validateBody(dbeRiskRequestSchema, req.body, res);
       if (!data) return;
       if (!req.user?.organizationId) return res.status(403).json({ error: "Organization required" });
-      const result = await computeDbeRiskAssessment(data.projectId, req.user.organizationId, req.user.id, { withAi: true });
+      const result = await computeDbeRiskAssessment(data.projectId, req.user!.organizationId, req.user!.id, { withAi: true });
       if (!result) return res.status(404).json({ error: "Project has no DBE goals or is not in your organization" });
       res.json(result);
     } catch (error) {

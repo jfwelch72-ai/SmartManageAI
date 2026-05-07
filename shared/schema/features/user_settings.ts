@@ -330,6 +330,7 @@ export interface DashboardWidgetConfig {
   minH?: number;
   maxW?: number;
   maxH?: number;
+  config?: Record<string, unknown>;
 }
 
 export interface DashboardSectionConfig {

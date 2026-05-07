@@ -182,10 +182,11 @@ router.get("/api/contracts", requireAuth, async (req: AuthRequest, res: Response
     }
 
     if (req.query.page) {
-      const { page, limit, offset } = parsePagination(req.query as Record<string, unknown>);
+      const { page, pageSize } = parsePagination(req.query as Record<string, unknown>);
+      const offset = (page - 1) * pageSize;
       const total = filtered.length;
-      const paginated = filtered.slice(offset, offset + limit);
-      res.json({ data: paginated, total, page, limit });
+      const paginated = filtered.slice(offset, offset + pageSize);
+      res.json({ data: paginated, total, page, limit: pageSize });
     } else {
       res.json(filtered);
     }

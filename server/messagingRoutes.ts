@@ -1577,7 +1577,7 @@ const messagingSetup = (async () => {
     const stream = file.createReadStream();
     stream.on("error", (streamErr: Error) => {
       logError("Voice stream error:", {}, streamErr instanceof Error ? streamErr : new Error(String(streamErr)));
-      if (!res.headersSent) next(streamErr);
+      if (!res.headersSent) res.status(500).end();
     });
     stream.pipe(res);
   }

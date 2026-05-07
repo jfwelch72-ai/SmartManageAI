@@ -1983,7 +1983,7 @@ export async function runAiTakeoffCalibrationJob(
 //   projectId / bidId — optional scoping filter.
 //
 // Org isolation is enforced by the WHERE clause (every condition
-// pins on `req.user.organizationId`); the route uses `requireAuth`
+// pins on `req.user!.organizationId`); the route uses `requireAuth`
 // because the data is informational, not destructive.
 router.get(
   "/ai-features/takeoff/scale-mismatches",

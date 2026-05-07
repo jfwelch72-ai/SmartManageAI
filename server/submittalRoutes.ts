@@ -2627,7 +2627,7 @@ router.get(
       ]);
 
       const generatedByName = req.user
-        ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() || req.user.email || null
+        ? `${req.user!.firstName ?? ""} ${req.user!.lastName ?? ""}`.trim() || req.user!.email || null
         : null;
 
       res.setHeader("Content-Type", "application/pdf");

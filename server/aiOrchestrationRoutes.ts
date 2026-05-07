@@ -85,7 +85,7 @@ router.patch("/ai-settings", sensitiveLimiter, requireRole("ADMIN"), async (req:
     }
 
     await logUpdate(
-      req.user.id,
+      req.user!.id,
       'AI_SETTINGS',
       updated.id,
       existingSettings,
@@ -137,10 +137,10 @@ router.post("/ai-pm/run", sensitiveLimiter, requireAuth, async (req: AuthRequest
     }
 
     await logCreate(
-      req.user.id,
+      req.user!.id,
       'AI_RUN',
       runId,
-      { runId, triggeredBy: req.user.id },
+      { runId, triggeredBy: req.user!.id },
       req
     );
 
@@ -196,7 +196,7 @@ router.get("/ai-pm/tasks", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { role, status } = req.query;
 
-    const userRole = role ? String(role) : req.user.role;
+    const userRole = role ? String(role) : req.user!.role;
     const taskStatus = status ? String(status) : undefined;
 
     const tasks = await getTasksForRole(userRole, taskStatus);
@@ -250,7 +250,7 @@ router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res, 
       return res.status(404).json({ error: "Task not found" });
     }
 
-    await updateTaskStatus(req.params.taskId, status, req.user.id);
+    await updateTaskStatus(req.params.taskId, status, req.user!.id);
 
     const [updatedTask] = await db
       .select()
@@ -259,7 +259,7 @@ router.patch("/ai-pm/tasks/:taskId", requireAuth, async (req: AuthRequest, res, 
       .limit(1);
 
     await logUpdate(
-      req.user.id,
+      req.user!.id,
       'AI_TASK',
       req.params.taskId,
       existingTask,
@@ -507,9 +507,9 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
     }
 
     const { module, projectId, saveResults } = validationResult.data;
-    const organizationId = req.user.organizationId;
+    const organizationId = req.user!.organizationId;
 
-    logInfo(`[AI Analysis] User ${req.user.email} triggered ${module || 'ALL'} analysis`);
+    logInfo(`[AI Analysis] User ${req.user!.email} triggered ${module || 'ALL'} analysis`);
 
     let result;
     
@@ -549,11 +549,11 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
         result,
         organizationId || undefined,
         projectId,
-        req.user.id
+        req.user!.id
       );
     }
 
-    await logCreate(req.user.id, 'AI_ANALYSIS', savedInsightIds[0] || 'batch', { module: module || 'ALL', insightCount: result.insights.length, savedInsightIds }, req);
+    await logCreate(req.user!.id, 'AI_ANALYSIS', savedInsightIds[0] || 'batch', { module: module || 'ALL', insightCount: result.insights.length, savedInsightIds }, req);
 
     res.json({
       success: true,

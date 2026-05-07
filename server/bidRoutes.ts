@@ -259,7 +259,7 @@ function getBidStorage(req: AuthRequest, res: Response): BidStorageDrizzle | nul
   if (ctx.mustDenyAccess) {
     if (!req.user) {
       res.status(401).json({ error: "Not authenticated" });
-    } else if (!req.user.organizationId) {
+    } else if (!req.user!.organizationId) {
       res.status(403).json({ error: "No organization access" });
     } else {
       res.status(403).json({ error: "Access denied" });

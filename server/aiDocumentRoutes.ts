@@ -2800,9 +2800,9 @@ router.post("/ai/trades/discover", sensitiveLimiter, requireAuth, async (req: Au
       projectType,
       existingScope,
       bidDocumentExtracts,
-    }, { orgId: req.user.organizationId || "system", userId: req.user.id });
+    }, { orgId: req.user!.organizationId || "system", userId: req.user!.id });
 
-    logInfo(`[AI Trades] Trade discovery completed for user ${req.user.id} | primaryTrade: ${result.primaryTrade} | relatedTrades: ${result.relatedTrades.length}`);
+    logInfo(`[AI Trades] Trade discovery completed for user ${req.user!.id} | primaryTrade: ${result.primaryTrade} | relatedTrades: ${result.relatedTrades.length}`);
 
     res.json(result);
   } catch (error: any) {
@@ -2828,9 +2828,9 @@ router.post("/ai/scope/predict", sensitiveLimiter, requireAuth, async (req: Auth
       estimatedValue,
       existingScopeItems,
       relatedTrades,
-    }, limit || 20, { orgId: req.user.organizationId || "system", userId: req.user.id });
+    }, limit || 20, { orgId: req.user!.organizationId || "system", userId: req.user!.id });
 
-    logInfo(`[AI Scope] Scope prediction completed for user ${req.user.id} | trade: ${tradeType} | items: ${result.predictedItems.length} | completeness: ${result.completenessScore}`);
+    logInfo(`[AI Scope] Scope prediction completed for user ${req.user!.id} | trade: ${tradeType} | items: ${result.predictedItems.length} | completeness: ${result.completenessScore}`);
 
     res.json(result);
   } catch (error: any) {
@@ -2855,7 +2855,7 @@ router.get("/ai/scope/search", requireAuth, async (req: AuthRequest, res, next) 
     const result = await searchScopeItems(
       q,
       tradeTypes,
-      req.user.organizationId || undefined,
+      req.user!.organizationId || undefined,
       searchLimit
     );
 
@@ -2871,7 +2871,7 @@ router.get("/ai/scope/trade/:tradeType", requireAuth, async (req: AuthRequest, r
 
     const items = await getScopeItemsForTrade(
       tradeType,
-      req.user.organizationId || undefined
+      req.user!.organizationId || undefined
     );
 
     res.json({ items, count: items.length });
@@ -2924,10 +2924,10 @@ router.post("/ai/scope/from-document", sensitiveLimiter, requireAuth, async (req
       documentText,
       tradeType,
       limit || 30,
-      { orgId: req.user.organizationId || "system", userId: req.user.id }
+      { orgId: req.user!.organizationId || "system", userId: req.user!.id }
     );
 
-    logInfo(`[AI Scope] Scope from document completed for user ${req.user.id} | trade: ${tradeType} | items: ${result.predictedItems.length}`);
+    logInfo(`[AI Scope] Scope from document completed for user ${req.user!.id} | trade: ${tradeType} | items: ${result.predictedItems.length}`);
 
     res.json(result);
   } catch (error: any) {
@@ -2951,14 +2951,14 @@ router.get("/ai-insights/dashboard-summary", requireAuth, requireAnyFeaturePermi
       sql`(${aiInsights.expiresAt} IS NULL OR ${aiInsights.expiresAt} > NOW())`,
     ];
 
-    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+    if (req.user!.role !== 'SUPER_ADMIN' && organizationId) {
       conditions.push(
         sql`(${aiInsights.organizationId} = ${organizationId} OR ${aiInsights.organizationId} IS NULL)`
       );
     }
 
     if (await isViewOnlyAiUser(req.user)) {
-      const assignedIds = await getAssignedProjectIds(req.user.id);
+      const assignedIds = await getAssignedProjectIds(req.user!.id);
       if (assignedIds.length === 0) {
         return res.json({ recentInsights: [], countBySeverity: {}, countByModule: {}, totalUnacknowledged: 0 });
       }
@@ -3013,18 +3013,18 @@ router.get("/ai-insights/dashboard-summary", requireAuth, requireAnyFeaturePermi
 router.get("/ai-insights", requireAuth, requireAnyFeaturePermission('canUseAiFeatures', 'canViewAiSummaries'), async (req: AuthRequest, res, next) => {
   try {
     const { module, projectId, severity, acknowledged } = req.query;
-    const organizationId = req.user.organizationId;
+    const organizationId = req.user!.organizationId;
 
     const conditions: any[] = [];
     
-    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+    if (req.user!.role !== 'SUPER_ADMIN' && organizationId) {
       conditions.push(
         sql`(${aiInsights.organizationId} = ${organizationId} OR ${aiInsights.organizationId} IS NULL)`
       );
     }
 
     if (await isViewOnlyAiUser(req.user)) {
-      const assignedIds = await getAssignedProjectIds(req.user.id);
+      const assignedIds = await getAssignedProjectIds(req.user!.id);
       if (assignedIds.length === 0) {
         return res.json([]);
       }
@@ -3090,14 +3090,14 @@ router.get("/ai-insights/:id", requireAuth, requireAnyFeaturePermission('canUseA
       return res.status(404).json({ error: "Insight not found" });
     }
 
-    if (req.user.role !== 'SUPER_ADMIN' && 
+    if (req.user!.role !== 'SUPER_ADMIN' && 
         insight.organizationId && 
-        insight.organizationId !== req.user.organizationId) {
+        insight.organizationId !== req.user!.organizationId) {
       return res.status(403).json({ error: "Access denied" });
     }
 
     if (await isViewOnlyAiUser(req.user)) {
-      const assignedIds = await getAssignedProjectIds(req.user.id);
+      const assignedIds = await getAssignedProjectIds(req.user!.id);
       if (!insight.projectId || !assignedIds.includes(insight.projectId)) {
         return res.status(403).json({ error: "Access denied to this project's insights" });
       }
@@ -3130,9 +3130,9 @@ router.patch("/ai-insights/:id/acknowledge", requireAuth, requireAnyFeaturePermi
       return res.status(404).json({ error: "Insight not found" });
     }
 
-    if (req.user.role !== 'SUPER_ADMIN' && 
+    if (req.user!.role !== 'SUPER_ADMIN' && 
         insight.organizationId && 
-        insight.organizationId !== req.user.organizationId) {
+        insight.organizationId !== req.user!.organizationId) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -3140,7 +3140,7 @@ router.patch("/ai-insights/:id/acknowledge", requireAuth, requireAnyFeaturePermi
       .update(aiInsights)
       .set({
         isAcknowledged: true,
-        acknowledgedById: req.user.id,
+        acknowledgedById: req.user!.id,
         acknowledgedAt: new Date(),
       })
       .where(eq(aiInsights.id, id))
@@ -3178,12 +3178,12 @@ router.get("/ai-gantt-recommendations/:projectId", requireAuth, requireRole("ADM
 router.get("/ai-vendor-comparisons", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
 
-    const organizationId = req.user.organizationId;
+    const organizationId = req.user!.organizationId;
     const { category } = req.query;
 
     const conditions: any[] = [];
     
-    if (req.user.role !== 'SUPER_ADMIN' && organizationId) {
+    if (req.user!.role !== 'SUPER_ADMIN' && organizationId) {
       conditions.push(eq(aiVendorComparisons.organizationId, organizationId));
     }
 
@@ -4027,7 +4027,7 @@ router.post("/ai-assistant/sow/suggest", sensitiveLimiter, async (req: AuthReque
     }
 
     const { userInput, tradeType, organizationId } = validation.data;
-    const orgId = organizationId || req.user.organizationId;
+    const orgId = organizationId || req.user!.organizationId;
 
     // Fetch existing SOW items for context and duplicate detection
     let existingItems: (MasterSowItem | OrganizationSowItem)[] = [];
@@ -4098,8 +4098,8 @@ ${tradeType ? `Trade type: ${tradeType}` : ''}
 Analyze and suggest the properly formatted SOW item.`;
 
     const governed = await governedAiCall<SOWSuggestion>({
-      orgId: req.user.organizationId || '',
-      userId: req.user.id?.toString() || null,
+      orgId: req.user!.organizationId || '',
+      userId: req.user!.id?.toString() || null,
       actionType: "sow_assistant",
       inputRefs: { userInput, tradeType },
       fn: async () => {
@@ -4154,7 +4154,7 @@ router.post("/ai-assistant/sow/add", async (req: AuthRequest, res, next) => {
 
     // Only allow management roles to add SOW items
     const allowedRoles = ['ADMIN', 'MANAGER', 'ESTIMATOR', 'SUPERINTENDENT'];
-    if (!allowedRoles.includes(req.user.role)) {
+    if (!allowedRoles.includes(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
 
@@ -4163,7 +4163,7 @@ router.post("/ai-assistant/sow/add", async (req: AuthRequest, res, next) => {
       return res.status(400).json({ error: "Invalid input", details: validation.error.errors });
     }
 
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
     if (!orgId) {
       return res.status(400).json({ error: "Organization not found for user" });
     }
@@ -4290,8 +4290,8 @@ Respond with a JSON object:
 Analyze and suggest the properly formatted UOM, or explain if a similar one already exists.`;
 
     const governed = await governedAiCall<UOMSuggestion>({
-      orgId: req.user.organizationId || '',
-      userId: req.user.id?.toString() || null,
+      orgId: req.user!.organizationId || '',
+      userId: req.user!.id?.toString() || null,
       actionType: "uom_assistant",
       inputRefs: { userInput },
       fn: async () => {
@@ -4343,7 +4343,7 @@ router.post("/ai-assistant/uom/add", async (req: AuthRequest, res, next) => {
     }
 
     // Only admins can add new UOMs
-    if (req.user.role !== 'ADMIN') {
+    if (req.user!.role !== 'ADMIN') {
       return res.status(403).json({ error: "Admin access required to add new units of measure" });
     }
 
@@ -4409,7 +4409,7 @@ router.get("/ai-assistant/sow/search", async (req: AuthRequest, res, next) => {
 
     const query = (req.query.q as string || '').trim();
     const tradeType = req.query.tradeType as string;
-    const orgId = req.user.organizationId;
+    const orgId = req.user!.organizationId;
 
     if (!query || query.length < 2) {
       return res.json({ items: [] });

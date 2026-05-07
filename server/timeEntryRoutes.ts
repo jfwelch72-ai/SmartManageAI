@@ -311,13 +311,13 @@ const bulkApproveHandler = async (req: AuthRequest, res: any, next: NextFunction
 
     if (req.user?.organizationId) {
       try {
-        const approvalsEnabled = await isFeatureEnabled(req.user.organizationId, "APPROVALS_FRAMEWORK");
+        const approvalsEnabled = await isFeatureEnabled(req.user!.organizationId, "APPROVALS_FRAMEWORK");
         if (approvalsEnabled) {
           await createApprovalRequest(
-            req.user.organizationId,
+            req.user!.organizationId,
             "TIME_ENTRY",
             accessibleIds[0],
-            req.user.id,
+            req.user!.id,
             `Bulk approved ${accessibleIds.length} time entries`
           );
         }

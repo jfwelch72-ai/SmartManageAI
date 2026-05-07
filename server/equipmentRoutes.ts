@@ -851,7 +851,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       const existingCodes = await db
         .select({ equipmentCode: equipment.equipmentCode })
         .from(equipment)
-        .where(eq(equipment.organizationId, req.user.organizationId));
+        .where(eq(equipment.organizationId, req.user!.organizationId));
       const existingCodeSet = new Set(existingCodes.map(e => e.equipmentCode));
 
       let created = 0;
@@ -916,7 +916,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
 
           await db.insert(equipment).values({
             ...validationResult.data,
-            organizationId: req.user.organizationId,
+            organizationId: req.user!.organizationId,
           });
 
           existingCodeSet.add(code);
@@ -1069,7 +1069,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       // SECURITY: Set organizationId from authenticated user
       const [newEquipment] = await db.insert(equipment).values({
         ...validatedData,
-        organizationId: req.user.organizationId
+        organizationId: req.user!.organizationId
       }).returning();
       
       // Audit log
@@ -3414,6 +3414,7 @@ Please provide:
   router.post("/api/equipment/notify-maintenance", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
     try {
       const { equipmentId, repairId, message, type } = req.body;
+      const orgId = req.user!.organizationId;
       
       const maintenanceManagers = await db
         .select({ id: users.id })

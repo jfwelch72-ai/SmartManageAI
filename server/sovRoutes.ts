@@ -659,11 +659,11 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
 
     if (req.user?.organizationId && (newStatus === "APPROVED" || newStatus === "REJECTED")) {
       const delegation = await workflowEngine.delegateEntityTransition(
-        req.user.organizationId,
+        req.user!.organizationId,
         "SOV_PAY_APP",
         id,
-        req.user.id,
-        req.user.role || "WORKER",
+        req.user!.id,
+        req.user!.role || "WORKER",
         newStatus,
         `SOV status changed to ${newStatus}`
       );
@@ -699,13 +699,13 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
 
     if (newStatus === "SUBMITTED" && req.user?.organizationId) {
       try {
-        const approvalsEnabled = await isFeatureEnabled(req.user.organizationId, "APPROVALS_FRAMEWORK");
+        const approvalsEnabled = await isFeatureEnabled(req.user!.organizationId, "APPROVALS_FRAMEWORK");
         if (approvalsEnabled) {
           await createApprovalRequest(
-            req.user.organizationId,
+            req.user!.organizationId,
             "SOV_PAY_APP",
             id,
-            req.user.id,
+            req.user!.id,
             `SOV/Pay App submitted for approval`
           );
         }
@@ -713,10 +713,10 @@ router.patch("/sov/:id/status", requireAuth, async (req: AuthRequest, res: Respo
 
       try {
         await workflowEngine.startWorkflow(
-          req.user.organizationId,
+          req.user!.organizationId,
           "SOV_PAY_APP",
           id,
-          req.user.id
+          req.user!.id
         );
       } catch (e) { logError("[sov] workflow start failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
