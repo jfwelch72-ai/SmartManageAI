@@ -85,6 +85,11 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 
 ## Pointers
 
+*   **On-Call Runbook**: `docs/ops/runbook.md` (top 6 incident scenarios)
+*   **Backups & Restore Drill**: `docs/ops/backups.md`
+*   **Status Page**: `docs/ops/status-page.md`
+*   **Metrics Catalog (`/metrics`)**: `docs/ops/metrics.md`
+*   **Observability Triage**: `docs/runbooks/observability.md`
 *   **Pagination Contract**: `docs/api/pagination.md`
 *   **Storage Seam Architecture Pattern**: `docs/architecture/storage-pattern.md`
 *   **Replit AI Integrations**: [Link to Replit AI Docs]

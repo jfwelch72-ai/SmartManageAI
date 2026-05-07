@@ -49,6 +49,11 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Emit hidden source maps so Sentry can symbolicate frontend
+    // stack traces without exposing the unminified source to end users
+    // via the browser devtools "Sources" panel. See
+    // docs/ops/runbook.md and docs/runbooks/observability.md.
+    sourcemap: "hidden",
     rollupOptions: {
       output: {
         manualChunks(id: string) {

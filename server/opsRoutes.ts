@@ -49,6 +49,8 @@ import { db } from './db';
 import { sql } from 'drizzle-orm';
 import { logInfo, logError } from './utils/logger';
 import { getMonitoringStatus } from './utils/monitoring';
+import { getPoolStats } from './utils/poolHealth';
+import { getAllJobMetrics } from './utils/jobMetrics';
 
 const router = Router();
 
@@ -213,6 +215,96 @@ router.get('/api/ops/health-check', opsRateLimiter, async (_req, res) => {
     checks,
     timestamp: new Date().toISOString(),
   });
+});
+
+/**
+ * GET /metrics - Prometheus-format metrics endpoint.
+ *
+ * Exposes a small, hand-rolled set of process + business gauges/counters
+ * in the Prometheus text-exposition format so any standard scraper
+ * (Prometheus, Grafana Agent, Datadog OpenMetrics, BetterStack, etc.) can
+ * ingest without us having to take a hard dependency on `prom-client`.
+ *
+ * Authentication: when `OPS_METRICS_TOKEN` is set, requests must carry a
+ * matching `Authorization: Bearer <token>` header. When unset (typical in
+ * dev), the endpoint is open. In production we recommend always setting
+ * the token and scraping over the private network.
+ *
+ * See `docs/ops/metrics.md` for the full catalog and scrape examples.
+ */
+router.get('/metrics', opsRateLimiter, (req, res) => {
+  const expected = process.env.OPS_METRICS_TOKEN;
+  const isProd = process.env.NODE_ENV === 'production';
+  // Secure-by-default in production: refuse to serve metrics if the
+  // operator forgot to set OPS_METRICS_TOKEN. Open in dev for easy
+  // local inspection.
+  if (isProd && !expected) {
+    return res.status(503).type('text/plain').send('# metrics disabled: OPS_METRICS_TOKEN not set\n');
+  }
+  if (expected) {
+    const auth = req.headers['authorization'];
+    const token = typeof auth === 'string' && auth.startsWith('Bearer ')
+      ? auth.slice('Bearer '.length).trim()
+      : null;
+    if (token !== expected) {
+      return res.status(401).type('text/plain').send('# unauthorized\n');
+    }
+  }
+
+  const lines: string[] = [];
+  const push = (name: string, help: string, type: 'counter' | 'gauge', value: number, labels?: Record<string, string>) => {
+    lines.push(`# HELP ${name} ${help}`);
+    lines.push(`# TYPE ${name} ${type}`);
+    const labelStr = labels && Object.keys(labels).length
+      ? `{${Object.entries(labels).map(([k, v]) => `${k}="${String(v).replace(/"/g, '\\"')}"`).join(',')}}`
+      : '';
+    lines.push(`${name}${labelStr} ${value}`);
+  };
+
+  // Process / runtime
+  const mem = process.memoryUsage();
+  push('app_process_uptime_seconds', 'Process uptime in seconds.', 'gauge', process.uptime());
+  push('app_process_memory_heap_used_bytes', 'V8 heap used.', 'gauge', mem.heapUsed);
+  push('app_process_memory_heap_total_bytes', 'V8 heap total.', 'gauge', mem.heapTotal);
+  push('app_process_memory_rss_bytes', 'Resident set size.', 'gauge', mem.rss);
+
+  // DB pool
+  try {
+    const pool = getPoolStats();
+    push('app_db_pool_active', 'Active (checked-out) DB connections.', 'gauge', pool.active);
+    push('app_db_pool_idle', 'Idle DB connections.', 'gauge', pool.idle);
+    push('app_db_pool_waiting', 'Clients waiting for a DB connection.', 'gauge', pool.waiting);
+    push('app_db_pool_total', 'Total DB connections (active + idle).', 'gauge', pool.total);
+    push('app_db_pool_max', 'Configured max pool size.', 'gauge', pool.max);
+  } catch (err) {
+    logError('Failed to read DB pool stats for /metrics', {}, err as Error);
+  }
+
+  // Job counters (rolling 24h totals from the in-process ring buffer).
+  // Cardinality is bounded by the number of registered jobs (currently <50)
+  // so emitting one series per (job, counter) pair is safe.
+  try {
+    const jobs = getAllJobMetrics();
+    let helpEmitted = false;
+    if (jobs.length && !helpEmitted) {
+      lines.push('# HELP app_job_counter_total Background job counter totals over the 24h in-process window.');
+      lines.push('# TYPE app_job_counter_total counter');
+      helpEmitted = true;
+    }
+    for (const j of jobs) {
+      for (const [counter, value] of Object.entries(j.totals)) {
+        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+        const safeJob = String(j.job).replace(/[^A-Za-z0-9_]/g, '_');
+        const safeCounter = String(counter).replace(/[^A-Za-z0-9_]/g, '_');
+        lines.push(`app_job_counter_total{job="${safeJob}",counter="${safeCounter}"} ${value}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read job metrics for /metrics', {}, err as Error);
+  }
+
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  res.send(lines.join('\n') + '\n');
 });
 
 export default router;
