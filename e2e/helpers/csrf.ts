@@ -78,7 +78,7 @@ export async function installCsrf(page: Page): Promise<void> {
   request.__csrfPatched = true;
 
   const wrap = (method: MutatingMethod) => {
-    const original = request[method].bind(request) as (
+    const original = request[method].bind(request) as unknown as (
       url: string,
       options?: RequestOptions,
     ) => Promise<ReturnType<APIRequestContext[MutatingMethod]>>;
@@ -125,7 +125,7 @@ export async function installCsrfOnRequest(
   req.__csrfPatched = true;
 
   const wrap = (method: MutatingMethod) => {
-    const original = req[method].bind(req) as (
+    const original = req[method].bind(req) as unknown as (
       url: string,
       options?: RequestOptions,
     ) => Promise<ReturnType<APIRequestContext[MutatingMethod]>>;
