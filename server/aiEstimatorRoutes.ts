@@ -671,6 +671,10 @@ const draftTakeoffSchema = z
     planDocumentIds: z.array(z.string().min(1)).max(8).optional(),
     projectId: z.string().min(1).optional(),
     scopeNotes: z.string().max(2000).optional(),
+    // Task #2530 — when true, the route enqueues `ai_estimator_draft`
+    // and returns `{ jobId }` so the UI can subscribe to live progress
+    // via `useJobProgress` instead of blocking on the HTTP call.
+    async: z.boolean().optional(),
   })
   .refine((d) => (d.planDocumentIds && d.planDocumentIds.length > 0) || !!d.projectId, {
     message: "Provide planDocumentIds or projectId",
@@ -683,14 +687,35 @@ router.post(
   async (req: AuthRequest, res: Response) => {
     const data = validateBody(draftTakeoffSchema, req.body, res);
     if (!data) return;
+    const organizationId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    const draftOptions = {
+      organizationId,
+      userId,
+      planDocumentIds: data.planDocumentIds,
+      projectId: data.projectId,
+      scopeNotes: data.scopeNotes,
+    };
+    if (data.async) {
+      try {
+        const { enqueueJob } = await import("./jobQueue");
+        const enqueued = await enqueueJob(
+          "ai_estimator_draft",
+          { mode: "takeoff", draftOptions },
+          { organizationId, userId },
+        );
+        return res.json({
+          status: "QUEUED",
+          jobId: enqueued.jobId,
+          deduplicated: enqueued.deduplicated,
+        });
+      } catch (err) {
+        logError("Draft takeoff enqueue failed", { error: String(err) });
+        return res.status(500).json({ error: "Draft takeoff enqueue failed" });
+      }
+    }
     try {
-      const out = await draftTakeoffFromPlans({
-        organizationId: req.user!.organizationId!,
-        userId: req.user!.id,
-        planDocumentIds: data.planDocumentIds,
-        projectId: data.projectId,
-        scopeNotes: data.scopeNotes,
-      });
+      const out = await draftTakeoffFromPlans(draftOptions);
       if (out.blocked) return blockedResponse(res, out.reason);
       if (!out.result) return res.status(200).json({ fallback: true, message: out.reason });
       res.json(out.result);

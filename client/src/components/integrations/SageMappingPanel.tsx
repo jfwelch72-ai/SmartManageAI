@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { JobProgressBar } from "@/components/JobProgressBar";
 import type { Connection } from "./types";
 
 interface SageMapping {
@@ -86,6 +87,9 @@ export function SageMappingPanel({ connection }: { connection: Connection }) {
   const [newCostCode, setNewCostCode] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [activeSync, setActiveSync] = useState<string | null>(null);
+  // Task #2530 — track the queued accounting_sync jobId so the panel can
+  // render the live progress bar driven by useJobProgress.
+  const [periodicSyncJobId, setPeriodicSyncJobId] = useState<string | null>(null);
 
   const isActive = connection.status === "active";
 
@@ -177,6 +181,39 @@ export function SageMappingPanel({ connection }: { connection: Connection }) {
     },
   });
 
+  const periodicSyncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/integrations/connections/${connection.id}/periodic-sync`,
+      );
+      return res.json();
+    },
+    onSuccess: (data: { jobId?: string }) => {
+      if (data.jobId) setPeriodicSyncJobId(data.jobId);
+      else toast({ title: "Sync failed", description: "No job id returned", variant: "destructive" });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Background sync failed", description: err.message, variant: "destructive" }),
+  });
+
+  const handlePeriodicSyncComplete = () => {
+    toast({ title: "Sync complete" });
+    queryClient.invalidateQueries({
+      queryKey: ["/api/integrations/connections", connection.id, "sage-accounts"],
+    });
+    setPeriodicSyncJobId(null);
+  };
+
+  const handlePeriodicSyncFail = (_id: string, message?: string) => {
+    toast({
+      title: "Background sync failed",
+      description: message ?? "Job failed",
+      variant: "destructive",
+    });
+    setPeriodicSyncJobId(null);
+  };
+
   const syncMutation = useMutation({
     mutationFn: async (operation: string) => {
       setActiveSync(operation);
@@ -231,7 +268,37 @@ export function SageMappingPanel({ connection }: { connection: Connection }) {
             in the background; manual triggers are useful after configuration changes.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid sm:grid-cols-2 gap-3">
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between gap-3 border rounded-md p-3">
+            <div className="text-xs text-muted-foreground">
+              Run the full periodic Sage sync now in the background. Progress streams live —
+              you can leave the page and come back.
+            </div>
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => periodicSyncMutation.mutate()}
+              disabled={periodicSyncMutation.isPending || !!periodicSyncJobId}
+              data-testid="button-sage-periodic-sync"
+            >
+              {periodicSyncMutation.isPending || !!periodicSyncJobId ? (
+                <Loader2 className="h-4 w-4 animate-spin mr-2" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Run periodic sync
+            </Button>
+          </div>
+          {periodicSyncJobId && (
+            <JobProgressBar
+              jobId={periodicSyncJobId}
+              fallbackMessage="Starting Sage sync..."
+              onComplete={handlePeriodicSyncComplete}
+              onFail={handlePeriodicSyncFail}
+              testIdPrefix="job-progress-sage-sync"
+            />
+          )}
+        <div className="grid sm:grid-cols-2 gap-3">
           {SAGE_OPERATIONS.map((op) => {
             const Icon = op.direction === "import" ? ArrowDownToLine : ArrowUpFromLine;
             const disabled = syncMutation.isPending || op.needsData === true;
@@ -272,6 +339,7 @@ export function SageMappingPanel({ connection }: { connection: Connection }) {
               </div>
             );
           })}
+        </div>
         </CardContent>
       </Card>
 

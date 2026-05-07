@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Sparkles, Check } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { JobProgressBar } from "@/components/JobProgressBar";
 
 interface DraftMeasurement {
   label: string;
@@ -23,35 +24,41 @@ interface Props {
   projectId?: string;
 }
 
+interface DraftResult {
+  measurements: DraftMeasurement[];
+  notes: string;
+  confidence: number;
+}
+
 /**
  * "Draft full takeoff" — sends the project's plan documents to the AI Estimator
- * service which scopes by org and caps the work. The user reviews the draft
- * and accepts/discards; nothing is added to the takeoff automatically.
+ * service which scopes by org and caps the work. Task #2530 — runs the work via
+ * the `ai_estimator_draft` queue so the dialog can show a real progress bar
+ * driven by `useJobProgress` instead of a static spinner.
  */
 export function DraftFullTakeoffButton({ projectId }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [scopeNotes, setScopeNotes] = useState("");
-  const [draft, setDraft] = useState<{ measurements: DraftMeasurement[]; notes: string; confidence: number } | null>(null);
+  const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [fetchingResult, setFetchingResult] = useState(false);
 
   const draftIt = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft-takeoff", {
         projectId,
         scopeNotes: scopeNotes.trim() || undefined,
+        async: true,
       });
       return r.json();
     },
-    onSuccess: (data: any) => {
-      if (data.fallback) {
-        toast({
-          title: "No takeoff drafted",
-          description: data.message ?? "AI returned no usable draft",
-          variant: "destructive",
-        });
-        return;
+    onSuccess: (data: { jobId?: string }) => {
+      if (data.jobId) {
+        setJobId(data.jobId);
+      } else {
+        toast({ title: "Draft failed", description: "No job id returned", variant: "destructive" });
       }
-      setDraft(data);
     },
     onError: (err: Error) => toast({ title: "Draft failed", description: err.message, variant: "destructive" }),
   });
@@ -65,6 +72,67 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
         projectId,
       }),
   });
+
+  // Once the SSE channel reports the job completed, fetch the result
+  // payload from the job-status endpoint and surface it in the dialog.
+  const handleJobComplete = async (id: string) => {
+    if (fetchingResult || draft) return;
+    setFetchingResult(true);
+    try {
+      const r = await apiRequest("GET", `/api/jobs/${id}`);
+      const status = await r.json();
+      const output = (status?.output ?? null) as
+        | { result?: DraftResult | null; reason?: string; blocked?: boolean }
+        | DraftResult
+        | null;
+      // The handler returns the raw `draftTakeoffFromPlans` envelope.
+      const envelope = (output ?? {}) as { result?: DraftResult | null; reason?: string };
+      if (envelope.result) {
+        setDraft(envelope.result);
+      } else if ((output as DraftResult)?.measurements) {
+        setDraft(output as DraftResult);
+      } else {
+        toast({
+          title: "No takeoff drafted",
+          description: envelope.reason ?? "AI returned no usable draft",
+          variant: "destructive",
+        });
+        setJobId(null);
+      }
+    } catch (err) {
+      toast({
+        title: "Failed to load draft",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      // Clear the jobId so the progress bar / "completed" callback won't
+      // re-fire on the same status, leaving the UI stuck. The user can
+      // re-trigger the draft via the action button.
+      setJobId(null);
+    } finally {
+      setFetchingResult(false);
+    }
+  };
+
+  const handleJobFail = (_id: string, message?: string) => {
+    toast({
+      title: "Draft failed",
+      description: message ?? "Background draft failed",
+      variant: "destructive",
+    });
+    setJobId(null);
+  };
+
+  // Reset state when dialog closes.
+  useEffect(() => {
+    if (!open) {
+      setDraft(null);
+      setJobId(null);
+      setFetchingResult(false);
+    }
+  }, [open]);
+
+  const isWorking = draftIt.isPending || (!!jobId && !draft);
 
   if (!projectId) return null;
 
@@ -80,23 +148,17 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
         <Sparkles className="h-4 w-4 mr-2" />
         Draft full takeoff (AI Estimator)
       </Button>
-      <Dialog
-        open={open}
-        onOpenChange={(v) => {
-          setOpen(v);
-          if (!v) setDraft(null);
-        }}
-      >
+      <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Draft full takeoff from plans</DialogTitle>
             <DialogDescription>
-              Reads the plan documents on this project (capped at 4 for performance) and produces an initial measurement
+              Reads the plan documents on this project (capped at 8 for performance) and produces an initial measurement
               list. You review and accept manually — nothing is added to your takeoff automatically.
             </DialogDescription>
           </DialogHeader>
 
-          {!draft && (
+          {!draft && !jobId && (
             <div className="space-y-3 py-2">
               <label className="text-sm font-medium">Scope notes (optional)</label>
               <Textarea
@@ -105,6 +167,18 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
                 placeholder="What scope should the takeoff focus on?"
                 className="min-h-[100px]"
                 data-testid="input-takeoff-scope-notes"
+              />
+            </div>
+          )}
+
+          {jobId && !draft && (
+            <div className="py-3">
+              <JobProgressBar
+                jobId={jobId}
+                fallbackMessage="Reading plan documents..."
+                onComplete={handleJobComplete}
+                onFail={handleJobFail}
+                testIdPrefix="job-progress-draft-takeoff"
               />
             </div>
           )}
@@ -144,8 +218,12 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
 
           <DialogFooter>
             {!draft ? (
-              <Button onClick={() => draftIt.mutate()} disabled={draftIt.isPending} data-testid="button-run-draft-takeoff">
-                {draftIt.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
+              <Button
+                onClick={() => draftIt.mutate()}
+                disabled={isWorking}
+                data-testid="button-run-draft-takeoff"
+              >
+                {isWorking ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Sparkles className="h-4 w-4 mr-2" />}
                 Generate
               </Button>
             ) : (
@@ -154,7 +232,6 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
                   variant="ghost"
                   onClick={() => {
                     sendFeedback.mutate("REJECTED");
-                    setDraft(null);
                     setOpen(false);
                   }}
                   data-testid="button-discard-takeoff-draft"

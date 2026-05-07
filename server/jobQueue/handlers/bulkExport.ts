@@ -15,10 +15,19 @@ export interface BulkExportPayload {
   params: Record<string, unknown>;
 }
 
+export interface ExportGeneratorResult {
+  url?: string;
+  bytes?: number;
+  // Inline payload for small / JSON exports streamed back via
+  // `GET /api/jobs/:id` instead of object storage.
+  data?: unknown;
+  filename?: string;
+}
+
 type ExportGenerator = (
   params: Record<string, unknown>,
   ctx: JobContext,
-) => Promise<{ url?: string; bytes?: number }>;
+) => Promise<ExportGeneratorResult>;
 
 const generators = new Map<string, ExportGenerator>();
 

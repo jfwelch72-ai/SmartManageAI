@@ -19,6 +19,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { OrgFeaturePresetsTab } from "@/components/settings/OrgFeaturePresetsTab";
+import { JobProgressBar } from "@/components/JobProgressBar";
 
 interface Organization {
   id: string;
@@ -215,21 +216,54 @@ export default function PlatformOrganizationDetail() {
     enabled: !!orgId,
   });
 
+  // Task #2530 — kicks off the queued `bulk_export` job and tracks the
+  // resulting jobId so the live progress bar can be rendered.
+  const [exportJobId, setExportJobId] = useState<string | null>(null);
   const exportMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/platform/organizations/${orgId}/export`, { credentials: "include" });
-      if (!res.ok) throw new Error("Export failed");
-      const blob = await res.blob();
+      const res = await apiRequest("POST", `/api/platform/organizations/${orgId}/export-async`, {});
+      return res.json();
+    },
+    onSuccess: (data: { jobId?: string }) => {
+      if (data.jobId) setExportJobId(data.jobId);
+      else toast({ title: "Export failed", description: "No job id returned", variant: "destructive" });
+    },
+    onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
+  });
+
+  const handleExportComplete = async (jobId: string) => {
+    try {
+      const res = await apiRequest("GET", `/api/jobs/${jobId}`);
+      const status = await res.json();
+      const output = status?.output as { data?: unknown; filename?: string } | null;
+      if (!output?.data) {
+        toast({ title: "Export failed", description: "Job returned no data", variant: "destructive" });
+        setExportJobId(null);
+        return;
+      }
+      const blob = new Blob([JSON.stringify(output.data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `org-export-${orgId}.json`;
+      a.download = output.filename || `org-export-${orgId}.json`;
       a.click();
       URL.revokeObjectURL(url);
-    },
-    onSuccess: () => toast({ title: "Export downloaded" }),
-    onError: (e: Error) => toast({ title: "Export failed", description: e.message, variant: "destructive" }),
-  });
+      toast({ title: "Export downloaded" });
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setExportJobId(null);
+    }
+  };
+
+  const handleExportFail = (_id: string, message?: string) => {
+    toast({ title: "Export failed", description: message ?? "Background export failed", variant: "destructive" });
+    setExportJobId(null);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (confirmationName: string) => {
@@ -423,10 +457,26 @@ export default function PlatformOrganizationDetail() {
               View as Organization
             </Button>
           </Link>
-          <Button variant="outline" onClick={() => exportMutation.mutate()} disabled={exportMutation.isPending} data-testid="button-export-org">
+          <Button
+            variant="outline"
+            onClick={() => exportMutation.mutate()}
+            disabled={exportMutation.isPending || !!exportJobId}
+            data-testid="button-export-org"
+          >
             <Download className="h-4 w-4 mr-2" />
-            {exportMutation.isPending ? "Exporting..." : "Export Data"}
+            {exportMutation.isPending || !!exportJobId ? "Exporting..." : "Export Data"}
           </Button>
+          {exportJobId && (
+            <div className="w-full sm:w-72" data-testid="org-export-progress-wrapper">
+              <JobProgressBar
+                jobId={exportJobId}
+                fallbackMessage="Building organization export..."
+                onComplete={handleExportComplete}
+                onFail={handleExportFail}
+                testIdPrefix="job-progress-org-export"
+              />
+            </div>
+          )}
           <Button variant="destructive" onClick={() => { setDeleteConfirmName(""); setDeleteDialogOpen(true); }} data-testid="button-delete-org">
             <Trash2 className="h-4 w-4 mr-2" />
             Delete All Data

@@ -2099,6 +2099,43 @@ router.delete("/platform/hiring-templates/:id", requireAuth, requireSuperAdmin, 
 // Data Export & Deletion
 // ========================================
 
+// Task #2530 — Async organization export. The `organization_json`
+// generator is registered in the worker boot path
+// (`server/jobQueue/handlers/organizationExport.ts`) and wraps the
+// shared `buildOrganizationExport` builder so this endpoint and the
+// inline `GET /export` route below produce the same payload.
+//
+// The job is enqueued with `organizationId: orgId` (the *target* org,
+// not the super-admin's home org) so the queue runner's `withOrgContext`
+// wrap binds the correct tenant — required for RLS to permit the
+// per-org reads inside the builder.
+router.post(
+  "/platform/organizations/:orgId/export-async",
+  requireAuth,
+  requireSuperAdmin,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { orgId } = req.params;
+      const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+      if (!org) return res.status(404).json({ error: "Organization not found" });
+
+      const { enqueueJob } = await import("./jobQueue");
+      const enqueued = await enqueueJob(
+        "bulk_export",
+        { exportType: "organization_json", params: { orgId } },
+        { organizationId: orgId, userId: req.user!.id },
+      );
+      res.json({
+        status: "QUEUED",
+        jobId: enqueued.jobId,
+        deduplicated: enqueued.deduplicated,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.get("/platform/organizations/:orgId/export", requireAuth, requireSuperAdmin, async (req: AuthRequest, res, next) => {
   try {
     const { orgId } = req.params;

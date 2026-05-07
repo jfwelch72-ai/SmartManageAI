@@ -651,6 +651,61 @@ const PROVIDER_OPERATIONS: Record<string, Set<string>> = {
   surety_verification: new Set(["surety_verify"]),
 };
 
+// Task #2530 — Trigger the periodic provider sync as a queued
+// `accounting_sync` job and return `{ jobId }` so the UI can subscribe
+// to live progress via `useJobProgress` instead of blocking on the
+// inline `/sync` call.
+router.post("/connections/:id/periodic-sync", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const user = req.user!;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const connection = await connectionService.getDecryptedConnection(req.params.id, user.organizationId!);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.status !== "active") {
+      return res.status(400).json({ error: "Connection must be active to sync" });
+    }
+    let provider: "sage" | "qbo";
+    if (connection.provider === "sage_intacct") provider = "sage";
+    else if (connection.provider === "qbo") provider = "qbo";
+    else {
+      return res.status(400).json({
+        error: `Periodic sync is only supported for Sage Intacct and QBO (got '${connection.provider}').`,
+      });
+    }
+    // Provider-specific gates — keep parity with the inline
+    // `/connections/:id/sync` dispatcher: Sage operations require
+    // SUPER_ADMIN or ADMIN and the INTEGRATION_SAGE feature flag.
+    if (provider === "sage") {
+      if (process.env.INTEGRATION_SAGE !== "true") {
+        return res.status(403).json({
+          error: "Sage Intacct sync is disabled. Enable INTEGRATION_SAGE to use this integration.",
+        });
+      }
+      if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+        return res.status(403).json({
+          error: "Sage Intacct operations require SUPER_ADMIN or ADMIN role.",
+        });
+      }
+    }
+    const { enqueueJob } = await import("./jobQueue");
+    const enqueued = await enqueueJob(
+      "accounting_sync",
+      { provider, organizationId: user.organizationId! },
+      { organizationId: user.organizationId!, userId: user.id },
+    );
+    res.json({
+      status: "QUEUED",
+      jobId: enqueued.jobId,
+      deduplicated: enqueued.deduplicated,
+      provider,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
