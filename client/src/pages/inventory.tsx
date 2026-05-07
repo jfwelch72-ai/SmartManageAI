@@ -15,7 +15,8 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
-import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff, Printer } from "lucide-react";
 
 type Material = {
   id: string; sku: string; barcode: string | null; name: string; uom: string;
@@ -157,6 +158,7 @@ export default function InventoryPage() {
             <TabsTrigger value="issue" data-testid="tab-issue">Issue</TabsTrigger>
             <TabsTrigger value="transfer" data-testid="tab-transfer">Transfer</TabsTrigger>
             <TabsTrigger value="adjust" data-testid="tab-adjust">Adjust</TabsTrigger>
+            <TabsTrigger value="labels" data-testid="tab-labels">Labels</TabsTrigger>
             <TabsTrigger value="reports" data-testid="tab-reports">Reports</TabsTrigger>
           </TabsList>
 
@@ -195,6 +197,10 @@ export default function InventoryPage() {
           <TabsContent value="issue"><TxnForm kind="issue" locations={locationsQ.data ?? []} materials={materialsQ.data ?? []} onDone={invalidateAll} /></TabsContent>
           <TabsContent value="transfer"><TxnForm kind="transfer" locations={locationsQ.data ?? []} materials={materialsQ.data ?? []} onDone={invalidateAll} /></TabsContent>
           <TabsContent value="adjust"><TxnForm kind="adjust" locations={locationsQ.data ?? []} materials={materialsQ.data ?? []} onDone={invalidateAll} /></TabsContent>
+
+          <TabsContent value="labels">
+            <LabelsTab materials={materialsQ.data ?? []} onPrinted={() => qc.invalidateQueries({ queryKey: ["/api/inventory/materials"] })} />
+          </TabsContent>
 
           <TabsContent value="reports">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -645,3 +651,158 @@ function TxnForm({ kind, locations, materials, onDone }: {
     </Card>
   );
 }
+
+function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted: () => void }) {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [symbology, setSymbology] = useState<"code128" | "qr">("code128");
+  const [copies, setCopies] = useState("1");
+  const [startOffset, setStartOffset] = useState("0");
+  const [search, setSearch] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const filtered = materials.filter(m => {
+    if (!m.isActive) return false;
+    if (!search) return true;
+    const q = search.toLowerCase();
+    return m.name.toLowerCase().includes(q) || m.sku.toLowerCase().includes(q) || (m.barcode ?? "").toLowerCase().includes(q);
+  });
+
+  const toggle = (id: string) => {
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    setSelected(next);
+  };
+  const allShownSelected = filtered.length > 0 && filtered.every(m => selected.has(m.id));
+  const toggleAllShown = () => {
+    const next = new Set(selected);
+    if (allShownSelected) filtered.forEach(m => next.delete(m.id));
+    else filtered.forEach(m => next.add(m.id));
+    setSelected(next);
+  };
+
+  const print = async () => {
+    if (selected.size === 0) {
+      toast({ title: "Select at least one material", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/inventory/labels", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          materialIds: Array.from(selected),
+          symbology,
+          copies: Math.max(1, Math.min(30, Number(copies) || 1)),
+          startOffset: Math.max(0, Math.min(29, Number(startOffset) || 0)),
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error?.formErrors?.[0] ?? err.error ?? "Failed to generate labels");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inventory-labels-${Date.now()}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: "Labels generated", description: `${selected.size} material(s) · ${copies}× each` });
+      onPrinted();
+    } catch (e) {
+      toast({ title: "Print failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2"><Printer className="w-5 h-5" /> Print Barcode / QR Labels</CardTitle>
+        <CardDescription>
+          Select materials and produce a printable PDF on Avery 5160 (3×10) sheets.
+          Materials without a barcode are auto-assigned one (saved to the SKU) before printing.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
+          <div className="md:col-span-2">
+            <Label>Search</Label>
+            <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by SKU, name, or barcode" data-testid="input-labels-search" />
+          </div>
+          <div>
+            <Label>Symbology</Label>
+            <Select value={symbology} onValueChange={(v) => setSymbology(v as "code128" | "qr")}>
+              <SelectTrigger data-testid="select-labels-symbology"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="code128">Code-128 (1-D)</SelectItem>
+                <SelectItem value="qr">QR Code</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <Label>Copies / SKU</Label>
+              <Input type="number" min={1} max={30} value={copies} onChange={e => setCopies(e.target.value)} data-testid="input-labels-copies" />
+            </div>
+            <div>
+              <Label>Skip first</Label>
+              <Input type="number" min={0} max={29} value={startOffset} onChange={e => setStartOffset(e.target.value)} data-testid="input-labels-offset" />
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-sm text-muted-foreground" data-testid="text-labels-selected">
+            {selected.size} selected · {filtered.length} shown
+          </div>
+          <Button onClick={print} disabled={submitting || selected.size === 0} data-testid="button-print-labels">
+            <Printer className="w-4 h-4 mr-1" />{submitting ? "Generating…" : "Print PDF"}
+          </Button>
+        </div>
+
+        {filtered.length === 0 ? (
+          <EmptyState icon={Boxes} title="No materials" description="Create materials to print barcode labels." />
+        ) : (
+          <div className="border rounded-md max-h-[480px] overflow-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox checked={allShownSelected} onCheckedChange={toggleAllShown} data-testid="checkbox-labels-all" />
+                  </TableHead>
+                  <TableHead>SKU</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Barcode</TableHead>
+                  <TableHead>UOM</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map(m => (
+                  <TableRow key={m.id} data-testid={`row-label-${m.id}`}>
+                    <TableCell>
+                      <Checkbox checked={selected.has(m.id)} onCheckedChange={() => toggle(m.id)} data-testid={`checkbox-label-${m.id}`} />
+                    </TableCell>
+                    <TableCell className="font-mono text-xs">{m.sku}</TableCell>
+                    <TableCell>{m.name}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {m.barcode ?? <span className="text-muted-foreground italic">auto-assign</span>}
+                    </TableCell>
+                    <TableCell>{m.uom}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+

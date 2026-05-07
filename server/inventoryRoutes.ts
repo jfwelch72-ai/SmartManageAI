@@ -21,6 +21,10 @@ import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } 
 import { getOrgIdForFilter } from "./orgFilter";
 import { logAudit } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
+import { inArray } from "drizzle-orm";
+import PDFDocument from "pdfkit";
+import bwipjs from "bwip-js/node";
+import * as QRCode from "qrcode";
 
 const router = Router();
 
@@ -172,6 +176,187 @@ router.get("/api/inventory/materials/by-barcode/:code", requireAuth, requireRole
     const stock = await db.select().from(inventoryStockLevels)
       .where(and(eq(inventoryStockLevels.organizationId, orgId), eq(inventoryStockLevels.materialId, mat.id)));
     res.json({ material: mat, stock });
+  } catch (err) { next(err); }
+});
+
+// ─── BARCODE / QR LABEL PRINTING ──────────────────────────────────────────────
+// Generates a printable PDF of barcode/QR labels laid out on a 3×10 Avery 5160
+// sheet (1" × 2.625" labels, Letter page). For any selected material that has
+// no `barcode` value, this endpoint auto-assigns one (URL-safe, derived from
+// the SKU + a short random suffix to avoid collisions) and persists it on
+// `inventoryMaterials.barcode` before printing.
+
+const labelsSchema = z.object({
+  materialIds: z.array(z.string().min(1)).min(1, "Select at least one material").max(500),
+  symbology: z.enum(["code128", "qr"]).default("code128"),
+  copies: z.coerce.number().int().min(1).max(30).default(1),
+  startOffset: z.coerce.number().int().min(0).max(29).default(0),
+});
+
+function makeBarcodeValue(sku: string): string {
+  const cleaned = (sku || "ITEM").toUpperCase().replace(/[^A-Z0-9-]/g, "").slice(0, 16) || "ITEM";
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${cleaned}-${suffix}`;
+}
+
+async function ensureBarcodes(orgId: string, materialIds: string[]) {
+  const mats = await db.select().from(inventoryMaterials)
+    .where(and(
+      eq(inventoryMaterials.organizationId, orgId),
+      inArray(inventoryMaterials.id, materialIds),
+    ));
+
+  const updates: Array<{ id: string; barcode: string }> = [];
+  for (const m of mats) {
+    if (m.barcode && m.barcode.trim().length > 0) continue;
+    // Pick a unique barcode within the org (retry up to a few times)
+    let candidate = makeBarcodeValue(m.sku);
+    for (let i = 0; i < 5; i++) {
+      const [conflict] = await db.select({ id: inventoryMaterials.id })
+        .from(inventoryMaterials)
+        .where(and(
+          eq(inventoryMaterials.organizationId, orgId),
+          eq(inventoryMaterials.barcode, candidate),
+        ))
+        .limit(1);
+      if (!conflict) break;
+      candidate = makeBarcodeValue(m.sku);
+    }
+    await db.update(inventoryMaterials)
+      .set({ barcode: candidate, updatedAt: new Date() })
+      .where(eq(inventoryMaterials.id, m.id));
+    updates.push({ id: m.id, barcode: candidate });
+  }
+
+  if (updates.length === 0) return mats;
+  // Re-fetch with updated barcodes (preserve original ordering by materialIds)
+  const refreshed = await db.select().from(inventoryMaterials)
+    .where(and(
+      eq(inventoryMaterials.organizationId, orgId),
+      inArray(inventoryMaterials.id, materialIds),
+    ));
+  return refreshed;
+}
+
+async function renderBarcodePng(value: string, symbology: "code128" | "qr"): Promise<Buffer> {
+  if (symbology === "qr") {
+    return await QRCode.toBuffer(value, { type: "png", margin: 1, scale: 6, errorCorrectionLevel: "M" });
+  }
+  return await bwipjs.toBuffer({
+    bcid: "code128",
+    text: value,
+    scale: 3,
+    height: 12,
+    includetext: false,
+    backgroundcolor: "FFFFFF",
+    paddingwidth: 4,
+    paddingheight: 2,
+  });
+}
+
+router.post("/api/inventory/labels", requireAuth, requireRole(...WRITE_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orgId = requireOrg(req, res); if (!orgId) return;
+    const parsed = labelsSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { materialIds, symbology, copies, startOffset } = parsed.data;
+
+    const materials = await ensureBarcodes(orgId, materialIds);
+    if (materials.length === 0) return res.status(404).json({ error: "No materials found" });
+
+    // Preserve caller-supplied ordering
+    const orderIndex = new Map(materialIds.map((id, i) => [id, i]));
+    materials.sort((a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0));
+
+    // Render each material's barcode once, then place `copies` times.
+    const pngs = new Map<string, Buffer>();
+    for (const m of materials) {
+      const value = (m.barcode ?? m.sku) as string;
+      pngs.set(m.id, await renderBarcodePng(value, symbology));
+    }
+
+    // Avery 5160: 3 cols × 10 rows, label 2.625"×1", page 8.5"×11"
+    // Margins: top 0.5", left 0.1875", horizontal pitch 2.75", vertical pitch 1"
+    const PAGE_W = 612, PAGE_H = 792;
+    const COLS = 3, ROWS = 10;
+    const LABEL_W = 2.625 * 72; // 189
+    const LABEL_H = 1 * 72;     // 72
+    const HORIZ_PITCH = 2.75 * 72; // 198 (0.125" gutter)
+    const VERT_PITCH = 1 * 72;     // 72
+    const TOP = 0.5 * 72;
+    const LEFT = 0.1875 * 72;
+    const PAD = 6;
+
+    const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="inventory-labels-${Date.now()}.pdf"`);
+    doc.pipe(res);
+
+    let cell = startOffset; // 0..29
+    let firstPage = true;
+
+    const placeLabel = (m: (typeof materials)[number]) => {
+      if (cell >= COLS * ROWS) {
+        doc.addPage({ size: "LETTER", margin: 0 });
+        cell = 0;
+      } else if (firstPage) {
+        firstPage = false;
+      }
+      const row = Math.floor(cell / COLS);
+      const col = cell % COLS;
+      const x = LEFT + col * HORIZ_PITCH;
+      const y = TOP + row * VERT_PITCH;
+
+      const png = pngs.get(m.id)!;
+      const value = (m.barcode ?? m.sku) as string;
+
+      if (symbology === "qr") {
+        // QR on the left, text on the right
+        const qrSize = LABEL_H - PAD * 2;
+        doc.image(png, x + PAD, y + PAD, { width: qrSize, height: qrSize });
+        const tx = x + PAD * 2 + qrSize;
+        const tw = LABEL_W - (tx - x) - PAD;
+        doc.fontSize(9).fillColor("#000")
+          .text(m.name ?? "", tx, y + PAD, { width: tw, ellipsis: true, lineBreak: false });
+        doc.fontSize(7).fillColor("#444")
+          .text(`SKU ${m.sku}`, tx, y + PAD + 12, { width: tw, ellipsis: true, lineBreak: false });
+        doc.fontSize(7).fillColor("#444")
+          .text(value, tx, y + PAD + 22, { width: tw, ellipsis: true, lineBreak: false });
+        if (m.uom) {
+          doc.fontSize(7).fillColor("#444")
+            .text(`UOM ${m.uom}`, tx, y + PAD + 32, { width: tw, ellipsis: true, lineBreak: false });
+        }
+      } else {
+        // Code-128 across the top, text below
+        const bcW = LABEL_W - PAD * 2;
+        const bcH = 30;
+        doc.image(png, x + PAD, y + PAD, { width: bcW, height: bcH });
+        const ty = y + PAD + bcH + 2;
+        const tw = LABEL_W - PAD * 2;
+        doc.fontSize(8).fillColor("#000")
+          .text(m.name ?? "", x + PAD, ty, { width: tw, ellipsis: true, lineBreak: false });
+        doc.fontSize(7).fillColor("#444")
+          .text(`SKU ${m.sku}${m.uom ? `   UOM ${m.uom}` : ""}`, x + PAD, ty + 10, { width: tw, ellipsis: true, lineBreak: false });
+        doc.fontSize(7).fillColor("#444").font("Courier")
+          .text(value, x + PAD, ty + 20, { width: tw, ellipsis: true, lineBreak: false });
+        doc.font("Helvetica");
+      }
+      cell++;
+    };
+
+    for (const m of materials) {
+      for (let c = 0; c < copies; c++) placeLabel(m);
+    }
+
+    doc.end();
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "UPDATE",
+      entityType: "inventoryMaterialLabels",
+      entityId: materials.map(m => m.id).join(",").slice(0, 200),
+      newValue: JSON.stringify({ symbology, copies, count: materials.length, op: "label_print" }),
+    }, req);
   } catch (err) { next(err); }
 });
 
