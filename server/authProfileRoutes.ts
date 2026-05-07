@@ -473,6 +473,8 @@ import { setAllFeatureFlags } from "./services/featureFlagService";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
 import { requireDevSeed } from "./utils/devSeedFlag";
 import { passwordSchema } from "@shared/utils/passwordPolicy";
+import * as integrationConnectionService from "./integrations/connectionService";
+import { getProvider as getIntegrationProvider } from "./integrations/registry";
 
 const router = Router();
 
@@ -897,6 +899,73 @@ const upload = multer({
         message: `Logged in as ${role} test account`,
         isDevAccount: true
       });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // DEV ONLY (Task #2506): seed an integration_connections row with
+  // sandbox credentials so the money-path e2e accounting-sync spec can
+  // round-trip against real QBO / Sage Intacct sandboxes without doing
+  // a full OAuth dance from a headless browser. Caller MUST already be
+  // authenticated as ADMIN/SUPER_ADMIN of the org that should own the
+  // connection. Gated by `requireDevSeed` (ENABLE_DEV_SEED + non-prod)
+  // so production cannot inject pre-authorized connections.
+  router.post("/api/dev/integration-connection", requireDevSeed, async (req: AuthRequest, res, next) => {
+    try {
+      const user = req.user;
+      if (!user) return res.status(401).json({ error: "Not authenticated" });
+      if (!user.organizationId) return res.status(400).json({ error: "User must be linked to an organization" });
+      if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+
+      const { provider, displayName, metadata } = req.body || {};
+      if (typeof provider !== "string" || !provider) {
+        return res.status(400).json({ error: "Provider required" });
+      }
+      const providerImpl = getIntegrationProvider(provider);
+      if (!providerImpl) return res.status(400).json({ error: "Unknown provider" });
+      if (!metadata || typeof metadata !== "object") {
+        return res.status(400).json({ error: "metadata object required" });
+      }
+
+      const connection = await integrationConnectionService.createConnection(
+        user.organizationId,
+        provider,
+        displayName || `${providerImpl.displayName} (e2e sandbox)`,
+        user.id,
+      );
+
+      // storeConnectionTokens encrypts metadata at rest. We pass the
+      // sandbox creds as a TokenSet whose `raw` blob carries provider-
+      // specific fields (realmId for QBO; companyId / userId /
+      // userPassword for Sage). expiresAt defaults to +1h so the sync
+      // dispatcher's expiry check won't try to refresh.
+      const m = metadata as Record<string, any>;
+      await integrationConnectionService.storeConnectionTokens(
+        connection.id,
+        user.organizationId,
+        {
+          accessToken: typeof m.accessToken === "string" && m.accessToken.length > 0
+            ? m.accessToken
+            : "e2e-sandbox-access-token",
+          refreshToken: typeof m.refreshToken === "string" ? m.refreshToken : null,
+          expiresAt: typeof m.expiresAt === "string"
+            ? new Date(m.expiresAt)
+            : new Date(Date.now() + 3_600_000),
+          scope: typeof m.scope === "string" ? m.scope : providerImpl.requiredScopes.join(" "),
+          tokenType: typeof m.tokenType === "string" ? m.tokenType : "Bearer",
+          raw: m.raw && typeof m.raw === "object"
+            ? m.raw
+            : (() => {
+                const { accessToken: _a, refreshToken: _r, expiresAt: _e, scope: _s, tokenType: _t, raw: _raw, ...rest } = m;
+                return rest;
+              })(),
+        },
+      );
+
+      res.status(201).json({ id: connection.id, provider: connection.provider });
     } catch (error) {
       next(error);
     }
