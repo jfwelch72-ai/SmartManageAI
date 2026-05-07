@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileText, Loader2, Plus, Ruler, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, ArrowDown, ArrowUp, ExternalLink, FileText, Loader2, Plus, Ruler, Tag, Trash2 } from "lucide-react";
 import { SendToEstimateDialog } from "@/components/SendToEstimateDialog";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,69 @@ export default function TakeoffStandalonePage() {
         variant: "destructive",
       }),
   });
+
+  const reorderSheetsMutation = useMutation({
+    mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/takeoff/standalone/${id}/sheets/reorder`,
+        { order },
+      );
+      return res.json();
+    },
+    onMutate: async (order) => {
+      await queryClient.cancelQueries({
+        queryKey: ["/api/takeoff/standalone", id, "sheets"],
+      });
+      const previous = queryClient.getQueryData<TakeoffSheet[]>([
+        "/api/takeoff/standalone",
+        id,
+        "sheets",
+      ]);
+      if (previous) {
+        const indexById = new Map(order.map((o) => [o.id, o.sheetIndex]));
+        const next = [...previous]
+          .map((s) => ({ ...s, sheetIndex: indexById.get(s.id) ?? s.sheetIndex }))
+          .sort((a, b) => a.sheetIndex - b.sheetIndex);
+        queryClient.setQueryData(
+          ["/api/takeoff/standalone", id, "sheets"],
+          next,
+        );
+      }
+      return { previous };
+    },
+    onError: (err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(
+          ["/api/takeoff/standalone", id, "sheets"],
+          ctx.previous,
+        );
+      }
+      toast({
+        title: "Reorder failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "sheets"],
+      });
+    },
+  });
+
+  const moveSheet = (sheetId: string, direction: "up" | "down") => {
+    const current = sheetsQuery.data ?? [];
+    const idx = current.findIndex((s) => s.id === sheetId);
+    if (idx < 0) return;
+    const newIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= current.length) return;
+    const reordered = [...current];
+    [reordered[idx], reordered[newIdx]] = [reordered[newIdx], reordered[idx]];
+    reorderSheetsMutation.mutate(
+      reordered.map((s, i) => ({ id: s.id, sheetIndex: i })),
+    );
+  };
 
   const removeTagMutation = useMutation({
     mutationFn: async (tagId: string) => {
@@ -405,18 +468,50 @@ export default function TakeoffStandalonePage() {
                *  workspace (`?sheet=<id>`) so the picker pre-selects the
                *  clicked sheet on mount. Mirrors bid/project Plans-tab
                *  behavior. */}
-              {sheets.map((s) => (
-                <Link
+              {sheets.map((s, idx) => (
+                <div
                   key={s.id}
-                  href={`/takeoff/standalone/${t.id}/workspace?sheet=${s.id}`}
+                  className="flex items-center gap-1 text-sm rounded px-2 py-1.5 hover:bg-muted"
                   data-testid={`sheet-row-${s.id}`}
                 >
-                  <div className="flex items-center gap-2 text-sm rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
-                    <FileText className="w-4 h-4 text-muted-foreground" />
-                    <span className="flex-1">{s.sheetName}</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      disabled={idx === 0 || reorderSheetsMutation.isPending}
+                      onClick={() => moveSheet(s.id, "up")}
+                      title="Move up"
+                      data-testid={`button-move-sheet-up-${s.id}`}
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-6 w-6"
+                      disabled={idx === sheets.length - 1 || reorderSheetsMutation.isPending}
+                      onClick={() => moveSheet(s.id, "down")}
+                      title="Move down"
+                      data-testid={`button-move-sheet-down-${s.id}`}
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </Button>
                   </div>
-                </Link>
+                  <Link
+                    href={`/takeoff/standalone/${t.id}/workspace?sheet=${s.id}`}
+                    className="flex-1"
+                    data-testid={`link-sheet-${s.id}`}
+                  >
+                    <div className="flex items-center gap-2 cursor-pointer">
+                      <FileText className="w-4 h-4 text-muted-foreground" />
+                      <span className="flex-1">{s.sheetName}</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                    </div>
+                  </Link>
+                </div>
               ))}
             </div>
           )}
