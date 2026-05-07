@@ -55,7 +55,9 @@ const router = Router();
 const aiTakeoffAnalyzeSchema = z.object({
   projectId: z.string().optional(),
   bidId: z.string().optional(),
-  // Task #2550 follow-up — standalone takeoff workspace also runs AI auto-takeoff.
+  // Task #2550 follow-up / Task #2551 — Standalone takeoff context.
+  // Mutually exclusive with projectId/bidId in practice; the analyze
+  // handler accepts any one of the three.
   standaloneTakeoffId: z.string().optional(),
   takeoffSheetId: z.string().optional(),
   tradeType: z.string().optional(),
@@ -1301,6 +1303,9 @@ router.get("/ai-features/takeoff/history/:contextId", requireAuth, async (req: A
 
     if (contextType === "bid") {
       conditions.push(eq(aiTakeoffAnalyses.bidId, contextId));
+    } else if (contextType === "standalone") {
+      // Task #2551 — standalone-takeoff scoped history.
+      conditions.push(eq(aiTakeoffAnalyses.standaloneTakeoffId, contextId));
     } else {
       conditions.push(eq(aiTakeoffAnalyses.projectId, contextId));
     }

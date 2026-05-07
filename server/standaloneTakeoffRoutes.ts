@@ -27,6 +27,8 @@ import {
   indexStandaloneTakeoffSafe,
   emitLibraryAssignmentSamplesSafe,
 } from "./services/aiEstimator/standaloneIngestion";
+// Task #2551 — Per-sheet discipline indexing for standalone takeoffs.
+import { indexPlanSheetsForStandaloneTakeoffSafe } from "./services/aiEstimator/sheetIndex";
 
 const router = Router();
 
@@ -214,6 +216,12 @@ router.post("/api/takeoff/standalone/:id/sheets", requireAuth, async (req: AuthR
         sheetName: parsed.data.sheetName ?? `Sheet ${nextIdx + 1}`,
       })
       .returning();
+    // Task #2551 — Best-effort discipline indexing for the new sheet.
+    indexPlanSheetsForStandaloneTakeoffSafe({
+      organizationId: row.organizationId,
+      userId: req.user!.id,
+      standaloneTakeoffId: row.id,
+    });
     res.status(201).json(sheet);
   } catch (err) {
     next(err);
@@ -302,6 +310,12 @@ router.post("/api/takeoff/standalone/:id/files", requireAuth, async (req: AuthRe
         fileSize: parsed.data.fileSize ?? null,
       })
       .returning();
+    // Task #2551 — Newly added plan files give the indexer fresh AI input.
+    indexPlanSheetsForStandaloneTakeoffSafe({
+      organizationId: row.organizationId,
+      userId: req.user!.id,
+      standaloneTakeoffId: row.id,
+    });
     res.status(201).json(file);
   } catch (err) {
     next(err);

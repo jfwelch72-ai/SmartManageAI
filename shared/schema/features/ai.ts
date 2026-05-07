@@ -351,9 +351,10 @@ export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   bidId: varchar("bid_id"),
-  // Task #2550 follow-up — standalone takeoffs are a third valid parent for
-  // an AI takeoff analysis (alongside projects and bids). Nullable; the
-  // analyze route enforces that exactly one of project/bid/standalone is set.
+  // Task #2550 follow-up / Task #2551 — Standalone takeoffs are a third
+  // valid parent for an AI takeoff analysis (alongside projects and
+  // bids). Nullable; the analyze route enforces that exactly one of
+  // project/bid/standalone is set.
   standaloneTakeoffId: varchar("standalone_takeoff_id").references(() => standaloneTakeoffs.id, { onDelete: "cascade" }),
   takeoffSheetId: varchar("takeoff_sheet_id").references(() => takeoffSheets.id, { onDelete: "set null" }),
   tradeType: tradeTypeEnum("trade_type").notNull(),

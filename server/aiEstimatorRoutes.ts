@@ -686,15 +686,23 @@ const draftTakeoffSchema = z
   .object({
     planDocumentIds: z.array(z.string().min(1)).max(8).optional(),
     projectId: z.string().min(1).optional(),
+    // Task #2551 — Standalone takeoff source. When provided, plan
+    // documents are pulled from `standalone_takeoff_files` for the
+    // takeoff (org-scoped); planDocumentIds/projectId may be omitted.
+    standaloneTakeoffId: z.string().min(1).optional(),
     scopeNotes: z.string().max(2000).optional(),
     // Task #2530 — when true, the route enqueues `ai_estimator_draft`
     // and returns `{ jobId }` so the UI can subscribe to live progress
     // via `useJobProgress` instead of blocking on the HTTP call.
     async: z.boolean().optional(),
   })
-  .refine((d) => (d.planDocumentIds && d.planDocumentIds.length > 0) || !!d.projectId, {
-    message: "Provide planDocumentIds or projectId",
-  });
+  .refine(
+    (d) =>
+      (d.planDocumentIds && d.planDocumentIds.length > 0) ||
+      !!d.projectId ||
+      !!d.standaloneTakeoffId,
+    { message: "Provide planDocumentIds, projectId, or standaloneTakeoffId" },
+  );
 router.post(
   `${estimatorBase}/draft-takeoff`,
   requireAuth,
@@ -710,6 +718,7 @@ router.post(
       userId,
       planDocumentIds: data.planDocumentIds,
       projectId: data.projectId,
+      standaloneTakeoffId: data.standaloneTakeoffId,
       scopeNotes: data.scopeNotes,
     };
     try {
@@ -720,7 +729,11 @@ router.post(
       // from Task #2530 is now the implicit default and accepted
       // for backward compatibility.
       const { enqueueJob } = await import("./jobQueue");
-      const idemBasis = data.planDocumentIds?.slice().sort().join(",") || data.projectId || "";
+      const idemBasis =
+        data.planDocumentIds?.slice().sort().join(",") ||
+        data.projectId ||
+        data.standaloneTakeoffId ||
+        "";
       const enq = await enqueueJob(
         "ai_estimator_draft",
         { mode: "takeoff", draftOptions },

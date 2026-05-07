@@ -1106,8 +1106,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const aiHistoryContextId =
     context?.type === "project" ? context.projectId :
     context?.type === "bid" ? context.bidId :
+    // Task #2551 — Standalone takeoff is its own AI history bucket.
+    context?.type === "standalone" ? context.standaloneTakeoffId :
     null;
-  const aiHistoryContextType = context?.type === "bid" ? "bid" : "project";
+  const aiHistoryContextType =
+    context?.type === "bid"
+      ? "bid"
+      : context?.type === "standalone"
+        ? "standalone"
+        : "project";
   const aiCtaPreconditionMet =
     !!selectedSheet &&
     !measurementsLoading &&
@@ -4986,6 +4993,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       props: {
         projectId: context?.type === "project" ? context.projectId : projectId || undefined,
         bidId: context?.type === "bid" ? context.bidId : undefined,
+        // Task #2551 — Standalone takeoff context.
         standaloneTakeoffId: context?.type === "standalone" ? context.standaloneTakeoffId : undefined,
         sheetId: selectedSheet,
         onClose: () => { setAiPanelOpen(false); setPreImportDetectedItems([]); },

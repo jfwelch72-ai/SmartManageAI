@@ -22,6 +22,8 @@ interface DraftMeasurement {
 interface Props {
   bidId?: string;
   projectId?: string;
+  // Task #2551 — Standalone takeoff source.
+  standaloneTakeoffId?: string;
 }
 
 interface DraftResult {
@@ -36,7 +38,7 @@ interface DraftResult {
  * the `ai_estimator_draft` queue so the dialog can show a real progress bar
  * driven by `useJobProgress` instead of a static spinner.
  */
-export function DraftFullTakeoffButton({ projectId }: Props) {
+export function DraftFullTakeoffButton({ projectId, standaloneTakeoffId }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [scopeNotes, setScopeNotes] = useState("");
@@ -52,6 +54,7 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
     mutationFn: async (): Promise<{ jobId?: string }> => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft-takeoff", {
         projectId,
+        standaloneTakeoffId,
         scopeNotes: scopeNotes.trim() || undefined,
         async: true,
       });
@@ -138,7 +141,7 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
 
   const isWorking = draftIt.isPending || (!!jobId && !draft);
 
-  if (!projectId) return null;
+  if (!projectId && !standaloneTakeoffId) return null;
 
   return (
     <>

@@ -102,6 +102,27 @@ export async function ensureStandaloneTakeoffTables(): Promise<void> {
     `));
     await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS takeoff_sheets_standalone_idx ON takeoff_sheets(standalone_takeoff_id)`));
 
+    // Task #2551 — ai_takeoff_analyses gains a nullable standalone_takeoff_id
+    // so AI Takeoff runs originating from a standalone takeoff workspace can
+    // be persisted and surfaced in the per-context history endpoint.
+    await db.execute(sql.raw(`
+      ALTER TABLE ai_takeoff_analyses
+        ADD COLUMN IF NOT EXISTS standalone_takeoff_id varchar
+    `));
+    await db.execute(sql.raw(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'ai_takeoff_analyses_standalone_takeoff_fkey'
+        ) THEN
+          ALTER TABLE ai_takeoff_analyses
+            ADD CONSTRAINT ai_takeoff_analyses_standalone_takeoff_fkey
+            FOREIGN KEY (standalone_takeoff_id) REFERENCES standalone_takeoffs(id) ON DELETE CASCADE;
+        END IF;
+      END $$;
+    `));
+    await db.execute(sql.raw(`CREATE INDEX IF NOT EXISTS ai_takeoff_analyses_standalone_idx ON ai_takeoff_analyses(standalone_takeoff_id)`));
+
     // estimate_line_items — send-to-estimate provenance + soft-delete.
     await db.execute(sql.raw(`
       ALTER TABLE estimate_line_items

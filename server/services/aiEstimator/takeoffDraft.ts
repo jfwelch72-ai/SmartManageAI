@@ -1,7 +1,14 @@
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
-import { planDocuments, projects, takeoffSheets } from "@shared/schema";
+import {
+  planDocuments,
+  projects,
+  takeoffSheets,
+  // Task #2551 — Standalone takeoff plan-document source.
+  standaloneTakeoffs,
+  standaloneTakeoffFiles,
+} from "@shared/schema";
 import { extractDocumentContent } from "../../ai/documentExtractor";
 import { governedAiCall } from "../aiGovernance";
 // Task #2410 — Routed through provider abstraction so this draft path runs on
@@ -55,8 +62,34 @@ export interface TakeoffDraftResult {
 
 async function resolveOrgPlanDocuments(
   organizationId: string,
-  opts: { documentIds?: string[]; projectId?: string; bidId?: string; disciplines?: string[] },
+  opts: {
+    documentIds?: string[];
+    projectId?: string;
+    bidId?: string;
+    disciplines?: string[];
+    // Task #2551 — Standalone takeoff source. When set, plan-document
+    // URLs are pulled from `standalone_takeoff_files` for the takeoff
+    // (org-scoped). projectId/documentIds are ignored in this branch.
+    standaloneTakeoffId?: string;
+  },
 ): Promise<string[]> {
+  // Task #2551 — Standalone takeoff source path. The standalone takeoff
+  // owns its own file table (`standalone_takeoff_files`) keyed by
+  // organizationId; verify ownership before reading.
+  if (opts.standaloneTakeoffId) {
+    const [takeoff] = await db
+      .select({ id: standaloneTakeoffs.id, organizationId: standaloneTakeoffs.organizationId })
+      .from(standaloneTakeoffs)
+      .where(eq(standaloneTakeoffs.id, opts.standaloneTakeoffId))
+      .limit(1);
+    if (!takeoff || takeoff.organizationId !== organizationId) return [];
+    const files = await db
+      .select({ fileUrl: standaloneTakeoffFiles.fileUrl })
+      .from(standaloneTakeoffFiles)
+      .where(eq(standaloneTakeoffFiles.standaloneTakeoffId, opts.standaloneTakeoffId));
+    return files.map((f) => f.fileUrl).filter((u): u is string => !!u);
+  }
+
   // Always restrict to documents whose project belongs to this organization.
   const baseRows = await db
     .select({
@@ -119,6 +152,10 @@ export async function draftTakeoffFromPlans(opts: {
   // entries match the given AIA disciplines (e.g. ['M','P'] for the
   // mech/plumbing trade pass).
   bidId?: string;
+  // Task #2551 — Standalone takeoff source. When set, plan documents
+  // are pulled from `standalone_takeoff_files` (org-scoped) instead of
+  // the project plan-set table.
+  standaloneTakeoffId?: string;
   disciplines?: string[];
   // Free-text trade label, threaded into the system prompt to steer the
   // model. Not a filter — pair with `disciplines` to narrow inputs.
@@ -144,6 +181,7 @@ export async function draftTakeoffFromPlans(opts: {
     documentIds: opts.planDocumentIds,
     projectId: opts.projectId,
     bidId: opts.bidId,
+    standaloneTakeoffId: opts.standaloneTakeoffId,
     disciplines: opts.disciplines,
   });
   if (urls.length === 0) {

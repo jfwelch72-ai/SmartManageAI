@@ -25,6 +25,9 @@ import {
   bids,
   planDocuments,
   takeoffSheets,
+  // Task #2551 — Standalone takeoff source.
+  standaloneTakeoffs,
+  standaloneTakeoffFiles,
   SHEET_DISCIPLINES,
   type SheetDiscipline,
   type SheetDisciplineSource,
@@ -298,6 +301,207 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
   });
 
   return { indexed: updates, aiBlocked, reason: aiReason };
+}
+
+/**
+ * Task #2551 — Sheet indexer for standalone takeoffs.
+ *
+ * Mirrors `indexPlanSheetsForBid` but pulls plan-document URLs from
+ * `standalone_takeoff_files` and pulls sheets from `takeoff_sheets`
+ * scoped by `standalone_takeoff_id`. Standalone sheets do not carry a
+ * `planId`, so the AI mapping falls back to (sheetIndex) only.
+ */
+export async function indexPlanSheetsForStandaloneTakeoff(opts: {
+  organizationId: string;
+  userId: string;
+  standaloneTakeoffId: string;
+}): Promise<{ indexed: SheetIndexEntry[]; aiBlocked?: boolean; reason?: string }> {
+  const [takeoff] = await db
+    .select({ id: standaloneTakeoffs.id, organizationId: standaloneTakeoffs.organizationId })
+    .from(standaloneTakeoffs)
+    .where(eq(standaloneTakeoffs.id, opts.standaloneTakeoffId))
+    .limit(1);
+  if (!takeoff || takeoff.organizationId !== opts.organizationId) {
+    return { indexed: [], reason: "Standalone takeoff not in org" };
+  }
+
+  const sheets = await db
+    .select()
+    .from(takeoffSheets)
+    .where(eq(takeoffSheets.standaloneTakeoffId, opts.standaloneTakeoffId));
+  if (sheets.length === 0) {
+    return { indexed: [], reason: "No sheets to index" };
+  }
+
+  const heuristicResults = new Map<string, { discipline: SheetDiscipline | null; sheetNumber: string | null }>();
+  for (const s of sheets) {
+    heuristicResults.set(s.id, disciplineFromText(s.sheetName ?? null));
+  }
+
+  const fileRows = await db
+    .select({ id: standaloneTakeoffFiles.id, fileUrl: standaloneTakeoffFiles.fileUrl })
+    .from(standaloneTakeoffFiles)
+    .where(eq(standaloneTakeoffFiles.standaloneTakeoffId, opts.standaloneTakeoffId));
+
+  let aiBlocked = false;
+  let aiReason: string | undefined;
+  const aiBySheetId = new Map<string, AiSheetClassification & { source: SheetDisciplineSource }>();
+
+  const docs = fileRows.slice(0, 8);
+  for (const doc of docs) {
+    if (!doc.fileUrl) continue;
+    let rawBlocks;
+    try {
+      rawBlocks = await extractDocumentContent(doc.fileUrl);
+    } catch (e) {
+      logWarn("[sheetIndex] standalone extract failed", { url: doc.fileUrl, error: String(e) });
+      continue;
+    }
+    if (!rawBlocks || rawBlocks.length === 0) continue;
+
+    const extractedText = rawBlocks
+      .filter((c) => c.type === "text")
+      .map((c) => (c as { text: string }).text)
+      .join("\n");
+    const detection = detectPromptInjection(extractedText);
+    if (shouldRefusePromptInjection(detection)) {
+      logWarn("[sheetIndex] standalone AI sheet classification refused (prompt injection)", {
+        standaloneTakeoffId: opts.standaloneTakeoffId,
+        fileId: doc.id,
+        matches: detection.matches.map((m) => m.id),
+      });
+      continue;
+    }
+    const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
+
+    const sysPrompt = `You read construction plan sets and classify each page by AIA discipline.
+Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1 }] }
+Only emit one entry per page in the order shown. If you cannot tell, set discipline to "O" and confidence < 0.5.`;
+
+    const gov = await governedAiCall<string | null>({
+      orgId: opts.organizationId,
+      userId: opts.userId,
+      actionType: "ai_estimator.sheet_index",
+      inputRefs: { standaloneTakeoffId: opts.standaloneTakeoffId, fileId: doc.id, pageBlocks: blocks.length },
+      fn: async () => {
+        const completion = await routedChatCompletion({
+          orgId: opts.organizationId,
+          featureKey: "ai_estimator.sheet_index",
+          request: {
+            messages: [
+              { role: "system", content: sysPrompt },
+              {
+                role: "user",
+                content: [
+                  ...blocks.map<AiContentPart>((b) =>
+                    b.type === "image_url"
+                      ? { type: "image_url", image_url: { url: b.image_url.url, detail: "auto" } }
+                      : { type: "text", text: b.text },
+                  ),
+                  { type: "text", text: "Classify each page." },
+                ],
+              },
+            ],
+            max_completion_tokens: 1500,
+            response_format: { type: "json_object" },
+          },
+        });
+        return { result: completion.choices[0]?.message?.content ?? null, completion };
+      },
+    });
+
+    if (gov.blocked) {
+      aiBlocked = true;
+      aiReason = gov.reason;
+      break;
+    }
+
+    const validated = validateAiJsonOutput(SHEET_INDEX_OUTPUT_SCHEMA, gov.result);
+    if (!validated.ok) {
+      logWarn("[sheetIndex] standalone AI returned non-JSON / invalid shape", {
+        fileId: doc.id,
+        reason: validated.reason,
+      });
+      continue;
+    }
+
+    for (const entry of validated.data.sheets as AiSheetClassification[]) {
+      if (typeof entry.sheetIndex !== "number") continue;
+      const target = sheets.find((s) => s.sheetIndex === entry.sheetIndex);
+      if (!target) continue;
+      const code = (entry.discipline ?? "").toUpperCase();
+      const safeCode = ALLOWED_DISCIPLINES.has(code) ? (code as SheetDiscipline) : "O";
+      aiBySheetId.set(target.id, {
+        sheetIndex: entry.sheetIndex,
+        discipline: safeCode,
+        sheetNumber: entry.sheetNumber ?? null,
+        confidence: typeof entry.confidence === "number" ? entry.confidence : 0.5,
+        source: "AI_DETECTED",
+      });
+    }
+  }
+
+  const updates: SheetIndexEntry[] = [];
+  for (const s of sheets) {
+    const ai = aiBySheetId.get(s.id);
+    const h = heuristicResults.get(s.id) ?? { discipline: null, sheetNumber: null };
+    const discipline = ai?.discipline ?? h.discipline;
+    const sheetNumber = ai?.sheetNumber ?? h.sheetNumber;
+    const source: SheetDisciplineSource | null = ai
+      ? "AI_DETECTED"
+      : h.discipline
+        ? "FILENAME_HEURISTIC"
+        : null;
+    const confidence = ai
+      ? coarseConfidence(ai.confidence)
+      : h.discipline
+        ? "MEDIUM"
+        : null;
+    if (!discipline) continue;
+    const disciplineTyped = discipline as SheetDiscipline;
+    await db
+      .update(takeoffSheets)
+      .set({
+        discipline: disciplineTyped,
+        sheetNumber,
+        disciplineConfidence: confidence,
+        disciplineSource: source,
+        updatedAt: new Date(),
+      })
+      .where(eq(takeoffSheets.id, s.id));
+    updates.push({
+      sheetId: s.id,
+      sheetIndex: s.sheetIndex,
+      sheetName: s.sheetName,
+      discipline: disciplineTyped,
+      sheetNumber,
+      disciplineConfidence: confidence,
+      disciplineSource: source,
+    });
+  }
+
+  logInfo("[sheetIndex] standalone indexed", {
+    standaloneTakeoffId: opts.standaloneTakeoffId,
+    sheets: sheets.length,
+    classified: updates.length,
+    aiBlocked,
+  });
+
+  return { indexed: updates, aiBlocked, reason: aiReason };
+}
+
+/** Fire-and-forget standalone indexing (best-effort, swallows errors). */
+export function indexPlanSheetsForStandaloneTakeoffSafe(opts: {
+  organizationId: string;
+  userId: string;
+  standaloneTakeoffId: string;
+}): void {
+  indexPlanSheetsForStandaloneTakeoff(opts).catch((err) => {
+    logWarn("standalone sheet indexing failed", {
+      standaloneTakeoffId: opts.standaloneTakeoffId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  });
 }
 
 /** Read the current sheet index for a bid. Read-only; no AI. */

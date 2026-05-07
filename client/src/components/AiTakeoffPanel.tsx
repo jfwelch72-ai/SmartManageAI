@@ -110,6 +110,7 @@ export interface ItemImportResult {
 interface AiTakeoffPanelProps {
   projectId?: string;
   bidId?: string;
+  // Task #2551 — Standalone takeoff context.
   standaloneTakeoffId?: string;
   sheetId?: string | null;
   onItemsImported?: (items: DetectedItem[]) => Promise<ItemImportResult>;
@@ -263,8 +264,13 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
     },
   });
 
-  const historyContextId = projectId || bidId;
-  const historyContextType = bidId && !projectId ? "bid" : "project";
+  // Task #2551 — Standalone takeoff is its own history context.
+  const historyContextId = standaloneTakeoffId || projectId || bidId;
+  const historyContextType = standaloneTakeoffId
+    ? "standalone"
+    : bidId && !projectId
+      ? "bid"
+      : "project";
   interface AnalysisHistoryEntry {
     id: string;
     status: string;
@@ -732,7 +738,7 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
                 </>
               )}
             </Button>
-            <DraftFullTakeoffButton bidId={bidId} projectId={projectId} />
+            <DraftFullTakeoffButton bidId={bidId} projectId={projectId} standaloneTakeoffId={standaloneTakeoffId} />
           </div>
         )}
 
