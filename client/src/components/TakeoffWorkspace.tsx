@@ -1646,6 +1646,54 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       toast({ title: "Move failed", description: e.message, variant: "destructive" }),
   });
 
+  // Task #2588 — Bulk-move N measurements to BASE/CO in one round-trip.
+  // Backend (`POST /api/takeoff/measurements/bulk-scope`) recomputes
+  // each affected change order's `takeoffRollupCost`; we invalidate
+  // the same query keys as the per-row mutation so an open
+  // ChangeOrderDialog reflects the new totals immediately.
+  const bulkMoveScopeMutation = useMutation({
+    mutationFn: async ({
+      ids,
+      scopeTag,
+      changeOrderId,
+    }: {
+      ids: string[];
+      scopeTag: "BASE" | "CO";
+      changeOrderId: string | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/takeoff/measurements/bulk-scope", {
+        ids,
+        scopeTag,
+        changeOrderId,
+      });
+      return res.json();
+    },
+    onSuccess: (data, vars) => {
+      invalidateAfterReview();
+      if (projectChangeOrdersEnabled) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/projects", context!.type === "project" ? context!.projectCode : "", "change-orders"],
+        });
+      }
+      if (vars.changeOrderId) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/change-orders", vars.changeOrderId, "takeoff-rollup"],
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
+      const n = data?.updatedCount ?? vars.ids.length;
+      toast({
+        title: vars.scopeTag === "CO" ? `Moved ${n} to change order` : `Moved ${n} to base bid`,
+        description:
+          vars.scopeTag === "CO"
+            ? `${n} measurement${n === 1 ? "" : "s"} now roll up under the selected CO.`
+            : `${n} measurement${n === 1 ? "" : "s"} returned to the base-bid scope.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Bulk move failed", description: e.message, variant: "destructive" }),
+  });
+
   const remediateDriftMutation = useMutation({
     mutationFn: async ({ measurementId, action }: { measurementId: string; action: "recapture" | "mark_stale" }) => {
       const res = await apiRequest(
@@ -5046,7 +5094,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             moveScopeMutation.mutate({ measurementId, ...payload });
           }
         : undefined,
-      isMovingScope: moveScopeMutation.isPending,
+      // Task #2588 — Bulk move many measurements to BASE/CO in one
+      // round-trip. Only meaningful in a project context (the
+      // change-order picker is project-scoped); the table only
+      // surfaces the toolbar action when both this callback and 2+
+      // selected rows are present.
+      onBulkMoveScope: projectChangeOrdersEnabled
+        ? async (
+            ids: string[],
+            payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+          ) => {
+            await bulkMoveScopeMutation.mutateAsync({ ids, ...payload });
+          }
+        : undefined,
+      isMovingScope: moveScopeMutation.isPending || bulkMoveScopeMutation.isPending,
       onBulkUnlockAndRescale: async (ids: string[]) => {
         // Use mutateAsync so the table can await success before
         // clearing its selection. If the request rejects (network

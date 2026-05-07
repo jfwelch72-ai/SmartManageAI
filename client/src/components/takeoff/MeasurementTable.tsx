@@ -117,6 +117,19 @@ interface MeasurementTableProps {
     measurementId: string,
     payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
   ) => void;
+  /**
+   * Task #2588 — Bulk move many measurements to a change order (or
+   * back to base bid) in one round-trip. The "Move N selected to…"
+   * toolbar action only renders when this callback is wired AND 2+
+   * rows are currently selected, so single-row moves still flow
+   * through the per-row right-click menu (which has a smaller
+   * confirmation surface). The callback receives only the selected
+   * ids — never the full sheet — so the user has explicit control.
+   */
+  onBulkMoveScope?: (
+    ids: string[],
+    payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+  ) => void | Promise<void>;
   isMovingScope?: boolean;
 }
 
@@ -140,6 +153,7 @@ export function MeasurementTable({
   isRemediatingDrift,
   changeOrders,
   onMoveScope,
+  onBulkMoveScope,
   isMovingScope,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
@@ -151,6 +165,14 @@ export function MeasurementTable({
   // Task #2581 — Holds the measurement the user is moving to a CO.
   const [moveCandidate, setMoveCandidate] = useState<any | null>(null);
   const [pickedChangeOrderId, setPickedChangeOrderId] = useState<string>("");
+  // Task #2588 — Bulk-move dialog state. Open whenever the user
+  // clicks the "Move N selected to…" toolbar action; reuses the same
+  // change-order picker as the per-row dialog. The "scope" radio in
+  // the dialog also lets the bulk action send rows back to BASE in
+  // one shot, which is the other half of the routine batch action.
+  const [bulkMoveOpen, setBulkMoveOpen] = useState(false);
+  const [bulkMoveTarget, setBulkMoveTarget] = useState<"CO" | "BASE">("CO");
+  const [bulkPickedChangeOrderId, setBulkPickedChangeOrderId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   // Task #2334 — `unlockCandidate` carries the measurement row the
@@ -282,6 +304,33 @@ export function MeasurementTable({
   function moveToBaseBid(m: any) {
     if (!onMoveScope) return;
     onMoveScope(m.id, { scopeTag: "BASE", changeOrderId: null });
+  }
+  function openBulkMove() {
+    setBulkMoveTarget("CO");
+    setBulkPickedChangeOrderId("");
+    setBulkMoveOpen(true);
+  }
+  function confirmBulkMove() {
+    if (!onBulkMoveScope) return;
+    const ids = Array.from(selectedRowIds);
+    if (ids.length === 0) return;
+    if (bulkMoveTarget === "CO" && !bulkPickedChangeOrderId) return;
+    const payload =
+      bulkMoveTarget === "CO"
+        ? { scopeTag: "CO" as const, changeOrderId: bulkPickedChangeOrderId }
+        : { scopeTag: "BASE" as const, changeOrderId: null };
+    Promise.resolve(onBulkMoveScope(ids, payload))
+      .then(() => {
+        // Clear selection only after success so a 4xx leaves the
+        // user's selection intact for retry.
+        setSelectedRowIds(new Set());
+        setBulkMoveOpen(false);
+        setBulkPickedChangeOrderId("");
+      })
+      .catch(() => {
+        // Mutation surfaces its own toast; keep dialog open so the
+        // user can adjust their pick (e.g. wrong CO) and retry.
+      });
   }
 
   function getQty(m: any): number {
@@ -488,6 +537,28 @@ export function MeasurementTable({
           >
             <LockOpen className="w-3 h-3" />
             Unlock {selectedLockedCount} selected
+          </Button>
+        )}
+        {/*
+          Task #2588 — Bulk "Move N selected to…" action. Renders only
+          when the workspace wired the bulk callback AND the user has
+          2+ rows selected. Single-row moves still flow through the
+          per-row right-click menu (which has a tighter affordance).
+          The dialog handles BASE vs CO selection so the action also
+          covers the "I tagged a bunch under CO-12 by mistake, move
+          them back to base" recovery path.
+        */}
+        {onBulkMoveScope && selectedRowIds.size >= 2 && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[10px] gap-1 border-purple-500/60 bg-purple-500/10 hover:bg-purple-500/20 text-purple-700 dark:text-purple-300"
+            disabled={isMovingScope}
+            onClick={openBulkMove}
+            data-testid="button-bulk-move-scope"
+          >
+            <GitBranch className="w-3 h-3" />
+            Move {selectedRowIds.size} selected to…
           </Button>
         )}
         {driftEnabled && driftCount > 0 && onBulkRemediateDrift && (
@@ -1114,6 +1185,113 @@ export function MeasurementTable({
               data-testid="button-confirm-move-to-co"
             >
               {isMovingScope ? "Moving…" : "Move"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/*
+        Task #2588 — Bulk-move picker. Same change-order list as the
+        per-row dialog, but with a BASE/CO toggle so the action can
+        also send rows back to base bid in one shot. Confirms the
+        count up front so the estimator sees the blast radius before
+        committing — moving 30 measurements to a different scope is a
+        money-path mutation (rolls them in/out of the CO total).
+      */}
+      <Dialog
+        open={bulkMoveOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            setBulkMoveOpen(false);
+            setBulkPickedChangeOrderId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="dialog-bulk-move-scope">
+          <DialogHeader>
+            <DialogTitle>
+              Move {selectedRowIds.size} measurement{selectedRowIds.size === 1 ? "" : "s"} to…
+            </DialogTitle>
+            <DialogDescription>
+              Re-tag every selected row in one shot. The change-order rollup updates immediately on success.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={bulkMoveTarget === "CO" ? "default" : "outline"}
+                size="sm"
+                className="flex-1 h-8 gap-1 text-xs"
+                onClick={() => setBulkMoveTarget("CO")}
+                data-testid="button-bulk-move-target-co"
+              >
+                <GitBranch className="w-3 h-3" />
+                Change order
+              </Button>
+              <Button
+                type="button"
+                variant={bulkMoveTarget === "BASE" ? "default" : "outline"}
+                size="sm"
+                className="flex-1 h-8 gap-1 text-xs"
+                onClick={() => setBulkMoveTarget("BASE")}
+                data-testid="button-bulk-move-target-base"
+              >
+                <FileText className="w-3 h-3" />
+                Base bid
+              </Button>
+            </div>
+            {bulkMoveTarget === "CO" && (
+              <div className="space-y-1">
+                <Label className="text-xs">Change order</Label>
+                <Select value={bulkPickedChangeOrderId} onValueChange={setBulkPickedChangeOrderId}>
+                  <SelectTrigger className="h-9 text-sm" data-testid="select-bulk-move-change-order">
+                    <SelectValue placeholder="Select a change order…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {(changeOrders ?? []).length === 0 && (
+                      <SelectItem value="__none__" disabled>
+                        No change orders on this project yet
+                      </SelectItem>
+                    )}
+                    {(changeOrders ?? []).map((co) => (
+                      <SelectItem
+                        key={co.id}
+                        value={co.id}
+                        data-testid={`option-bulk-change-order-${co.id}`}
+                      >
+                        CO {co.changeOrderNumber}
+                        {co.description ? ` — ${co.description.slice(0, 50)}` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setBulkMoveOpen(false);
+                setBulkPickedChangeOrderId("");
+              }}
+              data-testid="button-cancel-bulk-move"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmBulkMove}
+              disabled={
+                isMovingScope ||
+                selectedRowIds.size === 0 ||
+                (bulkMoveTarget === "CO" && !bulkPickedChangeOrderId)
+              }
+              data-testid="button-confirm-bulk-move"
+            >
+              {isMovingScope
+                ? "Moving…"
+                : `Move ${selectedRowIds.size} ${bulkMoveTarget === "CO" ? "to CO" : "to base bid"}`}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -50,6 +50,11 @@ export interface MeasurementTablePanelProps {
     measurementId: string,
     payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
   ) => void;
+  /** Task #2588 — Bulk move many measurements in one round-trip. */
+  onBulkMoveScope?: (
+    ids: string[],
+    payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+  ) => void | Promise<void>;
   isMovingScope?: boolean;
 }
 
@@ -84,6 +89,7 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           isRemediatingDrift={props.isRemediatingDrift}
           changeOrders={props.changeOrders}
           onMoveScope={props.onMoveScope}
+          onBulkMoveScope={props.onBulkMoveScope}
           isMovingScope={props.isMovingScope}
         />
       </div>
