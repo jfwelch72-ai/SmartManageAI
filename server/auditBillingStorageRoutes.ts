@@ -159,7 +159,31 @@ function serializePartUpload(uploadId: string, partNumber: number, task: () => P
 
 router.get("/api/projects/:projectId/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
-    const { scopeItems } = await import("@shared/schema");
+    const { scopeItems, projects } = await import("@shared/schema");
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    // Tenant-isolation guard (Task #2507): the project must belong to
+    // the caller's org. Without this check a user in Org B who knows
+    // an Org A project ID can read that project's billing events.
+    // SUPER_ADMIN (shouldFilter=false) bypasses the org predicate.
+    const projectConditions = [eq(projects.id, req.params.projectId)];
+    if (shouldFilter && orgId) {
+      projectConditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(...projectConditions))
+      .limit(1);
+    if (!project) {
+      res.status(404).json({ error: "Project not found" });
+      return;
+    }
+
     const events = await db
       .select({
         billingEvent: billingEvents,
@@ -190,6 +214,33 @@ router.post("/api/billing-events", requireAuth, requireRole("ADMIN", "MANAGER"),
 
     const data = validateBody(schema, req.body, res);
     if (!data) return;
+
+    // Tenant-isolation guard (Task #2507): the scope item's owning
+    // project must be in the caller's org. Without this check Org B
+    // can post billing events against Org A's scope items if they
+    // know (or guess) the scopeItemId.
+    const { scopeItems, projects } = await import("@shared/schema");
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+    // SUPER_ADMIN (shouldFilter=false) bypasses the org predicate so
+    // platform admins can author billing events on behalf of a tenant.
+    const ownerConditions = [eq(scopeItems.id, data.scopeItemId)];
+    if (shouldFilter && orgId) {
+      ownerConditions.push(eq(projects.gcOrganizationId, orgId));
+    }
+    const [owner] = await db
+      .select({ scopeItemId: scopeItems.id })
+      .from(scopeItems)
+      .innerJoin(projects, eq(scopeItems.projectId, projects.id))
+      .where(and(...ownerConditions))
+      .limit(1);
+    if (!owner) {
+      res.status(404).json({ error: "Scope item not found" });
+      return;
+    }
 
     const insertData = { ...data, createdById: req.user!.id };
 
