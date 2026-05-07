@@ -55,6 +55,8 @@ const router = Router();
 const aiTakeoffAnalyzeSchema = z.object({
   projectId: z.string().optional(),
   bidId: z.string().optional(),
+  // Task #2550 follow-up — standalone takeoff workspace also runs AI auto-takeoff.
+  standaloneTakeoffId: z.string().optional(),
   takeoffSheetId: z.string().optional(),
   tradeType: z.string().optional(),
   analysisMode: z.enum(["QUICK", "DETAILED"]).default("QUICK"),
@@ -75,10 +77,24 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
     }
 
-    const { projectId, bidId, takeoffSheetId, tradeType, analysisMode, focusAreas } = parsed.data;
+    const { projectId, bidId, standaloneTakeoffId, takeoffSheetId, tradeType, analysisMode, focusAreas } = parsed.data;
 
-    if (!projectId && !bidId) {
-      return res.status(400).json({ error: "Either projectId or bidId is required" });
+    if (!projectId && !bidId && !standaloneTakeoffId) {
+      return res.status(400).json({ error: "Either projectId, bidId, or standaloneTakeoffId is required" });
+    }
+
+    // Org-scope check for standalone takeoff parent (project/bid paths are
+    // already org-scoped downstream when records are loaded for analysis).
+    if (standaloneTakeoffId) {
+      const { standaloneTakeoffs } = await import("@shared/schema");
+      const [st] = await db
+        .select({ id: standaloneTakeoffs.id })
+        .from(standaloneTakeoffs)
+        .where(and(eq(standaloneTakeoffs.id, standaloneTakeoffId), eq(standaloneTakeoffs.organizationId, organizationId)))
+        .limit(1);
+      if (!st) {
+        return res.status(404).json({ error: "Standalone takeoff not found" });
+      }
     }
 
     const [org] = await db.select().from(organizations).where(eq(organizations.id, organizationId));
@@ -92,6 +108,7 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       organizationId,
       projectId: projectId || null,
       bidId: bidId || null,
+      standaloneTakeoffId: standaloneTakeoffId || null,
       takeoffSheetId: takeoffSheetId || null,
       tradeType: effectiveTradeType as any,
       status: "PENDING",

@@ -110,6 +110,7 @@ export interface ItemImportResult {
 interface AiTakeoffPanelProps {
   projectId?: string;
   bidId?: string;
+  standaloneTakeoffId?: string;
   sheetId?: string | null;
   onItemsImported?: (items: DetectedItem[]) => Promise<ItemImportResult>;
   onClose?: () => void;
@@ -210,7 +211,7 @@ const TRADE_TYPE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
-export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
@@ -398,6 +399,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
       const body: Record<string, unknown> = {
         ...(projectId ? { projectId } : {}),
         ...(bidId ? { bidId } : {}),
+        ...(standaloneTakeoffId ? { standaloneTakeoffId } : {}),
         takeoffSheetId: sheetId,
         analysisMode,
       };

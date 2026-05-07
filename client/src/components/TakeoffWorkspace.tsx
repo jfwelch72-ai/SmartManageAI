@@ -4986,6 +4986,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       props: {
         projectId: context?.type === "project" ? context.projectId : projectId || undefined,
         bidId: context?.type === "bid" ? context.bidId : undefined,
+        standaloneTakeoffId: context?.type === "standalone" ? context.standaloneTakeoffId : undefined,
         sheetId: selectedSheet,
         onClose: () => { setAiPanelOpen(false); setPreImportDetectedItems([]); },
         onHighlightItem: (item: DetectedItem | null) => setHighlightedAiItem(item),
