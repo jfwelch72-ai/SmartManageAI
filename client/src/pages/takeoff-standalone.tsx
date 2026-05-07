@@ -126,6 +126,13 @@ export default function TakeoffStandalonePage() {
   // After an ObjectUploader completes, persist each upload as a "file" row
   // for record-keeping and — when it's a PDF/image — also create a "sheet"
   // entry so the user immediately sees it in the Sheets list.
+  //
+  // Task #2552 — For PDFs we now hit the new `/import-plan` endpoint
+  // which detects the page count from GCS and inserts one sheet per
+  // page in a single round-trip (mirrors the bid/project import-plan
+  // flow). The endpoint also writes the companion file row so we no
+  // longer have to POST to `/files` first. For non-PDF plan-like
+  // uploads (PNG/JPG) we fall back to the legacy single-sheet path.
   const uploadMutation = useMutation({
     mutationFn: async (uploaded: {
       fileName: string;
@@ -133,19 +140,28 @@ export default function TakeoffStandalonePage() {
       objectKey: string;
       fileSize: number;
       mimeType: string;
-    }) => {
-      await apiRequest("POST", `/api/takeoff/standalone/${id}/files`, uploaded);
-      const isPlanLike =
+    }): Promise<{ pageCount: number }> => {
+      const isPdf =
         uploaded.mimeType === "application/pdf" ||
+        /\.pdf$/i.test(uploaded.fileName);
+      if (isPdf) {
+        const res = await apiRequest("POST", `/api/takeoff/standalone/${id}/import-plan`, uploaded);
+        const data = (await res.json()) as { sheets?: unknown[]; pageCount?: number };
+        return { pageCount: Number(data.pageCount ?? data.sheets?.length ?? 1) };
+      }
+      await apiRequest("POST", `/api/takeoff/standalone/${id}/files`, uploaded);
+      const isImagePlan =
         uploaded.mimeType.startsWith("image/") ||
-        /\.(pdf|png|jpe?g)$/i.test(uploaded.fileName);
-      if (isPlanLike) {
+        /\.(png|jpe?g)$/i.test(uploaded.fileName);
+      if (isImagePlan) {
         const sheetName = uploaded.fileName.replace(/\.[^/.]+$/, "");
         await apiRequest("POST", `/api/takeoff/standalone/${id}/sheets`, {
           imageUrl: uploaded.fileUrl,
           sheetName,
         });
+        return { pageCount: 1 };
       }
+      return { pageCount: 0 };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "files"] });
@@ -174,6 +190,7 @@ export default function TakeoffStandalonePage() {
       return;
     }
     let successCount = 0;
+    let totalSheets = 0;
     result.successful.forEach((up) => {
       const file = up.data as File | undefined;
       const fileName = file?.name ?? up.name ?? "plan.pdf";
@@ -185,12 +202,20 @@ export default function TakeoffStandalonePage() {
       uploadMutation.mutate(
         { fileName, fileUrl, objectKey, fileSize, mimeType },
         {
-          onSuccess: () => {
+          onSuccess: (data) => {
             successCount += 1;
+            totalSheets += data?.pageCount ?? 0;
             if (successCount === result.successful!.length) {
+              // Task #2552 — Surface the multi-page expansion in the
+              // toast so the user knows a 12-page PDF actually became
+              // 12 sheets in one click instead of one merged sheet.
+              const sheetSuffix =
+                totalSheets > successCount
+                  ? ` (${totalSheets} sheets)`
+                  : "";
               toast({
                 title: "Upload complete",
-                description: `${successCount} file(s) attached to this takeoff.`,
+                description: `${successCount} file(s) attached to this takeoff${sheetSuffix}.`,
               });
             }
           },

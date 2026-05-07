@@ -1665,9 +1665,15 @@ export function useTakeoffData({
 
   const reorderSheetsMutation = useMutation({
     mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
-      const url = isBid
-        ? `/api/bids/${ctxId}/takeoff/sheets/reorder`
-        : `/api/projects/${ctxId}/takeoff/sheets/reorder`;
+      // Task #2552 — Standalone takeoffs now have their own
+      // `/api/takeoff/standalone/:id/sheets/reorder` endpoint instead
+      // of silently no-op'ing against a project URL the standalone
+      // takeoff doesn't belong to.
+      const url = isStandalone
+        ? `/api/takeoff/standalone/${ctxId}/sheets/reorder`
+        : isBid
+          ? `/api/bids/${ctxId}/takeoff/sheets/reorder`
+          : `/api/projects/${ctxId}/takeoff/sheets/reorder`;
       const res = await apiRequest("PATCH", url, { order });
       return res.json();
     },

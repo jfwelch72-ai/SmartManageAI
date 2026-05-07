@@ -29,6 +29,7 @@ import {
 } from "./services/aiEstimator/standaloneIngestion";
 // Task #2551 — Per-sheet discipline indexing for standalone takeoffs.
 import { indexPlanSheetsForStandaloneTakeoffSafe } from "./services/aiEstimator/sheetIndex";
+import { getPdfPageCountFromGcs } from "./utils/pdfPageCount";
 
 const router = Router();
 
@@ -261,6 +262,166 @@ router.get("/api/takeoff/standalone/:id/all-measurements", requireAuth, async (r
       .from(takeoffMeasurements)
       .where(inArray(takeoffMeasurements.sheetId, sheetRows.map((s) => s.id)));
     res.json(ms);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Multi-sheet PDF import ----------
+//
+// Task #2552 — Standalone takeoffs previously only supported uploading
+// one sheet at a time via `POST .../sheets`. For multi-page plan PDFs
+// that meant a 12-sheet drawing set required 12 separate sheet inserts
+// (or fell back to "treat the whole PDF as one sheet"). This endpoint
+// mirrors the bid/project `/import-plan` shape: pass an already-uploaded
+// file (fileUrl + objectKey + fileName + mimeType + fileSize), the
+// server detects the PDF page count from GCS, and inserts one sheet per
+// page in a single round-trip. Also records a companion file row so the
+// upload shows up in the Files list.
+
+const importPlanSchema = z.object({
+  fileUrl: z.string().min(1),
+  fileName: z.string().min(1).max(300),
+  objectKey: z.string().max(500).optional(),
+  mimeType: z.string().max(120).optional(),
+  fileSize: z.number().int().min(0).optional(),
+});
+
+router.post("/api/takeoff/standalone/:id/import-plan", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+    const parsed = importPlanSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: "Invalid payload", details: parsed.error.errors });
+    const { fileUrl, fileName, objectKey, mimeType, fileSize } = parsed.data;
+
+    const isPdf = (mimeType?.includes("pdf") ?? false) || fileName.toLowerCase().endsWith(".pdf");
+
+    let pageCount = 1;
+    if (isPdf) {
+      try {
+        const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        let gcsFile: Awaited<ReturnType<typeof objectStorageService.getObjectEntityFile>> | null = null;
+        if (objectKey) {
+          try { gcsFile = await objectStorageService.getObjectEntityFile(objectKey); } catch { /* fall through */ }
+        }
+        if (!gcsFile && fileUrl) {
+          if (fileUrl.startsWith("https://storage.googleapis.com/")) {
+            const url = new URL(fileUrl);
+            const parts = url.pathname.split("/").filter(Boolean);
+            if (parts.length >= 2) {
+              gcsFile = objectStorageClient.bucket(parts[0]).file(parts.slice(1).join("/"));
+              const [exists] = await gcsFile.exists();
+              if (!exists) gcsFile = null;
+            }
+          } else {
+            try { gcsFile = await objectStorageService.getObjectEntityFile(fileUrl); } catch { /* ignore */ }
+          }
+        }
+        if (gcsFile) {
+          const [metadata] = await gcsFile.getMetadata();
+          const detectedSize = parseInt(metadata.size as string) || fileSize || 0;
+          const detected = await getPdfPageCountFromGcs(gcsFile, {
+            fileSize: detectedSize,
+            fileName,
+            loggerContext: { route: "standalone/import-plan", standaloneTakeoffId: row.id },
+          });
+          if (detected && detected > 0) pageCount = detected;
+        }
+      } catch (error) {
+        logError(
+          "Error reading PDF page count for standalone import (falling back to single page):",
+          {},
+          error instanceof Error ? error : new Error(String(error)),
+        );
+        pageCount = 1;
+      }
+    }
+
+    // Determine starting sheet index so multiple imports stack instead
+    // of overwriting each other's order.
+    const [{ count: existingCount } = { count: 0 }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.standaloneTakeoffId, row.id));
+    const startIdx = Number(existingCount) || 0;
+
+    // Record the companion file row (best-effort — sheet creation is the
+    // primary outcome, so a file insert error should not 500 the import).
+    try {
+      await db.insert(standaloneTakeoffFiles).values({
+        standaloneTakeoffId: row.id,
+        organizationId: row.organizationId,
+        uploadedById: req.user!.id,
+        fileName,
+        fileUrl,
+        objectKey: objectKey ?? null,
+        mimeType: mimeType ?? null,
+        fileSize: fileSize ?? null,
+      });
+    } catch (error) {
+      logError(
+        "Failed to record standalone takeoff file alongside import-plan:",
+        {},
+        error instanceof Error ? error : new Error(String(error)),
+      );
+    }
+
+    const baseSheetName = fileName.replace(/\.[^/.]+$/, "");
+    const sheetValues = [];
+    for (let i = 0; i < pageCount; i++) {
+      sheetValues.push({
+        standaloneTakeoffId: row.id,
+        imageUrl: fileUrl,
+        sheetIndex: startIdx + i,
+        sheetName: pageCount > 1 ? `${baseSheetName} - Page ${i + 1}` : baseSheetName,
+      });
+    }
+
+    const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
+    indexStandaloneTakeoffSafe(row.id);
+    res.status(201).json({ sheets, pageCount });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Sheet reordering ----------
+//
+// Task #2552 — Mirror the bid/project `sheets/reorder` endpoint so the
+// shared TakeoffWorkspace's "move sheet up/down" affordance and any
+// future drag-reorder UI can persist sheet ordering for standalone
+// takeoffs instead of silently no-op'ing.
+
+const reorderItemSchema = z.object({ id: z.string().min(1), sheetIndex: z.number().int().min(0) });
+const reorderSchema = z.object({ order: z.array(reorderItemSchema).min(1) });
+
+router.patch("/api/takeoff/standalone/:id/sheets/reorder", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+    const parsed = reorderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "order must be a non-empty array of { id: string, sheetIndex: number }" });
+    }
+
+    const now = new Date();
+    await db.transaction(async (tx) => {
+      for (const item of parsed.data.order) {
+        await tx
+          .update(takeoffSheets)
+          .set({ sheetIndex: item.sheetIndex, updatedAt: now })
+          .where(and(eq(takeoffSheets.id, item.id), eq(takeoffSheets.standaloneTakeoffId, row.id)));
+      }
+    });
+
+    const sheets = await db
+      .select()
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.standaloneTakeoffId, row.id))
+      .orderBy(takeoffSheets.sheetIndex);
+    res.json(sheets);
   } catch (err) {
     next(err);
   }
