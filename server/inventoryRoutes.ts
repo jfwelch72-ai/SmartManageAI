@@ -9,6 +9,10 @@ import {
   purchaseOrders, purchaseOrderItems,
   projects,
   mobileDevices, users,
+  userSettings,
+  DEFAULT_LABEL_SHEET_TEMPLATE,
+  LABEL_SHEET_TEMPLATE_IDS,
+  getLabelSheetTemplate,
 } from "@shared/schema";
 
 type InventoryTxnType = "RECEIPT" | "ISSUE" | "TRANSFER_OUT" | "TRANSFER_IN" | "ADJUSTMENT" | "CYCLE_COUNT";
@@ -190,7 +194,14 @@ const labelsSchema = z.object({
   materialIds: z.array(z.string().min(1)).min(1, "Select at least one material").max(500),
   symbology: z.enum(["code128", "qr"]).default("code128"),
   copies: z.coerce.number().int().min(1).max(30).default(1),
-  startOffset: z.coerce.number().int().min(0).max(29).default(0),
+  // Cell-offset is interpreted modulo the active template's cells-per-page,
+  // so this upper bound just guards obvious garbage; per-template clamping
+  // happens once the template has been resolved.
+  startOffset: z.coerce.number().int().min(0).max(999).default(0),
+  // Task #2570 — preferred label sheet template id. When omitted, the
+  // server falls back to the user's saved preference, then to the
+  // default (Avery 5160).
+  template: z.enum(LABEL_SHEET_TEMPLATE_IDS).optional(),
 });
 
 function makeBarcodeValue(sku: string): string {
@@ -261,6 +272,55 @@ router.post("/api/inventory/labels", requireAuth, requireRole(...WRITE_ROLES), a
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const { materialIds, symbology, copies, startOffset } = parsed.data;
 
+    // Task #2570 — resolve the active label sheet template. Precedence:
+    //   1) explicit `template` from the request body
+    //   2) the user's saved `userSettings.labelSheetTemplate`
+    //   3) DEFAULT_LABEL_SHEET_TEMPLATE (Avery 5160)
+    // When the request supplies a template that differs from the saved
+    // preference, we persist it so the next visit defaults correctly.
+    let resolvedTemplateId = parsed.data.template ?? null;
+    let savedTemplateId: string | null = null;
+    try {
+      const [row] = await db
+        .select({ labelSheetTemplate: userSettings.labelSheetTemplate })
+        .from(userSettings)
+        .where(eq(userSettings.userId, req.user!.id))
+        .limit(1);
+      savedTemplateId = row?.labelSheetTemplate ?? null;
+    } catch {
+      savedTemplateId = null;
+    }
+    if (!resolvedTemplateId) {
+      resolvedTemplateId = savedTemplateId ?? DEFAULT_LABEL_SHEET_TEMPLATE;
+    }
+    const template = getLabelSheetTemplate(resolvedTemplateId);
+
+    if (parsed.data.template && parsed.data.template !== savedTemplateId) {
+      try {
+        const orgIdForUpsert = req.user!.organizationId;
+        if (savedTemplateId !== null) {
+          await db
+            .update(userSettings)
+            .set({ labelSheetTemplate: parsed.data.template, updatedAt: new Date() })
+            .where(eq(userSettings.userId, req.user!.id));
+        } else if (orgIdForUpsert) {
+          await db
+            .insert(userSettings)
+            .values({
+              userId: req.user!.id,
+              organizationId: orgIdForUpsert,
+              labelSheetTemplate: parsed.data.template,
+            })
+            .onConflictDoUpdate({
+              target: userSettings.userId,
+              set: { labelSheetTemplate: parsed.data.template, updatedAt: new Date() },
+            });
+        }
+      } catch {
+        // Persistence is best-effort — never fail the print because of it.
+      }
+    }
+
     const materials = await ensureBarcodes(orgId, materialIds);
     if (materials.length === 0) return res.status(404).json({ error: "No materials found" });
 
@@ -275,29 +335,37 @@ router.post("/api/inventory/labels", requireAuth, requireRole(...WRITE_ROLES), a
       pngs.set(m.id, await renderBarcodePng(value, symbology));
     }
 
-    // Avery 5160: 3 cols × 10 rows, label 2.625"×1", page 8.5"×11"
-    // Margins: top 0.5", left 0.1875", horizontal pitch 2.75", vertical pitch 1"
-    const PAGE_W = 612, PAGE_H = 792;
-    const COLS = 3, ROWS = 10;
-    const LABEL_W = 2.625 * 72; // 189
-    const LABEL_H = 1 * 72;     // 72
-    const HORIZ_PITCH = 2.75 * 72; // 198 (0.125" gutter)
-    const VERT_PITCH = 1 * 72;     // 72
-    const TOP = 0.5 * 72;
-    const LEFT = 0.1875 * 72;
-    const PAD = 6;
+    // Task #2570 — Layout dimensions are pulled from the resolved template
+    // (Avery 5160 / 5163 / 5167 / 5267 / 4×6 thermal). All inches × 72 to
+    // get PDF points.
+    const COLS = template.cols;
+    const ROWS = template.rows;
+    const LABEL_W = template.labelWidthIn * 72;
+    const LABEL_H = template.labelHeightIn * 72;
+    const HORIZ_PITCH = template.horizontalPitchIn * 72;
+    const VERT_PITCH = template.verticalPitchIn * 72;
+    const TOP = template.marginTopIn * 72;
+    const LEFT = template.marginLeftIn * 72;
+    const PAD = Math.max(2, Math.min(8, Math.round(Math.min(LABEL_W, LABEL_H) * 0.06)));
+    const CELLS_PER_PAGE = COLS * ROWS;
 
-    const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true });
+    const pdfPageOpts: { size: "LETTER" | "A4" | [number, number]; margin: number } =
+      template.pageSize === "LETTER" || template.pageSize === "A4"
+        ? { size: template.pageSize, margin: 0 }
+        : { size: [template.pageSize.widthIn * 72, template.pageSize.heightIn * 72], margin: 0 };
+
+    const doc = new PDFDocument({ ...pdfPageOpts, autoFirstPage: true });
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="inventory-labels-${Date.now()}.pdf"`);
     doc.pipe(res);
 
-    let cell = startOffset; // 0..29
+    // Clamp the requested start-offset to the active template's grid.
+    let cell = Math.max(0, Math.min(CELLS_PER_PAGE - 1, startOffset));
     let firstPage = true;
 
     const placeLabel = (m: (typeof materials)[number]) => {
-      if (cell >= COLS * ROWS) {
-        doc.addPage({ size: "LETTER", margin: 0 });
+      if (cell >= CELLS_PER_PAGE) {
+        doc.addPage(pdfPageOpts);
         cell = 0;
       } else if (firstPage) {
         firstPage = false;
@@ -311,25 +379,54 @@ router.post("/api/inventory/labels", requireAuth, requireRole(...WRITE_ROLES), a
       const value = (m.barcode ?? m.sku) as string;
 
       if (symbology === "qr") {
-        // QR on the left, text on the right
-        const qrSize = LABEL_H - PAD * 2;
-        doc.image(png, x + PAD, y + PAD, { width: qrSize, height: qrSize });
-        const tx = x + PAD * 2 + qrSize;
-        const tw = LABEL_W - (tx - x) - PAD;
-        doc.fontSize(9).fillColor("#000")
-          .text(m.name ?? "", tx, y + PAD, { width: tw, ellipsis: true, lineBreak: false });
-        doc.fontSize(7).fillColor("#444")
-          .text(`SKU ${m.sku}`, tx, y + PAD + 12, { width: tw, ellipsis: true, lineBreak: false });
-        doc.fontSize(7).fillColor("#444")
-          .text(value, tx, y + PAD + 22, { width: tw, ellipsis: true, lineBreak: false });
-        if (m.uom) {
-          doc.fontSize(7).fillColor("#444")
-            .text(`UOM ${m.uom}`, tx, y + PAD + 32, { width: tw, ellipsis: true, lineBreak: false });
+        // Task #2570 — Pick a side-by-side or stacked QR layout based on
+        // the active template's aspect ratio so portrait labels (4×6
+        // thermal) and tiny return-address labels (5167/5267) both render
+        // without overflow. Side-by-side is preferred when the label is
+        // at least ~1.6× wider than the QR; otherwise stack the text
+        // beneath the QR.
+        const innerW = Math.max(0, LABEL_W - PAD * 2);
+        const innerH = Math.max(0, LABEL_H - PAD * 2);
+        const stacked = innerW < innerH * 1.6;
+        if (stacked) {
+          const qrSize = Math.max(8, Math.min(innerW, innerH * 0.65));
+          const qrX = x + PAD + Math.max(0, (innerW - qrSize) / 2);
+          doc.image(png, qrX, y + PAD, { width: qrSize, height: qrSize });
+          const ty = y + PAD + qrSize + 4;
+          const tw = innerW;
+          doc.fontSize(10).fillColor("#000")
+            .text(m.name ?? "", x + PAD, ty, { width: tw, ellipsis: true, lineBreak: false });
+          doc.fontSize(8).fillColor("#444")
+            .text(`SKU ${m.sku}${m.uom ? `   UOM ${m.uom}` : ""}`, x + PAD, ty + 12, { width: tw, ellipsis: true, lineBreak: false });
+          doc.fontSize(8).fillColor("#444").font("Courier")
+            .text(value, x + PAD, ty + 22, { width: tw, ellipsis: true, lineBreak: false });
+          doc.font("Helvetica");
+        } else {
+          // Side-by-side: QR sized to the smaller dimension so it never
+          // exceeds the label width.
+          const qrSize = Math.max(8, Math.min(innerH, innerW * 0.45));
+          doc.image(png, x + PAD, y + PAD, { width: qrSize, height: qrSize });
+          const tx = x + PAD * 2 + qrSize;
+          const tw = Math.max(0, LABEL_W - (tx - x) - PAD);
+          if (tw > 8) {
+            doc.fontSize(9).fillColor("#000")
+              .text(m.name ?? "", tx, y + PAD, { width: tw, ellipsis: true, lineBreak: false });
+            doc.fontSize(7).fillColor("#444")
+              .text(`SKU ${m.sku}`, tx, y + PAD + 12, { width: tw, ellipsis: true, lineBreak: false });
+            doc.fontSize(7).fillColor("#444")
+              .text(value, tx, y + PAD + 22, { width: tw, ellipsis: true, lineBreak: false });
+            if (m.uom) {
+              doc.fontSize(7).fillColor("#444")
+                .text(`UOM ${m.uom}`, tx, y + PAD + 32, { width: tw, ellipsis: true, lineBreak: false });
+            }
+          }
         }
       } else {
-        // Code-128 across the top, text below
+        // Code-128 across the top, text below. Scale the barcode height
+        // to the active template's label height so small (5167/5267) and
+        // large (thermal 4×6) sheets both render legibly.
         const bcW = LABEL_W - PAD * 2;
-        const bcH = 30;
+        const bcH = Math.max(16, Math.min(LABEL_H * 0.55, LABEL_H - PAD * 2 - 24));
         doc.image(png, x + PAD, y + PAD, { width: bcW, height: bcH });
         const ty = y + PAD + bcH + 2;
         const tw = LABEL_W - PAD * 2;
@@ -355,7 +452,7 @@ router.post("/api/inventory/labels", requireAuth, requireRole(...WRITE_ROLES), a
       action: "UPDATE",
       entityType: "inventoryMaterialLabels",
       entityId: materials.map(m => m.id).join(",").slice(0, 200),
-      newValue: JSON.stringify({ symbology, copies, count: materials.length, op: "label_print" }),
+      newValue: JSON.stringify({ symbology, copies, count: materials.length, template: template.id, op: "label_print" }),
     }, req);
   } catch (err) { next(err); }
 });

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { LABEL_SHEET_TEMPLATES, DEFAULT_LABEL_SHEET_TEMPLATE, getLabelSheetTemplate } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -692,12 +693,30 @@ function TxnForm({ kind, locations, materials, onDone }: {
 
 function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted: () => void }) {
   const { toast } = useToast();
+  const qc = useQueryClient();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [symbology, setSymbology] = useState<"code128" | "qr">("code128");
   const [copies, setCopies] = useState("1");
   const [startOffset, setStartOffset] = useState("0");
   const [search, setSearch] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [template, setTemplate] = useState<string>(DEFAULT_LABEL_SHEET_TEMPLATE);
+
+  // Task #2570 — load the user's saved label sheet template so the
+  // selector defaults to whatever they used last time.
+  const userSettingsQ = useQuery<{ labelSheetTemplate?: string | null }>({
+    queryKey: ["/api/user-settings"],
+  });
+  useEffect(() => {
+    const saved = userSettingsQ.data?.labelSheetTemplate;
+    if (saved && LABEL_SHEET_TEMPLATES.some((t) => t.id === saved)) {
+      setTemplate(saved);
+    }
+  }, [userSettingsQ.data?.labelSheetTemplate]);
+
+  const activeTemplate = getLabelSheetTemplate(template);
+  const cellsPerPage = activeTemplate.cols * activeTemplate.rows;
+  const offsetMax = Math.max(0, cellsPerPage - 1);
 
   const filtered = materials.filter(m => {
     if (!m.isActive) return false;
@@ -734,7 +753,8 @@ function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted:
           materialIds: Array.from(selected),
           symbology,
           copies: Math.max(1, Math.min(30, Number(copies) || 1)),
-          startOffset: Math.max(0, Math.min(29, Number(startOffset) || 0)),
+          startOffset: Math.max(0, Math.min(offsetMax, Number(startOffset) || 0)),
+          template,
         }),
       });
       if (!res.ok) {
@@ -750,8 +770,10 @@ function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted:
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Labels generated", description: `${selected.size} material(s) · ${copies}× each` });
+      toast({ title: "Labels generated", description: `${selected.size} material(s) · ${copies}× each · ${activeTemplate.label}` });
       onPrinted();
+      // Refresh saved-template cache so the selector defaults stay in sync.
+      qc.invalidateQueries({ queryKey: ["/api/user-settings"] });
     } catch (e) {
       toast({ title: "Print failed", description: e instanceof Error ? e.message : String(e), variant: "destructive" });
     } finally {
@@ -764,7 +786,7 @@ function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted:
       <CardHeader>
         <CardTitle className="flex items-center gap-2"><Printer className="w-5 h-5" /> Print Barcode / QR Labels</CardTitle>
         <CardDescription>
-          Select materials and produce a printable PDF on Avery 5160 (3×10) sheets.
+          Select materials and produce a printable PDF using your preferred label sheet.
           Materials without a barcode are auto-assigned one (saved to the SKU) before printing.
         </CardDescription>
       </CardHeader>
@@ -773,6 +795,22 @@ function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted:
           <div className="md:col-span-2">
             <Label>Search</Label>
             <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter by SKU, name, or barcode" data-testid="input-labels-search" />
+          </div>
+          <div>
+            <Label>Sheet template</Label>
+            <Select value={template} onValueChange={(v) => { setTemplate(v); setStartOffset("0"); }}>
+              <SelectTrigger data-testid="select-labels-template"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {LABEL_SHEET_TEMPLATES.map((t) => (
+                  <SelectItem key={t.id} value={t.id} data-testid={`select-labels-template-option-${t.id}`}>
+                    {t.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground mt-1" data-testid="text-labels-template-description">
+              {activeTemplate.description}
+            </p>
           </div>
           <div>
             <Label>Symbology</Label>
@@ -784,14 +822,22 @@ function LabelsTab({ materials, onPrinted }: { materials: Material[]; onPrinted:
               </SelectContent>
             </Select>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2 gap-2 md:col-span-2">
             <div>
               <Label>Copies / SKU</Label>
               <Input type="number" min={1} max={30} value={copies} onChange={e => setCopies(e.target.value)} data-testid="input-labels-copies" />
             </div>
             <div>
               <Label>Skip first</Label>
-              <Input type="number" min={0} max={29} value={startOffset} onChange={e => setStartOffset(e.target.value)} data-testid="input-labels-offset" />
+              <Input
+                type="number"
+                min={0}
+                max={offsetMax}
+                value={startOffset}
+                onChange={e => setStartOffset(e.target.value)}
+                disabled={cellsPerPage <= 1}
+                data-testid="input-labels-offset"
+              />
             </div>
           </div>
         </div>

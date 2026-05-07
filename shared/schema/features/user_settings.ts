@@ -392,6 +392,10 @@ export const userSettings = pgTable("user_settings", {
   // Undo affordance is still the safety net). Default is false so
   // every user sees the dialog at least once.
   skipBulkScalePropagationConfirm: boolean("skip_bulk_scale_propagation_confirm").notNull().default(false),
+  // Task #2570 — Remember the user's preferred barcode/QR label sheet
+  // template for the Inventory → Labels tab. Default keeps prior behavior
+  // (Avery 5160, 3×10 on US Letter).
+  labelSheetTemplate: text("label_sheet_template").notNull().default("avery_5160"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -423,6 +427,111 @@ export const STYLUS_LONG_PRESS_MAX_MS = 1500;
 // number.
 export const BULK_SCALE_PROPAGATION_CONFIRM_MIN_MEMBERS = 5;
 export const DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM = false;
+
+// Task #2570 — Library of barcode/QR label-sheet templates that the
+// Inventory → Labels tab can lay out against, plus the default the
+// server falls back to when nothing is set on `userSettings` yet.
+//
+// All dimensions are in inches; the server converts to PDF points
+// (×72) at render time. Page sizes accept the values supported by
+// PDFKit ("LETTER", "A4", or `[width, height]` in points).
+//
+// `pageSize: "LETTER"` is the standard 8.5" × 11" sheet. `[w, h]`
+// in inches is converted at render time for the 4×6 thermal roll.
+export type LabelSheetTemplate = {
+  id: string;
+  label: string;
+  description: string;
+  pageSize: "LETTER" | "A4" | { widthIn: number; heightIn: number };
+  cols: number;
+  rows: number;
+  labelWidthIn: number;
+  labelHeightIn: number;
+  marginTopIn: number;
+  marginLeftIn: number;
+  horizontalPitchIn: number;
+  verticalPitchIn: number;
+};
+
+export const LABEL_SHEET_TEMPLATES: readonly LabelSheetTemplate[] = [
+  {
+    id: "avery_5160",
+    label: "Avery 5160 (3 × 10)",
+    description: "1\" × 2.625\" address labels, 30 per US Letter sheet.",
+    pageSize: "LETTER",
+    cols: 3,
+    rows: 10,
+    labelWidthIn: 2.625,
+    labelHeightIn: 1,
+    marginTopIn: 0.5,
+    marginLeftIn: 0.1875,
+    horizontalPitchIn: 2.75,
+    verticalPitchIn: 1,
+  },
+  {
+    id: "avery_5163",
+    label: "Avery 5163 (2 × 5)",
+    description: "2\" × 4\" shipping labels, 10 per US Letter sheet.",
+    pageSize: "LETTER",
+    cols: 2,
+    rows: 5,
+    labelWidthIn: 4,
+    labelHeightIn: 2,
+    marginTopIn: 0.5,
+    marginLeftIn: 0.15625,
+    horizontalPitchIn: 4.1875,
+    verticalPitchIn: 2,
+  },
+  {
+    id: "avery_5167",
+    label: "Avery 5167 (4 × 20)",
+    description: "0.5\" × 1.75\" return address labels, 80 per US Letter sheet.",
+    pageSize: "LETTER",
+    cols: 4,
+    rows: 20,
+    labelWidthIn: 1.75,
+    labelHeightIn: 0.5,
+    marginTopIn: 0.5,
+    marginLeftIn: 0.3,
+    horizontalPitchIn: 2.0625,
+    verticalPitchIn: 0.5,
+  },
+  {
+    id: "avery_5267",
+    label: "Avery 5267 (4 × 20)",
+    description: "0.5\" × 1.75\" return address labels (laser), 80 per sheet.",
+    pageSize: "LETTER",
+    cols: 4,
+    rows: 20,
+    labelWidthIn: 1.75,
+    labelHeightIn: 0.5,
+    marginTopIn: 0.5,
+    marginLeftIn: 0.3,
+    horizontalPitchIn: 2.0625,
+    verticalPitchIn: 0.5,
+  },
+  {
+    id: "thermal_4x6",
+    label: "Thermal 4\" × 6\"",
+    description: "Single-label 4\" × 6\" thermal roll (Zebra/DYMO).",
+    pageSize: { widthIn: 4, heightIn: 6 },
+    cols: 1,
+    rows: 1,
+    labelWidthIn: 4,
+    labelHeightIn: 6,
+    marginTopIn: 0,
+    marginLeftIn: 0,
+    horizontalPitchIn: 4,
+    verticalPitchIn: 6,
+  },
+] as const;
+
+export const LABEL_SHEET_TEMPLATE_IDS = LABEL_SHEET_TEMPLATES.map((t) => t.id) as [string, ...string[]];
+export const DEFAULT_LABEL_SHEET_TEMPLATE = "avery_5160";
+
+export function getLabelSheetTemplate(id: string | null | undefined): LabelSheetTemplate {
+  return LABEL_SHEET_TEMPLATES.find((t) => t.id === id) ?? LABEL_SHEET_TEMPLATES[0];
+}
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;

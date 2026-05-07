@@ -13,9 +13,11 @@ import { parseOrRespond } from "./utils/validation";
 import { sendCrmContactBirthdayDigestForUser } from "./jobs/jobRunner";
 import {
   DEFAULT_ALLOW_TWO_FINGER_ROTATE,
+  DEFAULT_LABEL_SHEET_TEMPLATE,
   DEFAULT_PALM_REJECTION_BAND_PX,
   DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM,
   DEFAULT_STYLUS_LONG_PRESS_MS,
+  LABEL_SHEET_TEMPLATE_IDS,
   PALM_REJECTION_BAND_MAX_PX,
   PALM_REJECTION_BAND_MIN_PX,
   STYLUS_LONG_PRESS_MAX_MS,
@@ -63,6 +65,7 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next
         palmRejectionBandPx: DEFAULT_PALM_REJECTION_BAND_PX,
         stylusLongPressMs: DEFAULT_STYLUS_LONG_PRESS_MS,
         skipBulkScalePropagationConfirm: DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM,
+        labelSheetTemplate: DEFAULT_LABEL_SHEET_TEMPLATE,
       });
     }
     return res.json(settings);
@@ -91,6 +94,9 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       // Task #2228 — "Don't ask again" remembered choice for the
       // bulk-scale propagation confirmation dialog.
       skipBulkScalePropagationConfirm: z.boolean().optional(),
+      // Task #2570 — preferred label sheet template for the
+      // Inventory → Labels tab.
+      labelSheetTemplate: z.enum(LABEL_SHEET_TEMPLATE_IDS).optional(),
     });
 
     const parsed = parseOrRespond(schema, req.body, res);
