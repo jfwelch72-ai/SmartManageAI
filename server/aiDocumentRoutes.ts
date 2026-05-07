@@ -160,7 +160,7 @@ interface BidDocumentAnalysisResult {
   confidenceScore: number;
 }
 
-async function analyzeDocumentWithAI(documentUrl: string, documentName: string, tradeType?: string, governanceOpts?: { userId: string | null; orgId: string }): Promise<BidDocumentAnalysisResult> {
+export async function analyzeDocumentWithAI(documentUrl: string, documentName: string, tradeType?: string, governanceOpts?: { userId: string | null; orgId: string }): Promise<BidDocumentAnalysisResult> {
   const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
   
   const userPrompt = `Analyze this bid/scope document and extract all relevant information.
@@ -504,61 +504,31 @@ router.post("/ai-bid-document/analyze", requireAuth, requireRole("ADMIN", "ESTIM
       })
       .returning();
 
-    res.status(201).json({ id: newAnalysis.id, status: "PROCESSING" });
-
-    // Background AI analysis
-    (async () => {
-      try {
-        const result = await analyzeDocumentWithAI(fileUrl, fileName, org?.tradeType || undefined, { userId: req.user?.id || null, orgId: targetOrgId });
-        
-        await db
-          .update(aiBidDocumentAnalysis)
-          .set({
-            status: "COMPLETED",
-            projectName: result.projectName || null,
-            clientName: result.clientName || null,
-            bidDueDate: result.bidDueDate ? new Date(result.bidDueDate) : null,
-            projectLocation: result.projectLocation || null,
-            projectScope: result.projectScope || null,
-            scopeSummary: result.scopeSummary || null,
-            lineItems: JSON.stringify(result.lineItems || []),
-            requirements: JSON.stringify(result.requirements || []),
-            qualifications: JSON.stringify(result.qualifications || []),
-            insuranceRequirements: result.insuranceRequirements || null,
-            bondingRequirements: result.bondingRequirements || null,
-            suggestedPricingFactors: JSON.stringify(result.suggestedPricingFactors || []),
-            riskFactors: JSON.stringify(result.riskFactors || []),
-            confidenceScore: result.confidenceScore ?? 0,
-            analyzedAt: new Date(),
-            rawAiResponse: JSON.stringify(result),
-            updatedAt: new Date(),
-          })
-          .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
-
-        logInfo(`AI bid document analysis completed for: ${fileName}`);
-      } catch (error) {
-        const refused = isPromptInjectionRefusal(error);
-        if (refused) {
-          logWarn("Background AI analysis refused (prompt-injection)", {
-            analysisId: newAnalysis.id,
-            documentName: fileName,
-          });
-        } else {
-          logError("Background AI analysis error:", {}, error instanceof Error ? error : new Error(String(error)));
-        }
-        await db
-          .update(aiBidDocumentAnalysis)
-          .set({
-            status: "FAILED",
-            errorMessage: refused
-              ? "REFUSED_PROMPT_INJECTION: Document refused — prompt-injection payload detected."
-              : (error instanceof Error ? error.message : "Unknown error"),
-            updatedAt: new Date(),
-          })
-          .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
-      }
-    })();
-
+    // Task #2481 — enqueue background analysis on pg-boss instead of
+    // a fire-and-forget IIFE so retries, DLQ, RLS context, and
+    // progress streaming all apply.
+    const { enqueueJob } = await import("./jobQueue");
+    const enqueued = await enqueueJob(
+      "ai_document_analyze",
+      {
+        analysisId: newAnalysis.id,
+        documentUrl: fileUrl,
+        documentName: fileName,
+        organizationId: bid.gcOrganizationId || targetOrgId,
+        userId: req.user?.id || null,
+      },
+      {
+        organizationId: bid.gcOrganizationId || targetOrgId,
+        userId: req.user?.id || null,
+        idempotencyKey: `ai_document_analyze:${newAnalysis.id}`,
+      },
+    );
+    res.status(201).json({
+      id: newAnalysis.id,
+      status: "PROCESSING",
+      jobId: enqueued.jobId,
+      deduplicated: enqueued.deduplicated,
+    });
   } catch (error) {
     next(error);
   }
@@ -593,67 +563,31 @@ router.post("/ai-bid-document/:id/reanalyze", requireAuth, requireRole("ADMIN", 
       .set({ status: "PROCESSING", updatedAt: new Date() })
       .where(eq(aiBidDocumentAnalysis.id, id));
 
-    res.json({ id, status: "PROCESSING" });
-
-    // Background reanalysis
-    (async () => {
-      try {
-        const [org] = await db
-          .select({ tradeType: organizations.tradeType })
-          .from(organizations)
-          .where(eq(organizations.id, existing.organizationId))
-          .limit(1);
-
-        const result = await analyzeDocumentWithAI(existing.documentUrl, existing.documentName, org?.tradeType || undefined, { userId: req.user?.id || null, orgId: existing.organizationId });
-        
-        await db
-          .update(aiBidDocumentAnalysis)
-          .set({
-            status: "COMPLETED",
-            projectName: result.projectName || null,
-            clientName: result.clientName || null,
-            bidDueDate: result.bidDueDate ? new Date(result.bidDueDate) : null,
-            projectLocation: result.projectLocation || null,
-            projectScope: result.projectScope || null,
-            scopeSummary: result.scopeSummary || null,
-            lineItems: JSON.stringify(result.lineItems || []),
-            requirements: JSON.stringify(result.requirements || []),
-            qualifications: JSON.stringify(result.qualifications || []),
-            insuranceRequirements: result.insuranceRequirements || null,
-            bondingRequirements: result.bondingRequirements || null,
-            suggestedPricingFactors: JSON.stringify(result.suggestedPricingFactors || []),
-            riskFactors: JSON.stringify(result.riskFactors || []),
-            confidenceScore: result.confidenceScore ?? 0,
-            analyzedAt: new Date(),
-            rawAiResponse: JSON.stringify(result),
-            updatedAt: new Date(),
-          })
-          .where(eq(aiBidDocumentAnalysis.id, id));
-
-        logInfo(`AI bid document reanalysis completed for: ${existing.documentName}`);
-      } catch (error) {
-        const refused = isPromptInjectionRefusal(error);
-        if (refused) {
-          logWarn("Background AI reanalysis refused (prompt-injection)", {
-            analysisId: id,
-            documentName: existing.documentName,
-          });
-        } else {
-          logError("Background AI reanalysis error:", {}, error instanceof Error ? error : new Error(String(error)));
-        }
-        await db
-          .update(aiBidDocumentAnalysis)
-          .set({
-            status: "FAILED",
-            errorMessage: refused
-              ? "REFUSED_PROMPT_INJECTION: Document refused — prompt-injection payload detected."
-              : (error instanceof Error ? error.message : "Unknown error"),
-            updatedAt: new Date(),
-          })
-          .where(eq(aiBidDocumentAnalysis.id, id));
-      }
-    })();
-
+    // Task #2481 — enqueue reanalysis on pg-boss instead of a
+    // fire-and-forget IIFE so retries, DLQ, RLS context, and progress
+    // streaming all apply.
+    const { enqueueJob } = await import("./jobQueue");
+    const enqueued = await enqueueJob(
+      "ai_document_analyze",
+      {
+        analysisId: id,
+        documentUrl: existing.documentUrl,
+        documentName: existing.documentName,
+        organizationId: existing.organizationId,
+        userId: req.user?.id || null,
+      },
+      {
+        organizationId: existing.organizationId,
+        userId: req.user?.id || null,
+        idempotencyKey: `ai_document_analyze:${id}:reanalyze:${Date.now()}`,
+      },
+    );
+    res.json({
+      id,
+      status: "PROCESSING",
+      jobId: enqueued.jobId,
+      deduplicated: enqueued.deduplicated,
+    });
   } catch (error) {
     next(error);
   }

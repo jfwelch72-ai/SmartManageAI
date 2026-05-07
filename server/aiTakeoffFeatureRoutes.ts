@@ -99,21 +99,33 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       createdByUserId: userId,
     }).returning();
 
-    setTimeout(async () => {
-      try {
-        await processAiTakeoff(analysis.id, effectiveTradeType, focusAreas, needsAutoDetection, userId);
-      } catch (error) {
-        logError("AI Takeoff processing error:", {}, error instanceof Error ? error : new Error(String(error)));
-        await db.update(aiTakeoffAnalyses)
-          .set({ status: "FAILED", errorMessage: "Processing failed" })
-          .where(eq(aiTakeoffAnalyses.id, analysis.id));
-      }
-    }, 100);
+    // Task #2481 — enqueue on the background queue instead of using a
+    // request-scoped setTimeout (which lost work on a redeploy and
+    // couldn't be retried). The handler lives at
+    // `server/jobQueue/handlers/aiTakeoff.ts`.
+    const { enqueueJob } = await import("./jobQueue");
+    const enqueued = await enqueueJob(
+      "ai_takeoff_analyze",
+      {
+        analysisId: analysis.id,
+        tradeType: effectiveTradeType,
+        focusAreas,
+        needsAutoDetection,
+        userId,
+      },
+      {
+        organizationId,
+        userId,
+        idempotencyKey: `ai_takeoff_analyze:${analysis.id}`,
+      },
+    );
 
     res.json({
       success: true,
       analysisId: analysis.id,
       status: "QUEUED",
+      jobId: enqueued.jobId,
+      deduplicated: enqueued.deduplicated,
       estimatedTime: analysisMode === "QUICK" ? 30 : 120,
     });
   } catch (error) {
@@ -477,7 +489,7 @@ async function persistSuggestionsAndApplyCalibration(
   return { items: adjusted, calibrationApplied };
 }
 
-async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[], needsAutoDetection?: boolean, userId?: string | null) {
+export async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[], needsAutoDetection?: boolean, userId?: string | null) {
   const startTime = Date.now();
   
   await db.update(aiTakeoffAnalyses)

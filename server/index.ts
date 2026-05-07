@@ -21,6 +21,7 @@ import { crmBackfillAlertDigestScheduler } from "./crmBackfillAlertDigestSchedul
 import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
 import { startMessagingBus } from "./messagingBus";
+import { startJobQueue } from "./jobQueue";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { startStatusProbeScheduler, runProbeSweep } from "./statusProbeScheduler";
@@ -342,6 +343,43 @@ app.use((req, res, next) => {
       err instanceof Error ? err : new Error(String(err)),
     );
   });
+
+  // Task #2481 — Background job queue (pg-boss).
+  // The HTTP server only enqueues; the dedicated worker process
+  // (`server/worker.ts`, run via the `Job worker` workflow) actually
+  // executes handlers. In dev (NODE_ENV !== "production") we also
+  // register handlers in-process so a single `npm run dev` continues
+  // to do everything end-to-end. Override with JOB_WORKER_INPROCESS=0
+  // to disable, or =1 in prod to run handlers on the web pod.
+  {
+    const inProcessDefault = process.env.NODE_ENV !== "production";
+    const inProcess = process.env.JOB_WORKER_INPROCESS
+      ? process.env.JOB_WORKER_INPROCESS === "1"
+      : inProcessDefault;
+    if (inProcess) {
+      // Lazy import so we don't pull handler deps when running pure-HTTP.
+      import("./jobQueue/handlers")
+        .then(({ registerAllJobHandlers }) => {
+          registerAllJobHandlers();
+          return startJobQueue({ withWorkers: true });
+        })
+        .catch((err) => {
+          logError(
+            "Failed to start job queue (in-process workers)",
+            {},
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        });
+    } else {
+      startJobQueue({ withWorkers: false }).catch((err) => {
+        logError(
+          "Failed to start job queue (enqueue-only)",
+          {},
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      });
+    }
+  }
 
   // Wire Gantt PDF queue/browser events to the alerter and start its monitor.
   onGanttPdfQueueFull(() => reportGanttPdfQueueFull());

@@ -153,6 +153,7 @@ import auditExportRoutes from "./auditExportRoutes";
 import retentionRoutes from "./retentionRoutes";
 import privacyRoutes from "./privacyRoutes";
 import authProfileRoutes from "./authProfileRoutes";
+import jobQueueAdminRoutes from "./jobQueueAdminRoutes";
 import oauthRoutes from "./oauthRoutes";
 import passkeyRoutes from "./passkeyRoutes";
 import workforceRoutes from "./workforceRoutes";
@@ -459,6 +460,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.use("/api/sso", ssoRoutes);
   app.use("/api/audit", auditExportRoutes);
+  // Task #2481 — background job status + super-admin queue surface.
+  app.use("/api", jobQueueAdminRoutes);
   app.use("/api/retention", retentionRoutes);
   app.use("/api/privacy", privacyRoutes);
 
