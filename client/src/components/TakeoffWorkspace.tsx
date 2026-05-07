@@ -5388,6 +5388,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // touch-friendly when open, so iPad and phone users finally get
       // an inspector. Desktop (lg:+) keeps the pinned panel gated by
       // the explicit `propertiesPanelOpen` toggle in the toolbar.
+      // Task #2587 — Forward the BASE/CO scope picker wiring to the
+      // properties panel so the chip + dropdown there reuses the same
+      // workspace mutation the table row context menu does. Only
+      // meaningful in project context (change orders are
+      // project-scoped); embedded bid-context callers leave these
+      // undefined and the panel hides the affordance.
+      const scopeProps = projectChangeOrdersEnabled
+        ? {
+            changeOrders: projectChangeOrders,
+            onMoveScope: (
+              measurementId: string,
+              payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+            ) => {
+              moveScopeMutation.mutate({ measurementId, ...payload });
+            },
+            isMovingScope: moveScopeMutation.isPending,
+          }
+        : {};
       if (isBelowLg) {
         return {
           props: {
@@ -5395,6 +5413,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             selectedSheet,
             onClose: () => setInspectorDrawerOpen(false),
             variant: "drawer" as const,
+            ...scopeProps,
           },
           drawer: {
             open: inspectorDrawerOpen,
@@ -5409,6 +5428,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           selectedSheet,
           onClose: () => setPropertiesPanelOpen(false),
           variant: "inline" as const,
+          ...scopeProps,
         },
       };
     })(),

@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { X, Building2, Truck, MapPin, CheckCircle2, Tag, DollarSign, Ruler, Square, Box } from "lucide-react";
+import { X, Building2, Truck, MapPin, CheckCircle2, Tag, DollarSign, Ruler, Square, Box, GitBranch, FileText } from "lucide-react";
 import type { TakeoffMeasurement } from "@shared/schema";
 
 interface TakeoffPropertiesPanelProps {
@@ -21,9 +21,34 @@ interface TakeoffPropertiesPanelProps {
    *  Sheet wrapper full-width on tablet/phone, and hides the
    *  internal close-X (Sheet provides its own). */
   variant?: "inline" | "drawer";
+  /**
+   * Task #2587 — Base-bid vs change-order scope tagging. When provided,
+   * the panel renders the same BASE/CO chip the measurement table row
+   * shows and a small dropdown that moves the measurement to base bid
+   * or any active change order. Reuses the workspace's
+   * `moveScopeMutation` (via `onMoveScope`) so the underlying
+   * `POST /api/takeoff/measurements/:id/scope` call, cache
+   * invalidation, and toasts stay centralized. Both props are
+   * optional so embedded callers (e.g. bid-context) that have no
+   * change-order list keep rendering the panel unchanged.
+   */
+  changeOrders?: Array<{ id: string; changeOrderNumber: string; description?: string | null; status?: string | null }>;
+  onMoveScope?: (
+    measurementId: string,
+    payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+  ) => void;
+  isMovingScope?: boolean;
 }
 
-export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose, variant = "inline" }: TakeoffPropertiesPanelProps) {
+export function TakeoffPropertiesPanel({
+  measurement,
+  selectedSheet,
+  onClose,
+  variant = "inline",
+  changeOrders,
+  onMoveScope,
+  isMovingScope,
+}: TakeoffPropertiesPanelProps) {
   const { toast } = useToast();
   const [subcontractorId, setSubcontractorId] = useState(measurement.subcontractorId || "");
   const [supplierId, setSupplierId] = useState(measurement.supplierId || "");
@@ -93,6 +118,32 @@ export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose, va
     return "—";
   };
 
+  // Task #2587 — Scope chip + picker. Mirrors the
+  // MeasurementTable row chip so users see the same BASE/CO
+  // signal in both surfaces. The picker is rendered as a
+  // simple Select inside the panel (no dialog needed — the
+  // panel itself is the surface) with a "Base bid" entry plus
+  // one entry per active change order.
+  const scopeEnabled = !!onMoveScope;
+  const currentScopeTag = (measurement.scopeTag ?? "BASE") as "BASE" | "CO";
+  const currentChangeOrderId = measurement.changeOrderId;
+  const currentCo = currentChangeOrderId
+    ? (changeOrders ?? []).find((c) => c.id === currentChangeOrderId) ?? null
+    : null;
+  const scopeSelectValue =
+    currentScopeTag === "CO" && currentChangeOrderId ? currentChangeOrderId : "__base__";
+
+  const handleScopeChange = (value: string) => {
+    if (!onMoveScope) return;
+    if (value === "__base__") {
+      if (currentScopeTag === "BASE") return;
+      onMoveScope(measurement.id, { scopeTag: "BASE", changeOrderId: null });
+    } else {
+      if (currentScopeTag === "CO" && value === currentChangeOrderId) return;
+      onMoveScope(measurement.id, { scopeTag: "CO", changeOrderId: value });
+    }
+  };
+
   const isDrawer = variant === "drawer";
   return (
     <div
@@ -118,11 +169,40 @@ export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose, va
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: measurement.color || "#3b82f6" }} />
             <p className="text-sm font-medium truncate" data-testid="text-measurement-label">{measurement.label}</p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
             <Badge variant="outline" className="text-xs py-0 h-5" data-testid="badge-measurement-type">
               {measurement.type}
             </Badge>
             <span data-testid="text-measurement-quantity">{getMeasurementQuantity()}</span>
+            {scopeEnabled && (
+              currentScopeTag === "CO" ? (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[10px] font-medium px-1.5 py-0.5"
+                  data-testid="badge-properties-scope"
+                  data-scope="CO"
+                  title={
+                    currentCo?.description
+                      ? `CO ${currentCo.changeOrderNumber} — ${currentCo.description}`
+                      : currentCo
+                        ? `CO ${currentCo.changeOrderNumber}`
+                        : "Change order"
+                  }
+                >
+                  <GitBranch className="w-3 h-3" />
+                  {currentCo ? `CO ${currentCo.changeOrderNumber}` : "CO"}
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded bg-slate-500/15 text-slate-700 dark:text-slate-300 text-[10px] font-medium px-1.5 py-0.5"
+                  data-testid="badge-properties-scope"
+                  data-scope="BASE"
+                  title="Base bid scope"
+                >
+                  <FileText className="w-3 h-3" />
+                  Base
+                </span>
+              )
+            )}
           </div>
         </div>
 
@@ -164,6 +244,45 @@ export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose, va
         <Separator />
 
         <div className="space-y-3">
+          {scopeEnabled && (
+            <div className="space-y-1.5">
+              <Label className="text-xs flex items-center gap-1.5">
+                <GitBranch className="w-3.5 h-3.5" />
+                Scope
+              </Label>
+              <Select
+                value={scopeSelectValue}
+                onValueChange={handleScopeChange}
+                disabled={isMovingScope}
+              >
+                <SelectTrigger className="h-8 text-xs" data-testid="select-properties-scope">
+                  <SelectValue placeholder="Select scope" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__base__" data-testid="option-properties-scope-base">
+                    Base bid
+                  </SelectItem>
+                  {(changeOrders ?? []).length === 0 ? (
+                    <SelectItem value="__no_cos__" disabled>
+                      No change orders on this project
+                    </SelectItem>
+                  ) : (
+                    (changeOrders ?? []).map((co) => (
+                      <SelectItem
+                        key={co.id}
+                        value={co.id}
+                        data-testid={`option-properties-scope-co-${co.id}`}
+                      >
+                        CO {co.changeOrderNumber}
+                        {co.description ? ` — ${co.description.slice(0, 40)}` : ""}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
           <div className="space-y-1.5">
             <Label className="text-xs flex items-center gap-1.5">
               <Tag className="w-3.5 h-3.5" />
