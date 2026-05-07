@@ -26,6 +26,9 @@ export function registerAiTakeoffJob(): void {
         payload.focusAreas,
         payload.needsAutoDetection,
         payload.userId,
+        async (pct, message, meta) => {
+          await ctx.progress(pct, message, meta);
+        },
       );
       await ctx.progress(100, "Analysis complete", { analysisId: payload.analysisId });
       return { analysisId: payload.analysisId };

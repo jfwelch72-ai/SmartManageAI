@@ -29,13 +29,16 @@ export function registerAiDocumentJob(): void {
         .where(eq(organizations.id, payload.organizationId))
         .limit(1);
 
-      await ctx.progress(15, "Calling AI analyzer");
+      await ctx.progress(15, "Preparing AI analyzer");
       try {
         const result = await analyzeDocumentWithAI(
           payload.documentUrl,
           payload.documentName,
           org?.tradeType || undefined,
           { userId: payload.userId, orgId: payload.organizationId },
+          async (pct, message, meta) => {
+            await ctx.progress(pct, message, meta);
+          },
         );
         await ctx.progress(85, "Persisting analysis");
         await db

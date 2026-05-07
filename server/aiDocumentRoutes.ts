@@ -160,7 +160,31 @@ interface BidDocumentAnalysisResult {
   confidenceScore: number;
 }
 
-export async function analyzeDocumentWithAI(documentUrl: string, documentName: string, tradeType?: string, governanceOpts?: { userId: string | null; orgId: string }): Promise<BidDocumentAnalysisResult> {
+export type AiDocumentAnalysisProgressFn = (
+  pct: number,
+  message: string,
+  meta?: Record<string, unknown>,
+) => void | Promise<void>;
+
+export async function analyzeDocumentWithAI(
+  documentUrl: string,
+  documentName: string,
+  tradeType?: string,
+  governanceOpts?: { userId: string | null; orgId: string },
+  onProgress?: AiDocumentAnalysisProgressFn,
+): Promise<BidDocumentAnalysisResult> {
+  const reportProgress = async (
+    pct: number,
+    message: string,
+    meta?: Record<string, unknown>,
+  ) => {
+    if (!onProgress) return;
+    try {
+      await onProgress(pct, message, meta);
+    } catch {
+      // Progress reporting must never break the analysis pipeline.
+    }
+  };
   const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
   
   const userPrompt = `Analyze this bid/scope document and extract all relevant information.
@@ -207,7 +231,9 @@ Respond with JSON in this format:
 }`;
 
   try {
+    await reportProgress(25, "Fetching document content");
     const rawContent = await extractDocumentContent(documentUrl);
+    await reportProgress(45, "Scanning for prompt-injection");
 
     // Task #2479 — quarantine the untrusted document text in tagged
     // delimiters and scan for known prompt-injection patterns. If the
@@ -263,6 +289,7 @@ Respond with JSON in this format:
       });
     }
 
+    await reportProgress(55, "Calling AI analyzer");
     if (governanceOpts) {
       const governed = await governedAiCall({
         orgId: governanceOpts.orgId,
@@ -288,6 +315,7 @@ Respond with JSON in this format:
       if (governed.blocked) {
         throw new Error(`AI_GOVERNANCE_BLOCKED:${governed.reason}`);
       }
+      await reportProgress(75, "Validating AI response");
       return governed.result;
     }
 
@@ -305,6 +333,7 @@ Respond with JSON in this format:
     if (!validated.ok) {
       throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
     }
+    await reportProgress(75, "Validating AI response");
     return validated.data as BidDocumentAnalysisResult;
   } catch (error) {
     // Hard-fail on prompt-injection refusal — never mask it as a fallback

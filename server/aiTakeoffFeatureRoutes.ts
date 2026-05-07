@@ -489,12 +489,38 @@ async function persistSuggestionsAndApplyCalibration(
   return { items: adjusted, calibrationApplied };
 }
 
-export async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[], needsAutoDetection?: boolean, userId?: string | null) {
+export type AiTakeoffProgressFn = (
+  pct: number,
+  message: string,
+  meta?: Record<string, unknown>,
+) => void | Promise<void>;
+
+export async function processAiTakeoff(
+  analysisId: string,
+  tradeType: string,
+  focusAreas?: string[],
+  needsAutoDetection?: boolean,
+  userId?: string | null,
+  onProgress?: AiTakeoffProgressFn,
+) {
   const startTime = Date.now();
-  
+  const reportProgress = async (
+    pct: number,
+    message: string,
+    meta?: Record<string, unknown>,
+  ) => {
+    if (!onProgress) return;
+    try {
+      await onProgress(pct, message, meta);
+    } catch {
+      // Progress reporting must never break the analysis pipeline.
+    }
+  };
+
   await db.update(aiTakeoffAnalyses)
     .set({ status: "PROCESSING" })
     .where(eq(aiTakeoffAnalyses.id, analysisId));
+  await reportProgress(10, "Loading takeoff sheet");
 
   try {
     // Get the analysis record to find associated takeoff sheet
@@ -536,6 +562,7 @@ export async function processAiTakeoff(analysisId: string, tradeType: string, fo
     }
 
     if (imageUrl) {
+      await reportProgress(20, "Fetching plan PDF");
       try {
         const { openPdfFromGcs, PDF_BUFFERED_PARSE_MAX_BYTES } = await import("./utils/pdfPageCount");
         let gcsFile: import("@google-cloud/storage").File | null = null;
@@ -684,6 +711,7 @@ export async function processAiTakeoff(analysisId: string, tradeType: string, fo
     let scaleMismatchEval: ReturnType<typeof evaluateScaleMismatch> = null;
 
     if (needsAutoDetection && imageUrl) {
+      await reportProgress(35, "Detecting trade type from drawing");
       const classification = await classifyTradeType(imageUrl, analysis.organizationId, userId);
       if (classification.confidence >= 40) {
         tradeType = classification.trade;
@@ -699,6 +727,7 @@ export async function processAiTakeoff(analysisId: string, tradeType: string, fo
     const analysisMode = analysis?.analysisMode || "QUICK";
 
     if (imageUrl && openai) {
+      await reportProgress(50, "Calling AI vision model");
       try {
         const tradePrompt = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
         const focusAreaPrompt = focusAreas?.length ? `Focus especially on: ${focusAreas.join(", ")}. ` : "";
@@ -881,6 +910,7 @@ Return your analysis as JSON with this exact structure:
           };
 
           if (analysisMode === "DETAILED" && detectedItems.length > 0) {
+            await reportProgress(75, "Running quality verification pass");
             const verifyResult = await governedAiCall({
               orgId: analysis.organizationId,
               userId: analysis.createdByUserId,
@@ -1016,6 +1046,7 @@ Return JSON with:
       aiNotes = `Demo mode: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
     }
 
+    await reportProgress(85, "Persisting AI suggestions");
     // Task #2323 — apply per-org confidence calibration overrides AND
     // persist one PENDING suggestion row per detected item so the
     // accept/reject/edit-and-accept flow has something to update.
