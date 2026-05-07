@@ -865,6 +865,7 @@ function AuthGatedWidget() {
           }}
           data-testid="widget-stack"
         >
+          <HelpWidget />
           <div style={collapsibleStyle(hideVoiceButton)} aria-hidden={hideVoiceButton}>
             <VoiceDictation />
           </div>
@@ -874,7 +875,6 @@ function AuthGatedWidget() {
           <div style={collapsibleStyle(hideAiButton)} aria-hidden={hideAiButton}>
             <AIAssistantWidget />
           </div>
-          <HelpWidget />
         </div>
       </div>
     </Suspense>
