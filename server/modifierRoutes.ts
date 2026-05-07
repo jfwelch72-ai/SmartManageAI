@@ -13,7 +13,7 @@ import {
 } from "../shared/schema/features";
 import { bids } from "../shared/schema/core";
 import { estimates, estimateLineItems } from "../shared/schema/operations";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, type AuthRequest } from "./auth";
 import { governedAiCall } from "./services/aiGovernance";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { MODIFIER_AI_SYSTEM_PROMPT, buildModifierUserPrompt } from "./ai/modifierPrompt";
@@ -191,9 +191,11 @@ function matchesRule(rule: ScopeModifierRule, scopeName: string): boolean {
 
 router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const { layer, category, scopePattern } = req.query;
     const tradeIdsParam = req.query["tradeIds[]"] || req.query.tradeIds;
-    const orgId = req.user?.organizationId;
 
     const conditions = [
       eq(modifiers.isActive, true),
@@ -239,13 +241,15 @@ router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response
 
 router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const { tradeId, scopeName } = req.query;
 
     if (!tradeId || !scopeName || typeof tradeId !== "string" || typeof scopeName !== "string") {
       return res.status(400).json({ error: "tradeId and scopeName are required" });
     }
 
-    const orgId = req.user?.organizationId;
     const allActive = await db
       .select()
       .from(modifiers)

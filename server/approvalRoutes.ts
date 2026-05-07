@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, type AuthRequest } from "./auth";
 import * as approvalService from "./services/approvalService";
 import { logInfo, logError } from "./utils/logger";
 import { notifySubmitter } from "./services/approvalNotificationService";
@@ -12,8 +12,10 @@ router.get("/", requireAuth, async (req: AuthRequest, res, next) => {
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const entityType = req.query.entityType as string | undefined;
-    const approvals = await approvalService.getPendingApprovals(user.organizationId, entityType);
+    const approvals = await approvalService.getPendingApprovals(orgId, entityType);
     res.json(approvals);
   } catch (err) {
     next(err);
@@ -26,7 +28,9 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res, next) => {
     if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
       return res.status(403).json({ error: "Admin access required" });
     }
-    const stats = await approvalService.getApprovalStats(user.organizationId);
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+    const stats = await approvalService.getApprovalStats(orgId);
     res.json(stats);
   } catch (err) {
     next(err);
@@ -39,7 +43,9 @@ router.get("/:id", requireAuth, async (req: AuthRequest, res, next) => {
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const approval = await approvalService.getApprovalById(req.params.id, user.organizationId);
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+    const approval = await approvalService.getApprovalById(req.params.id, orgId);
     if (!approval) return res.status(404).json({ error: "Not found" });
     res.json(approval);
   } catch (err) {
@@ -53,7 +59,9 @@ router.post("/:id/approve", requireAuth, async (req: AuthRequest, res, next) => 
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const result = await approvalService.approveRequest(req.params.id, user.organizationId, user.id, user.role, req.body.notes);
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+    const result = await approvalService.approveRequest(req.params.id, orgId, user.id, user.role, req.body.notes);
     if (!result) return res.status(404).json({ error: "Approval not found or already decided" });
 
     if (result.requestedByUserId) {
@@ -64,7 +72,7 @@ router.post("/:id/approve", requireAuth, async (req: AuthRequest, res, next) => 
         message: `Your ${entityLabel} has been approved${req.body.notes ? `: ${req.body.notes}` : ""}`,
         relatedEntityId: result.entityId || req.params.id,
         relatedEntityType: result.entityType || "approval",
-      }, req.user?.organizationId);
+      }, orgId);
     }
 
     res.json(result);
@@ -79,7 +87,9 @@ router.post("/:id/reject", requireAuth, async (req: AuthRequest, res, next) => {
     if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const result = await approvalService.rejectRequest(req.params.id, user.organizationId, user.id, user.role, req.body.notes);
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+    const result = await approvalService.rejectRequest(req.params.id, orgId, user.id, user.role, req.body.notes);
     if (!result) return res.status(404).json({ error: "Approval not found or already decided" });
 
     if (result.requestedByUserId) {
@@ -90,7 +100,7 @@ router.post("/:id/reject", requireAuth, async (req: AuthRequest, res, next) => {
         message: `Your ${entityLabel} has been rejected${req.body.notes ? `: ${req.body.notes}` : ""}`,
         relatedEntityId: result.entityId || req.params.id,
         relatedEntityType: result.entityType || "approval",
-      }, req.user?.organizationId);
+      }, orgId);
     }
 
     res.json(result);

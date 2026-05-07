@@ -244,7 +244,7 @@ import {
   projectGeofenceZones, siteLeaves
 } from "@shared/schema";
 import { eq, and, desc, gte, lte, isNull, sql, inArray } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { z } from "zod";
@@ -413,6 +413,9 @@ async function captureKpiFromShift(userId: string, orgId: string, totalHours: nu
 
 router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const sanitizedBody = {
       ...req.body,
       notes: req.body.notes ? sanitizeText(req.body.notes) : undefined,
@@ -458,7 +461,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     if (data.projectId) {
       const [project] = await db.select().from(projects).where(
-        and(eq(projects.id, data.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!))
+        and(eq(projects.id, data.projectId), eq(projects.gcOrganizationId, orgId))
       ).limit(1);
       if (!project) {
         res.status(400).json({ error: "Project not found or does not belong to your organization" });
@@ -522,7 +525,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
     }
 
     if (data.costCode) {
-      const isValid = await validateCostCode(req.user!.organizationId!, data.costCode, data.projectId);
+      const isValid = await validateCostCode(orgId, data.costCode, data.projectId);
       if (!isValid) {
         res.status(400).json({ error: "Invalid or inactive cost code for this project" });
         return;
@@ -890,6 +893,9 @@ router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: Aut
 
 router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const schema = z.object({
       costCode: z.string().nullable(),
     });
@@ -912,7 +918,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
     }
 
     if (data.costCode) {
-      const isValid = await validateCostCode(req.user!.organizationId!, data.costCode, activeShift.projectId);
+      const isValid = await validateCostCode(orgId, data.costCode, activeShift.projectId);
       if (!isValid) {
         res.status(400).json({ error: "Invalid or inactive cost code for this project" });
         return;

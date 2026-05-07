@@ -140,7 +140,7 @@ import { eventBus } from "./events";
 import { db } from "./db";
 import { changeOrders, users, projects, changeOrderRevisions, changeOrderApprovals, budgetLineItems, orgCostCodes } from "@shared/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
-import { type AuthRequest, requireAuth, requireRole, requireRoleOrFeature } from "./auth";
+import { type AuthRequest, requireAuth, requireOrgUser, requireRole, requireRoleOrFeature } from "./auth";
 import { logAudit } from "./auditLogger";
 import { insertNotifications } from "./services/notificationService";
 import { sanitizeText } from "./sanitization";
@@ -787,6 +787,9 @@ router.post("/:id/promote-to-review", requireAuth, requireRoleOrFeature(["ADMIN"
  */
 router.post("/:id/approve-pricing", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canCreateChangeOrders"), async (req: AuthRequest, res: Response, next) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const result = await getChangeOrderById(req.params.id);
 
     if (!result?.order) {
@@ -846,7 +849,7 @@ router.post("/:id/approve-pricing", requireAuth, requireRoleOrFeature(["ADMIN", 
           message: `Change order ${updatedOrder.changeOrderNumber} pricing was approved and has been submitted to the client`,
           relatedEntityId: updatedOrder.id,
           relatedEntityType: "changeOrder",
-        }, project?.gcOrganizationId ?? req.user!.organizationId);
+        }, project?.gcOrganizationId ?? userOrgId);
       } catch (e) { logError("[changeOrder] submitter notification failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 

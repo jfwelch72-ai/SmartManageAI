@@ -155,7 +155,7 @@ import { changeOrders, users, projects, changeOrderApprovals, changeOrderAttachm
 import { eq, and } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { type AuthRequest, requireAuth, requireOrgUser, requireRole } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { notifySubmitter } from "./services/approvalNotificationService";
@@ -474,6 +474,9 @@ router.post("/:id/setup-approval-chain", requireAuth, requireRole("ADMIN", "MANA
 
 router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const { tmTicketId } = req.body;
     if (!tmTicketId || typeof tmTicketId !== "string") {
       res.status(400).json({ error: "tmTicketId is required" });
@@ -529,7 +532,7 @@ router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async 
           message: `T&M ticket ${ticket.ticketNumber} has been linked to change order ${order.changeOrderNumber}`,
           relatedEntityId: order.id,
           relatedEntityType: "changeOrder",
-        }, req.user?.organizationId);
+        }, orgId);
       } catch (e) {
         logError("Failed to notify TM ticket submitter:", {}, e instanceof Error ? e : new Error(String(e)));
       }
@@ -543,6 +546,9 @@ router.post("/:id/link-tm", requireAuth, requireRole("ADMIN", "MANAGER"), async 
 
 router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const { rfiId } = req.body;
     if (!rfiId || typeof rfiId !== "string") {
       res.status(400).json({ error: "rfiId is required" });
@@ -598,7 +604,7 @@ router.post("/:id/link-rfi", requireAuth, requireRole("ADMIN", "MANAGER"), async
           message: `RFI ${rfi.rfiNumber} has been linked to change order ${order.changeOrderNumber}`,
           relatedEntityId: order.id,
           relatedEntityType: "changeOrder",
-        }, req.user?.organizationId);
+        }, orgId);
       } catch (e) {
         logError("Failed to notify RFI submitter", {}, e instanceof Error ? e : new Error(String(e)));
       }

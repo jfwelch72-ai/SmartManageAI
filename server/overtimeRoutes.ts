@@ -139,7 +139,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { timeClockShifts, users, projects, overtimeRequests, overtimeRules } from "@shared/schema";
 import { eq, and, desc, sql, isNull } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
@@ -167,6 +167,9 @@ router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequ
 
 router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT", "FIELD_WORKER"), async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
+
     const otCreateSchema = z.object({
       shiftId: z.string().min(1, "shiftId is required"),
       requestedHours: z.coerce.number().positive("requestedHours must be a positive number"),
@@ -190,14 +193,14 @@ router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER
 
     const [sup] = await db.select({ id: users.id, organizationId: users.organizationId })
       .from(users).where(eq(users.id, superintendentId));
-    if (!sup || sup.organizationId !== req.user!.organizationId!) {
+    if (!sup || sup.organizationId !== orgId) {
       res.status(400).json({ error: "Invalid approver selected" }); return;
     }
 
     const [otRequest] = await db.insert(overtimeRequests).values({
       shiftId,
       userId: req.user!.id,
-      organizationId: req.user!.organizationId!,
+      organizationId: orgId,
       requestedHours: hours.toFixed(2),
       superintendentId,
       notes: notes ? sanitizeText(notes) : null,
@@ -213,7 +216,7 @@ router.post("/api/overtime-requests", requireAuth, requireRole("ADMIN", "MANAGER
     }, req);
 
     await notifyApprovers(
-      req.user!.organizationId!,
+      orgId,
       req.user!.id,
       {
         type: "OVERTIME_REQUESTED",

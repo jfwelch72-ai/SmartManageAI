@@ -428,7 +428,7 @@ import {
 import { eq, and, desc, sql, asc, max, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
 import { generateSubmittalLogPdf } from "./services/logPdfService";
@@ -2104,6 +2104,9 @@ const stampBodySchema = z.object({
 
 router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id, reviewId } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2175,7 +2178,7 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
       comment: comments || null,
     });
 
-    await advanceChain(id, user.id, req.user?.organizationId);
+    await advanceChain(id, user.id, userOrgId);
 
     res.json(updatedReview);
   } catch (error) {
@@ -2187,6 +2190,9 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
 
 router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2253,7 +2259,7 @@ router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json(updated);
@@ -2266,6 +2272,9 @@ router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER
 
 router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2336,7 +2345,7 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeatur
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been approved as noted`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json(updated);
@@ -2349,6 +2358,9 @@ router.post("/submittals/:id/approve-as-noted", requireAuth, requireRoleOrFeatur
 
 router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2419,7 +2431,7 @@ router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" has been rejected`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json(updated);
@@ -2432,6 +2444,9 @@ router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_
 
 router.post("/submittals/:id/revise", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canAccessApprovals"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
     if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
@@ -2502,7 +2517,7 @@ router.post("/submittals/:id/revise", requireAuth, requireRoleOrFeature(["SUPER_
         message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" requires revision`,
         relatedEntityId: id,
         relatedEntityType: "submittal",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json(updated);

@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc, inArray, sql } from "drizzle-orm";
-import { requireAuth, requireFeaturePermission, AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, requireFeaturePermission, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyApprovers, notifySubmitter, getApproverUserIds, notifyUsers } from "./services/approvalNotificationService";
 import { eventBus } from "./events";
@@ -233,6 +233,9 @@ function registerTMApprovalRoutes(app: Express) {
 
   app.post("/api/tm-tickets/:ticketId/approve", requireAuth, async (req: AuthRequest, res, next) => {
     try {
+      const orgId = requireOrgUser(req, res);
+      if (!orgId) return;
+
       const { ticketId } = req.params;
       const userId = req.user!.id;
       
@@ -282,7 +285,7 @@ function registerTMApprovalRoutes(app: Express) {
           message: `T&M Ticket ${ticket.ticketNumber} has been approved`,
           relatedEntityId: ticket.projectId || ticketId,
           relatedEntityType: "project",
-        }, req.user?.organizationId);
+        }, orgId);
       }
 
       if (ticket.projectId) {
@@ -316,6 +319,9 @@ function registerTMApprovalRoutes(app: Express) {
 
   app.post("/api/tm-tickets/:ticketId/reject", requireAuth, async (req: AuthRequest, res, next) => {
     try {
+      const orgId = requireOrgUser(req, res);
+      if (!orgId) return;
+
       const { ticketId } = req.params;
       const { reason } = req.body;
       const userId = req.user!.id;
@@ -366,7 +372,7 @@ function registerTMApprovalRoutes(app: Express) {
           message: `T&M Ticket ${ticket.ticketNumber} has been rejected${reason ? `: ${reason}` : ""}`,
           relatedEntityId: ticket.projectId || ticketId,
           relatedEntityType: "project",
-        }, req.user?.organizationId);
+        }, orgId);
       }
       
       res.json(updatedTicket);

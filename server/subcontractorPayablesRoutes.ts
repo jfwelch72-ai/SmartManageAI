@@ -12,7 +12,7 @@ import {
   notifications
 } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
+import { requireAuth, requireOrgUser, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { eventBus } from "./events";
 import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
@@ -391,6 +391,9 @@ router.post("/payables", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"],
 
 router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -494,7 +497,7 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
         message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been approved`,
         relatedEntityId: id,
         relatedEntityType: "PAYABLE",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json({
@@ -523,6 +526,9 @@ const rejectPayableSchema = z.object({
 
 router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], 'canEditFinancials'), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
+    const userOrgId = requireOrgUser(req, res);
+    if (!userOrgId) return;
+
     const { id } = req.params;
     const { shouldFilter, orgId, mustDenyAccess, isSuperAdmin } = getOrgIdForFilter(req);
 
@@ -602,7 +608,7 @@ router.post("/payables/:id/reject", requireAuth, requireRoleOrFeature(["ADMIN", 
         message: `Subcontractor payable for ${fullPayment.subcontractor.companyName} - $${parseFloat(payment.amount).toLocaleString('en-US', { minimumFractionDigits: 2 })} has been rejected: ${rejectionReason}`,
         relatedEntityId: id,
         relatedEntityType: "PAYABLE",
-      }, req.user?.organizationId);
+      }, userOrgId);
     }
 
     res.json({

@@ -861,9 +861,10 @@ router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canM
     }
 
     const projectOtConfigCache = new Map<string, OvertimeConfig>();
+    const orgIdForOt: string = orgId;
     async function resolveOtConfig(projectId: string): Promise<OvertimeConfig> {
       if (!projectOtConfigCache.has(projectId)) {
-        projectOtConfigCache.set(projectId, await getOvertimeConfig(orgId, projectId));
+        projectOtConfigCache.set(projectId, await getOvertimeConfig(orgIdForOt, projectId));
       }
       return projectOtConfigCache.get(projectId)!;
     }
