@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation, useRoute, type NavigationProp, type RouteProp } from "@react-navigation/native";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 
-import { api } from "@/api/client";
+import { api, baseUrl, getAuthToken, ApiError } from "@/api/client";
 import { enqueue } from "@/sync/outbox";
 import { cacheList } from "@/sync/db";
 import { useSync } from "@/sync/SyncContext";
@@ -56,6 +58,7 @@ export function InventoryActionScreen() {
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [printingLabel, setPrintingLabel] = useState(false);
 
   // Locations: try a fresh fetch when online, fall back to last known list
   // from the per-material stock rows so the screen still works offline.
@@ -98,6 +101,87 @@ export function InventoryActionScreen() {
   }, [stock]);
 
   const onHandHere = locationId ? stockByLocation.get(locationId) ?? 0 : 0;
+
+  async function reprintLabel() {
+    setFeedback(null);
+    if (!(await isOnline())) {
+      setFeedback("Connect to the network to reprint a label.");
+      return;
+    }
+    setPrintingLabel(true);
+    try {
+      const token = await getAuthToken();
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        Accept: "application/pdf",
+      };
+      if (token) headers["Cookie"] = `auth_token=${token}`;
+      const res = await fetch(`${baseUrl}/api/inventory/labels`, {
+        method: "POST",
+        headers,
+        credentials: "include",
+        body: JSON.stringify({
+          materialIds: [material.id],
+          symbology: "code128",
+          copies: 1,
+          startOffset: 0,
+        }),
+      });
+      if (!res.ok) {
+        let body: unknown = null;
+        try { body = await res.json(); } catch { /* ignore */ }
+        throw new ApiError(res.status, body);
+      }
+      // Convert PDF body to base64 for FileSystem.writeAsStringAsync.
+      const blob = await res.blob();
+      const base64: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result as string;
+          // result is "data:application/pdf;base64,xxxx"
+          const idx = result.indexOf(",");
+          resolve(idx >= 0 ? result.slice(idx + 1) : result);
+        };
+        reader.onerror = () => reject(reader.error ?? new Error("Failed to read PDF"));
+        reader.readAsDataURL(blob);
+      });
+      const safeSku = (material.sku || "label").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 32);
+      // Use cacheDirectory so the OS can clean up old labels automatically.
+      // expo-sharing wraps the file in a FileProvider content:// URI on
+      // Android and a UIActivityViewController on iOS, so cache-scoped
+      // files share/print correctly on both platforms.
+      const dir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "";
+      const fileUri = `${dir}label-${safeSku}-${Date.now()}.pdf`;
+      await FileSystem.writeAsStringAsync(fileUri, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      // Hand off to the OS sheet so the user can AirPrint, send to a paired
+      // Bluetooth/network label printer, or save to Files. expo-sharing is
+      // the cross-platform path: iOS uses the share sheet, Android opens
+      // the standard intent chooser via FileProvider.
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(fileUri, {
+          mimeType: "application/pdf",
+          UTI: "com.adobe.pdf",
+          dialogTitle: `Print label for ${material.sku}`,
+        });
+        setFeedback("Label sent to print/share sheet.");
+      } else {
+        setFeedback(`Label saved to ${fileUri}.`);
+      }
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? `Print failed (HTTP ${err.status}).`
+          : err instanceof Error
+          ? `Print failed: ${err.message}`
+          : "Print failed.";
+      setFeedback(msg);
+    } finally {
+      setPrintingLabel(false);
+    }
+  }
 
   function reset() {
     setQuantity("1");
@@ -185,6 +269,16 @@ export function InventoryActionScreen() {
         <Text style={[styles.muted, { marginTop: spacing(1) }]}>
           On hand at selected location: <Text style={styles.bold}>{onHandHere}</Text>
         </Text>
+        <Pressable
+          onPress={() => void reprintLabel()}
+          disabled={printingLabel}
+          style={[styles.btn, styles.btnSecondary, { marginTop: spacing(2) }, printingLabel && { opacity: 0.6 }]}
+          testID="button-reprint-label"
+        >
+          <Text style={styles.btnText}>
+            {printingLabel ? "Preparing label…" : "Reprint label"}
+          </Text>
+        </Pressable>
       </View>
 
       <View style={styles.tabs}>
