@@ -20,7 +20,7 @@ const config: ExpoConfig = {
     supportsTablet: true,
     infoPlist: {
       NSCameraUsageDescription:
-        "SmartManageAI uses the camera to capture jobsite photos for daily reports, punch list items, and inspections.",
+        "SmartManageAI uses the camera to capture jobsite photos and to scan barcodes/QR codes on materials for warehouse and yard inventory tracking.",
       NSLocationWhenInUseUsageDescription:
         "SmartManageAI uses your location to record GPS coordinates for time-clock punches and field reports.",
       NSPhotoLibraryUsageDescription:
@@ -47,6 +47,13 @@ const config: ExpoConfig = {
   plugins: [
     "expo-secure-store",
     "expo-sqlite",
+    [
+      "expo-camera",
+      {
+        cameraPermission:
+          "SmartManageAI uses the camera to scan material barcodes and QR codes for warehouse and yard inventory tracking.",
+      },
+    ],
     "expo-notifications",
     "expo-image-picker",
     "expo-location",

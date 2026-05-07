@@ -84,6 +84,14 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   SUBMITTAL: "submittals",
   SUBMITTAL_REVIEW: "submittalReviews",
   SUBMITTAL_STAMP: "submittalStamps",
+  // Task #2497: routed by pushInventory() to dedicated REST endpoints,
+  // not through the unified mobile sync envelope. Empty string keeps the
+  // record/field map total for TS exhaustiveness while signalling that
+  // push() should skip it (the existing `if (!serverField) continue;`
+  // guard treats an empty string as falsy).
+  INVENTORY_RECEIPT: "",
+  INVENTORY_ISSUE: "",
+  INVENTORY_TRANSFER: "",
 };
 
 export async function pull(): Promise<number> {
@@ -292,8 +300,57 @@ export async function push(): Promise<{ pushed: number; conflicts: number }> {
   }
 }
 
+// Task #2497: drain inventory outbox rows by calling the dedicated REST
+// endpoints. Each entity type maps to a single POST. Treat 4xx (other than
+// auth/timeouts) as terminal — the server has already validated the
+// payload (cross-tenant, insufficient stock, etc.) and a retry will keep
+// failing. Mark those SYNCED-with-error to clear them from the queue and
+// surface the message via lastError. Network/5xx errors stay PENDING via
+// markFailed() so the next syncNow() retries.
+const INVENTORY_PATHS: Partial<Record<SyncEntityType, string>> = {
+  INVENTORY_RECEIPT: "/api/inventory/receive",
+  INVENTORY_ISSUE: "/api/inventory/issue",
+  INVENTORY_TRANSFER: "/api/inventory/transfer",
+};
+
+export async function pushInventory(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType in INVENTORY_PATHS);
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const path = INVENTORY_PATHS[rec.entityType]!;
+    try {
+      await api(path, { method: "POST", body: JSON.stringify(rec.payload) });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // 4xx validation errors (except 401/403/408/429) are terminal — drop.
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => {
+          try { return JSON.stringify(err.body); } catch { return String(err.body); }
+        })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        // Bump retry count enough times to exit the retryable window so we
+        // don't loop forever on a permanently-bad payload.
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
-  return { pulled, pushed, conflicts };
+  const inv = await pushInventory();
+  return { pulled, pushed: pushed + inv.pushed, conflicts };
 }

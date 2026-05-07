@@ -18,7 +18,18 @@ export type SyncEntityType =
   // field user never types a UUID.
   | "SUBMITTAL"
   | "SUBMITTAL_REVIEW"
-  | "SUBMITTAL_STAMP";
+  | "SUBMITTAL_STAMP"
+  // Task #2497: barcode/QR-driven inventory operations posted from the
+  // warehouse/yard scan screen. These are pushed directly to the
+  // /api/inventory/{receive,issue,transfer} REST endpoints by
+  // pushInventory() in the sync coordinator (they are NOT routed through
+  // the unified /api/ai-features/mobile/sync envelope, which has no
+  // inventory section). Using the existing outbox table keeps offline
+  // semantics, retry behavior, and the SyncStatusBar pending count
+  // consistent with every other field action.
+  | "INVENTORY_RECEIPT"
+  | "INVENTORY_ISSUE"
+  | "INVENTORY_TRANSFER";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
