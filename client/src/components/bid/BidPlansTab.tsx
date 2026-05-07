@@ -43,6 +43,13 @@ import { useFeatureFlags } from "@/hooks/use-feature-flags";
 // default no-doc-selected pane. Sheet clicks navigate via wouter.
 import { Link, useLocation } from "wouter";
 import { TakeoffCtaPane } from "@/components/takeoff/TakeoffCtaPane";
+import {
+  PlanSetIngestBanner,
+  enqueuePlanSetIngest,
+  persistIngestJob,
+  type PlanSetIngestPayload,
+} from "@/components/bid/PlanSetIngestBanner";
+import { Zap } from "lucide-react";
 
 interface BidPlansTabProps {
   bidId: string;
@@ -261,6 +268,9 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [bimExtractionResult, setBimExtractionResult] = useState<BimExtractionResult | null>(null);
   const [bimIsExtracting, setBimIsExtracting] = useState(false);
   const [bimExtractionProgress, setBimExtractionProgress] = useState(0);
+  // Task #2582 — bumped after enqueue so the banner remounts and
+  // rereads the active jobId from localStorage.
+  const [ingestBannerKey, setIngestBannerKey] = useState(0);
 
   const { data: categories = [] } = useQuery<QuantityCategory[]>({
     queryKey: ["/api/bids", bidId, "takeoff", "categories"],
@@ -663,6 +673,37 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
     }
   };
 
+  // Task #2582 — Background ingest for large plan sets. Enqueues the
+  // plan_set_ingest job and persists the jobId to localStorage so the
+  // <PlanSetIngestBanner /> can show live progress + retry across
+  // navigation.
+  const handleIngestInBackground = async (doc: BidDocument) => {
+    const payload: PlanSetIngestPayload = {
+      bidId,
+      bidDocumentId: doc.id,
+      fileUrl: doc.fileUrl,
+      fileName: doc.fileName,
+      objectKey: doc.objectKey ?? undefined,
+    };
+    try {
+      const { jobId } = await enqueuePlanSetIngest(payload);
+      persistIngestJob(bidId, { jobId, payload, startedAt: Date.now() });
+      // Force the banner (mounted at the top of this tab) to remount
+      // and rehydrate the active job from localStorage.
+      setIngestBannerKey((n) => n + 1);
+      toast({
+        title: "Ingest queued",
+        description: "Large plan sets process in the background. Progress will appear above.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Could not queue ingest",
+        description: error?.message || "Background ingest enqueue failed",
+        variant: "destructive",
+      });
+    }
+  };
+
   const importToEstimateMutation = useMutation({
     mutationFn: async () => {
       if (!estimateId) throw new Error("No estimate found. Create an estimate in Step 2 first.");
@@ -775,6 +816,8 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
 
   return (
     <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
+      {/* Task #2582 — live banner for the background plan-set ingest job. */}
+      <PlanSetIngestBanner key={ingestBannerKey} bidId={bidId} />
       <div className="flex flex-1 min-h-0 relative">
         {!leftPanelCollapsed && (
           <div
@@ -1044,13 +1087,22 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                                       View
                                     </DropdownMenuItem>
                                     {(doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf")) && (
-                                      <DropdownMenuItem
-                                        onClick={() => handleImportToTakeoff(doc.id)}
-                                        data-testid={`button-import-takeoff-${doc.id}`}
-                                      >
-                                        <FileText className="w-4 h-4 mr-2" />
-                                        Import to Takeoff
-                                      </DropdownMenuItem>
+                                      <>
+                                        <DropdownMenuItem
+                                          onClick={() => handleImportToTakeoff(doc.id)}
+                                          data-testid={`button-import-takeoff-${doc.id}`}
+                                        >
+                                          <FileText className="w-4 h-4 mr-2" />
+                                          Import to Takeoff
+                                        </DropdownMenuItem>
+                                        <DropdownMenuItem
+                                          onClick={() => handleIngestInBackground(doc)}
+                                          data-testid={`button-ingest-background-${doc.id}`}
+                                        >
+                                          <Zap className="w-4 h-4 mr-2" />
+                                          Ingest in background
+                                        </DropdownMenuItem>
+                                      </>
                                     )}
                                     {bimEnabled && isIfcFile(doc.fileName) && (
                                       <DropdownMenuItem
@@ -1404,9 +1456,21 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     <Eye className="w-3 h-3 mr-1" /> View
                   </Button>
                   {(selectedDoc.mimeType?.includes("pdf") || selectedDoc.fileName?.toLowerCase().endsWith(".pdf")) && (
-                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleImportToTakeoff(selectedDoc.id)} data-testid="button-import-selected-doc">
-                      <FileText className="w-3 h-3 mr-1" /> Import
-                    </Button>
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleImportToTakeoff(selectedDoc.id)} data-testid="button-import-selected-doc">
+                        <FileText className="w-3 h-3 mr-1" /> Import
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs flex-1"
+                        onClick={() => handleIngestInBackground(selectedDoc)}
+                        data-testid="button-ingest-background-selected-doc"
+                        title="Ingest large plan sets in the background"
+                      >
+                        <Zap className="w-3 h-3 mr-1" /> Background
+                      </Button>
+                    </>
                   )}
                 </div>
               </div>
