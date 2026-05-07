@@ -72,7 +72,7 @@ export function FeatureHighlightEditor({ comp, onChange }: { comp: BodyComponent
   const addItem = () => {
     onChange({ ...comp.config, items: [...comp.config.items, { id: `fh-${Date.now()}`, title: "Feature", description: "Description", icon: "star" }] });
   };
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: FeatureItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<FeatureItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -96,7 +96,7 @@ export function FeatureHighlightEditor({ comp, onChange }: { comp: BodyComponent
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Features</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: FeatureItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <Input value={item.title} onChange={(e) => updateItem(i, { title: e.target.value })} placeholder="Title" className="flex-1 min-w-[100px]" data-testid={`input-feature-item-title-${i}`} />
@@ -127,7 +127,7 @@ export function StatsEditor({ comp, onChange }: { comp: BodyComponent & { type: 
   const addItem = () => {
     onChange({ ...comp.config, items: [...comp.config.items, { id: `s-${Date.now()}`, value: "0", label: "Metric", prefix: "", suffix: "" }] });
   };
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: StatItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<StatItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -151,7 +151,7 @@ export function StatsEditor({ comp, onChange }: { comp: BodyComponent & { type: 
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Stats</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: StatItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3">
             <div className="flex items-center gap-2 flex-wrap">
               <Input value={item.prefix} onChange={(e) => updateItem(i, { prefix: e.target.value })} placeholder="Prefix" className="w-16" data-testid={`input-stat-prefix-${i}`} />

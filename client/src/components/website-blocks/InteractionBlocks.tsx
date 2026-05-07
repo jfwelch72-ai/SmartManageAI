@@ -56,7 +56,7 @@ export function FormEditor({ comp, onChange, brandingColors }: { comp: BodyCompo
     const newField: FormFieldConfig = { id: `f-${Date.now()}`, label: "New Field", type: "text", placeholder: "", required: false };
     onChange({ ...comp.config, fields: [...comp.config.fields, newField] });
   };
-  const removeField = (i: number) => onChange({ ...comp.config, fields: comp.config.fields.filter((_, idx) => idx !== i) });
+  const removeField = (i: number) => onChange({ ...comp.config, fields: comp.config.fields.filter((_: FormFieldConfig, idx: number) => idx !== i) });
   const updateField = (i: number, updates: Partial<FormFieldConfig>) => {
     const fields = [...comp.config.fields];
     fields[i] = { ...fields[i], ...updates };
@@ -214,7 +214,7 @@ export function FormEditor({ comp, onChange, brandingColors }: { comp: BodyCompo
 
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Form Fields</Label>
-        {comp.config.fields.map((field, i) => (
+        {comp.config.fields.map((field: FormFieldConfig, i: number) => (
           <div key={field.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <Input value={field.label} onChange={(e) => updateField(i, { label: e.target.value })} placeholder="Label" className="flex-1 min-w-[100px]" data-testid={`input-field-label-${i}`} />
@@ -303,7 +303,7 @@ export function FaqEditor({ comp, onChange }: { comp: BodyComponent & { type: "f
   const addItem = () => {
     onChange({ ...comp.config, items: [...comp.config.items, { id: `faq-${Date.now()}`, question: "New Question?", answer: "Answer here." }] });
   };
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: FaqItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<FaqItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -318,7 +318,7 @@ export function FaqEditor({ comp, onChange }: { comp: BodyComponent & { type: "f
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Questions & Answers</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: FaqItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2">
               <Input value={item.question} onChange={(e) => updateItem(i, { question: e.target.value })} placeholder="Question" className="flex-1" data-testid={`input-faq-q-${i}`} />
@@ -339,14 +339,14 @@ export function FaqEditor({ comp, onChange }: { comp: BodyComponent & { type: "f
 
 export function SafetyEditor({ comp, onChange }: { comp: BodyComponent & { type: "safety" }; onChange: (c: SafetyConfig) => void }) {
   const addStat = () => onChange({ ...comp.config, stats: [...comp.config.stats, { id: `ss-${Date.now()}`, value: "0", label: "New Stat" }] });
-  const removeStat = (i: number) => onChange({ ...comp.config, stats: comp.config.stats.filter((_, idx) => idx !== i) });
+  const removeStat = (i: number) => onChange({ ...comp.config, stats: comp.config.stats.filter((_: SafetyConfig["stats"][number], idx: number) => idx !== i) });
   const updateStat = (i: number, updates: Partial<SafetyConfig["stats"][0]>) => {
     const stats = [...comp.config.stats];
     stats[i] = { ...stats[i], ...updates };
     onChange({ ...comp.config, stats });
   };
   const addBadge = () => onChange({ ...comp.config, badges: [...comp.config.badges, { id: `sb-${Date.now()}`, imageUrl: "", label: "New Badge" }] });
-  const removeBadge = (i: number) => onChange({ ...comp.config, badges: comp.config.badges.filter((_, idx) => idx !== i) });
+  const removeBadge = (i: number) => onChange({ ...comp.config, badges: comp.config.badges.filter((_: SafetyConfig["badges"][number], idx: number) => idx !== i) });
   const updateBadge = (i: number, updates: Partial<SafetyConfig["badges"][0]>) => {
     const badges = [...comp.config.badges];
     badges[i] = { ...badges[i], ...updates };
@@ -358,7 +358,7 @@ export function SafetyEditor({ comp, onChange }: { comp: BodyComponent & { type:
       <div><Label className="text-xs">Safety Policy</Label><Textarea value={comp.config.safetyPolicy} onChange={(e) => onChange({ ...comp.config, safetyPolicy: e.target.value })} className="resize-none text-xs" rows={4} data-testid="input-safety-policy" /></div>
       <div className="space-y-2 pt-1 border-t">
         <Label className="text-xs font-semibold">Safety Stats</Label>
-        {comp.config.stats.map((stat, i) => (
+        {comp.config.stats.map((stat: SafetyConfig["stats"][number], i: number) => (
           <div key={stat.id} className="flex items-center gap-2">
             <Input value={stat.value} onChange={(e) => updateStat(i, { value: e.target.value })} placeholder="Value" className="w-20" data-testid={`input-safety-stat-val-${i}`} />
             <Input value={stat.label} onChange={(e) => updateStat(i, { label: e.target.value })} placeholder="Label" className="flex-1" data-testid={`input-safety-stat-label-${i}`} />
@@ -369,7 +369,7 @@ export function SafetyEditor({ comp, onChange }: { comp: BodyComponent & { type:
       </div>
       <div className="space-y-2 pt-1 border-t">
         <Label className="text-xs font-semibold">Compliance Badges</Label>
-        {comp.config.badges.map((badge, i) => (
+        {comp.config.badges.map((badge: SafetyConfig["badges"][number], i: number) => (
           <div key={badge.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Badge {i + 1}</Label>

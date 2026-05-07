@@ -61,7 +61,7 @@ export function TestimonialEditor({ comp, onChange }: { comp: BodyComponent & { 
   const addItem = () => {
     onChange({ ...comp.config, items: [...comp.config.items, { id: `t-${Date.now()}`, name: "Name", role: "Role", quote: "Quote text", imageEnabled: false, imageUrl: "" }] });
   };
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: TestimonialItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<TestimonialItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -97,7 +97,7 @@ export function TestimonialEditor({ comp, onChange }: { comp: BodyComponent & { 
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Testimonials</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: TestimonialItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center gap-2 flex-wrap">
               <Input value={item.name} onChange={(e) => updateItem(i, { name: e.target.value })} placeholder="Name" className="flex-1 min-w-[80px]" data-testid={`input-testimonial-name-${i}`} />
@@ -126,7 +126,7 @@ export function TestimonialEditor({ comp, onChange }: { comp: BodyComponent & { 
 
 export function TeamEditor({ comp, onChange }: { comp: BodyComponent & { type: "team" }; onChange: (c: TeamConfig) => void }) {
   const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `tm-${Date.now()}`, photoUrl: "", name: "New Member", role: "", bio: "" }] });
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: TeamMember, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<TeamMember>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -143,7 +143,7 @@ export function TeamEditor({ comp, onChange }: { comp: BodyComponent & { type: "
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Team Members</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: TeamMember, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Member {i + 1}</Label>
@@ -163,7 +163,7 @@ export function TeamEditor({ comp, onChange }: { comp: BodyComponent & { type: "
 
 export function CertificationsEditor({ comp, onChange }: { comp: BodyComponent & { type: "certifications" }; onChange: (c: CertificationsConfig) => void }) {
   const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `c-${Date.now()}`, logoUrl: "", label: "New Certification" }] });
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: CertificationItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<CertificationItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -180,7 +180,7 @@ export function CertificationsEditor({ comp, onChange }: { comp: BodyComponent &
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Certifications</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: CertificationItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Certification {i + 1}</Label>
@@ -198,7 +198,7 @@ export function CertificationsEditor({ comp, onChange }: { comp: BodyComponent &
 
 export function LogoShowcaseEditor({ comp, onChange }: { comp: BodyComponent & { type: "logo_showcase" }; onChange: (c: LogoShowcaseConfig) => void }) {
   const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `l-${Date.now()}`, imageUrl: "", altText: "" }] });
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: LogoItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<LogoItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -221,7 +221,7 @@ export function LogoShowcaseEditor({ comp, onChange }: { comp: BodyComponent & {
       )}
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Logos</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: LogoItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Logo {i + 1}</Label>

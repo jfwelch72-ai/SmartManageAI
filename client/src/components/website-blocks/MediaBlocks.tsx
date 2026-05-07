@@ -115,7 +115,7 @@ export function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "
   const addItem = () => {
     onChange({ ...comp.config, items: [...comp.config.items, { id: `g-${Date.now()}`, title: "New Item", content: "Description", mediaType: "none", alignment: "left" }] });
   };
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: GridItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<GridItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -139,7 +139,7 @@ export function GridEditor({ comp, onChange }: { comp: BodyComponent & { type: "
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Grid Items</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: GridItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Item {i + 1}</Label>
@@ -322,7 +322,7 @@ export function GalleryEditor({ comp, onChange }: { comp: BodyComponent & { type
 
 export function EquipmentEditor({ comp, onChange }: { comp: BodyComponent & { type: "equipment" }; onChange: (c: EquipmentConfig) => void }) {
   const addItem = () => onChange({ ...comp.config, items: [...comp.config.items, { id: `eq-${Date.now()}`, imageUrl: "", model: "New Equipment", description: "" }] });
-  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_, idx) => idx !== i) });
+  const removeItem = (i: number) => onChange({ ...comp.config, items: comp.config.items.filter((_: EquipmentItem, idx: number) => idx !== i) });
   const updateItem = (i: number, updates: Partial<EquipmentItem>) => {
     const items = [...comp.config.items];
     items[i] = { ...items[i], ...updates };
@@ -339,7 +339,7 @@ export function EquipmentEditor({ comp, onChange }: { comp: BodyComponent & { ty
       </div>
       <div className="space-y-2">
         <Label className="text-xs font-semibold">Equipment Items</Label>
-        {comp.config.items.map((item, i) => (
+        {comp.config.items.map((item: EquipmentItem, i: number) => (
           <div key={item.id} className="border rounded-md p-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-xs font-medium">Equipment {i + 1}</Label>

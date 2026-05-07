@@ -145,20 +145,43 @@ interface PreviewData {
   footerLayoutSettings?: {
     footerColumns?: number;
     sectionSettings?: {
-      top?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      middle?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      top?: SectionSettings;
+      middle?: SectionSettings;
+      bottom?: SectionSettings;
     } | null;
   } | null;
   headerLayoutSettings?: {
     headerType?: string;
     headerHeight?: number;
     sectionSettings?: {
-      top?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      middle?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
-      bottom?: { columns?: number; width?: string; sectionPadding?: number; backgroundType?: string; backgroundColor?: string; gradientStart?: string; gradientEnd?: string; gradientDirection?: string; backgroundImageUrl?: string; backgroundSize?: string; backgroundPosition?: string; padding?: number; margin?: number; gap?: number };
+      top?: SectionSettings;
+      middle?: SectionSettings;
+      bottom?: SectionSettings;
     } | null;
   } | null;
+}
+
+interface SectionSettings {
+  columns?: number;
+  width?: string;
+  sectionPadding?: number;
+  backgroundType?: string;
+  backgroundColor?: string;
+  gradientStart?: string;
+  gradientEnd?: string;
+  gradientDirection?: string;
+  backgroundImageUrl?: string;
+  backgroundSize?: string;
+  backgroundPosition?: string;
+  padding?: number;
+  margin?: number;
+  gap?: number;
+  horizontalAlignment?: string;
+  verticalAlignment?: string;
+  borderWidth?: number;
+  borderColor?: string;
+  borderStyle?: string;
+  borderRadius?: number;
 }
 
 interface CareersJob {
@@ -172,6 +195,10 @@ interface CareersJob {
   description?: string | null;
   requirements?: string | null;
   benefits?: string | null;
+  department?: string | null;
+  preferredQualifications?: string | null;
+  certificationsRequired?: string | null;
+  screeningQuestionsJson?: string | null;
   screeningQuestions?: Array<{ question: string; required?: boolean }> | null;
   createdAt?: string | null;
   created_at?: string | null;
@@ -3187,9 +3214,9 @@ export default function WebsitePreviewRenderer({ data, deviceType, websiteId, tr
       return true;
     });
 
-    const trades = [...new Set(careersJobs.map(j => j.trade).filter(Boolean))];
-    const locations = [...new Set(careersJobs.map(j => j.location).filter(Boolean))];
-    const employmentTypes = [...new Set(careersJobs.map(j => j.employmentType).filter(Boolean))];
+    const trades = [...new Set(careersJobs.map(j => j.trade).filter((x): x is string => Boolean(x)))];
+    const locations = [...new Set(careersJobs.map(j => j.location).filter((x): x is string => Boolean(x)))];
+    const employmentTypes = [...new Set(careersJobs.map(j => j.employmentType).filter((x): x is string => Boolean(x)))];
 
     const formatEmploymentType = (t: string) => t.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
     const formatCompensation = (job: any) => {
