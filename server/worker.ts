@@ -8,7 +8,6 @@
 //   - DATABASE_URL  (required; same DB the app uses)
 //   - PGBOSS_SCHEMA (optional; defaults to "pgboss")
 
-import "dotenv/config";
 import * as Sentry from "@sentry/node";
 import { logError, logInfo } from "./utils/logger";
 import { initSentry, isSentryEnabled } from "./sentry";

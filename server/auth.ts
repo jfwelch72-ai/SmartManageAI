@@ -5,7 +5,7 @@ import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { users, organizations, organizationSubscriptions, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
-import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
+import { getRoleDefaults, mergePermissions } from "./rolePermissions";
 import type { UserRole } from "@shared/schema";
 
 // Task #2427 — under autoscale this cache is intentionally per-process.
