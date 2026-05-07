@@ -51,6 +51,7 @@ import {
 } from "@/lib/estimate-utils";
 import { EstimateSummaryCards } from "@/components/estimate/EstimateSummaryCards";
 import { MarkupCalculatorCard } from "@/components/estimate/MarkupCalculator";
+import { EstimateFactorsOverrideDrawer } from "@/components/estimate/EstimateFactorsOverrideDrawer";
 import { LineItemFormDialog } from "@/components/estimate/LineItemForm";
 import { LineItemsTable } from "@/components/estimate/LineItemsTable";
 import { AssemblyInsertDialog } from "@/components/estimate/AssemblyInsertDialog";
@@ -740,6 +741,7 @@ export default function BidEstimate() {
           <div className="flex items-center gap-3">
             {getStatusBadge(estimate.status)}
             <GenerateDraftEstimateButton bidId={bid.id} estimateId={estimate.id} />
+            <EstimateFactorsOverrideDrawer estimateId={estimate.id} />
             <EstimatePdfExportButton
               estimateId={estimate.id}
               disabled={estimate.lineItems.length === 0}

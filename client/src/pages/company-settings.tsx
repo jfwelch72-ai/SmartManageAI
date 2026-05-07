@@ -4,13 +4,14 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch, Mail, ToggleRight } from "lucide-react";
+import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch, Mail, ToggleRight, Percent } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
 import { OrgFeaturePresetsTab } from "@/components/settings/OrgFeaturePresetsTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
 import { CompanyUserInviteTab } from "@/components/settings/CompanyUserInviteTab";
 import { OrgDistributionListsTab } from "@/components/settings/OrgDistributionListsTab";
+import { EstimatingMarkupsTab } from "@/components/settings/EstimatingMarkupsTab";
 import type { LucideIcon } from "lucide-react";
 
 const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
@@ -79,6 +80,7 @@ const TAB_GROUPS: TabGroup[] = [
       { value: "cost-codes", label: "Cost Codes", icon: Code },
       { value: "overhead-costs", label: "Overhead Costs", icon: DollarSign },
       { value: "production-rates", label: "Production Rates", icon: BarChart3 },
+      { value: "estimating-markups", label: "Estimating Markups", icon: Percent },
     ],
   },
   {
@@ -129,7 +131,7 @@ const VALID_TABS = [
   "trade", "feature-presets", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
   "report-locks", "scope-settings", "workflows", "ai-settings", "ai-governance", "leave-types",
-  "distribution-lists",
+  "distribution-lists", "estimating-markups",
 ];
 
 function getParentForTab(tab: string): string {
@@ -190,6 +192,7 @@ export default function CompanySettings() {
   const canViewWebsite = isOrgAdmin || featurePerms?.canManageWebsite === true;
   const canViewOverhead = user.role === "ADMIN" || user.role === "MANAGER";
   const canViewProductionRates = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT" || featurePerms?.canAccessReports === true;
+  const canViewEstimatingMarkups = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPER_ADMIN";
   const canViewReportLocks = user.role === "ADMIN" || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
   const canViewScopeSettings = isOrgAdmin || user.role === "MANAGER" || user.role === "ESTIMATOR" || user.role === "SUPERINTENDENT";
   const canViewWorkflows = isOrgAdmin;
@@ -205,6 +208,7 @@ export default function CompanySettings() {
     "cost-codes": canViewCostCodes, users: canViewUsers, integrations: canViewIntegrations,
     website: canViewWebsite, "overhead-costs": canViewOverhead, "production-rates": canViewProductionRates,
     "report-locks": canViewReportLocks, "scope-settings": canViewScopeSettings,
+    "estimating-markups": canViewEstimatingMarkups,
     workflows: canViewWorkflows,
     "ai-settings": canViewAISettings, "ai-governance": canViewAIGovernance,
     "leave-types": canViewLeaveTypes,
@@ -222,7 +226,7 @@ export default function CompanySettings() {
       if (visibleSubs.length === 0) return null;
       return { ...group, subTabs: visibleSubs };
     }).filter((g): g is TabGroup => g !== null);
-  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes, canViewDistributionLists, isOrgAdmin]);
+  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewEstimatingMarkups, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes, canViewDistributionLists, isOrgAdmin]);
 
   const activeParent = getParentForTab(activeTab);
 
@@ -431,6 +435,12 @@ export default function CompanySettings() {
             <Suspense fallback={<TabLoader />}>
               <ProductionRatesPage embedded />
             </Suspense>
+          </TabsContent>
+        )}
+
+        {canViewEstimatingMarkups && (
+          <TabsContent value="estimating-markups" className="mt-6">
+            <EstimatingMarkupsTab />
           </TabsContent>
         )}
 
