@@ -8,6 +8,7 @@ import {
   insertInventoryLocationSchema, insertInventoryMaterialSchema,
   purchaseOrders, purchaseOrderItems,
   projects,
+  mobileDevices, users,
 } from "@shared/schema";
 
 type InventoryTxnType = "RECEIPT" | "ISSUE" | "TRANSFER_OUT" | "TRANSFER_IN" | "ADJUSTMENT" | "CYCLE_COUNT";
@@ -558,6 +559,115 @@ router.get("/api/inventory/transactions", requireAuth, requireRole(...READ_ROLES
       .orderBy(desc(inventoryTransactions.performedAt))
       .limit(500);
     res.json(rows);
+  } catch (err) { next(err); }
+});
+
+// ─── FIELD ACTIVITY (mobile-originated) ───────────────────────────────────────
+// Surfaces inventory transactions whose performer has a registered mobile
+// device for this org, plus a stale-device list (registered but not synced
+// in >24 hours). Powers the "From the field" panel on /inventory.
+router.get("/api/inventory/field-activity", requireAuth, requireRole(...READ_ROLES), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orgId = requireOrg(req, res); if (!orgId) return;
+    const STALE_MS = 24 * 60 * 60 * 1000;
+    const staleCutoff = new Date(Date.now() - STALE_MS);
+
+    const txns = await db
+      .select({
+        id: inventoryTransactions.id,
+        type: inventoryTransactions.type,
+        quantity: inventoryTransactions.quantity,
+        performedAt: inventoryTransactions.performedAt,
+        referenceNumber: inventoryTransactions.referenceNumber,
+        notes: inventoryTransactions.notes,
+        materialId: inventoryTransactions.materialId,
+        materialSku: inventoryMaterials.sku,
+        materialName: inventoryMaterials.name,
+        uom: inventoryMaterials.uom,
+        locationId: inventoryTransactions.locationId,
+        locationCode: inventoryLocations.code,
+        locationName: inventoryLocations.name,
+        projectId: inventoryTransactions.projectId,
+        performedById: inventoryTransactions.performedById,
+        performerFirstName: users.firstName,
+        performerLastName: users.lastName,
+      })
+      .from(inventoryTransactions)
+      .innerJoin(inventoryMaterials, eq(inventoryMaterials.id, inventoryTransactions.materialId))
+      .innerJoin(inventoryLocations, eq(inventoryLocations.id, inventoryTransactions.locationId))
+      .innerJoin(users, eq(users.id, inventoryTransactions.performedById))
+      .where(and(
+        eq(inventoryTransactions.organizationId, orgId),
+        sql`EXISTS (SELECT 1 FROM ${mobileDevices} md WHERE md.user_id = ${inventoryTransactions.performedById} AND md.organization_id = ${orgId})`,
+      ))
+      .orderBy(desc(inventoryTransactions.performedAt))
+      .limit(50);
+
+    // Latest device per performer for the rendered transactions
+    const performerIds = Array.from(new Set(txns.map(t => t.performedById)));
+    const deviceByUser = new Map<string, { deviceId: string; platform: string; deviceModel: string | null; lastSyncAt: Date | null }>();
+    if (performerIds.length > 0) {
+      const devices = await db
+        .select({
+          userId: mobileDevices.userId,
+          deviceId: mobileDevices.deviceId,
+          platform: mobileDevices.platform,
+          deviceModel: mobileDevices.deviceModel,
+          lastSyncAt: mobileDevices.lastSyncAt,
+        })
+        .from(mobileDevices)
+        .where(and(
+          eq(mobileDevices.organizationId, orgId),
+          sql`${mobileDevices.userId} = ANY(${performerIds})`,
+        ))
+        .orderBy(desc(mobileDevices.lastSyncAt));
+      for (const d of devices) {
+        if (!deviceByUser.has(d.userId)) {
+          deviceByUser.set(d.userId, {
+            deviceId: d.deviceId,
+            platform: d.platform,
+            deviceModel: d.deviceModel,
+            lastSyncAt: d.lastSyncAt,
+          });
+        }
+      }
+    }
+
+    const transactions = txns.map(t => ({
+      ...t,
+      performerName: `${t.performerFirstName ?? ""} ${t.performerLastName ?? ""}`.trim() || "Unknown",
+      device: deviceByUser.get(t.performedById) ?? null,
+    }));
+
+    // Stale devices: active, not synced in >24h (or never synced)
+    const staleDevices = await db
+      .select({
+        id: mobileDevices.id,
+        deviceId: mobileDevices.deviceId,
+        platform: mobileDevices.platform,
+        deviceModel: mobileDevices.deviceModel,
+        lastSyncAt: mobileDevices.lastSyncAt,
+        userId: mobileDevices.userId,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+      })
+      .from(mobileDevices)
+      .innerJoin(users, eq(users.id, mobileDevices.userId))
+      .where(and(
+        eq(mobileDevices.organizationId, orgId),
+        eq(mobileDevices.isActive, true),
+        or(sql`${mobileDevices.lastSyncAt} IS NULL`, lt(mobileDevices.lastSyncAt, staleCutoff)),
+      ))
+      .orderBy(asc(mobileDevices.lastSyncAt));
+
+    res.json({
+      transactions,
+      staleDevices: staleDevices.map(d => ({
+        ...d,
+        userName: `${d.userFirstName ?? ""} ${d.userLastName ?? ""}`.trim() || "Unknown",
+      })),
+      staleThresholdHours: 24,
+    });
   } catch (err) { next(err); }
 });
 

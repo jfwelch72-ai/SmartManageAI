@@ -15,7 +15,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
-import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck } from "lucide-react";
+import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff } from "lucide-react";
 
 type Material = {
   id: string; sku: string; barcode: string | null; name: string; uom: string;
@@ -38,6 +38,20 @@ type SlowMovingRow = {
   totalOnHand: string; lastMovementAt: string | null;
 };
 type ProjectLite = { id: string; name: string; code: string; status: string };
+type FieldDevice = { deviceId: string; platform: string; deviceModel: string | null; lastSyncAt: string | null };
+type FieldTxn = {
+  id: string; type: string; quantity: string; performedAt: string;
+  referenceNumber: string | null; notes: string | null;
+  materialId: string; materialSku: string; materialName: string; uom: string;
+  locationId: string; locationCode: string; locationName: string;
+  projectId: string | null; performedById: string; performerName: string;
+  device: FieldDevice | null;
+};
+type StaleDevice = {
+  id: string; deviceId: string; platform: string; deviceModel: string | null;
+  lastSyncAt: string | null; userId: string; userName: string;
+};
+type FieldActivity = { transactions: FieldTxn[]; staleDevices: StaleDevice[]; staleThresholdHours: number };
 type PoItemLite = {
   id: string; description: string | null; quantity: string;
   quantityReceived: string | null; unitOfMeasure: string | null;
@@ -61,12 +75,14 @@ export default function InventoryPage() {
   const stockQ = useQuery<StockRow[]>({ queryKey: ["/api/inventory/stock"] });
   const lowStockQ = useQuery<LowStockRow[]>({ queryKey: ["/api/inventory/reports/low-stock"] });
   const slowQ = useQuery<{ days: number; items: SlowMovingRow[] }>({ queryKey: ["/api/inventory/reports/slow-moving"] });
+  const fieldQ = useQuery<FieldActivity>({ queryKey: ["/api/inventory/field-activity"] });
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["/api/inventory/stock"] });
     qc.invalidateQueries({ queryKey: ["/api/inventory/reports/low-stock"] });
     qc.invalidateQueries({ queryKey: ["/api/inventory/reports/slow-moving"] });
     qc.invalidateQueries({ queryKey: ["/api/inventory/transactions"] });
+    qc.invalidateQueries({ queryKey: ["/api/inventory/field-activity"] });
   };
 
   const handleScan = async () => {
@@ -131,6 +147,8 @@ export default function InventoryPage() {
             )}
           </CardContent>
         </Card>
+
+        <FieldActivityPanel data={fieldQ.data} loading={fieldQ.isLoading} />
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -223,6 +241,117 @@ export default function InventoryPage() {
         </Tabs>
       </main>
     </div>
+  );
+}
+
+function timeAgo(iso: string | null): string {
+  if (!iso) return "never";
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 0) return "just now";
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function FieldActivityPanel({ data, loading }: { data: FieldActivity | undefined; loading: boolean }) {
+  const txns = data?.transactions ?? [];
+  const stale = data?.staleDevices ?? [];
+  const threshold = data?.staleThresholdHours ?? 24;
+  return (
+    <Card data-testid="card-field-activity">
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Smartphone className="w-5 h-5" /> From the Field
+            </CardTitle>
+            <CardDescription>Recent inventory activity from mobile devices and any trucks that haven&apos;t synced lately.</CardDescription>
+          </div>
+          {stale.length > 0 && (
+            <Badge variant="destructive" className="self-start" data-testid="badge-stale-devices">
+              <WifiOff className="w-3.5 h-3.5 mr-1" /> {stale.length} device{stale.length === 1 ? "" : "s"} not synced &gt;{threshold}h
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2">
+            <div className="text-sm font-medium mb-2">Recent mobile transactions</div>
+            {loading ? (
+              <div className="text-sm text-muted-foreground">Loading…</div>
+            ) : txns.length === 0 ? (
+              <EmptyState icon={Smartphone} title="No mobile activity yet" description="Field crews haven't posted any inventory moves from their devices." />
+            ) : (
+              <div className="border rounded-md overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>When</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Material</TableHead>
+                      <TableHead className="text-right">Qty</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Performer</TableHead>
+                      <TableHead>Device</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {txns.map(t => (
+                      <TableRow key={t.id} data-testid={`row-field-txn-${t.id}`}>
+                        <TableCell className="text-xs whitespace-nowrap" title={new Date(t.performedAt).toLocaleString()}>{timeAgo(t.performedAt)}</TableCell>
+                        <TableCell><Badge variant="outline">{t.type}</Badge></TableCell>
+                        <TableCell>
+                          <div className="font-medium text-sm">{t.materialName}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{t.materialSku}</div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(t.quantity)} {t.uom}</TableCell>
+                        <TableCell className="text-xs">{t.locationCode} — {t.locationName}</TableCell>
+                        <TableCell className="text-sm">{t.performerName}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {t.device ? (
+                            <>
+                              <div>{t.device.platform}{t.device.deviceModel ? ` · ${t.device.deviceModel}` : ""}</div>
+                              <div>synced {timeAgo(t.device.lastSyncAt)}</div>
+                            </>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+          <div>
+            <div className="text-sm font-medium mb-2 flex items-center gap-2">
+              <WifiOff className="w-4 h-4" /> Devices behind on sync
+            </div>
+            {loading ? (
+              <div className="text-sm text-muted-foreground">Loading…</div>
+            ) : stale.length === 0 ? (
+              <div className="text-sm text-muted-foreground" data-testid="text-no-stale-devices">All registered devices have synced in the last {threshold}h.</div>
+            ) : (
+              <div className="space-y-2">
+                {stale.map(d => (
+                  <div key={d.id} className="border rounded-md p-2" data-testid={`row-stale-device-${d.id}`}>
+                    <div className="text-sm font-medium">{d.userName}</div>
+                    <div className="text-xs text-muted-foreground">{d.platform}{d.deviceModel ? ` · ${d.deviceModel}` : ""}</div>
+                    <div className="text-xs text-muted-foreground">Last sync: {d.lastSyncAt ? `${timeAgo(d.lastSyncAt)} (${new Date(d.lastSyncAt).toLocaleString()})` : "never"}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
