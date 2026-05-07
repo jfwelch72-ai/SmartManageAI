@@ -140,6 +140,14 @@ app.use(helmet({
   crossOriginOpenerPolicy: isProduction ? { policy: "same-origin" } : false,
   crossOriginResourcePolicy: isProduction ? { policy: "same-origin" } : { policy: "cross-origin" },
   frameguard: isProduction ? { action: "deny" } : false,
+  // Task #2479 — explicit HSTS so the Strict-Transport-Security header is set
+  // with a 1-year max-age, includeSubDomains, and preload in production. Behind
+  // the Replit proxy `trust proxy` is on, so helmet honours x-forwarded-proto
+  // when deciding whether to set the header.
+  hsts: isProduction
+    ? { maxAge: 31536000, includeSubDomains: true, preload: true }
+    : false,
+  referrerPolicy: { policy: "no-referrer" },
 }));
 
 const allowedOrigins: string[] = [];

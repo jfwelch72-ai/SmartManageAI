@@ -8,6 +8,7 @@ import { z } from "zod";
 import { validateBody } from "./utils/validation";
 import { logCreate } from "./auditLogger";
 import { getOrgIdForFilter } from "./orgFilter";
+import { uploadLimiter } from "./rateLimiter";
 import {
   parsePagination,
   setNextLinkHeader,
@@ -276,7 +277,7 @@ const uploadRequestSchema = z.object({
   fileType: z.enum(["MEDIA", "DOCUMENT", "RECEIPT", "BIM", "LIDAR"]).optional(),
 });
 
-router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/objects/upload", requireAuth, uploadLimiter, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -333,7 +334,7 @@ router.post("/api/objects/upload", requireAuth, async (req: AuthRequest, res, ne
 });
 
 
-router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/objects/multipart", requireAuth, uploadLimiter, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user!.organizationId;
     if (!organizationId) {
@@ -527,7 +528,7 @@ router.put("/api/objects/multipart/:uploadId/:partNumber/upload", requireAuth, a
   }
 });
 
-router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/objects/multipart/:uploadId/complete", requireAuth, uploadLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { uploadId } = req.params;
     const { aclPolicy } = req.body;
@@ -553,6 +554,25 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, async (req
         res.status(409).json({ error: "Upload not yet complete on storage backend" });
         return;
       }
+    }
+
+    // Task #2479 (round-7) — multipart completion is also a "confirmed
+    // upload" and MUST traverse the AV scan boundary before its ACL
+    // policy is persisted. Same fail-closed semantics as
+    // /api/objects/confirm.
+    const { scanConfirmedUpload } = await import("./uploadAvScanner");
+    const scanResult = await scanConfirmedUpload({
+      objectKey: intent.objectKey,
+      organizationId: req.user!.organizationId ?? null,
+      contentType: intent.contentType ?? null,
+      sizeBytes: intent.fileSize ?? null,
+    });
+    if (scanResult.status === "blocked") {
+      res.status(422).json({
+        error: "Upload rejected by malware scan",
+        reason: scanResult.reason,
+      });
+      return;
     }
 
     const { ObjectStorageService } = await objectStoragePromise;
@@ -602,7 +622,7 @@ router.delete("/api/objects/multipart/:uploadId", requireAuth, async (req: AuthR
   }
 });
 
-router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/api/objects/confirm", requireAuth, uploadLimiter, async (req: AuthRequest, res, next) => {
   try {
     const { intentId, aclPolicy } = req.body;
     if (!intentId) {
@@ -629,6 +649,27 @@ router.post("/api/objects/confirm", requireAuth, async (req: AuthRequest, res, n
 
     if (intent.confirmedAt) {
       res.status(409).json({ error: "Upload already confirmed" });
+      return;
+    }
+
+    // Task #2479 — every confirmed upload MUST traverse the AV scan
+    // boundary. The default scanner is the built-in EICAR head-check
+    // (and Cloudmersive when `CLOUDMERSIVE_AV_API_KEY` is set). Mode
+    // defaults to `enforce` in production and `permissive` in dev;
+    // `UPLOAD_AV_SCAN_MODE` always wins. Fail-closed semantics live in
+    // server/uploadAvScanner.ts.
+    const { scanConfirmedUpload } = await import("./uploadAvScanner");
+    const scanResult = await scanConfirmedUpload({
+      objectKey: intent.objectKey,
+      organizationId: req.user!.organizationId ?? null,
+      contentType: intent.contentType ?? null,
+      sizeBytes: intent.fileSize ?? null,
+    });
+    if (scanResult.status === "blocked") {
+      res.status(422).json({
+        error: "Upload rejected by malware scan",
+        reason: scanResult.reason,
+      });
       return;
     }
 

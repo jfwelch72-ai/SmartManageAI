@@ -85,6 +85,35 @@ export const exportLimiter = rateLimit({
 // runaway client (or bad actor inside an org) flooding dot_pay_item_match_history
 // and skewing the history-aware ranking. The endpoint already accepts up to
 // 500 decisions per call, so the per-window cap can stay modest.
+// Task #2479 — bound presigned-URL / multipart-intent creation so a single
+// account can't spam GCS resumable handles or create thousands of upload_intents
+// rows. The per-part PUT proxy is intentionally NOT included (large multipart
+// uploads legitimately produce many requests in a short window); we cap the
+// initiation/confirmation surface instead.
+export const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: { error: "Too many upload requests, please slow down and try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getUserKeyOrIp,
+  store: makeStore("upload"),
+});
+
+// Task #2479 — protect AI document/contract analysis and other long-running
+// LLM endpoints. These calls cost real money and can be abused to run up
+// API bills or to probe prompt-injection payloads. 30/15min is enough for
+// genuine estimator workflows and well under the OpenAI/Anthropic quota.
+export const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: "Too many AI requests, please slow down and try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getUserKeyOrIp,
+  store: makeStore("ai"),
+});
+
 export const feedbackLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: () => {

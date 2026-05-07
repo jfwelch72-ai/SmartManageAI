@@ -189,6 +189,7 @@ import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovH
 import { generateAIAG702PDF, generateAIAG703PDF } from "./aia-pdf-service";
 import { insertNotifications } from "./services/notificationService";
 import { sendEmail } from "./email";
+import { logCreate, logUpdate, logApprove } from "./auditLogger";
 
 const router = Router();
 
@@ -366,6 +367,15 @@ router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "
       createdById: req.user?.id,
     }).returning();
 
+    if (req.user?.id) {
+      logCreate(req.user.id, "pay_application", newApp.id, {
+        projectId: newApp.projectId,
+        applicationNumber: newApp.applicationNumber,
+        currentPaymentDue: newApp.currentPaymentDue,
+        contractSumToDate: newApp.contractSumToDate,
+      }, req).catch(() => {});
+    }
+
     res.status(201).json(newApp);
   } catch (error) {
     next(error);
@@ -402,6 +412,21 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
     if (status === "REJECTED") updates.rejectionReason = rejectionReason || null;
 
     const [updated] = await db.update(payApplications).set(updates).where(eq(payApplications.id, id)).returning();
+
+    if (req.user?.id) {
+      const auditDetails = {
+        applicationNumber: app.applicationNumber,
+        projectId: app.projectId,
+        from: app.status,
+        to: status,
+        rejectionReason: rejectionReason || null,
+      };
+      if (status === "APPROVED") {
+        logApprove(req.user.id, "pay_application", id, auditDetails, req).catch(() => {});
+      } else {
+        logUpdate(req.user.id, "pay_application", id, { status: app.status }, auditDetails, req).catch(() => {});
+      }
+    }
 
     const sovStatusMap: Record<string, string> = { SUBMITTED: "SUBMITTED", APPROVED: "APPROVED", REJECTED: "REJECTED", UNDER_REVIEW: "UNDER_REVIEW", DRAFT: "DRAFT" };
     const mappedSOVStatus = sovStatusMap[status];
@@ -559,6 +584,22 @@ router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER
 
     if (fullyPaid && app.sovId) {
       await db.update(scheduleOfValues).set({ status: "PAID", updatedAt: new Date() }).where(eq(scheduleOfValues.id, app.sovId));
+    }
+
+    if (req.user?.id) {
+      logUpdate(req.user.id, "pay_application", id, {
+        status: app.status,
+        paidAmount: app.paidAmount,
+      }, {
+        action: "record_payment",
+        applicationNumber: app.applicationNumber,
+        projectId: app.projectId,
+        amount: amountStr,
+        paymentMethod: paymentMethod || "CHECK",
+        paymentReference: paymentReference || null,
+        newPaidAmount: newTotalPaid.toFixed(2),
+        newStatus,
+      }, req).catch(() => {});
     }
 
     res.json(updated);

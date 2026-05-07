@@ -84,6 +84,12 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **`server/storage.ts`**: This file is intentionally *not* deleted yet; other domains will incrementally adopt the new storage seam pattern.
 *   **Typecheck backlog**: `npm run check` currently reports ~446 pre-existing TS errors across ~107 files (mostly Drizzle schema drift, nullable `organizationId` narrowing, and outdated enum unions). The `typecheck` workflow is therefore RED at HEAD. **Rule for all new work**: do not add to the count and do not mask with `// @ts-ignore` / `as any`. A dedicated cleanup task will burn it down to zero. Run `npm run check 2>&1 | grep -c "error TS"` before/after your change to confirm the count did not grow.
 
+## Security
+
+*   **Threat model**: `threat_model.md` (HTTP hardening, rate limits, upload safety, audit log coverage, prompt-injection defenses, secret rotation).
+*   **Env template**: `.env.example` — copy to `.env` and fill in. Never commit a real `.env`.
+*   **Prompt-injection guard**: `server/ai/promptInjectionGuard.ts` — wrap any new untrusted-document → LLM path through `quarantineDocumentBlocks` + `detectPromptInjection`.
+
 ## Pointers
 
 *   **On-Call Runbook**: `docs/ops/runbook.md` (top 6 incident scenarios)
