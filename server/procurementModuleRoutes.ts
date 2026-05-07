@@ -1234,6 +1234,32 @@ router.post("/api/procurement-module/orders/:id/approve", requireAuth, requireRo
     if (!(await verifyProjectAssignment(req, res, existing.projectId))) return;
     if (existing.status !== "PENDING_APPROVAL") { res.status(400).json({ error: "Only pending orders can be approved" }); return; }
 
+    // Task #2484 — COI compliance gating (FAIL-CLOSED). Refuse PO
+    // approval when the vendor (or any project party) is non-compliant
+    // unless an audited override is on file for this PO.
+    if (existing.projectId) {
+      const { isReleaseBlocked } = await import("./services/coiGating");
+      const { hasActiveOverride } = await import("./coiRoutes");
+      let extra: { partyType: "CRM_ORG"; partyId: string; partyName: string } | undefined;
+      if (existing.vendorId) {
+        const [v] = await db.select({ name: crmOrganisations.name }).from(crmOrganisations)
+          .where(eq(crmOrganisations.id, existing.vendorId)).limit(1);
+        extra = { partyType: "CRM_ORG", partyId: existing.vendorId, partyName: v?.name || "Vendor" };
+      }
+      const decision = await isReleaseBlocked(orgId, existing.projectId, extra);
+      if (decision.block) {
+        const overridden = await hasActiveOverride(orgId, "PURCHASE_ORDER", existing.id);
+        if (!overridden) {
+          res.status(409).json({
+            error: "COI_COMPLIANCE_HOLD",
+            message: `Project insurance compliance: ${decision.status}`,
+            decision,
+          });
+          return;
+        }
+      }
+    }
+
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "APPROVED", approvedById: req.user!.id, approvedAt: new Date(), updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();

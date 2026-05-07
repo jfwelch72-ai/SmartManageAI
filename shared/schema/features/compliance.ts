@@ -467,3 +467,189 @@ export const rateLimitState = pgTable("rate_limit_state", {
     .defaultNow(),
 });
 export type RateLimitState = typeof rateLimitState.$inferSelect;
+
+// ============================================================
+// COI & INSURANCE COMPLIANCE LIFECYCLE (Task #2484)
+// ============================================================
+// Tracks Certificates of Insurance (COIs) submitted by subcontractors,
+// vendors, and CRM organisations; per-project insurance requirement
+// profiles; per-coverage compliance status (Compliant / Expiring /
+// Expired / Missing); a reminder log so we don't double-send 30/14/7/0
+// day expiry emails; and an auditable override record so finance can
+// release a pay-app or PO past a hard hold with a written reason.
+
+export const insuranceCoverageTypeEnum = pgEnum("insurance_coverage_type", [
+  "GENERAL_LIABILITY",
+  "AUTO_LIABILITY",
+  "WORKERS_COMP",
+  "UMBRELLA",
+  "PROFESSIONAL",
+  "POLLUTION",
+  "BUILDERS_RISK",
+  "CYBER",
+  "OTHER",
+]);
+
+export const insuranceCertificateStatusEnum = pgEnum("insurance_certificate_status", [
+  "ACTIVE",
+  "EXPIRING",
+  "EXPIRED",
+  "REVOKED",
+]);
+
+export const coiPartyTypeEnum = pgEnum("coi_party_type", [
+  "SUBCONTRACTOR",
+  "VENDOR",
+  "CRM_ORG",
+]);
+
+export const coiComplianceStatusEnum = pgEnum("coi_compliance_status", [
+  "COMPLIANT",
+  "EXPIRING",
+  "EXPIRED",
+  "MISSING",
+]);
+
+export const coiOverrideEntityTypeEnum = pgEnum("coi_override_entity_type", [
+  "PAY_APPLICATION",
+  "PURCHASE_ORDER",
+  "SUBCONTRACTOR_PAYMENT",
+]);
+
+export const insuranceCertificates = pgTable("insurance_certificates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  partyType: coiPartyTypeEnum("party_type").notNull(),
+  partyId: varchar("party_id").notNull(),
+  partyName: text("party_name").notNull(),
+  carrier: text("carrier").notNull(),
+  policyNumber: text("policy_number").notNull(),
+  effectiveDate: date("effective_date").notNull(),
+  expiryDate: date("expiry_date").notNull(),
+  additionalInsured: boolean("additional_insured").notNull().default(false),
+  waiverOfSubrogation: boolean("waiver_of_subrogation").notNull().default(false),
+  primaryNonContributory: boolean("primary_non_contributory").notNull().default(false),
+  status: insuranceCertificateStatusEnum("status").notNull().default("ACTIVE"),
+  fileKey: text("file_key"),
+  fileName: text("file_name"),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  notes: text("notes"),
+  extractedData: jsonb("extracted_data"),
+  extractionConfidence: doublePrecision("extraction_confidence"),
+  confirmedAt: timestamp("confirmed_at"),
+  confirmedById: varchar("confirmed_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  orgPartyIdx: index("ic_org_party_idx").on(t.organizationId, t.partyType, t.partyId),
+  orgExpiryIdx: index("ic_org_expiry_idx").on(t.organizationId, t.expiryDate),
+  orgStatusIdx: index("ic_org_status_idx").on(t.organizationId, t.status),
+}));
+
+export const insuranceCertificateCoverages = pgTable("insurance_certificate_coverages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  certificateId: varchar("certificate_id").notNull().references(() => insuranceCertificates.id, { onDelete: "cascade" }),
+  coverageType: insuranceCoverageTypeEnum("coverage_type").notNull(),
+  perOccurrenceLimit: decimal("per_occurrence_limit", { precision: 14, scale: 2 }),
+  aggregateLimit: decimal("aggregate_limit", { precision: 14, scale: 2 }),
+  deductible: decimal("deductible", { precision: 14, scale: 2 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  certCoverageUnique: unique("icc_cert_coverage_unique").on(t.certificateId, t.coverageType),
+  certIdx: index("icc_cert_idx").on(t.certificateId),
+}));
+
+export const projectInsuranceRequirements = pgTable("project_insurance_requirements", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  coverageType: insuranceCoverageTypeEnum("coverage_type").notNull(),
+  minPerOccurrence: decimal("min_per_occurrence", { precision: 14, scale: 2 }),
+  minAggregate: decimal("min_aggregate", { precision: 14, scale: 2 }),
+  requiresAdditionalInsured: boolean("requires_additional_insured").notNull().default(false),
+  requiresWaiverOfSubrogation: boolean("requires_waiver_of_subrogation").notNull().default(false),
+  requiresPrimaryNonContributory: boolean("requires_primary_non_contributory").notNull().default(false),
+  required: boolean("required").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (t) => ({
+  projectCoverageUnique: unique("pir_project_coverage_unique").on(t.projectId, t.coverageType),
+  orgProjectIdx: index("pir_org_project_idx").on(t.organizationId, t.projectId),
+}));
+
+export const coiReminderLog = pgTable("coi_reminder_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  certificateId: varchar("certificate_id").notNull().references(() => insuranceCertificates.id, { onDelete: "cascade" }),
+  daysBeforeExpiry: integer("days_before_expiry").notNull(),
+  recipient: text("recipient").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  ok: boolean("ok").notNull().default(true),
+  errorMessage: text("error_message"),
+}, (t) => ({
+  certBucketUnique: unique("crl_cert_bucket_unique").on(t.certificateId, t.daysBeforeExpiry, t.recipient),
+  certIdx: index("crl_cert_idx").on(t.certificateId),
+}));
+
+export const coiComplianceOverrides = pgTable("coi_compliance_overrides", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  entityType: coiOverrideEntityTypeEnum("entity_type").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  partyType: coiPartyTypeEnum("party_type"),
+  partyId: varchar("party_id"),
+  reason: text("reason").notNull(),
+  expiresAt: timestamp("expires_at"),
+  createdById: varchar("created_by_id").notNull().references(() => users.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  entityIdx: index("cco_entity_idx").on(t.entityType, t.entityId),
+  orgIdx: index("cco_org_idx").on(t.organizationId, t.createdAt),
+}));
+
+export const insertInsuranceCertificateSchema = createInsertSchema(insuranceCertificates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  status: true,
+  confirmedAt: true,
+  confirmedById: true,
+});
+export type InsertInsuranceCertificate = z.infer<typeof insertInsuranceCertificateSchema>;
+export type InsuranceCertificate = typeof insuranceCertificates.$inferSelect;
+
+export const insertInsuranceCertificateCoverageSchema = createInsertSchema(insuranceCertificateCoverages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertInsuranceCertificateCoverage = z.infer<typeof insertInsuranceCertificateCoverageSchema>;
+export type InsuranceCertificateCoverage = typeof insuranceCertificateCoverages.$inferSelect;
+
+export const insertProjectInsuranceRequirementSchema = createInsertSchema(projectInsuranceRequirements).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertProjectInsuranceRequirement = z.infer<typeof insertProjectInsuranceRequirementSchema>;
+export type ProjectInsuranceRequirement = typeof projectInsuranceRequirements.$inferSelect;
+
+export const insertCoiReminderLogSchema = createInsertSchema(coiReminderLog).omit({
+  id: true,
+  sentAt: true,
+});
+export type InsertCoiReminderLog = z.infer<typeof insertCoiReminderLogSchema>;
+export type CoiReminderLog = typeof coiReminderLog.$inferSelect;
+
+export const insertCoiComplianceOverrideSchema = createInsertSchema(coiComplianceOverrides).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertCoiComplianceOverride = z.infer<typeof insertCoiComplianceOverrideSchema>;
+export type CoiComplianceOverride = typeof coiComplianceOverrides.$inferSelect;
+
+export const COI_REMINDER_DAY_BUCKETS = [30, 14, 7, 0] as const;
+export type CoiReminderDayBucket = (typeof COI_REMINDER_DAY_BUCKETS)[number];
+
+export const COI_EXPIRING_WINDOW_DAYS = 30;

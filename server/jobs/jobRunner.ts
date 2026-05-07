@@ -48,6 +48,7 @@ let syncScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 let socialPostTask: ReturnType<typeof cron.schedule> | null = null;
 let tokenExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 let complianceCheckTask: ReturnType<typeof cron.schedule> | null = null;
+let coiReminderTask: ReturnType<typeof cron.schedule> | null = null;
 let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
@@ -455,6 +456,21 @@ export function startJobRunner() {
     } catch (err) {
       recordJobOutcome("compliance_expiration_check", false);
       logError("Compliance expiration check failed", { error: String(err) });
+    }
+  });
+
+  // Task #2484 — COI reminder cycle (30/14/7/0d) + nightly status refresh
+  coiReminderTask = cron.schedule("0 8 * * *", async () => {
+    try {
+      await withSchedulerLock("job:coiReminderCycle", async () => {
+        const { runCoiReminderCycle, refreshCertificateStatuses } = await import("../coiRoutes");
+        await refreshCertificateStatuses();
+        await runCoiReminderCycle();
+        recordJobOutcome("coi_reminder_cycle", true);
+      });
+    } catch (err) {
+      recordJobOutcome("coi_reminder_cycle", false);
+      logError("COI reminder cycle failed", { error: String(err) });
     }
   });
 
@@ -1258,6 +1274,10 @@ export function stopJobRunner() {
   if (complianceCheckTask) {
     complianceCheckTask.stop();
     complianceCheckTask = null;
+  }
+  if (coiReminderTask) {
+    coiReminderTask.stop();
+    coiReminderTask = null;
   }
   if (profitabilityMonitorTask) {
     profitabilityMonitorTask.stop();

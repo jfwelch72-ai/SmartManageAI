@@ -407,6 +407,41 @@ router.post("/payables/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN",
       return res.status(400).json({ error: `Cannot approve payable in ${payment.status} status` });
     }
 
+    // Task #2484 — COI compliance gating (FAIL-CLOSED). Block approval
+    // when the subcontractor's certificates are non-compliant for the
+    // project. Evaluation errors deliberately fail closed.
+    {
+      const { isReleaseBlocked } = await import("./services/coiGating");
+      const { hasActiveOverride } = await import("./coiRoutes");
+      const [contractRow] = await db
+        .select({ subcontractorId: subcontractorContracts.subcontractorId, projectId: subcontractorContracts.projectId })
+        .from(subcontractorContracts)
+        .where(eq(subcontractorContracts.id, payment.contractId))
+        .limit(1);
+      if (contractRow && payment.organizationId) {
+        const [subRow] = await db
+          .select({ id: subcontractors.id, companyName: subcontractors.companyName })
+          .from(subcontractors)
+          .where(eq(subcontractors.id, contractRow.subcontractorId))
+          .limit(1);
+        const decision = await isReleaseBlocked(payment.organizationId, contractRow.projectId, {
+          partyType: "CRM_ORG",
+          partyId: contractRow.subcontractorId,
+          partyName: subRow?.companyName || "Subcontractor",
+        });
+        if (decision.block) {
+          const overridden = await hasActiveOverride(payment.organizationId, "SUBCONTRACTOR_PAYMENT", id);
+          if (!overridden) {
+            return res.status(409).json({
+              error: "COI_COMPLIANCE_HOLD",
+              message: `Subcontractor insurance compliance: ${decision.status}`,
+              decision,
+            });
+          }
+        }
+      }
+    }
+
     const oldPayment = { ...payment };
 
     const [updatedPayment] = await db

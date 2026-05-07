@@ -305,6 +305,25 @@ router.post("/pay-applications", requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "
       return res.status(400).json({ error: "Project ID does not match the SOV's project" });
     }
 
+    // Task #2484 — COI compliance gating (FAIL-CLOSED). Refuse the
+    // pay-app release when any sub/vendor on the project is non-
+    // compliant unless an audited override exists for the SOV.
+    if (orgId) {
+      const { isReleaseBlocked } = await import("./services/coiGating");
+      const { hasActiveOverride } = await import("./coiRoutes");
+      const decision = await isReleaseBlocked(orgId, data.projectId);
+      if (decision.block) {
+        const overridden = await hasActiveOverride(orgId, "PAY_APPLICATION", data.sovId);
+        if (!overridden) {
+          return res.status(409).json({
+            error: "COI_COMPLIANCE_HOLD",
+            message: `Project insurance compliance: ${decision.status}`,
+            decision,
+          });
+        }
+      }
+    }
+
     const existingApps = await db.select({ applicationNumber: payApplications.applicationNumber })
       .from(payApplications)
       .where(eq(payApplications.projectId, data.projectId))

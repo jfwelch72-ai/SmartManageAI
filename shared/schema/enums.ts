@@ -265,6 +265,9 @@ export const auditActionEnum = pgEnum("audit_action", [
   "EXECUTE", "MERGE",
   "EXTERNAL_EMAIL_SENT", "EXTERNAL_EMAIL_FAILED",
   "CLOCK_IN_BLOCKED", "CLOCK_OUT_BLOCKED", "CLOCK_IN_OVERRIDE",
+  // Task #2484 — auditable override for COI/insurance compliance holds
+  // on pay applications, POs, and subcontractor payments.
+  "OVERRIDE_COMPLIANCE_HOLD",
   "SITE_LEAVE_STARTED", "SITE_LEAVE_RETURNED",
   "UPDATE_COST_CODE",
   "AI_REVIEW_COMPLETED"

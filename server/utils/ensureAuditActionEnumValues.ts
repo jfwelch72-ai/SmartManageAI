@@ -42,6 +42,8 @@ const REQUIRED_AUDIT_ACTION_VALUES = [
   "ROLE_REVOKED",
   "MFA_ENABLED",
   "MFA_DISABLED",
+  // Task #2484 — auditable COI / insurance compliance hold overrides
+  "OVERRIDE_COMPLIANCE_HOLD",
 ];
 
 export async function ensureAuditActionEnumValues(): Promise<void> {

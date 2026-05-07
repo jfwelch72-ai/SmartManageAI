@@ -76,6 +76,14 @@ export const FEATURE_FLAG_KEYS = [
   // keep their current GPT-5.2 behavior until a Super Admin flips them over.
   // New trial orgs can be flipped on at provisioning time.
   "AI_PROVIDER_TAKEOFF",
+  // Task #2484 — when ON, COI compliance gating BLOCKS the release of
+  // pay applications, purchase orders, and subcontractor payable
+  // approvals when any project party is non-compliant (EXPIRED or
+  // MISSING). When OFF, the gating is permissive (warn-only via the
+  // dashboard / per-project endpoint). Audited overrides via
+  // coi_compliance_overrides bypass the block either way. Default OFF
+  // so tenants opt into the new enforcement.
+  "COI_COMPLIANCE_HOLD",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -128,6 +136,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
   AI_ESTIMATOR: "AI Estimator (takeoff, estimate, chat)",
   AI_PROVIDER_TAKEOFF: "AI Provider — Takeoff family on Claude",
+  COI_COMPLIANCE_HOLD: "COI Compliance — Block release on non-compliance",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -178,6 +187,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   AI_TAKEOFF_FEW_SHOT: "Inject up to five recent EDITED takeoff suggestions per trade into the next AI takeoff prompt as a 'Recent corrections' few-shot block.",
   AI_ESTIMATOR: "AI Estimator workspace: AI-drafted takeoffs, draft estimates, inline cost suggestions, an Ask the Estimator chat, and learning from your historical bids.",
   AI_PROVIDER_TAKEOFF: "Route the Takeoff/Heavy-Civil/AI-Estimator calls to Anthropic Claude instead of OpenAI GPT. Falls back to OpenAI automatically if Claude errors.",
+  COI_COMPLIANCE_HOLD: "Block pay-app, PO, and subcontractor payable approvals when project insurance compliance is EXPIRED or MISSING. Audited overrides bypass the hold. When OFF, the dashboard still shows non-compliance but releases are not blocked.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -247,6 +257,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   AI_TAKEOFF_FEW_SHOT: "Advanced Tech",
   AI_ESTIMATOR: "Advanced Tech",
   AI_PROVIDER_TAKEOFF: "Advanced Tech",
+  COI_COMPLIANCE_HOLD: "Core Platform",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -304,6 +315,9 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // explicitly flips them to Claude. Default-OFF preserves the current
   // behavior for every tenant on rollout day.
   "AI_PROVIDER_TAKEOFF",
+  // Task #2484: tenants opt into the new gating after they have
+  // backfilled certs / project requirements.
+  "COI_COMPLIANCE_HOLD",
 ] as const;
 
 // Task #1119: audit log of trade-preset applications on the Feature Flags tab.
