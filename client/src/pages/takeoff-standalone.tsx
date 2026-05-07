@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileText, Loader2, Plus, Tag, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, FileText, Loader2, Plus, Ruler, Tag, Trash2 } from "lucide-react";
 import { SendToEstimateDialog } from "@/components/SendToEstimateDialog";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Button } from "@/components/ui/button";
@@ -239,6 +239,31 @@ export default function TakeoffStandalonePage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {/* Task #2550 — Primary entry point into the full takeoff
+           *  workspace (drawing tools, calibration, AI takeoff, exports).
+           *  Disabled until at least one sheet exists since the workspace
+           *  has nothing to render without a plan to draw on. */}
+          <Button
+            asChild={sheets.length > 0}
+            variant="default"
+            disabled={sheets.length === 0}
+            title={
+              sheets.length === 0
+                ? "Upload a plan sheet first to open the workspace"
+                : undefined
+            }
+            data-testid="button-open-workspace"
+          >
+            {sheets.length > 0 ? (
+              <Link href={`/takeoff/standalone/${t.id}/workspace`}>
+                <Ruler className="w-4 h-4 mr-2" /> Open workspace
+              </Link>
+            ) : (
+              <span>
+                <Ruler className="w-4 h-4 mr-2" /> Open workspace
+              </span>
+            )}
+          </Button>
           <SendToEstimateButton standaloneTakeoffId={t.id} sheetIds={sheets.map((s) => s.id)} />
           <Dialog open={tagOpen} onOpenChange={setTagOpen}>
             <DialogTrigger asChild>
@@ -345,22 +370,28 @@ export default function TakeoffStandalonePage() {
         </CardHeader>
         <CardContent>
           {sheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No sheets yet. Upload a PDF or image plan above. To get the full
-              takeoff workspace (drawing tools, measurements, AI takeoff), tag
-              this takeoff to a bid or project.
+            <p className="text-sm text-muted-foreground" data-testid="text-sheets-empty">
+              No sheets yet. Upload a PDF or image plan above, then click
+              "Open workspace" to start drawing measurements.
             </p>
           ) : (
             <div className="space-y-1">
+              {/* Task #2550 — Sheet rows deep-link into the standalone
+               *  workspace (`?sheet=<id>`) so the picker pre-selects the
+               *  clicked sheet on mount. Mirrors bid/project Plans-tab
+               *  behavior. */}
               {sheets.map((s) => (
-                <div
+                <Link
                   key={s.id}
-                  className="flex items-center gap-2 text-sm"
+                  href={`/takeoff/standalone/${t.id}/workspace?sheet=${s.id}`}
                   data-testid={`sheet-row-${s.id}`}
                 >
-                  <FileText className="w-4 h-4 text-muted-foreground" />
-                  <span>{s.sheetName}</span>
-                </div>
+                  <div className="flex items-center gap-2 text-sm rounded px-2 py-1.5 hover:bg-muted cursor-pointer">
+                    <FileText className="w-4 h-4 text-muted-foreground" />
+                    <span className="flex-1">{s.sheetName}</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
+                  </div>
+                </Link>
               ))}
             </div>
           )}

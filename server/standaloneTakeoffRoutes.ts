@@ -220,6 +220,44 @@ router.post("/api/takeoff/standalone/:id/sheets", requireAuth, async (req: AuthR
   }
 });
 
+// ---------- Categories + Measurements (workspace parity) ----------
+//
+// Task #2550 — The shared TakeoffWorkspace component fetches a per-context
+// quantity-categories list and a flattened all-measurements list to power
+// per-sheet count chips. Standalone takeoffs do not currently support
+// categories, so we serve an empty list (the workspace handles `[]` by
+// hiding the "uncategorized" rollup). All-measurements aggregates every
+// measurement attached to any sheet under this standalone takeoff.
+
+router.get("/api/takeoff/standalone/:id/categories", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+    res.json([]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/takeoff/standalone/:id/all-measurements", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+    const sheetRows = await db
+      .select({ id: takeoffSheets.id })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.standaloneTakeoffId, row.id));
+    if (sheetRows.length === 0) return res.json([]);
+    const ms = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.sheetId, sheetRows.map((s) => s.id)));
+    res.json(ms);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- Files ----------
 
 router.get("/api/takeoff/standalone/:id/files", requireAuth, async (req: AuthRequest, res, next) => {

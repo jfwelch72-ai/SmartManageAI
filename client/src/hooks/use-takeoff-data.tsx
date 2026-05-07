@@ -13,7 +13,8 @@ export type TakeoffMarkupWithAuthor = Omit<TakeoffMarkup, "points"> & { authorNa
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
-  | { type: "bid"; bidId: string; bidCode: string };
+  | { type: "bid"; bidId: string; bidCode: string }
+  | { type: "standalone"; standaloneTakeoffId: string; standaloneTitle?: string };
 
 interface UseTakeoffDataParams {
   projectId: string;
@@ -269,8 +270,17 @@ export function useTakeoffData({
   }, []);
 
   const isBid = context?.type === "bid";
-  const ctxId = isBid ? context.bidId : projectId;
-  const ctxCode = isBid ? context.bidCode : projectCode;
+  const isStandalone = context?.type === "standalone";
+  const ctxId = isStandalone
+    ? context.standaloneTakeoffId
+    : isBid
+      ? context.bidId
+      : projectId;
+  const ctxCode = isStandalone
+    ? context.standaloneTakeoffId
+    : isBid
+      ? context.bidCode
+      : projectCode;
 
   // Task #1913 — Mirror PlansTab's #1895 staleness wiring from inside the
   // takeoff workspace. Sheet rename / duplicate / delete / supersede here
@@ -283,13 +293,17 @@ export function useTakeoffData({
     isBid ? null : projectId,
   );
 
-  const sheetsQueryKey = isBid
-    ? ["/api/bids", ctxId, "takeoff", "sheets"]
-    : ["/api/projects", ctxId, "takeoff", "sheets"];
+  const sheetsQueryKey = isStandalone
+    ? ["/api/takeoff/standalone", ctxId, "sheets"]
+    : isBid
+      ? ["/api/bids", ctxId, "takeoff", "sheets"]
+      : ["/api/projects", ctxId, "takeoff", "sheets"];
 
-  const categoriesQueryKey = isBid
-    ? ["/api/bids", ctxId, "takeoff", "categories"]
-    : ["/api/projects", ctxCode, "quantity-categories"];
+  const categoriesQueryKey = isStandalone
+    ? ["/api/takeoff/standalone", ctxId, "categories"]
+    : isBid
+      ? ["/api/bids", ctxId, "takeoff", "categories"]
+      : ["/api/projects", ctxCode, "quantity-categories"];
 
   const { data: sheets = [], isLoading: sheetsLoading } = useQuery<TakeoffSheet[]>({
     queryKey: sheetsQueryKey,
@@ -299,7 +313,7 @@ export function useTakeoffData({
     queryKey: isBid
       ? ["/api/bids", ctxCode, "documents"]
       : ["/api/projects", ctxCode, "documents"],
-    enabled: uploadDialogOpen,
+    enabled: uploadDialogOpen && !isStandalone,
   });
 
   const importPlanMutation = useMutation({
@@ -358,7 +372,7 @@ export function useTakeoffData({
 
   const { data: projectAddenda = [] } = useQuery<AddendumOverlayData[]>({
     queryKey: ["/api/projects", ctxId, "addenda"],
-    enabled: !isBid,
+    enabled: !isBid && !isStandalone,
   });
 
   const { data: selectedVersionData } = useQuery<{ id: string; status: string }>({
@@ -383,9 +397,11 @@ export function useTakeoffData({
     enabled: !!selectedSheet,
   });
 
-  const allMeasurementsUrl = isBid
-    ? `/api/bids/${ctxId}/takeoff/all-measurements`
-    : `/api/projects/${ctxId}/takeoff/all-measurements`;
+  const allMeasurementsUrl = isStandalone
+    ? `/api/takeoff/standalone/${ctxId}/all-measurements`
+    : isBid
+      ? `/api/bids/${ctxId}/takeoff/all-measurements`
+      : `/api/projects/${ctxId}/takeoff/all-measurements`;
 
   const { data: allMeasurementsRaw = [] } = useQuery<TakeoffMeasurement[]>({
     queryKey: [allMeasurementsUrl],

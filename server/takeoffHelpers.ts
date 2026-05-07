@@ -1,12 +1,13 @@
 import { db } from "./db";
 import { logWarn } from "./utils/logger";
-import { takeoffSheets, projects, bids, takeoffMeasurementGroups, takeoffVersions } from "@shared/schema";
+import { takeoffSheets, projects, bids, standaloneTakeoffs, takeoffMeasurementGroups, takeoffVersions } from "@shared/schema";
 import { eq, and, desc, inArray } from "drizzle-orm";
 
 export interface SheetAccessInfo {
   id: string;
   projectId: string | null;
   bidId: string | null;
+  standaloneTakeoffId: string | null;
 }
 
 export interface SheetAccessResult {
@@ -41,6 +42,7 @@ export async function verifySheetAccess(sheetId: string, user: { id: string; org
       id: takeoffSheets.id,
       projectId: takeoffSheets.projectId,
       bidId: takeoffSheets.bidId,
+      standaloneTakeoffId: takeoffSheets.standaloneTakeoffId,
     })
     .from(takeoffSheets)
     .where(eq(takeoffSheets.id, sheetId))
@@ -84,6 +86,19 @@ export async function verifySheetAccess(sheetId: string, user: { id: string; org
       .where(and(...bidConditions))
       .limit(1);
     if (!bid) return { allowed: false, sheet, reason: "Sheet not found" };
+    return { allowed: true, sheet };
+  }
+
+  if (sheet.standaloneTakeoffId) {
+    const standaloneConditions = isSuperAdmin
+      ? [eq(standaloneTakeoffs.id, sheet.standaloneTakeoffId)]
+      : [eq(standaloneTakeoffs.id, sheet.standaloneTakeoffId!), eq(standaloneTakeoffs.organizationId, user.organizationId!)];
+    const [takeoff] = await db
+      .select({ id: standaloneTakeoffs.id, organizationId: standaloneTakeoffs.organizationId })
+      .from(standaloneTakeoffs)
+      .where(and(...standaloneConditions))
+      .limit(1);
+    if (!takeoff) return { allowed: false, sheet, reason: "Sheet not found" };
     return { allowed: true, sheet };
   }
 

@@ -130,7 +130,8 @@ import { Users, Lock, Sparkles, DollarSign, Layers, Zap, TableProperties, Printe
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
-  | { type: "bid"; bidId: string; bidCode: string };
+  | { type: "bid"; bidId: string; bidCode: string }
+  | { type: "standalone"; standaloneTakeoffId: string; standaloneTitle?: string };
 
 interface TakeoffWorkspaceProps {
   projectId?: string;
@@ -210,7 +211,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
   const sheetStorageKey = context
-    ? `takeoff-sheet-${context.type === "bid" ? context.bidId : context.projectId}`
+    ? context.type === "bid"
+      ? `takeoff-sheet-${context.bidId}`
+      : context.type === "project"
+        ? `takeoff-sheet-${context.projectId}`
+        : `takeoff-sheet-standalone-${context.standaloneTakeoffId}`
     : projectId
       ? `takeoff-sheet-${projectId}`
       : null;
@@ -603,7 +608,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const sheetSetsCtxId = context
     ? context.type === "bid"
       ? `bid:${context.bidId}`
-      : `project:${context.projectId}`
+      : context.type === "project"
+        ? `project:${context.projectId}`
+        : null
     : projectId
       ? `project:${projectId}`
       : null;
@@ -3131,11 +3138,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleExportAllSheets = async () => {
     try {
-      const isBid = context?.type === "bid";
-      const ctxId = isBid ? context.bidId : projectId;
-      const url = isBid
-        ? `/api/bids/${ctxId}/takeoff/all-measurements`
-        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const url = context?.type === "standalone"
+        ? `/api/takeoff/standalone/${context.standaloneTakeoffId}/all-measurements`
+        : context?.type === "bid"
+          ? `/api/bids/${context.bidId}/takeoff/all-measurements`
+          : `/api/projects/${projectId}/takeoff/all-measurements`;
       const res = await apiRequest("GET", url);
       const allMeasurements = await res.json();
       if (!allMeasurements || allMeasurements.length === 0) {
@@ -3158,11 +3165,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleExportQuantityDelta = async () => {
     try {
-      const isBid = context?.type === "bid";
-      const ctxId = isBid ? context.bidId : projectId;
-      const url = isBid
-        ? `/api/bids/${ctxId}/takeoff/all-measurements`
-        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const url = context?.type === "standalone"
+        ? `/api/takeoff/standalone/${context.standaloneTakeoffId}/all-measurements`
+        : context?.type === "bid"
+          ? `/api/bids/${context.bidId}/takeoff/all-measurements`
+          : `/api/projects/${projectId}/takeoff/all-measurements`;
       const res = await apiRequest("GET", url);
       const allMeasurements = await res.json();
 
@@ -3200,11 +3207,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleConfirmBidPackage = async () => {
     try {
-      const isBid = context?.type === "bid";
-      const ctxId = isBid ? context.bidId : projectId;
-      const url = isBid
-        ? `/api/bids/${ctxId}/takeoff/all-measurements`
-        : `/api/projects/${ctxId}/takeoff/all-measurements`;
+      const url = context?.type === "standalone"
+        ? `/api/takeoff/standalone/${context.standaloneTakeoffId}/all-measurements`
+        : context?.type === "bid"
+          ? `/api/bids/${context.bidId}/takeoff/all-measurements`
+          : `/api/projects/${projectId}/takeoff/all-measurements`;
       const res = await apiRequest("GET", url);
       const allMeasurements = await res.json();
 
@@ -5727,7 +5734,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           open={sheetSetsPanelOpen}
           onClose={() => setSheetSetsPanelOpen(false)}
           projectId={
-            context?.type === "bid" ? null : context?.projectId ?? projectId ?? null
+            context?.type === "project"
+              ? context.projectId
+              : projectId ?? null
           }
           bidId={context?.type === "bid" ? context.bidId : null}
           sheets={sheets}
@@ -5740,7 +5749,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           onClearMultiSelection={() => setMultiSheetSelection(new Set())}
         />
       )}
-      {context && (
+      {context && context.type !== "standalone" && (
         <ProjectFilesPanel
           open={projectFilesPanelOpen}
           onClose={() => setProjectFilesPanelOpen(false)}
