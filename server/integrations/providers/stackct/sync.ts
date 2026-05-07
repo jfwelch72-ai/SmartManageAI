@@ -73,7 +73,7 @@ export async function importProjects(
               name: sp.name,
               code: projectCode,
               clientName: sp.name,
-              organizationId: orgId,
+              gcOrganizationId: orgId,
               status: "PLANNING" as any,
               startDate: sp.bidDate ? new Date(sp.bidDate) : null,
               locationAddress: sp.address || null,

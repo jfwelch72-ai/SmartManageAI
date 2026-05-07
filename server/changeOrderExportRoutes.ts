@@ -137,7 +137,7 @@ router.post("/:id/add-to-sov", requireAuth, requireRoleOrFeature(["ADMIN", "MANA
       const nextNum = (Number(sovCount[0]?.cnt || 0) + 1).toString().padStart(3, "0");
 
       const [newSov] = await db.insert(scheduleOfValues).values({
-        organizationId: project.gcOrganizationId,
+        organizationId: project.gcOrganizationId!,
         projectId: co.projectId,
         sovNumber: `SOV-${project.code}-${nextNum}`,
         title: `${project.name} — Schedule of Values`,

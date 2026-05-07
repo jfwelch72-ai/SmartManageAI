@@ -231,8 +231,8 @@ router.post("/projects/:projectId/risks", requireAuth, requireRole("ADMIN", "MAN
 
     const [risk] = await db.insert(projectRisks).values({
       projectId,
-      organizationId: orgId,
-      title: sanitizeShortText(data.title),
+      organizationId: orgId!,
+      title: sanitizeShortText(data.title) || "Untitled Risk",
       description: data.description ? sanitizeText(data.description) : null,
       category: data.category,
       probability,

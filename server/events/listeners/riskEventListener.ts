@@ -13,7 +13,7 @@ const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {
-    const roles: string[] = [...ADMIN_ROLES];
+    const roles: Array<typeof users.$inferSelect.role> = [...ADMIN_ROLES];
     const rows = await db
       .select({ id: users.id })
       .from(users)
@@ -110,8 +110,7 @@ async function handleRiskOccurred(event: RiskStatusChangedEvent): Promise<void> 
         .values({
           projectId: payload.projectId,
           changeOrderNumber: String(nextNum),
-          description: `Risk Occurred: ${payload.title}`,
-          reason: `Risk "${payload.title}" materialized`,
+          description: `Risk Occurred: ${payload.title} — Risk "${payload.title}" materialized`,
           amount: String(payload.costImpactDollars),
           status: "PCO",
           requestedById: actorId,
@@ -265,8 +264,8 @@ ${project.locationAddress ? `Location: ${project.locationAddress}` : ""}${histor
 
       await db.insert(projectRisks).values({
         projectId: payload.projectId,
-        organizationId: orgId,
-        title: sanitizeShortText(String(s.title || "Untitled Risk")),
+        organizationId: orgId!,
+        title: sanitizeShortText(String(s.title || "Untitled Risk")) || "Untitled Risk",
         description: s.description ? sanitizeText(String(s.description)) : null,
         category,
         probability,
@@ -303,7 +302,7 @@ async function insertRiskNotifications(
       userIds.map((userId) => ({
         userId,
         organizationId: organizationId || null,
-        type: "SYSTEM" as const,
+        type: "GENERAL" as const,
         title,
         message,
         relatedEntityId,

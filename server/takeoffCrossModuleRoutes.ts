@@ -24,7 +24,7 @@ async function getProjectWithAccess(req: AuthRequest, res: any, projectId: strin
   const isSuperAdmin = user.role === "SUPER_ADMIN";
   const conditions = isSuperAdmin
     ? [eq(projects.id, projectId)]
-    : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+    : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId!)];
   const [project] = await db
     .select()
     .from(projects)
@@ -148,7 +148,7 @@ router.post(
       const existingPRs = await db
         .select({ prNumber: purchaseRequests.prNumber })
         .from(purchaseRequests)
-        .where(eq(purchaseRequests.orgId, project.gcOrganizationId));
+        .where(eq(purchaseRequests.orgId, project.gcOrganizationId!));
       const maxNum = existingPRs.reduce((max, pr) => {
         const match = pr.prNumber.match(/PR-(\d+)/);
         return match ? Math.max(max, parseInt(match[1], 10)) : max;
@@ -158,7 +158,7 @@ router.post(
       const [pr] = await db
         .insert(purchaseRequests)
         .values({
-          orgId: project.gcOrganizationId,
+          orgId: project.gcOrganizationId!,
           projectId,
           requestedById: req.user!.id,
           prNumber,
@@ -522,7 +522,7 @@ router.post(
       const [sov] = await db
         .insert(scheduleOfValues)
         .values({
-          organizationId: project.gcOrganizationId,
+          organizationId: project.gcOrganizationId!,
           projectId,
           sovNumber,
           title: `Takeoff-Generated SOV`,

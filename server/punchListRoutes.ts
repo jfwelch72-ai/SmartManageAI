@@ -201,7 +201,7 @@ router.post(
         return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
       }
 
-      const [item] = await db.insert(punchListItems).values(parsed.data).returning();
+      const [item] = await db.insert(punchListItems).values({ ...parsed.data, attachments: [...(parsed.data.attachments ?? [])] } as typeof punchListItems.$inferInsert).returning();
 
       await logAudit({
         userId,
@@ -697,7 +697,7 @@ router.post(
           return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
         }
 
-        const [item] = await db.insert(punchListItems).values(parsed.data).returning();
+        const [item] = await db.insert(punchListItems).values({ ...parsed.data, attachments: [...(parsed.data.attachments ?? [])] } as typeof punchListItems.$inferInsert).returning();
         createdItems.push(item);
 
         await logAudit({

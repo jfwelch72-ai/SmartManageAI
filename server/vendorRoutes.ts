@@ -923,8 +923,8 @@ router.get("/api/vendor/pricing/export", requireAuth, requireRole("VENDOR"), asy
     const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
 
     const exportConditions = [eq(vendorPricingCatalogs.crmOrganisationId, vendorUser.crmOrganisationId)];
-    if (categoryParam) exportConditions.push(eq(vendorPricingCatalogs.category, categoryParam));
-    if (statusParam) exportConditions.push(eq(vendorPricingCatalogs.approvalStatus, statusParam));
+    if (categoryParam) exportConditions.push(eq(vendorPricingCatalogs.category, categoryParam as typeof vendorPricingCatalogs.$inferSelect.category));
+    if (statusParam) exportConditions.push(sql`${vendorPricingCatalogs.approvalStatus} = ${statusParam}`);
 
     let items = await db.select().from(vendorPricingCatalogs)
       .where(and(...exportConditions))
@@ -1181,8 +1181,8 @@ router.get("/api/vendor/rental-pricing/export", requireAuth, requireRole("VENDOR
     const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
 
     const exportConditions = [eq(rentalEquipmentCatalog.crmOrganisationId, vendorUser.crmOrganisationId)];
-    if (typeParam) exportConditions.push(eq(rentalEquipmentCatalog.equipmentType, typeParam));
-    if (statusParam) exportConditions.push(eq(rentalEquipmentCatalog.approvalStatus, statusParam));
+    if (typeParam) exportConditions.push(eq(rentalEquipmentCatalog.equipmentType, typeParam as typeof rentalEquipmentCatalog.$inferSelect.equipmentType));
+    if (statusParam) exportConditions.push(sql`${rentalEquipmentCatalog.approvalStatus} = ${statusParam}`);
 
     let items = await db.select().from(rentalEquipmentCatalog)
       .where(and(...exportConditions))
@@ -1430,8 +1430,8 @@ router.get("/api/vendor/service-pricing/export", requireAuth, requireRole("VENDO
     const statusParam = typeof req.query.status === "string" && req.query.status !== "all" ? req.query.status : "";
 
     const exportConditions = [eq(vendorServiceCatalog.crmOrganisationId, vendorUser.crmOrganisationId)];
-    if (categoryParam) exportConditions.push(eq(vendorServiceCatalog.category, categoryParam));
-    if (statusParam) exportConditions.push(eq(vendorServiceCatalog.approvalStatus, statusParam));
+    if (categoryParam) exportConditions.push(eq(vendorServiceCatalog.category, categoryParam as typeof vendorServiceCatalog.$inferSelect.category));
+    if (statusParam) exportConditions.push(sql`${vendorServiceCatalog.approvalStatus} = ${statusParam}`);
 
     let items = await db.select().from(vendorServiceCatalog)
       .where(and(...exportConditions))
@@ -1488,7 +1488,7 @@ const createImportJobSchema = z.object({
 
 router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1496,7 +1496,7 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next
     const offset = parseInt(req.query.offset as string) || 0;
     const statusFilter = req.query.status as string;
 
-    const conditions = [eq(pricebookImportJobs.organizationId, req.user!.organizationId)];
+    const conditions = [eq(pricebookImportJobs.organizationId, req.user!.organizationId!)];
     if (statusFilter && ["PENDING", "PROCESSING", "COMPLETED", "FAILED"].includes(statusFilter)) {
       conditions.push(eq(pricebookImportJobs.status, statusFilter as any));
     }
@@ -1550,7 +1550,7 @@ router.get("/pricebook-imports", requireAuth, async (req: AuthRequest, res, next
 
 router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1578,7 +1578,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId!)
         )
       )
       .limit(1);
@@ -1604,7 +1604,7 @@ router.get("/pricebook-imports/:jobId", requireAuth, async (req: AuthRequest, re
 
 router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('file'), async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1625,7 +1625,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
       .where(
         and(
           eq(crmOrganisations.id, crmOrganisationId),
-          eq(crmOrganisations.organizationId, req.user!.organizationId)
+          eq(crmOrganisations.organizationId, req.user!.organizationId!)
         )
       );
 
@@ -1637,7 +1637,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
     const fileName = req.file.originalname;
     const timestamp = Date.now();
     const sanitizedFileName = fileName.replace(/[^a-zA-Z0-9.-]/g, '_');
-    const fileRef = `pricebooks/${req.user!.organizationId}/${crmOrganisationId}/${timestamp}_${sanitizedFileName}`;
+    const fileRef = `pricebooks/${req.user!.organizationId!}/${crmOrganisationId}/${timestamp}_${sanitizedFileName}`;
 
     let storageAvailable = false;
     try {
@@ -1650,7 +1650,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
         await file.save(fileBuffer, {
           contentType: 'application/pdf',
           metadata: {
-            organizationId: req.user!.organizationId,
+            organizationId: req.user!.organizationId!,
             crmOrganisationId,
             uploadedBy: req.user!.id,
           },
@@ -1663,7 +1663,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
     }
 
     const [importJob] = await db.insert(pricebookImportJobs).values({
-      organizationId: req.user!.organizationId,
+      organizationId: req.user!.organizationId!,
       crmOrganisationId,
       fileRef: storageAvailable ? fileRef : `local:${fileName}`,
       fileName,
@@ -1687,7 +1687,7 @@ router.post("/pricebook-imports", requireAuth, sensitiveLimiter, upload.single('
 
 router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1699,7 +1699,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId!)
         )
       );
 
@@ -1789,7 +1789,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
 
 router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1801,7 +1801,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId!)
         )
       );
 
@@ -1859,7 +1859,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/approve", requireAuth, asyn
 
 router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1871,7 +1871,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId!)
         )
       );
 
@@ -1901,7 +1901,7 @@ router.post("/pricebook-imports/:jobId/items/:itemId/reject", requireAuth, async
 
 router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    if (!req.user || !req.user!.organizationId) {
+    if (!req.user || !req.user!.organizationId!) {
       return res.status(401).json({ error: "Unauthorized" });
     }
 
@@ -1913,7 +1913,7 @@ router.post("/pricebook-imports/:jobId/approve-all", requireAuth, async (req: Au
       .where(
         and(
           eq(pricebookImportJobs.id, jobId),
-          eq(pricebookImportJobs.organizationId, req.user!.organizationId)
+          eq(pricebookImportJobs.organizationId, req.user!.organizationId!)
         )
       );
 
@@ -1982,7 +1982,7 @@ router.get("/api/crm/organisations/:id/pricing", requireAuth, async (req: AuthRe
 
 router.get("/api/crm/organisations/:id/pricing/search", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId!))).limit(1);
     if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
 
     const { q, category, minPrice, maxPrice, unit } = req.query;
@@ -2034,7 +2034,7 @@ router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async
       return;
     }
 
-    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId!))).limit(1);
     if (!org) {
       res.status(404).json({ error: "Organisation not found" });
       return;
@@ -2046,13 +2046,14 @@ router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async
       try {
         await db.insert(vendorPricingCatalogs).values({
           crmOrganisationId: req.params.id,
-          organizationId: org.organizationId || req.user!.organizationId,
+          organizationId: org.organizationId || req.user!.organizationId!,
           itemName: item.itemName || item.name,
           itemCode: item.itemCode || item.code || null,
           category: item.category || null,
           unit: item.unit || "EA",
           unitPrice: String(item.unitPrice || item.price || 0),
           effectiveDate: new Date(),
+          effectiveQuarter: `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`,
           isActive: true,
         });
         imported++;
@@ -2068,7 +2069,7 @@ router.post("/api/crm/organisations/:id/pricing/bulk-import", requireAuth, async
 
 router.get("/api/crm/organisations/:id/pricing/history/:itemId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId))).limit(1);
+    const [org] = await db.select().from(crmOrganisations).where(and(eq(crmOrganisations.id, req.params.id), eq(crmOrganisations.organizationId, req.user!.organizationId!))).limit(1);
     if (!org) { res.status(404).json({ error: "Organisation not found" }); return; }
 
     const items = await db
@@ -2301,6 +2302,7 @@ router.post("/api/vendor-pricing/bulk-import", requireAuth, async (req: AuthRequ
           unit: item.unit || "EA",
           unitPrice: String(item.unitPrice || "0"),
           effectiveQuarter: quarter,
+          effectiveDate: new Date(),
           isActive: true,
         });
         imported++;

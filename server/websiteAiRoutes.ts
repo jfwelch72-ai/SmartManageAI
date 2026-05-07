@@ -1,6 +1,6 @@
 import { logError } from "./utils/logger";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
-import { Router, type Response, type NextFunction } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
@@ -446,7 +446,8 @@ router.post("/analytics/track", async (req: Request, res: Response, next: NextFu
     const { websiteId, sessionId, visitorId, eventType, pagePath, pageTitle, referrer, eventData } = req.body;
 
     if (!websiteId || !sessionId || !eventType) {
-      return res.status(400).json({ error: "Missing required fields" });
+      res.status(400).json({ error: "Missing required fields" });
+      return;
     }
 
     const ipAddress = req.headers['x-forwarded-for'] as string || req.socket.remoteAddress;

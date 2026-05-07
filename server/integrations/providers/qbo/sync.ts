@@ -575,7 +575,7 @@ export async function exportPurchaseOrders(
 
     const conditions = [
       eq(projects.gcOrganizationId, connection.organizationId),
-      inArray(procurementItems.status, ["ORDERED", "RECEIVED"]),
+      inArray(procurementItems.status, ["ORDERED", "DELIVERED"] as Array<typeof procurementItems.$inferSelect.status>),
     ];
     if (projectId) {
       conditions.push(eq(procurementItems.projectId, projectId));

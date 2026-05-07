@@ -184,7 +184,7 @@ beforeAll(async () => {
     .insert(crmOpportunities)
     .values({
       organizationId: orgId,
-      organisationId: cOrg.id,
+      crmOrganisationId: cOrg.id,
       contactId: contact.id,
       name: `Pending Opp ${SUFFIX}`,
       stage: "LEAD",

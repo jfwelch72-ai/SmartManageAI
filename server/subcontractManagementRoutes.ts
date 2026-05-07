@@ -1343,7 +1343,7 @@ router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAu
           .select({ id: users.id })
           .from(users)
           .where(and(
-            eq(users.organizationId, project.gcOrganizationId),
+            eq(users.organizationId, project.gcOrganizationId!),
             sql`${users.role} IN ('SUPER_ADMIN', 'ADMIN', 'MANAGER')`,
           ))
           .limit(20);

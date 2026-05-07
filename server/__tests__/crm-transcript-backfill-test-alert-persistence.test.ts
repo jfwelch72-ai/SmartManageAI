@@ -227,11 +227,15 @@ describe("DELETE /api/crm/calls/transcripts/backfill/notification-settings/last-
       .values({
         organizationId: orgId,
         slackWebhookUrl: seededWebhook,
-        emailRecipients: seededRecipients,
+        emailRecipients: [...seededRecipients],
         updatedById: adminUserId,
         updatedAt: new Date(),
         lastTestAt: new Date("2026-04-22T10:00:00.000Z"),
-        lastTestResult: HEALTHY_RESULT,
+        lastTestResult: {
+          slack: { ...HEALTHY_RESULT.slack },
+          email: { ...HEALTHY_RESULT.email, recipients: [...HEALTHY_RESULT.email.recipients] },
+          operatorDisplay: HEALTHY_RESULT.operatorDisplay,
+        },
       });
 
     const seeded = await readSettingsRow();

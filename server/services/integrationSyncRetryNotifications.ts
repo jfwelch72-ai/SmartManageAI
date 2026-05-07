@@ -113,7 +113,7 @@ async function getOrgAdminUserIds(organizationId: string): Promise<string[]> {
     .where(
       and(
         eq(users.organizationId, organizationId),
-        inArray(users.role, ADMIN_ROLES),
+        inArray(users.role, [...ADMIN_ROLES] as Array<typeof users.$inferSelect.role>),
         eq(users.isActive, true),
       ),
     );

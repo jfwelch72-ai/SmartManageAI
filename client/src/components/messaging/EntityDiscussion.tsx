@@ -104,7 +104,7 @@ export function EntityDiscussion({ entityType, entityId }: EntityDiscussionProps
       const res = await fetch(`/api/tasks?search=${encodeURIComponent(mentionQuery!)}`, { credentials: "include" });
       if (!res.ok) return [];
       const tasks = await res.json();
-      return (tasks as { id: string; title: string }[]).slice(0, 5).map((t) => ({ id: t.id, title: t.title }));
+      return (tasks as { id: string; title: string; projectName?: string | null }[]).slice(0, 5).map((t) => ({ id: t.id, title: t.title, projectName: t.projectName ?? null }));
     },
   });
 

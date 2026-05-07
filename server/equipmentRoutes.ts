@@ -2503,7 +2503,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       const [newPlan] = await db.insert(projectEquipmentPlans).values({
         projectId,
-        source: body.source,
+        source: body.source as "OWNED" | "RENTAL",
         status: "PLANNED" as const,
         equipmentId: body.equipmentId || null,
         rentalCatalogId: body.rentalCatalogId || null,
@@ -2804,7 +2804,7 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       const insertData = {
         bidId,
-        source: body.source,
+        source: body.source as "OWNED" | "RENTAL",
         equipmentId: body.equipmentId || null,
         rentalCatalogId: body.rentalCatalogId || null,
         rentalVendorId: body.rentalVendorId || null,

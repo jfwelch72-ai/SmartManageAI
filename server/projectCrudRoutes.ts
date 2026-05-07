@@ -479,7 +479,10 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
         .insert(projectLaborRates)
         .values({
           projectId: project.id,
-          ...validationResult,
+          defaultRegularRate: String(validationResult.defaultRegularRate),
+          defaultOvertimeRate: String(validationResult.defaultOvertimeRate),
+          burdenMultiplier: String(validationResult.burdenMultiplier),
+          notes: validationResult.notes,
         })
         .returning();
     }
@@ -591,8 +594,8 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
         .values({
           projectId: project.id,
           userId: validationResult.userId,
-          regularRate: validationResult.regularRate,
-          overtimeRate: validationResult.overtimeRate,
+          regularRate: String(validationResult.regularRate),
+          overtimeRate: String(validationResult.overtimeRate),
           notes: validationResult.notes,
         })
         .returning();
@@ -967,7 +970,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
             // Included: project manager, privileged roles, and crew members from
             // crews currently assigned to this project.
             // Creator is already added as admin above; use onConflictDoNothing for safety.
-            const PRIVILEGED_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"] as const;
+            const PRIVILEGED_ROLES: Array<typeof users.$inferSelect.role> = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
 
             // Privileged users + project manager from the org
             const privilegedUsers = await db
@@ -977,7 +980,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
                 and(
                   eq(users.organizationId, projOrgId),
                   eq(users.isActive, true),
-                  inArray(users.role, PRIVILEGED_ROLES as unknown as string[])
+                  inArray(users.role, PRIVILEGED_ROLES)
                 )
               );
 

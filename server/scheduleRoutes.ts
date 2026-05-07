@@ -780,7 +780,7 @@ router.post("/projects/:code/schedule/tasks", requireAuth, requireRole("ADMIN", 
       isMilestone: parsed.data.isMilestone || false,
       plannedStartDate: parsed.data.plannedStartDate,
       plannedEndDate: parsed.data.plannedEndDate,
-      tradeType: parsed.data.tradeType || null,
+      tradeType: (parsed.data.tradeType || null) as typeof projectScheduleTasks.$inferInsert.tradeType,
       parentTaskId: parsed.data.parentTaskId || null,
       percentComplete: 0,
       sortOrder: maxSortOrder + 1,
@@ -1806,6 +1806,7 @@ router.post(
       let schedule = await getActiveSchedule(project.id);
       if (!schedule) {
         const [created] = await db.insert(projectSchedules).values({
+          organizationId: project.gcOrganizationId!,
           projectId: project.id,
           name: imported.projectName || `${project.name} Schedule`,
           baselineStartDate: imported.startDate || new Date().toISOString().split("T")[0],

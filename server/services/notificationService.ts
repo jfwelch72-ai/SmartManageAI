@@ -8,7 +8,7 @@ import { createQboEntityLabelCache } from "./qboEntityLabels";
 import { logError, logInfo } from "../utils/logger";
 
 export async function insertNotification(values: InsertNotification): Promise<void> {
-  const [inserted] = await db.insert(notifications).values(values).returning();
+  const [inserted] = await db.insert(notifications).values(values as typeof notifications.$inferInsert).returning();
   if (inserted) {
     const record: NotificationRecord = {
       id: inserted.id,
@@ -459,7 +459,7 @@ export function __resetContactReassignmentQueueForTest(): void {
 
 export async function insertNotifications(valuesList: InsertNotification[]): Promise<void> {
   if (valuesList.length === 0) return;
-  const inserted = await db.insert(notifications).values(valuesList).returning();
+  const inserted = await db.insert(notifications).values(valuesList as Array<typeof notifications.$inferInsert>).returning();
   if (inserted.length > 0) {
     const records: NotificationRecord[] = inserted.map((n) => ({
       id: n.id,

@@ -6228,7 +6228,7 @@ export async function processRfiOverdueNotifications(opts: { now?: Date } = {}) 
     .from(rfis)
     .innerJoin(organizations, eq(rfis.organizationId, organizations.id))
     .where(and(
-      inArray(rfis.status, RFI_OVERDUE_OPEN_STATUSES as unknown as string[]),
+      inArray(rfis.status, RFI_OVERDUE_OPEN_STATUSES as unknown as Array<typeof rfis.$inferSelect.status>),
       isNotNull(rfis.dateRequired),
       lt(rfis.dateRequired, now),
       or(
@@ -6367,7 +6367,7 @@ export async function processSubmittalReviewOverdueNotifications(opts: { now?: D
     .innerJoin(submittals, eq(submittalReviews.submittalId, submittals.id))
     .innerJoin(organizations, eq(submittalReviews.organizationId, organizations.id))
     .where(and(
-      inArray(submittalReviews.status, SUBMITTAL_REVIEW_OPEN_STATUSES as unknown as string[]),
+      inArray(submittalReviews.status, SUBMITTAL_REVIEW_OPEN_STATUSES as unknown as Array<typeof submittalReviews.$inferSelect.status>),
       isNotNull(submittals.dateRequired),
       lt(submittals.dateRequired, now),
       or(

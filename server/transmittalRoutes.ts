@@ -36,7 +36,7 @@ router.get("/transmittals", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
       conditions.push(eq(documentTransmittals.projectId, projectIdFilter));
     }
     if (statusFilter) {
-      conditions.push(eq(documentTransmittals.status, statusFilter));
+      conditions.push(eq(documentTransmittals.status, statusFilter as typeof documentTransmittals.$inferSelect.status));
     }
 
     const filtered = await db

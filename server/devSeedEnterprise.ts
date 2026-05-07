@@ -216,17 +216,11 @@ router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res, ne
       const isSecondRevision = doc.entityType === "contract" && revisionNumber === 2;
       await db.insert(documentRevisions).values({
         organizationId: orgId,
-        entityType: doc.entityType,
-        entityId: doc.entityId,
+        documentId: doc.entityId,
         revisionNumber: doc.entityType === "contract" ? revisionNumber++ : 1,
         status: isSecondRevision ? "active" : (doc.entityType === "contract" && revisionNumber > 2 ? "superseded" : "active"),
-        fileName: doc.fileName,
-        fileUrl: `/dev/files/${doc.fileName}`,
-        fileSize: Math.floor(Math.random() * 500000) + 50000,
-        mimeType: "application/pdf",
-        source: "upload",
-        uploadedByUserId: user.id,
-        notes: `Dev seed: ${doc.fileName}`,
+        sourceType: "upload",
+        createdByUserId: user.id,
       });
       docCount++;
     }
@@ -243,13 +237,14 @@ router.post("/seed-enterprise", requireDevSeed, requireAuth, async (req, res, ne
       await db.insert(projectHealthSnapshots).values({
         organizationId: orgId,
         projectId: project.id,
+        snapshotDate: new Date().toISOString().split("T")[0],
         overallScore: score,
         scheduleScore: Math.floor(Math.random() * 30) + 60,
         budgetScore: Math.floor(Math.random() * 30) + 65,
         rfiSubmittalScore: Math.floor(Math.random() * 40) + 50,
         changeOrderScore: Math.floor(Math.random() * 30) + 70,
         safetyScore: Math.floor(Math.random() * 20) + 75,
-        details: {
+        breakdown: {
           scheduleWeight: 0.25,
           budgetWeight: 0.25,
           rfiSubmittalWeight: 0.20,
@@ -936,7 +931,7 @@ router.post(
         };
         const [meas] = await db
           .insert(takeoffMeasurements)
-          .values(measValues)
+          .values(measValues as typeof takeoffMeasurements.$inferInsert)
           .returning();
         measurementIds.push(meas.id);
       }

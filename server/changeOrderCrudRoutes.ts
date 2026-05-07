@@ -445,7 +445,7 @@ router.post("/:id/approve", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER
     if (updatedOrder.costCodeId && project) {
       try {
         const [costCode] = await db.select().from(orgCostCodes)
-          .where(and(eq(orgCostCodes.id, updatedOrder.costCodeId), eq(orgCostCodes.organizationId, project.gcOrganizationId)))
+          .where(and(eq(orgCostCodes.id, updatedOrder.costCodeId), eq(orgCostCodes.organizationId, project.gcOrganizationId!)))
           .limit(1);
         if (costCode) {
           const coAmount = Number(updatedOrder.amount || 0);

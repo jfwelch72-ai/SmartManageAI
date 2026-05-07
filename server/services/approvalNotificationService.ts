@@ -71,7 +71,7 @@ export async function getApproverUserIds(
         and(
           eq(users.organizationId, organizationId),
           eq(users.isActive, true),
-          inArray(users.role, [...roles])
+          inArray(users.role, [...roles] as Array<typeof users.$inferSelect.role>)
         )
       );
 

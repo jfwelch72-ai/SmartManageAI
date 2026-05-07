@@ -28,7 +28,7 @@ async function getHrUserIds(orgId: string): Promise<string[]> {
         and(
           eq(users.organizationId, orgId),
           eq(users.isActive, true),
-          inArray(users.role, roles)
+          inArray(users.role, roles as Array<typeof users.$inferSelect.role>)
         )
       );
     return rows.map((r) => r.id);

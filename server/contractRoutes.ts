@@ -283,7 +283,7 @@ router.post("/api/contracts", requireAuth, async (req: AuthRequest, res: Respons
       projectId,
       bidId: bidId || null,
       contractNumber,
-      contractType: contractType || "PRIME",
+      contractType: ((contractType as string) || "PRIME") as "PRIME" | "SUBCONTRACT" | "JV" | "T_AND_M",
       status: "DRAFT" as const,
       parties: parties || null,
       contractValue: contractValue ? String(contractValue) : null,

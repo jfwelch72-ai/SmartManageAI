@@ -682,7 +682,7 @@ const upload = multer({
         });
         await db.insert(activityLog).values({
           userId: user.id,
-          organizationId: user.organizationId || undefined,
+          organizationId: user.organizationId!,
           action: "LOGIN",
           details: "User logged in",
           ipAddress: loginIp,
@@ -714,7 +714,7 @@ const upload = multer({
     if (userId) {
       db.insert(activityLog).values({
         userId,
-        organizationId: req.user?.organizationId || undefined,
+        organizationId: req.user!.organizationId!,
         action: "LOGOUT",
         details: "User logged out",
         ipAddress: logoutIp,
@@ -883,7 +883,7 @@ const upload = multer({
         await db.insert(userSessions).values({ userId: testUser.id, userAgent: devUa, ipAddress: devIp });
         await db.insert(activityLog).values({
           userId: testUser.id,
-          organizationId: testUser.organizationId || undefined,
+          organizationId: testUser.organizationId!,
           action: "LOGIN",
           details: "Dev quick login",
           ipAddress: devIp,
@@ -1032,7 +1032,7 @@ const upload = multer({
         const [org] = await db
           .select({ name: organizations.name, onboardingStatus: organizations.onboardingStatus })
           .from(organizations)
-          .where(eq(organizations.id, req.user!.organizationId))
+          .where(eq(organizations.id, req.user!.organizationId!))
           .limit(1);
         organizationName = org?.name || null;
         organizationOnboardingStatus = org?.onboardingStatus || null;
@@ -1446,7 +1446,7 @@ const upload = multer({
       try {
         await db.insert(activityLog).values({
           userId,
-          organizationId: req.user?.organizationId || undefined,
+          organizationId: req.user!.organizationId!,
           action: "PASSWORD_CHANGE",
           details: "Password changed successfully",
           ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -1879,7 +1879,7 @@ const upload = multer({
       }
 
       const { requestId } = req.params;
-      const orgId = req.user!.organizationId;
+      const orgId = req.user!.organizationId!;
       const actionSchema = z.object({ action: z.enum(["approve", "reject"]) });
       const parsed = actionSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid action", details: parsed.error.errors }); return; }
@@ -2204,7 +2204,7 @@ const upload = multer({
         res.json(updated);
       } else {
         const [created] = await db.insert(employeePerformanceProfiles)
-          .values({ userId, organizationId: orgId || null, ...parsed.data })
+          .values({ userId, organizationId: orgId!, ...parsed.data })
           .returning();
         res.json(created);
       }
@@ -2243,7 +2243,7 @@ const upload = multer({
         const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
         if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
       }
-      const [log] = await db.insert(attendanceLogs).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      const [log] = await db.insert(attendanceLogs).values({ ...parsed.data, organizationId: orgId!, recordedBy: userId }).returning();
       res.json(log);
     } catch (error) {
       next(error);
@@ -2281,7 +2281,7 @@ const upload = multer({
         const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
         if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
       }
-      const [incident] = await db.insert(safetyIncidents).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      const [incident] = await db.insert(safetyIncidents).values({ ...parsed.data, organizationId: orgId!, recordedBy: userId }).returning();
       try {
         const { eventBus } = await import("./events");
         await eventBus.emit({
@@ -2333,7 +2333,7 @@ const upload = multer({
         const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
         if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
       }
-      const [issue] = await db.insert(qualityIssues).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      const [issue] = await db.insert(qualityIssues).values({ ...parsed.data, organizationId: orgId!, recordedBy: userId }).returning();
       res.json(issue);
     } catch (error) {
       next(error);
@@ -2380,7 +2380,7 @@ const upload = multer({
         const [targetUser] = await db.select().from(users).where(and(eq(users.id, parsed.data.userId), eq(users.organizationId, orgId)));
         if (!targetUser) { res.status(403).json({ error: "User not in your organization" }); return; }
       }
-      const [review] = await db.insert(performanceReviews).values({ ...parsed.data, organizationId: orgId || null, recordedBy: userId }).returning();
+      const [review] = await db.insert(performanceReviews).values({ ...parsed.data, organizationId: orgId!, recordedBy: userId }).returning();
       res.json(review);
     } catch (error) {
       next(error);
@@ -2419,7 +2419,7 @@ const upload = multer({
       const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Manager";
       const [note] = await db.insert(supervisorNotes).values({
         userId: parsed.data.userId,
-        organizationId: orgId || null,
+        organizationId: orgId!,
         note: parsed.data.note,
         createdBy: userId,
         createdByName: creatorName,

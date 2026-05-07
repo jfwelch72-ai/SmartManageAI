@@ -1688,7 +1688,7 @@ router.get("/api/procurement-module/receipts", requireAuth, requireRole(...ROLES
     if (req.query.status) {
       const s = String(req.query.status);
       if (!(RECEIPT_STATUSES as readonly string[]).includes(s)) { res.status(400).json({ error: `Invalid status. Allowed: ${RECEIPT_STATUSES.join(", ")}` }); return; }
-      receiptConditions.push(eq(poReceipts.status, s));
+      receiptConditions.push(eq(poReceipts.status, s as typeof poReceipts.$inferSelect.status));
     }
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;

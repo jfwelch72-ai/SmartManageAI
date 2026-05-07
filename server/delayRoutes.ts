@@ -348,7 +348,7 @@ router.post("/projects/:projectId/delays", requireAuth, requireRole("ADMIN", "MA
 
     const [newDelay] = await db
       .insert(projectDelays)
-      .values(insertData)
+      .values(insertData as typeof projectDelays.$inferInsert)
       .returning();
     
     // Fetch weather evidence async after creation for WEATHER delays
@@ -1519,7 +1519,7 @@ router.post("/delay-claims/locks", requireAuth, requireRole("ADMIN", "MANAGER", 
       [lock] = await db
         .insert(dailyReportLocks)
         .values({
-          organizationId: orgId,
+          organizationId: orgId!,
           projectId,
           reportDate,
           status: "LOCKED",
@@ -1744,7 +1744,7 @@ router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MA
     
     const [record] = await db
       .insert(photoCustodyRecords)
-      .values(validated)
+      .values(validated as typeof photoCustodyRecords.$inferInsert)
       .returning();
     
     res.status(201).json(record);
@@ -1896,7 +1896,7 @@ router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER
       .values({
         ...validated,
         claimNumber,
-      })
+      } as typeof delayClaims.$inferInsert)
       .returning();
     
     await logAudit({

@@ -77,7 +77,7 @@ export type CrmTranscriptBackfillJobUpdate = Partial<{
 export async function createCrmTranscriptBackfillJob(
   data: InsertCrmTranscriptBackfillJob,
 ): Promise<CrmTranscriptBackfillJob> {
-  const [row] = await db.insert(crmTranscriptBackfillJobs).values(data).returning();
+  const [row] = await db.insert(crmTranscriptBackfillJobs).values(data as typeof crmTranscriptBackfillJobs.$inferInsert).returning();
   return row;
 }
 
@@ -436,7 +436,7 @@ export async function createCrmTranscriptBackfillTestAlert(
 ): Promise<CrmTranscriptBackfillTestAlert> {
   const [row] = await db
     .insert(crmTranscriptBackfillTestAlerts)
-    .values(data)
+    .values(data as typeof crmTranscriptBackfillTestAlerts.$inferInsert)
     .returning();
   return row;
 }

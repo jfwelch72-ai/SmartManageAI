@@ -1078,7 +1078,7 @@ router.post("/domain/verify", requireAuth, async (req: AuthRequest, res: Respons
     await db.insert(websiteDeployments).values({
       websiteId: website.id,
       organizationId: website.organizationId,
-      action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_VERIFICATION_FAILED",
+      action: verified ? "DOMAIN_VERIFIED" : "DOMAIN_UPDATED",
       performedByUserId: user.id,
       performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
       note: verified

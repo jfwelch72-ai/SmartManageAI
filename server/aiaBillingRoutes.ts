@@ -1248,7 +1248,7 @@ router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, 
     const { project, hasAccess } = await verifyProjectAccess(projectId, orgId, shouldFilter);
     if (!project || !hasAccess) return res.status(404).json({ error: "Project not found" });
 
-    const committedStatuses = ["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED"];
+    const committedStatuses: Array<typeof purchaseOrders.$inferSelect.status> = ["APPROVED", "SENT", "ACKNOWLEDGED", "PARTIAL", "FULFILLED"];
 
     const pos = await db.select({
       id: purchaseOrders.id,

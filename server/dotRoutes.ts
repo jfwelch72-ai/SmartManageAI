@@ -3445,7 +3445,7 @@ router.get(
         .from(haulTickets)
         .where(and(
           eq(haulTickets.projectId, projectId),
-          eq(haulTickets.organizationId, project.organizationId),
+          eq(haulTickets.organizationId, project.organizationId!),
           sql`${haulTickets.status} IN ('SUBMITTED', 'APPROVED')`,
         ))
         .groupBy(haulTickets.source, haulTickets.destination, haulTickets.materialClass, haulTickets.unit);

@@ -86,7 +86,7 @@ beforeAll(async () => {
     passwordHash,
     firstName: "Crew",
     lastName: "Member",
-    role: "USER",
+    role: "FIELD_WORKER",
     organizationId: orgId,
     isActive: true,
   }).returning();
@@ -151,7 +151,7 @@ describe("POST /api/labor-rates/classifications/:id/merge", () => {
 
     const [eli] = await db.insert(estimateLineItems).values({
       estimateId: estimate.id,
-      category: "LABOR",
+      category: "GENERAL",
       description: "Carpentry crew",
       quantity: "10",
       unit: "HR",

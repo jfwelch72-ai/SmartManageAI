@@ -515,7 +515,8 @@ router.delete("/organization-documents/:id", requireAuth, requireRole("SUPER_ADM
 router.get("/api/organization-documents/:id/download", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
-    const orgId = await getOrgIdForFilter(req);
+    const orgFilter = await getOrgIdForFilter(req);
+    const orgId = typeof orgFilter === "string" ? orgFilter : orgFilter?.orgId;
     if (!orgId) return res.status(403).json({ error: "Organization required" });
 
     const [doc] = await db

@@ -11,7 +11,7 @@ const ADMIN_ROLES = ["ADMIN", "MANAGER"] as const;
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {
-    const roles: string[] = [...ADMIN_ROLES];
+    const roles: Array<typeof users.$inferSelect.role> = [...ADMIN_ROLES];
     const rows = await db
       .select({ id: users.id })
       .from(users)
@@ -76,7 +76,7 @@ export function registerTakeoffDeltaListener(): void {
               adminIds.map((userId) => ({
                 userId,
                 organizationId: event.orgId || null,
-                type: "SYSTEM" as const,
+                type: "GENERAL" as const,
                 title: "Auto Change Order from Plan Revision",
                 message: `A change order was auto-generated for "${sheetLabel}" with a cost impact of $${delta.totalCostDelta.toFixed(2)}. Review and adjust as needed.`,
                 relatedEntityId: result.changeOrderId,

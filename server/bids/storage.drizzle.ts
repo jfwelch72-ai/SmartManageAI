@@ -1109,7 +1109,7 @@ export class BidStorageDrizzle implements IBidStorage {
         const [newSov] = await tx
           .insert(scheduleOfValues)
           .values({
-            organizationId: bid.gcOrganizationId,
+            organizationId: bid.gcOrganizationId!,
             projectId: createdProject.id,
             sovNumber: `SOV-${createdProject.code}-001`,
             title: `${createdProject.name} — Initial Contract`,
@@ -1769,7 +1769,7 @@ export class BidStorageDrizzle implements IBidStorage {
       const [newContract] = await db
         .insert(contractsTable)
         .values({
-          organizationId: newProject.gcOrganizationId,
+          organizationId: newProject.gcOrganizationId!,
           projectId: newProject.id,
           bidId: bid.id,
           contractNumber: contractNum,

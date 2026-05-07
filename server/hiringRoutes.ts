@@ -515,7 +515,7 @@ router.get("/candidates", requireAuth, requireRole(...HIRING_REVIEW), async (req
 
     const conditions = [eq(hiringCandidates.organizationId, org)];
     if (jobId) conditions.push(eq(hiringCandidates.jobId, jobId));
-    if (stage) conditions.push(eq(hiringCandidates.currentStage, stage as Parameters<typeof eq>[1]));
+    if (stage) conditions.push(eq(hiringCandidates.currentStage, String(stage)));
 
     if (search) {
       const candidates = await db

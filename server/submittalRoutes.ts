@@ -458,16 +458,16 @@ router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADM
       conditions.push(eq(submittals.projectId, projectId as string));
     }
     if (status) {
-      conditions.push(eq(submittals.status, status as string));
+      conditions.push(eq(submittals.status, status as typeof submittals.$inferSelect.status));
     }
     if (phase) {
-      conditions.push(eq(submittals.phase, phase as string));
+      conditions.push(eq(submittals.phase, phase as typeof submittals.$inferSelect.phase));
     }
     if (submittalType) {
-      conditions.push(eq(submittals.submittalType, submittalType as string));
+      conditions.push(eq(submittals.submittalType, submittalType as typeof submittals.$inferSelect.submittalType));
     }
     if (category) {
-      conditions.push(eq(submittals.submittalCategory, category as string));
+      conditions.push(eq(submittals.submittalCategory, category as NonNullable<typeof submittals.$inferSelect.submittalCategory>));
     }
 
     const filtered = await db

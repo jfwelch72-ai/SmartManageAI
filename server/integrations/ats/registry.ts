@@ -3,7 +3,7 @@ import { WorkableProvider } from "./WorkableProvider";
 import { GreenhouseProvider } from "./GreenhouseProvider";
 import { LeverProvider } from "./LeverProvider";
 
-const providers: Map<string, ATSProvider> = new Map([
+const providers: Map<string, ATSProvider> = new Map<string, ATSProvider>([
   ["WORKABLE", new WorkableProvider()],
   ["GREENHOUSE", new GreenhouseProvider()],
   ["LEVER", new LeverProvider()],

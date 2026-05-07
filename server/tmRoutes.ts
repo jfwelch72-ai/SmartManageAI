@@ -1346,6 +1346,7 @@ export function registerTMTicketRoutes(app: Express) {
       const newTicket = await db.transaction(async (tx) => {
         const [ticket] = await tx.insert(tmTickets).values({
           ...restTicketData,
+          workDate: restTicketData.workDate ?? new Date().toISOString().slice(0, 10),
           projectId,
           ticketNumber,
           createdById: userId,
@@ -1356,11 +1357,11 @@ export function registerTMTicketRoutes(app: Express) {
           workTypeCode: workTypeCode || null,
           workTypeName: workTypeName || null,
           categoryName: categoryName || null,
-          scopeModifierIds: scopeModifierIds || null,
-          scopeModifierNames: scopeModifierNames || null,
+          scopeModifierIds: scopeModifierIds ? JSON.stringify(scopeModifierIds) : null,
+          scopeModifierNames: scopeModifierNames ? JSON.stringify(scopeModifierNames) : null,
           canonicalName: canonicalName || null,
           scopeUnit: scopeUnit || null,
-          scopeQuantity: scopeQuantity || null,
+          scopeQuantity: scopeQuantity != null ? String(scopeQuantity) : null,
           costCode: costCode || null,
           status: "DRAFT",
         }).returning();

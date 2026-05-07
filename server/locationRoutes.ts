@@ -54,7 +54,7 @@ router.post("/api/projects/:projectId/locations", requireAuth, requireRole("ADMI
 
     const [location] = await db.insert(projectLocations).values({
       projectId: project.id,
-      name: sanitizeShortText(parsed.data.name),
+      name: sanitizeShortText(parsed.data.name) || "",
       level: parsed.data.level,
       parentId: parsed.data.parentId || null,
       sortOrder: parsed.data.sortOrder ?? 0,
@@ -326,10 +326,11 @@ router.patch("/api/takeoff/measurements/:measurementId/installed", requireAuth, 
         try {
           await db.insert(notifications).values({
             userId: req.user!.id,
-            type: "MATERIAL_ALERT",
+            type: "MATERIAL_OVERAGE",
             title: `Takeoff Overrun: ${measurement.label}`,
             message: `Installed quantity (${parsed.data.installedQuantity}) exceeds planned (${plannedQty}) by ${overrunPct}%`,
-            projectId,
+            relatedEntityId: projectId,
+            relatedEntityType: "project",
           });
         } catch (e) {
           logError("Failed to create overrun notification:", {}, e instanceof Error ? e : new Error(String(e)));

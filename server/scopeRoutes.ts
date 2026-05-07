@@ -306,8 +306,8 @@ router.post("/api/scope/work-types", requireAuth, requireRole("ADMIN", "MANAGER"
       .values({
         organizationId,
         categoryName,
-        name: sanitizedName,
-        code: sanitizedCode,
+        name: sanitizedName || "",
+        code: sanitizedCode || "",
         unit: sanitizeShortText(defaultUnit) || "EA",
         requiresDimensions: requiresDimensions || false,
         dimensionLabel: dimensionType ? sanitizeShortText(dimensionType) : null,

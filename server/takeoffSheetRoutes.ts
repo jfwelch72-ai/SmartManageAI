@@ -455,7 +455,7 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
     const isSuperAdmin = user.role === "SUPER_ADMIN";
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, projectId)]
-      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId!)];
     const [project] = await db
       .select({ id: projects.id })
       .from(projects)
@@ -638,14 +638,14 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
         await eventBus.emit({
           type: "takeoff.version_superseded",
           version: 1,
-          orgId: req.user!.organizationId || "",
+          orgId: req.user!.organizationId!,
           actorId: req.user!.id,
           timestamp: new Date(),
           payload: {
             oldSheetId: sheetId,
             newSheetId,
             projectId: oldSheet.projectId,
-            organizationId: req.user!.organizationId || "",
+            organizationId: req.user!.organizationId!,
             oldSheetName: oldSheet.sheetName || null,
             newSheetName: newSheet?.sheetName || null,
             revisionLabel: revisionLabel || newSheet?.revisionLabel || null,
@@ -1008,7 +1008,7 @@ router.get(
     try {
       const { sheetId } = req.params;
       const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
-      const orgId = req.user!.organizationId;
+      const orgId = req.user!.organizationId!;
       const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
       const access = await verifySheetAccess(sheetId, req.user!);
@@ -1121,7 +1121,7 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
   try {
     const { sheetId } = req.params;
     const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
 
     const access = await verifySheetAccess(sheetId, req.user!);
@@ -1236,7 +1236,7 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
     const isSuperAdmin = user.role === "SUPER_ADMIN";
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, projectId)]
-      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId!)];
     const [projectCheck] = await db
       .select({ id: projects.id })
       .from(projects)
@@ -1370,7 +1370,7 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
     const isSuperAdmin = user.role === "SUPER_ADMIN";
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, projectId)]
-      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId!)];
     const [projectCheck] = await db
       .select({ id: projects.id })
       .from(projects)
@@ -1543,7 +1543,7 @@ router.patch("/api/projects/:projectId/takeoff/sheets/reorder", requireAuth, asy
     const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, projectId)]
-      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId)];
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)];
     const [project] = await db
       .select({ id: projects.id })
       .from(projects)
@@ -1898,7 +1898,7 @@ router.post("/api/takeoff/sheets/:id/restore", requireAuth, requireRole("ADMIN",
 
     const sheetSnap = validated.sheet;
     const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
 
     // Verify the user still has access to the parent project / bid.
     // The cascade-delete only removed the sheet's children, not its
@@ -2099,12 +2099,12 @@ router.delete("/api/quantity-categories/:id", requireAuth, async (req: AuthReque
     if (!isSuperAdmin) {
       if (existing.projectId) {
         const [project] = await db.select({ id: projects.id }).from(projects)
-          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
           .limit(1);
         if (!project) { res.status(403).json({ error: "Access denied" }); return; }
       } else if (existing.bidId) {
         const [bid] = await db.select({ id: bids.id }).from(bids)
-          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId!)))
           .limit(1);
         if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
       } else {
@@ -2138,12 +2138,12 @@ router.get("/api/takeoff/versions", requireAuth, async (req: AuthRequest, res, n
       }
     } else if (projectId) {
       const [project] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, projectId as string), eq(projects.gcOrganizationId, req.user!.organizationId)))
+        .where(and(eq(projects.id, projectId as string), eq(projects.gcOrganizationId, req.user!.organizationId!)))
         .limit(1);
       if (!project) { res.status(403).json({ error: "Access denied" }); return; }
     } else if (bidId) {
       const [bid] = await db.select({ id: bids.id }).from(bids)
-        .where(and(eq(bids.id, bidId as string), eq(bids.gcOrganizationId, req.user!.organizationId)))
+        .where(and(eq(bids.id, bidId as string), eq(bids.gcOrganizationId, req.user!.organizationId!)))
         .limit(1);
       if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
     } else {

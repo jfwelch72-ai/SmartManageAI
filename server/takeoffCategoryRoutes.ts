@@ -170,7 +170,7 @@ router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async
   try {
     const user = req.user!;
     const isSuperAdmin = user.role === "SUPER_ADMIN";
-    const orgConditions = isSuperAdmin ? [] : [eq(projects.gcOrganizationId, user.organizationId)];
+    const orgConditions = isSuperAdmin ? [] : [eq(projects.gcOrganizationId, user.organizationId!)];
 
     const payables = await db
       .select({
@@ -414,12 +414,12 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
     if (!isSuperAdmin) {
       if (existing.projectId) {
         const [project] = await db.select({ id: projects.id }).from(projects)
-          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
           .limit(1);
         if (!project) { res.status(403).json({ error: "Access denied" }); return; }
       } else if (existing.bidId) {
         const [bid] = await db.select({ id: bids.id }).from(bids)
-          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId)))
+          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId!)))
           .limit(1);
         if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
       } else {
@@ -521,7 +521,7 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
     const body = {
       ...req.body,
       createdBy: req.user!.id,
-      organizationId: req.user!.organizationId,
+      organizationId: req.user!.organizationId!,
       points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
@@ -644,7 +644,7 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
 
     const userRole = req.user!.role;
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = userRole === "SUPER_ADMIN";
     const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -838,7 +838,7 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
 
     const userRole = req.user!.role;
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = userRole === "SUPER_ADMIN";
 
     if (!isSuperAdmin && markup.organizationId !== orgId) {
@@ -966,7 +966,7 @@ router.delete("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest,
 
     const userRole = req.user!.role;
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = userRole === "SUPER_ADMIN";
     const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -1157,7 +1157,7 @@ router.post("/api/takeoff/markups/restore-bulk", requireAuth, async (req: AuthRe
 
     const userRole = req.user!.role;
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = userRole === "SUPER_ADMIN";
     const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
@@ -1327,7 +1327,7 @@ router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthReq
     const userRole = req.user!.role;
     const userId = req.user!.id;
 
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isSuperAdmin = userRole === "SUPER_ADMIN";
 
     if (!isSuperAdmin && markup.organizationId !== orgId) {
@@ -1414,7 +1414,7 @@ router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRe
 
 router.get("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
     const { takeoffConditions } = await import("@shared/schema");
     const conditions = await db
@@ -1753,7 +1753,7 @@ router.patch("/api/takeoff/conditions/:id/favorite", requireAuth, async (req: Au
 
 router.get("/api/takeoff/conditions/export-csv", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
     const { takeoffConditions } = await import("@shared/schema");
     const conditions = await db.select().from(takeoffConditions)
@@ -1807,9 +1807,10 @@ router.post("/api/takeoff/conditions/import-csv", requireAuth, async (req: AuthR
           }
         } catch { /* skip malformed */ }
       }
+      if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
       await db.insert(takeoffConditions).values({
         organizationId: resolvedOrgId,
-        name: sanitizeShortText(row.name),
+        name: sanitizeShortText(row.name) || "",
         measurementType: measType,
         color: typeof row.color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(row.color) ? row.color : "#3b82f6",
         categoryName: typeof row.categoryName === "string" ? sanitizeShortText(row.categoryName) : null,
@@ -1852,14 +1853,14 @@ router.post("/api/takeoff/conditions/apply-to-project", requireAuth, async (req:
     for (const c of conds) {
       const existingCond = await db.select().from(takeoffConditions)
         .where(and(
-          eq(takeoffConditions.organizationId, targetOrgId),
+          eq(takeoffConditions.organizationId, targetOrgId!),
           eq(takeoffConditions.name, c.name),
           eq(takeoffConditions.measurementType, c.measurementType)
         )).limit(1);
 
       if (existingCond.length === 0) {
         await db.insert(takeoffConditions).values({
-          organizationId: targetOrgId,
+          organizationId: targetOrgId!,
           name: c.name,
           measurementType: c.measurementType,
           color: c.color,
@@ -1899,7 +1900,7 @@ router.post("/api/takeoff/conditions/apply-to-project", requireAuth, async (req:
 
 router.get("/api/takeoff/scale-templates", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) { res.status(403).json({ error: "Organization required" }); return; }
     const { savedScaleTemplates } = await import("@shared/schema");
     const templates = await db.select().from(savedScaleTemplates)
@@ -1919,8 +1920,8 @@ router.post("/api/takeoff/scale-templates", requireAuth, async (req: AuthRequest
     const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
     if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
     const [template] = await db.insert(savedScaleTemplates).values({
-      organizationId: resolvedOrgId,
-      name: sanitizeShortText(req.body.name),
+      organizationId: resolvedOrgId!,
+      name: sanitizeShortText(req.body.name) || "",
       label: req.body.label,
       pxPerFoot: req.body.pxPerFoot,
       category: req.body.category || "custom",

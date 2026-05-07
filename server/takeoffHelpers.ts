@@ -53,7 +53,7 @@ export async function verifySheetAccess(sheetId: string, user: { id: string; org
   if (sheet.projectId) {
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, sheet.projectId)]
-      : [eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, user.organizationId)];
+      : [eq(projects.id, sheet.projectId!), eq(projects.gcOrganizationId, user.organizationId!)];
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
@@ -77,7 +77,7 @@ export async function verifySheetAccess(sheetId: string, user: { id: string; org
   if (sheet.bidId) {
     const bidConditions = isSuperAdmin
       ? [eq(bids.id, sheet.bidId)]
-      : [eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, user.organizationId)];
+      : [eq(bids.id, sheet.bidId!), eq(bids.gcOrganizationId, user.organizationId!)];
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)

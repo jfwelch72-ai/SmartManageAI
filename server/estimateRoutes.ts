@@ -4047,7 +4047,7 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRo
     const { libraryAssemblies, libraryAssemblyItems } = await import("@shared/schema");
 
     const [assembly] = await db.select().from(libraryAssemblies)
-      .where(and(eq(libraryAssemblies.id, assemblyId), eq(libraryAssemblies.organizationId, req.user!.organizationId)));
+      .where(and(eq(libraryAssemblies.id, assemblyId), eq(libraryAssemblies.organizationId, req.user!.organizationId!)));
     if (!assembly) return res.status(404).json({ error: "Assembly not found" });
 
     const items = await db.select().from(libraryAssemblyItems)

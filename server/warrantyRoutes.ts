@@ -216,7 +216,7 @@ router.post(
         return res.status(400).json({ error: "Validation failed", details: parsed.error.format() });
       }
 
-      const [wc] = await db.insert(warrantyCases).values(parsed.data).returning();
+      const [wc] = await db.insert(warrantyCases).values(parsed.data as typeof warrantyCases.$inferInsert).returning();
 
       await logAudit({
         userId,

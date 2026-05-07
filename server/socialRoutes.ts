@@ -1177,7 +1177,7 @@ function validateAndClearState(req: Request, res: Response, name: string, return
 async function upsertSocialAccount(
   orgId: string,
   userId: string,
-  platform: string,
+  platform: typeof socialAccounts.$inferSelect.platform,
   accountName: string,
   accountId: string,
   accessToken: string,

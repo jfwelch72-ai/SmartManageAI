@@ -914,10 +914,7 @@ router.post("/payables/backfill", requireAuth, requireRole("ADMIN", "SUPER_ADMIN
             paymentNumber,
             amount,
             status: "PENDING",
-            invoiceDate: new Date().toISOString().split('T')[0],
-            dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 30 days from now
             description: `Final payment for completed contract ${contract.contractNumber}`,
-            notes: `Auto-created by backfill process for completed contract`,
             autoCreated: true,
             createdById: userId
           })

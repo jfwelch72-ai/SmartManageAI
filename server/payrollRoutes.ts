@@ -4510,7 +4510,7 @@ router.get("/api/payroll/certified-reports", requireAuth, requireFeaturePermissi
 
     const conditions = [eq(certifiedPayrollReports.organizationId, orgId)];
     if (projectId) conditions.push(eq(certifiedPayrollReports.projectId, projectId));
-    if (variant) conditions.push(eq(certifiedPayrollReports.variant, variant));
+    if (variant) conditions.push(eq(certifiedPayrollReports.variant, variant as typeof certifiedPayrollReports.$inferSelect.variant));
     if (startDate) conditions.push(gte(certifiedPayrollReports.generatedAt, new Date(`${startDate}T00:00:00.000Z`)));
     if (endDate) conditions.push(lte(certifiedPayrollReports.generatedAt, new Date(`${endDate}T23:59:59.999Z`)));
     // Only ADMIN / SUPER_ADMIN may surface archived rows; everyone else gets

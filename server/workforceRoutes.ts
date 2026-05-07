@@ -637,7 +637,6 @@ const router = Router();
         projectId: parsed.data.projectId,
         clockIn: new Date(),
         notes: parsed.data.notes || `Assigned to ${project.name} by manager`,
-        organizationId: orgId,
       }).returning();
 
       const creatorName = `${req.user?.firstName || ""} ${req.user?.lastName || ""}`.trim() || "Manager";

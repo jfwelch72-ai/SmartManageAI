@@ -1100,7 +1100,7 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
             description: typeof item.description === "string" ? item.description : null,
             requestedDate: completedAt ?? new Date(),
             completedDate: completedAt,
-            status: completedAt ? "COMPLETED" : "REQUESTED",
+            status: completedAt ? "PASSED" : "REQUESTED",
             resultNotes: typeof item.answers === "string"
               ? item.answers
               : item.answers !== undefined ? JSON.stringify(item.answers) : null,

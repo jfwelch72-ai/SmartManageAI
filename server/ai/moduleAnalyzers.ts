@@ -1041,7 +1041,7 @@ export async function saveAnalysisResults(
   for (const insight of results.insights) {
     try {
       const [saved] = await db.insert(aiInsights).values({
-        organizationId,
+        organizationId: organizationId!,
         projectId,
         module: insight.module as any,
         severity: insight.severity as any,

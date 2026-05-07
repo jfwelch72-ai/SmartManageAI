@@ -34,7 +34,7 @@ router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, asy
     const isSuperAdmin = user.role === "SUPER_ADMIN";
     const projectConditions = isSuperAdmin
       ? [eq(projects.id, projectId)]
-      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId)];
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId!)];
     const [project] = await db
       .select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
       .from(projects)
@@ -121,7 +121,7 @@ router.get("/api/bids/:bidId/takeoff/all-measurements", requireAuth, async (req:
     const isSuperAdmin = user.role === "SUPER_ADMIN";
     const bidConditions = isSuperAdmin
       ? [eq(bids.id, bidId)]
-      : [eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId)];
+      : [eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId!)];
     const [bid] = await db
       .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
       .from(bids)

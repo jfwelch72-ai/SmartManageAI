@@ -303,7 +303,7 @@ describe("Estimate export routes — line item photos", () => {
       rebarSpacingInches: "12.00",
       rebarLengthFeet: "20.00",
       rebarWasteFactor: "10.00",
-      calculatedRebarCount: 13,
+      calculatedRebarCount: "13",
     };
     const [calcLi] = await db
       .insert(estimateLineItems)

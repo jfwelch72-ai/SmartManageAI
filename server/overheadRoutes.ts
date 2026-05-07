@@ -119,7 +119,7 @@ router.post("/api/overhead/items", requireAuth, async (req: AuthRequest, res: Re
     .values({
       organizationId: orgId,
       name: data.name,
-      category: data.category,
+      category: data.category as Exclude<typeof data.category, "MANAGER">,
       amount: String(data.amount),
       frequency: data.frequency,
       amortizationMonths: data.frequency === "ONE_TIME" ? (data.amortizationMonths ?? null) : null,

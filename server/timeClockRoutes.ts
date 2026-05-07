@@ -458,7 +458,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
 
     if (data.projectId) {
       const [project] = await db.select().from(projects).where(
-        and(eq(projects.id, data.projectId), eq(projects.gcOrganizationId, req.user!.organizationId))
+        and(eq(projects.id, data.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!))
       ).limit(1);
       if (!project) {
         res.status(400).json({ error: "Project not found or does not belong to your organization" });
@@ -522,7 +522,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
     }
 
     if (data.costCode) {
-      const isValid = await validateCostCode(req.user!.organizationId, data.costCode, data.projectId);
+      const isValid = await validateCostCode(req.user!.organizationId!, data.costCode, data.projectId);
       if (!isValid) {
         res.status(400).json({ error: "Invalid or inactive cost code for this project" });
         return;
@@ -579,7 +579,7 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
     await eventBus.emit({
       type: "timeclock.checked_in",
       version: 1,
-      orgId: req.user!.organizationId || "",
+      orgId: req.user!.organizationId!,
       actorId: req.user!.id,
       timestamp: new Date(),
       payload: {
@@ -753,7 +753,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
     await eventBus.emit({
       type: "timeclock.checked_out",
       version: 1,
-      orgId: req.user!.organizationId || "",
+      orgId: req.user!.organizationId!,
       actorId: req.user!.id,
       timestamp: new Date(),
       payload: {
@@ -833,7 +833,7 @@ router.get("/api/time-clock/my-shifts", requireAuth, async (req: AuthRequest, re
     if (projectIds.length > 0) {
       const projectRows = await db.select({ id: projects.id, name: projects.name, code: projects.code })
         .from(projects)
-        .where(and(inArray(projects.id, projectIds), eq(projects.gcOrganizationId, req.user!.organizationId)));
+        .where(and(inArray(projects.id, projectIds), eq(projects.gcOrganizationId, req.user!.organizationId!)));
       projectMap = new Map(projectRows.map(p => [p.id, p]));
     }
 
@@ -912,7 +912,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
     }
 
     if (data.costCode) {
-      const isValid = await validateCostCode(req.user!.organizationId, data.costCode, activeShift.projectId);
+      const isValid = await validateCostCode(req.user!.organizationId!, data.costCode, activeShift.projectId);
       if (!isValid) {
         res.status(400).json({ error: "Invalid or inactive cost code for this project" });
         return;
@@ -942,7 +942,7 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
 
 router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const pendingShifts = await db
       .select({
         shift: timeClockShifts,
@@ -987,7 +987,7 @@ router.get("/api/time-clock/pending-approvals", requireAuth, requireRole("ADMIN"
 
 router.get("/api/time-clock/active-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const activeShifts = await db
       .select({
         shift: timeClockShifts,
@@ -1040,7 +1040,7 @@ router.get("/api/time-clock/employee/:userId/shifts", requireAuth, requireRole("
 
     const [targetUser] = await db.select({ id: users.id, organizationId: users.organizationId })
       .from(users).where(eq(users.id, req.params.userId)).limit(1);
-    if (!targetUser || targetUser.organizationId !== req.user!.organizationId) {
+    if (!targetUser || targetUser.organizationId !== req.user!.organizationId!) {
       return res.status(403).json({ error: "Access denied" });
     }
 
@@ -1101,7 +1101,7 @@ router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN
 
     const shift = shiftWithUser.shift;
 
-    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+    if (shiftWithUser.userOrgId !== req.user!.organizationId!) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
@@ -1199,7 +1199,7 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
 
     const shift = shiftWithUser.shift;
 
-    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+    if (shiftWithUser.userOrgId !== req.user!.organizationId!) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
@@ -1266,7 +1266,7 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
 
     const shift = shiftWithUser.shift;
 
-    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+    if (shiftWithUser.userOrgId !== req.user!.organizationId!) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
@@ -1383,7 +1383,7 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
     const shift = shiftWithUser.shift;
 
-    if (shiftWithUser.userOrgId !== req.user!.organizationId) {
+    if (shiftWithUser.userOrgId !== req.user!.organizationId!) {
       res.status(403).json({ error: "Access denied" });
       return;
     }
@@ -1422,7 +1422,7 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
 
 router.get("/api/time-clock/live", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const activeShifts = await db
       .select({
         shift: timeClockShifts,
@@ -1552,7 +1552,7 @@ router.post("/api/time-clock/location-ping", requireAuth, async (req: AuthReques
 router.get("/api/projects/:projectId/geofence-zones", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
       .limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
@@ -1568,7 +1568,7 @@ router.get("/api/projects/:projectId/geofence-zones", requireAuth, async (req: A
 router.post("/api/projects/:projectId/geofence-zones", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
       .limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
@@ -1612,7 +1612,7 @@ router.post("/api/projects/:projectId/geofence-zones", requireAuth, requireRole(
 router.delete("/api/projects/:projectId/geofence-zones/:zoneId", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const [project] = await db.select({ id: projects.id }).from(projects)
-      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId)))
+      .where(and(eq(projects.id, req.params.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
       .limit(1);
     if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
@@ -1650,7 +1650,7 @@ router.get("/api/time-clock/shift/:shiftId/location-pings", requireAuth, require
       .innerJoin(users, eq(timeClockShifts.userId, users.id))
       .where(and(
         eq(timeClockShifts.id, req.params.shiftId),
-        eq(users.organizationId, req.user!.organizationId)
+        eq(users.organizationId, req.user!.organizationId!)
       ))
       .limit(1);
     if (!shift) { res.status(404).json({ error: "Shift not found" }); return; }
@@ -1671,7 +1671,7 @@ router.get("/api/time-clock/shift/:shiftId/location-pings", requireAuth, require
 router.get("/api/time-clock/geofence-compliance-report", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
     const { startDate, endDate } = req.query;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
 
     const conditions = [eq(users.organizationId, orgId)];
     if (startDate) conditions.push(gte(timeClockShifts.clockIn, new Date(startDate as string)));
@@ -1871,7 +1871,7 @@ router.get("/api/time-clock/project/:projectId/geofence-compliance", requireAuth
     const { startDate, endDate } = req.query;
 
     const [project] = await db.select().from(projects).where(
-      and(eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId))
+      and(eq(projects.id, projectId), eq(projects.gcOrganizationId, req.user!.organizationId!))
     ).limit(1);
 
     if (!project) {
@@ -1979,7 +1979,7 @@ router.post("/api/time-clock/site-leave", requireAuth, async (req, res, next) =>
     }
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.id, shift.projectId), eq(projects.gcOrganizationId, user.organizationId)))
+      .where(and(eq(projects.id, shift.projectId), eq(projects.gcOrganizationId, user.organizationId!)))
       .limit(1);
 
     if (!project) {
@@ -2000,8 +2000,8 @@ router.post("/api/time-clock/site-leave", requireAuth, async (req, res, next) =>
       shiftId: shift.id,
       userId: user.id,
       projectId: shift.projectId,
-      reason: sanitizeText(data.reason),
-      category: data.category,
+      reason: sanitizeText(data.reason) || "",
+      category: data.category!,
       estimatedReturnMinutes: data.estimatedReturnMinutes ?? null,
       departedAt: new Date(),
       departLatitude: data.latitude ?? null,

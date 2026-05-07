@@ -105,11 +105,11 @@ const ALL_SOURCES: ReadonlyArray<MyWorkType> = ["TASK", "CRM_TASK", "PUNCH", "RF
 //   crm_tasks.status       = free text (PENDING / IN_PROGRESS / COMPLETED / CANCELLED)
 //   rfi_status             = DRAFT, SUBMITTED, UNDER_REVIEW, FORWARDED, ANSWERED, CLOSED
 //   inspection_status      = REQUESTED, SCHEDULED, PASSED, FAILED, CANCELLED
-const TASK_COMPLETED = ["COMPLETED", "DISMISSED"];
-const PUNCH_COMPLETED = ["RESOLVED", "VERIFIED"];
+const TASK_COMPLETED = ["COMPLETED", "DISMISSED"] as Array<typeof tasks.$inferSelect.status>;
+const PUNCH_COMPLETED = ["RESOLVED", "VERIFIED"] as Array<typeof punchListItems.$inferSelect.status>;
 const CRM_COMPLETED = ["COMPLETED", "CANCELLED"];
-const RFI_COMPLETED = ["ANSWERED", "CLOSED"];
-const INSPECTION_COMPLETED = ["PASSED", "FAILED", "CANCELLED"];
+const RFI_COMPLETED = ["ANSWERED", "CLOSED"] as Array<typeof rfis.$inferSelect.status>;
+const INSPECTION_COMPLETED = ["PASSED", "FAILED", "CANCELLED"] as Array<typeof projectInspections.$inferSelect.status>;
 
 function toIso(d: Date | string | null | undefined): string | null {
   if (!d) return null;
@@ -465,9 +465,9 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
       if (skipSource("TASK")) return Promise.resolve([] as Array<Record<string, unknown>>);
       const ks = buildKeysetWhere(tasks.dueDate, tasks.updatedAt, tasks.id, cursorIn.map.TASK);
       const statusW = !includeCompleted
-        ? notInArray(tasks.status, TASK_COMPLETED as unknown as string[])
+        ? notInArray(tasks.status, TASK_COMPLETED)
         : !includeOpen
-          ? inArray(tasks.status, TASK_COMPLETED as unknown as string[])
+          ? inArray(tasks.status, TASK_COMPLETED)
           : undefined;
       return db
         .select({
@@ -526,9 +526,9 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
       if (skipSource("PUNCH")) return Promise.resolve([] as Array<Record<string, unknown>>);
       const ks = buildKeysetWhere(punchListItems.dueDate, punchListItems.updatedAt, punchListItems.id, cursorIn.map.PUNCH);
       const statusW = !includeCompleted
-        ? notInArray(punchListItems.status, PUNCH_COMPLETED as unknown as string[])
+        ? notInArray(punchListItems.status, PUNCH_COMPLETED)
         : !includeOpen
-          ? inArray(punchListItems.status, PUNCH_COMPLETED as unknown as string[])
+          ? inArray(punchListItems.status, PUNCH_COMPLETED)
           : undefined;
       return db
         .select({
@@ -556,9 +556,9 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
       if (skipSource("RFI")) return Promise.resolve([] as Array<Record<string, unknown>>);
       const ks = buildKeysetWhere(rfis.dateRequired, rfis.updatedAt, rfis.id, cursorIn.map.RFI);
       const statusW = !includeCompleted
-        ? notInArray(rfis.status, RFI_COMPLETED as unknown as string[])
+        ? notInArray(rfis.status, RFI_COMPLETED)
         : !includeOpen
-          ? inArray(rfis.status, RFI_COMPLETED as unknown as string[])
+          ? inArray(rfis.status, RFI_COMPLETED)
           : undefined;
       return db
         .select({
@@ -590,9 +590,9 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
       if (!base) return Promise.resolve([] as Array<Record<string, unknown>>);
       const ks = buildKeysetWhere(inspDueExpr, projectInspections.updatedAt, projectInspections.id, cursorIn.map.INSPECTION);
       const statusW = !includeCompleted
-        ? notInArray(projectInspections.status, INSPECTION_COMPLETED as unknown as string[])
+        ? notInArray(projectInspections.status, INSPECTION_COMPLETED)
         : !includeOpen
-          ? inArray(projectInspections.status, INSPECTION_COMPLETED as unknown as string[])
+          ? inArray(projectInspections.status, INSPECTION_COMPLETED)
           : undefined;
       return db
         .select({
@@ -1104,7 +1104,7 @@ function isAdminRole(role: string | null | undefined): boolean {
 router.get("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });
     }
@@ -1146,7 +1146,7 @@ router.get("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Resp
 router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });
     }
@@ -1184,7 +1184,7 @@ router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Res
 router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const role = req.user!.role;
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });
@@ -1246,7 +1246,7 @@ router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res
 router.delete("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const role = req.user!.role;
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });

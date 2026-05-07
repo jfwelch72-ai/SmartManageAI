@@ -109,7 +109,7 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
         .insert(userSettings)
         .values({
           userId,
-          organizationId: req.user!.organizationId || undefined,
+          organizationId: req.user!.organizationId!,
           ...parsed,
         })
         .returning();
@@ -126,7 +126,7 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
 router.post("/api/user-settings/birthday-digest/test", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) {
       return res.status(400).json({ error: "User is not associated with an organization." });
     }
@@ -218,7 +218,7 @@ router.post("/api/account/deactivation-request", requireAuth, async (req: AuthRe
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "ACCOUNT_DEACTIVATION_REQUEST",
       details: reason || "User requested account deactivation",
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -397,7 +397,7 @@ router.post("/api/account/sessions/revoke-all", requireAuth, async (req: AuthReq
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "SESSIONS_REVOKED",
       details: "All other sessions revoked by user",
       ipAddress: currentIp || null,
@@ -490,7 +490,7 @@ router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "2FA_ENABLED",
       details: "Two-factor authentication enabled",
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -534,7 +534,7 @@ router.post("/api/account/2fa/disable", requireAuth, async (req: AuthRequest, re
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "2FA_DISABLED",
       details: "Two-factor authentication disabled",
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -600,7 +600,7 @@ router.post("/api/account/api-keys", requireAuth, async (req: AuthRequest, res, 
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "API_KEY_CREATED",
       details: `API key "${name}" created`,
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -629,7 +629,7 @@ router.delete("/api/account/api-keys/:keyId", requireAuth, async (req: AuthReque
 
     await db.insert(activityLog).values({
       userId,
-      organizationId: req.user!.organizationId || undefined,
+      organizationId: req.user!.organizationId!,
       action: "API_KEY_DELETED",
       details: `API key "${deleted.name}" deleted`,
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
@@ -645,7 +645,7 @@ router.delete("/api/account/api-keys/:keyId", requireAuth, async (req: AuthReque
 router.get("/api/account/integrations-status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     if (!requireAdminRole(req, res)) return;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     if (!orgId) {
       return res.json([]);
     }

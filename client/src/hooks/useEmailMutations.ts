@@ -429,11 +429,10 @@ export function useUpdateMessageState(threadId?: string) {
               ToastAction,
               {
                 altText: "Undo",
-                "data-testid": `button-toast-undo-message-${vars.messageId}`,
                 onClick: () => {
                   mutation.mutate({ messageId: vars.messageId, ...undo });
                 },
-              },
+              } as React.ComponentProps<typeof ToastAction>,
               "Undo",
             )
           : undefined,
@@ -512,11 +511,10 @@ export function useUpdateThreadState() {
               ToastAction,
               {
                 altText: "Undo",
-                "data-testid": `button-toast-undo-thread-${vars.threadId}`,
                 onClick: () => {
                   mutation.mutate({ threadId: vars.threadId, ...undo });
                 },
-              },
+              } as React.ComponentProps<typeof ToastAction>,
               "Undo",
             )
           : undefined,

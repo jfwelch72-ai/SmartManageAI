@@ -28,7 +28,7 @@ type AdminRole = (typeof ADMIN_ROLES)[number];
 
 async function getAdminUserIds(orgId: string): Promise<string[]> {
   try {
-    const roles: AdminRole[] = [...ADMIN_ROLES];
+    const roles: Array<typeof users.$inferSelect.role> = [...ADMIN_ROLES];
     const rows = await db
       .select({ id: users.id })
       .from(users)
@@ -36,7 +36,7 @@ async function getAdminUserIds(orgId: string): Promise<string[]> {
         and(
           eq(users.organizationId, orgId),
           eq(users.isActive, true),
-          inArray(users.role, roles as unknown as string[])
+          inArray(users.role, roles)
         )
       );
     return rows.map((r) => r.id);
@@ -265,7 +265,7 @@ export function registerNotificationListener(): void {
           superintendentId: projects.superintendentId,
         })
         .from(projects)
-        .where(eq(projects.id, event.payload.projectId))
+        .where(eq(projects.id, event.payload.projectId!))
         .limit(1);
 
       if (project) {
@@ -299,7 +299,7 @@ export function registerNotificationListener(): void {
           projectManagerId: projects.projectManagerId,
         })
         .from(projects)
-        .where(eq(projects.id, event.payload.projectId))
+        .where(eq(projects.id, event.payload.projectId!))
         .limit(1);
 
       const adminIds = await getAdminUserIds(event.orgId);
@@ -314,7 +314,7 @@ export function registerNotificationListener(): void {
       const teamRows = await db
         .select({ userId: projectEmployeeRates.userId })
         .from(projectEmployeeRates)
-        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId!));
       for (const row of teamRows) {
         recipientIds.add(row.userId);
       }
@@ -344,7 +344,7 @@ export function registerNotificationListener(): void {
           and(
             eq(users.organizationId, event.orgId),
             eq(users.isActive, true),
-            inArray(users.role, [...safetyRoles] as unknown as string[])
+            inArray(users.role, [...safetyRoles] as unknown as Array<typeof users.$inferSelect.role>)
           )
         );
       const recipientIds = new Set([...adminIds, ...safetyRows.map(r => r.id)]);
@@ -373,7 +373,7 @@ export function registerNotificationListener(): void {
           projectManagerId: projects.projectManagerId,
         })
         .from(projects)
-        .where(eq(projects.id, event.payload.projectId))
+        .where(eq(projects.id, event.payload.projectId!))
         .limit(1);
 
       const adminIds = await getAdminUserIds(event.orgId);
@@ -388,7 +388,7 @@ export function registerNotificationListener(): void {
       const teamRows = await db
         .select({ userId: projectEmployeeRates.userId })
         .from(projectEmployeeRates)
-        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId!));
       for (const row of teamRows) {
         recipientIds.add(row.userId);
       }
@@ -419,7 +419,7 @@ export function registerNotificationListener(): void {
           code: projects.code,
         })
         .from(projects)
-        .where(eq(projects.id, event.payload.projectId))
+        .where(eq(projects.id, event.payload.projectId!))
         .limit(1);
 
       const adminIds = await getAdminUserIds(event.orgId);
@@ -434,7 +434,7 @@ export function registerNotificationListener(): void {
       const teamRows = await db
         .select({ userId: projectEmployeeRates.userId })
         .from(projectEmployeeRates)
-        .where(eq(projectEmployeeRates.projectId, event.payload.projectId));
+        .where(eq(projectEmployeeRates.projectId, event.payload.projectId!));
       for (const row of teamRows) {
         recipientIds.add(row.userId);
       }

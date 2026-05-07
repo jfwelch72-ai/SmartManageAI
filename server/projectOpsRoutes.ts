@@ -1300,7 +1300,7 @@ router.post("/api/change-orders", requireAuth, requireRole("ADMIN", "MANAGER", "
         return;
       }
       const [costCode] = await db.select().from(orgCostCodes)
-        .where(and(eq(orgCostCodes.id, parsedCostCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId)))
+        .where(and(eq(orgCostCodes.id, parsedCostCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId!)))
         .limit(1);
       if (!costCode) {
         res.status(400).json({ error: "Cost code not found or does not belong to your organization" });
@@ -1416,7 +1416,7 @@ router.patch("/api/change-orders/:id", requireAuth, requireRoleOrFeature(["ADMIN
 
     if (validationResult.data.costCodeId !== undefined && validationResult.data.costCodeId !== null) {
       const [costCode] = await db.select().from(orgCostCodes)
-        .where(and(eq(orgCostCodes.id, validationResult.data.costCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId)))
+        .where(and(eq(orgCostCodes.id, validationResult.data.costCodeId), eq(orgCostCodes.organizationId, req.user!.organizationId!)))
         .limit(1);
       if (!costCode) {
         res.status(400).json({ error: "Cost code not found or does not belong to your organization" });
@@ -2087,7 +2087,7 @@ router.post("/api/calendar/events", requireAuth, async (req: AuthRequest, res, n
         .from(projects)
         .where(and(
           eq(projects.id, validationResult.data.projectId),
-          eq(projects.gcOrganizationId, req.user!.organizationId)
+          eq(projects.gcOrganizationId, req.user!.organizationId!)
         ))
         .limit(1);
       if (!project) {

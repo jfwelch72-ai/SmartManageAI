@@ -98,7 +98,7 @@ router.post("/api/projects/:code/notes", requireAuth, requireRole("ADMIN", "MANA
     const [newNote] = await db.insert(projectNotes).values([insertData]).returning();
 
     const userId = req.user!.id;
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
 
     if (orgId) {
       let [projectConversation] = await db
@@ -152,7 +152,7 @@ router.post("/api/projects/:code/notes", requireAuth, requireRole("ADMIN", "MANA
         .values({
           conversationId: projectConversation.id,
           senderId: userId,
-          content: sanitizeText(newNote.text),
+          content: sanitizeText(newNote.text) ?? "",
           isFieldNote: true,
         })
         .returning();
@@ -373,7 +373,7 @@ router.delete("/api/media/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SU
 
 router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const projectId = req.params.id;
 
     const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
@@ -459,7 +459,7 @@ router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest,
 
 router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const projectId = req.params.id;
 
     const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
@@ -511,7 +511,7 @@ router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), a
 router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { getCostCodesForTrade } = await import("@shared/costCodes");
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
     const tradeType = org?.tradeType || "OTHER";
     const staticCodes = getCostCodesForTrade(tradeType);
@@ -552,7 +552,7 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) =
 
 router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const rows = await db
       .select({
         id: orgCostCodes.id,
@@ -579,7 +579,7 @@ router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, nex
 
 router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const isCustom = req.body.isCustom !== false;
 
     if (isCustom) {
@@ -594,7 +594,7 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
 
     const parsed = parseOrRespond(insertOrgCostCodeSchema, { ...req.body, organizationId: orgId, isCustom }, res);
     if (!parsed) return;
-    const insertData: Record<string, any> = { ...parsed };
+    const insertData: typeof orgCostCodes.$inferInsert = { ...parsed };
     if (parsed.isActive === false) {
       insertData.deactivatedById = req.user!.id;
       insertData.deactivatedAt = new Date();
@@ -612,14 +612,14 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
 
 router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId;
+    const orgId = req.user!.organizationId!;
     const id = Number(req.params.id);
     const { code, description, division, isActive, isCustom } = req.body;
 
     const [existing] = await db.select().from(orgCostCodes).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).limit(1);
     if (!existing) return res.status(404).json({ error: "Cost code not found" });
 
-    const updates: Record<string, any> = { updatedAt: new Date() };
+    const updates: Partial<typeof orgCostCodes.$inferInsert> = { updatedAt: new Date() };
     if (code !== undefined) updates.code = code;
     if (description !== undefined) updates.description = description;
     if (division !== undefined) updates.division = division;
