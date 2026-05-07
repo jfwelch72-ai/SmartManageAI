@@ -54,53 +54,64 @@ const violations = [];
 const ok = [];
 const missing = [];
 
-for (const [endpoint, budget] of Object.entries(budgets.endpoints)) {
-  const requiredTags = { endpoint };
-  if (cohortFilter) requiredTags.cohort = cohortFilter;
+// Both the read-path (`endpoints`) and write-path (`mutations`) blocks
+// share the same tag layout (`endpoint:<METHOD path>`) and the same
+// per-budget shape, so we enforce them with one loop. Tracking the
+// originating section lets the report distinguish reads from writes.
+const budgetSections = [
+  { section: "endpoints", entries: budgets.endpoints || {} },
+  { section: "mutations", entries: budgets.mutations || {} },
+];
 
-  const dur = findMetric(indexed, "http_req_duration", requiredTags);
-  const fail = findMetric(indexed, "http_req_failed", requiredTags);
-  const p95 = dur?.values?.["p(95)"];
-  const rate = fail?.values?.rate;
+for (const { section, entries } of budgetSections) {
+  for (const [endpoint, budget] of Object.entries(entries)) {
+    const requiredTags = { endpoint };
+    if (cohortFilter) requiredTags.cohort = cohortFilter;
 
-  if (p95 == null && rate == null) {
-    missing.push(endpoint);
-    continue;
-  }
+    const dur = findMetric(indexed, "http_req_duration", requiredTags);
+    const fail = findMetric(indexed, "http_req_failed", requiredTags);
+    const p95 = dur?.values?.["p(95)"];
+    const rate = fail?.values?.rate;
 
-  const allowedP95 = budget.p95Ms * (1 + tolerance);
-  const allowedRate = (budget.errorRate ?? 0.01) + 0.001;
+    if (p95 == null && rate == null) {
+      missing.push({ endpoint, section });
+      continue;
+    }
 
-  const row = { endpoint, p95: round(p95), budgetP95: budget.p95Ms, rate: round4(rate), budgetRate: budget.errorRate };
-  if (p95 != null && p95 > allowedP95) {
-    violations.push({ ...row, kind: "latency" });
-  } else if (rate != null && rate > allowedRate) {
-    violations.push({ ...row, kind: "errors" });
-  } else {
-    ok.push(row);
+    const allowedP95 = budget.p95Ms * (1 + tolerance);
+    const allowedRate = (budget.errorRate ?? 0.01) + 0.001;
+
+    const row = { endpoint, section, p95: round(p95), budgetP95: budget.p95Ms, rate: round4(rate), budgetRate: budget.errorRate };
+    if (p95 != null && p95 > allowedP95) {
+      violations.push({ ...row, kind: "latency" });
+    } else if (rate != null && rate > allowedRate) {
+      violations.push({ ...row, kind: "errors" });
+    } else {
+      ok.push(row);
+    }
   }
 }
 
 console.log(`[budgets] cohort=${cohortFilter || "all"}  tolerance=${(tolerance * 100).toFixed(0)}%`);
 console.log("[budgets] OK:");
 for (const r of ok) {
-  console.log(`  PASS  ${r.endpoint.padEnd(36)} p95=${fmt(r.p95)}ms (≤ ${r.budgetP95}) err=${fmt(r.rate)} (≤ ${r.budgetRate})`);
+  console.log(`  PASS  [${r.section}] ${r.endpoint.padEnd(36)} p95=${fmt(r.p95)}ms (≤ ${r.budgetP95}) err=${fmt(r.rate)} (≤ ${r.budgetRate})`);
 }
 if (missing.length) {
   console.log("[budgets] not measured (skipped, no metric in summary):");
-  for (const e of missing) console.log(`  SKIP  ${e}`);
+  for (const e of missing) console.log(`  SKIP  [${e.section}] ${e.endpoint}`);
 }
 if (violations.length) {
   console.log("[budgets] VIOLATIONS:");
   for (const v of violations) {
-    console.log(`  FAIL  ${v.endpoint.padEnd(36)} ${v.kind}: p95=${fmt(v.p95)}ms (> ${v.budgetP95}*${1 + tolerance}) err=${fmt(v.rate)} (> ${v.budgetRate})`);
+    console.log(`  FAIL  [${v.section}] ${v.endpoint.padEnd(36)} ${v.kind}: p95=${fmt(v.p95)}ms (> ${v.budgetP95}*${1 + tolerance}) err=${fmt(v.rate)} (> ${v.budgetRate})`);
   }
   process.exit(1);
 }
 
 if (requireAll && missing.length) {
   console.log("[budgets] FAIL — --require-all set and the following endpoints have no matching metrics in the summary:");
-  for (const e of missing) console.log(`  MISSING  ${e}`);
+  for (const e of missing) console.log(`  MISSING  [${e.section}] ${e.endpoint}`);
   console.log("[budgets] Either tag the requests in the scenario, seed the auth fixture, or remove the budget entry.");
   process.exit(1);
 }

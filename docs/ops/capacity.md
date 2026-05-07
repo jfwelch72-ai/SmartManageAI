@@ -56,6 +56,35 @@ Highlights — see the JSON file for the full top-20 list.
 | `GET /api/crm/contacts`           | 950 ms     | 1%           |
 | Global ceiling (untagged)         | 2000 ms    | 1%           |
 
+### Mutation budgets
+
+The `mutations` block in [`loadtests/budgets.json`](../../loadtests/budgets.json)
+applies the same CI gate to the write workload exercised by
+`loadtests/scenarios/mutations.js` (nightly). Budgets account for the
+extra DB round-trips a tenant write incurs (entity row + audit-log
+insert + RLS policy check; see
+[`docs/architecture/tenant-isolation.md`](../architecture/tenant-isolation.md)),
+so insert paths get the most headroom and status-only PATCHes are
+tighter. Error budgets stay at 1% (validation 4xxs are healthy 200s
+from the server's perspective).
+
+| Endpoint                              | p95 budget | Error budget |
+| ------------------------------------- | ---------- | ------------ |
+| `POST /api/bids`                      | 1200 ms    | 1%           |
+| `PATCH /api/bids/:id`                 | 950 ms     | 1%           |
+| `POST /api/projects`                  | 1200 ms    | 1%           |
+| `PATCH /api/projects/:id`             | 900 ms     | 1%           |
+| `POST /api/change-orders`             | 1200 ms    | 1%           |
+| `PATCH /api/change-orders/:id/status` | 800 ms     | 1%           |
+| `POST /api/rfis`                      | 1100 ms    | 1%           |
+| `PATCH /api/rfis/:id`                 | 900 ms     | 1%           |
+| `POST /api/time-entries`              | 900 ms     | 1%           |
+| `DELETE /api/time-entries/:id`        | 700 ms     | 1%           |
+
+`loadtests/check-budgets.mjs` enforces the `endpoints` and `mutations`
+blocks in a single pass and labels each row in its report with the
+originating section.
+
 Updating a budget requires a PR that links the load-test summary
 artifact (uploaded by the smoke + nightly jobs) showing the new
 steady-state and a one-line justification.

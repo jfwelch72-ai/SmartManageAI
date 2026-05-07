@@ -28,5 +28,18 @@
     "GET /api/time-clock/status":            { "p95Ms": 450,  "errorRate": 0.005 },
     "GET /api/rfis":                         { "p95Ms": 800,  "errorRate": 0.01 },
     "GET /api/submittals":                   { "p95Ms": 800,  "errorRate": 0.01 }
+  },
+  "$mutationsComment": "Per-endpoint budgets for the write/mutation workload exercised by loadtests/scenarios/mutations.js (nightly). p95 budgets are sized for the same `LOAD_PROFILE=nightly` shape as the read budgets above but allow the extra DB round-trip(s) and the audit-log + RLS overhead each tenant write incurs (see docs/architecture/tenant-isolation.md). Insert paths get the most headroom because they touch the most tables (audit_log + entity row + frequently a join table); status-only PATCHes are tighter. Error rate stays at 1% — the same tolerance the global ceiling uses — because mutation 4xxs are dominated by validation responses, which are still healthy 200s from a server-perspective. The CI checker enforces these alongside the `endpoints` block.",
+  "mutations": {
+    "POST /api/bids":                        { "p95Ms": 1200, "errorRate": 0.01 },
+    "PATCH /api/bids/:id":                   { "p95Ms": 950,  "errorRate": 0.01 },
+    "POST /api/projects":                    { "p95Ms": 1200, "errorRate": 0.01 },
+    "PATCH /api/projects/:id":               { "p95Ms": 900,  "errorRate": 0.01 },
+    "POST /api/change-orders":               { "p95Ms": 1200, "errorRate": 0.01 },
+    "PATCH /api/change-orders/:id/status":   { "p95Ms": 800,  "errorRate": 0.01 },
+    "POST /api/rfis":                        { "p95Ms": 1100, "errorRate": 0.01 },
+    "PATCH /api/rfis/:id":                   { "p95Ms": 900,  "errorRate": 0.01 },
+    "POST /api/time-entries":                { "p95Ms": 900,  "errorRate": 0.01 },
+    "DELETE /api/time-entries/:id":          { "p95Ms": 700,  "errorRate": 0.01 }
   }
 }
