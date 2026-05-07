@@ -16,6 +16,8 @@ import {
   takeoffMeasurements,
   bids,
   projects,
+  SHEET_DISCIPLINES,
+  type SheetDiscipline,
 } from "@shared/schema";
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
@@ -381,6 +383,14 @@ router.post("/api/takeoff/standalone/:id/import-plan", requireAuth, async (req: 
 
     const sheets = await db.insert(takeoffSheets).values(sheetValues).returning();
     indexStandaloneTakeoffSafe(row.id);
+    // Task #2561 — auto-classify the freshly-imported sheets by AIA
+    // discipline so the standalone Sheets list can group/filter by
+    // trade just like the bid workspace.
+    indexPlanSheetsForStandaloneTakeoffSafe({
+      organizationId: row.organizationId,
+      userId: req.user!.id,
+      standaloneTakeoffId: row.id,
+    });
     res.status(201).json({ sheets, pageCount });
   } catch (err) {
     next(err);
@@ -426,6 +436,53 @@ router.patch("/api/takeoff/standalone/:id/sheets/reorder", requireAuth, async (r
     next(err);
   }
 });
+
+// ---------- Manual discipline override ----------
+//
+// Task #2561 — Auto-classification (AI + filename heuristic) is best-
+// effort. When it gets a sheet wrong (or refuses to run because the
+// org has no AI Estimator entitlement), users need to be able to set
+// the discipline by hand from the standalone Sheets list. Source is
+// stamped as "USER" so the AI passes do not silently overwrite it.
+
+const setDisciplineSchema = z.object({
+  discipline: z.enum(SHEET_DISCIPLINES).nullable(),
+});
+
+router.patch(
+  "/api/takeoff/standalone/:id/sheets/:sheetId/discipline",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+      if (!row) return res.status(404).json({ error: "Takeoff not found" });
+      const parsed = setDisciplineSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid payload", details: parsed.error.errors });
+      }
+      const discipline = parsed.data.discipline as SheetDiscipline | null;
+      const [updated] = await db
+        .update(takeoffSheets)
+        .set({
+          discipline,
+          disciplineSource: discipline ? "USER" : null,
+          disciplineConfidence: discipline ? "HIGH" : null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(takeoffSheets.id, req.params.sheetId),
+            eq(takeoffSheets.standaloneTakeoffId, row.id),
+          ),
+        )
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Sheet not found" });
+      res.json(updated);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ---------- Files ----------
 

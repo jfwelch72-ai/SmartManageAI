@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
 import { ArrowLeft, ArrowDown, ArrowUp, ExternalLink, FileText, Loader2, Plus, Ruler, Tag, Trash2 } from "lucide-react";
@@ -47,7 +47,33 @@ interface TakeoffSheet {
   sheetIndex: number;
   sheetName: string;
   imageUrl: string;
+  // Task #2561 — AIA discipline classification (set by AI/heuristic on
+  // import or by the user via the manual picker).
+  discipline: string | null;
+  sheetNumber: string | null;
+  disciplineConfidence: "HIGH" | "MEDIUM" | "LOW" | null;
+  disciplineSource: "AI_DETECTED" | "FILENAME_HEURISTIC" | "USER" | null;
 }
+
+// Task #2561 — AIA discipline labels (matches SHEET_DISCIPLINES on the
+// server). Kept here as a small constant so we don't have to import
+// from `@shared/schema` (which pulls Drizzle into the client bundle).
+const DISCIPLINE_LABELS: Record<string, string> = {
+  G: "General",
+  A: "Architectural",
+  S: "Structural",
+  M: "Mechanical",
+  E: "Electrical",
+  P: "Plumbing",
+  C: "Civil",
+  L: "Landscape",
+  FP: "Fire Protection",
+  T: "Telecom",
+  Q: "Equipment",
+  I: "Interiors",
+  O: "Other",
+};
+const DISCIPLINE_CODES = Object.keys(DISCIPLINE_LABELS);
 
 interface TakeoffFile {
   id: string;
@@ -69,6 +95,10 @@ export default function TakeoffStandalonePage() {
   const id = params?.id ?? "";
   const { toast } = useToast();
   const [tagOpen, setTagOpen] = useState(false);
+  // Task #2561 — Filter the Sheets list by AIA discipline. "ALL" shows
+  // every sheet; "UNCLASSIFIED" surfaces sheets the indexer left blank
+  // so users can fix them.
+  const [disciplineFilter, setDisciplineFilter] = useState<string>("ALL");
 
   const takeoffQuery = useQuery<StandaloneTakeoff>({
     queryKey: ["/api/takeoff/standalone", id],
@@ -170,6 +200,28 @@ export default function TakeoffStandalonePage() {
       reordered.map((s, i) => ({ id: s.id, sheetIndex: i })),
     );
   };
+
+  // Task #2561 — Manual discipline override for a single sheet. Stamps
+  // disciplineSource="USER" on the server so AI re-passes won't clobber it.
+  const setDisciplineMutation = useMutation({
+    mutationFn: async (vars: { sheetId: string; discipline: string | null }) => {
+      const res = await apiRequest(
+        "PATCH",
+        `/api/takeoff/standalone/${id}/sheets/${vars.sheetId}/discipline`,
+        { discipline: vars.discipline },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "sheets"] });
+    },
+    onError: (err: unknown) =>
+      toast({
+        title: "Could not update discipline",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
+  });
 
   const removeTagMutation = useMutation({
     mutationFn: async (tagId: string) => {
@@ -305,6 +357,51 @@ export default function TakeoffStandalonePage() {
   const tags = tagsQuery.data ?? [];
   const isUploading = uploadMutation.isPending;
 
+  // Task #2561 — Derive per-discipline counts and the grouped/filtered
+  // sheet list. Discipline ordering follows DISCIPLINE_CODES so the
+  // groups always show in canonical AIA order with "Unclassified" last.
+  const disciplineCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const s of sheets) {
+      const code = s.discipline ?? "UNCLASSIFIED";
+      counts.set(code, (counts.get(code) ?? 0) + 1);
+    }
+    return counts;
+  }, [sheets]);
+
+  const presentDisciplines = useMemo(
+    () => DISCIPLINE_CODES.filter((c) => (disciplineCounts.get(c) ?? 0) > 0),
+    [disciplineCounts],
+  );
+
+  const groupedSheets = useMemo(() => {
+    const filtered = sheets.filter((s) => {
+      if (disciplineFilter === "ALL") return true;
+      if (disciplineFilter === "UNCLASSIFIED") return !s.discipline;
+      return s.discipline === disciplineFilter;
+    });
+    const byCode = new Map<string, TakeoffSheet[]>();
+    for (const s of filtered) {
+      const code = s.discipline ?? "UNCLASSIFIED";
+      const arr = byCode.get(code) ?? [];
+      arr.push(s);
+      byCode.set(code, arr);
+    }
+    for (const arr of byCode.values()) {
+      arr.sort((a, b) => a.sheetIndex - b.sheetIndex);
+    }
+    const ordered: { code: string; sheets: TakeoffSheet[] }[] = [];
+    for (const code of DISCIPLINE_CODES) {
+      const arr = byCode.get(code);
+      if (arr && arr.length > 0) ordered.push({ code, sheets: arr });
+    }
+    const unclassified = byCode.get("UNCLASSIFIED");
+    if (unclassified && unclassified.length > 0) {
+      ordered.push({ code: "UNCLASSIFIED", sheets: unclassified });
+    }
+    return ordered;
+  }, [sheets, disciplineFilter]);
+
   return (
     <div className="container max-w-5xl mx-auto p-6 space-y-6" data-testid="standalone-takeoff-page">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -430,31 +527,55 @@ export default function TakeoffStandalonePage() {
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between gap-3 flex-wrap">
           <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
             Sheets ({sheets.length})
           </CardTitle>
-          <ObjectUploader
-            maxNumberOfFiles={10}
-            allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg"]}
-            fileType="DOCUMENT"
-            onComplete={handleUploadComplete}
-            testId="button-upload-plan"
-          >
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={isUploading}
-              data-testid="button-add-sheet"
+          <div className="flex items-center gap-2">
+            {/* Task #2561 — Filter the Sheets list by AIA discipline. The
+             *  list below is rendered grouped by discipline so this
+             *  doubles as a jump target for large plan sets. */}
+            {sheets.length > 0 && (
+              <Select value={disciplineFilter} onValueChange={setDisciplineFilter}>
+                <SelectTrigger
+                  className="h-8 w-[180px] text-xs"
+                  data-testid="select-discipline-filter"
+                >
+                  <SelectValue placeholder="Filter by discipline" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">All disciplines</SelectItem>
+                  <SelectItem value="UNCLASSIFIED">Unclassified</SelectItem>
+                  {presentDisciplines.map((code) => (
+                    <SelectItem key={code} value={code}>
+                      {code} — {DISCIPLINE_LABELS[code] ?? code} ({disciplineCounts.get(code) ?? 0})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <ObjectUploader
+              maxNumberOfFiles={10}
+              allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg"]}
+              fileType="DOCUMENT"
+              onComplete={handleUploadComplete}
+              testId="button-upload-plan"
             >
-              {isUploading ? (
-                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Plus className="w-3.5 h-3.5 mr-1.5" />
-              )}
-              Upload plan
-            </Button>
-          </ObjectUploader>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isUploading}
+                data-testid="button-add-sheet"
+              >
+                {isUploading ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Plus className="w-3.5 h-3.5 mr-1.5" />
+                )}
+                Upload plan
+              </Button>
+            </ObjectUploader>
+          </div>
         </CardHeader>
         <CardContent>
           {sheets.length === 0 ? (
@@ -462,55 +583,124 @@ export default function TakeoffStandalonePage() {
               No sheets yet. Upload a PDF or image plan above, then click
               "Open workspace" to start drawing measurements.
             </p>
+          ) : groupedSheets.length === 0 ? (
+            <p className="text-sm text-muted-foreground" data-testid="text-sheets-filtered-empty">
+              No sheets match this discipline filter.
+            </p>
           ) : (
-            <div className="space-y-1">
-              {/* Task #2550 — Sheet rows deep-link into the standalone
-               *  workspace (`?sheet=<id>`) so the picker pre-selects the
-               *  clicked sheet on mount. Mirrors bid/project Plans-tab
-               *  behavior. */}
-              {sheets.map((s, idx) => (
+            <div className="space-y-4">
+              {/* Task #2561 — Grouped by AIA discipline so a multi-sheet
+               *  plan set is browsable by trade (mirrors bid workspace).
+               *  Within a group, sheets keep their original sheet-index
+               *  order. The unclassified bucket is shown last so common
+               *  cases stay at the top.
+               *  Task #2560 — Reorder buttons (up/down) operate on the
+               *  global sheet-index regardless of grouping, so they're
+               *  disabled at the global ends, not the group ends. */}
+              {groupedSheets.map((group) => (
                 <div
-                  key={s.id}
-                  className="flex items-center gap-1 text-sm rounded px-2 py-1.5 hover:bg-muted"
-                  data-testid={`sheet-row-${s.id}`}
+                  key={group.code}
+                  className="space-y-1"
+                  data-testid={`sheet-group-${group.code}`}
                 >
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      disabled={idx === 0 || reorderSheetsMutation.isPending}
-                      onClick={() => moveSheet(s.id, "up")}
-                      title="Move up"
-                      data-testid={`button-move-sheet-up-${s.id}`}
-                    >
-                      <ArrowUp className="w-3.5 h-3.5" />
-                    </Button>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      className="h-6 w-6"
-                      disabled={idx === sheets.length - 1 || reorderSheetsMutation.isPending}
-                      onClick={() => moveSheet(s.id, "down")}
-                      title="Move down"
-                      data-testid={`button-move-sheet-down-${s.id}`}
-                    >
-                      <ArrowDown className="w-3.5 h-3.5" />
-                    </Button>
+                  <div className="flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <span>
+                      {group.code === "UNCLASSIFIED"
+                        ? "Unclassified"
+                        : `${group.code} — ${DISCIPLINE_LABELS[group.code] ?? group.code}`}
+                    </span>
+                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                      {group.sheets.length}
+                    </Badge>
                   </div>
-                  <Link
-                    href={`/takeoff/standalone/${t.id}/workspace?sheet=${s.id}`}
-                    className="flex-1"
-                    data-testid={`link-sheet-${s.id}`}
-                  >
-                    <div className="flex items-center gap-2 cursor-pointer">
-                      <FileText className="w-4 h-4 text-muted-foreground" />
-                      <span className="flex-1">{s.sheetName}</span>
-                      <ExternalLink className="w-3.5 h-3.5 text-muted-foreground" />
-                    </div>
-                  </Link>
+                  {group.sheets.map((s) => {
+                    const globalIdx = sheets.findIndex((g) => g.id === s.id);
+                    return (
+                      <div
+                        key={s.id}
+                        className="flex items-center gap-2 text-sm rounded px-2 py-1.5 hover:bg-muted"
+                        data-testid={`sheet-row-${s.id}`}
+                      >
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            disabled={globalIdx <= 0 || reorderSheetsMutation.isPending}
+                            onClick={() => moveSheet(s.id, "up")}
+                            title="Move up"
+                            data-testid={`button-move-sheet-up-${s.id}`}
+                          >
+                            <ArrowUp className="w-3.5 h-3.5" />
+                          </Button>
+                          <Button
+                            type="button"
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            disabled={globalIdx === sheets.length - 1 || reorderSheetsMutation.isPending}
+                            onClick={() => moveSheet(s.id, "down")}
+                            title="Move down"
+                            data-testid={`button-move-sheet-down-${s.id}`}
+                          >
+                            <ArrowDown className="w-3.5 h-3.5" />
+                          </Button>
+                        </div>
+                        <Link
+                          href={`/takeoff/standalone/${t.id}/workspace?sheet=${s.id}`}
+                          className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
+                          data-testid={`sheet-link-${s.id}`}
+                        >
+                          <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="flex-1 truncate">{s.sheetName}</span>
+                          {s.discipline && (
+                            <Badge
+                              variant={s.disciplineSource === "USER" ? "default" : "outline"}
+                              className="text-[10px] h-5 px-1.5 shrink-0"
+                              title={
+                                s.disciplineSource === "USER"
+                                  ? "Set manually"
+                                  : s.disciplineSource === "AI_DETECTED"
+                                    ? `AI-detected (${s.disciplineConfidence ?? "n/a"})`
+                                    : `Filename heuristic (${s.disciplineConfidence ?? "n/a"})`
+                              }
+                              data-testid={`badge-discipline-${s.id}`}
+                            >
+                              {s.discipline}
+                            </Badge>
+                          )}
+                          <ExternalLink className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        </Link>
+                        {/* Manual discipline picker — overrides the AI/heuristic
+                         *  classification (server stamps source="USER"). */}
+                        <Select
+                          value={s.discipline ?? "NONE"}
+                          onValueChange={(value) =>
+                            setDisciplineMutation.mutate({
+                              sheetId: s.id,
+                              discipline: value === "NONE" ? null : value,
+                            })
+                          }
+                        >
+                          <SelectTrigger
+                            className="h-7 w-[110px] text-xs"
+                            data-testid={`select-discipline-${s.id}`}
+                          >
+                            <SelectValue placeholder="Set" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="NONE">— Clear —</SelectItem>
+                            {DISCIPLINE_CODES.map((code) => (
+                              <SelectItem key={code} value={code}>
+                                {code} — {DISCIPLINE_LABELS[code]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
