@@ -102,6 +102,9 @@ import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
 const AIAssistantWidget = lazy(() => import("@/components/AIAssistantWidget"));
 const MessagingWidget = lazy(() => import("@/components/MessagingWidget"));
+const HelpWidget = lazy(() => import("@/components/HelpWidget"));
+const HelpCenterPage = lazy(() => import("@/pages/help-center"));
+const SlaPage = lazy(() => import("@/pages/sla"));
 import { FirstTimeWelcomeModal } from "@/components/FirstTimeWelcomeModal";
 import { GlobalIncomingCallModal } from "@/components/GlobalIncomingCallModal";
 import { useGlobalCallEvents } from "@/hooks/use-global-call-events";
@@ -389,6 +392,8 @@ function Router() {
       <Route path="/trust" component={TrustPage} />
       <Route path="/sub-processors" component={SubProcessorsPage} />
       <Route path="/status" component={StatusPage} />
+      <Route path="/help" component={HelpCenterPage} />
+      <Route path="/sla" component={SlaPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsOfServicePage} />
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
@@ -854,6 +859,7 @@ function AuthGatedWidget() {
           <div style={collapsibleStyle(hideAiButton)} aria-hidden={hideAiButton}>
             <AIAssistantWidget />
           </div>
+          <HelpWidget />
         </div>
       </div>
     </Suspense>

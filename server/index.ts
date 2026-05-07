@@ -24,6 +24,7 @@ import { startMessagingBus } from "./messagingBus";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { startStatusProbeScheduler, runProbeSweep } from "./statusProbeScheduler";
+import { startSupportWeeklyReportScheduler } from "./supportWeeklyReport";
 import {
   onGanttPdfQueueFull,
   onGanttPdfBrowserDisconnected,
@@ -537,6 +538,12 @@ app.use((req, res, next) => {
         startStatusProbeScheduler();
       } catch (error) {
         logError('Failed to start Status Probe scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
+      }
+
+      try {
+        startSupportWeeklyReportScheduler();
+      } catch (error) {
+        logError('Failed to start Support Weekly Report scheduler:', {}, error instanceof Error ? error : new Error(String(error)));
       }
 
       logInfo(`Background schedulers ENABLED (${isProduction ? 'production' : 'ENABLE_SCHEDULERS=true'})`);

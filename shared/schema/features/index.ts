@@ -66,6 +66,7 @@ export * from "./library";
 export * from "./lidar";
 export * from "./messaging";
 export * from "./misc";
+export * from "./support";
 export * from "./mobile";
 export * from "./org_catalog";
 export * from "./performance";

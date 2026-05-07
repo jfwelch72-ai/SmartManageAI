@@ -1,0 +1,73 @@
+# SmartManageAI Service Level Agreement (SLA)
+
+_Last updated: 2026-05-07. This document is canonical — the in-app SLA enforcement
+in `server/support/slaPolicy.ts` mirrors these targets and must stay in sync._
+
+SmartManageAI publishes uptime, first-response time, and resolution time targets
+per plan tier. Status and incidents are published at [`/status`](/status). Tickets
+can be opened from the in-app help widget on every page or by emailing
+support@smartmanageai.com.
+
+## Plan tiers at a glance
+
+| Target | Starter | Pro | Enterprise |
+| --- | --- | --- | --- |
+| Monthly uptime | 99.5% | 99.9% | 99.95% |
+| First response (Sev 1 / urgent) | 1 business day | 4 business hours | 30 minutes (24×7) |
+| First response (normal) | 2 business days | 1 business day | 4 business hours |
+| Target resolution (Sev 1) | 5 business days | 2 calendar days | 8 hours |
+| Channels | In-app + email | In-app + email + shared Slack | In-app + email + Slack + named CSM |
+| Status page incident updates | Best effort | ≤ 60 min cadence | ≤ 30 min cadence |
+
+Business hours are 09:00–18:00, Monday–Friday, excluding US federal holidays.
+Enterprise urgent tickets are 24×7. The platform currently evaluates business
+hours in **UTC**; per-tenant billing-address time zones are on the roadmap and
+the matrix above is the floor we enforce in either case. The SLA computation
+lives in `server/support/slaPolicy.ts` and is unit-tested against this table.
+
+## Severity definitions
+
+- **Sev 1 / Urgent.** Production is down, data loss is suspected, or a security
+  incident is in progress.
+- **Sev 2 / High.** A core workflow (bidding, takeoff, time-clock, billing) is
+  unavailable for a meaningful subset of users; no workaround.
+- **Sev 3 / Normal.** A non-blocking defect, a question, or a feature request
+  with a reasonable workaround.
+- **Sev 4 / Low.** Cosmetic, documentation-only, or scheduling-only items.
+
+## What we measure
+
+The platform records, on every ticket:
+
+- `created_at`, `first_response_at`, `resolved_at`
+- `sla_first_response_due_at`, `sla_resolution_due_at`
+- `sla_first_response_breached`, `sla_resolution_breached`
+
+A nightly sweep (`POST /api/support/tickets/sla/sweep`) flips the breach flags so
+the weekly internal report and the per-org admin dashboard surface at-risk and
+breached tickets without ad-hoc querying.
+
+## Service credits
+
+If we miss the monthly uptime target for your tier, you may request a service
+credit by opening a ticket within 30 days of the affected month:
+
+- **Starter / Pro.** 5% of the affected month's fees per 0.1% below target,
+  capped at 25%.
+- **Enterprise.** As negotiated in your master agreement; the table above is the
+  default floor.
+
+## Operational hooks
+
+- **Status page.** [`/status`](/status) reflects the live status probes from
+  `docs/ops/status-page.md`.
+- **Runbook.** Engineers on call follow `docs/ops/runbook.md`.
+- **Weekly report.** Every Monday at 13:00 UTC the platform emails the support
+  team a digest of ticket volume, top subjects, and SLA adherence
+  (`server/supportWeeklyReport.ts`). Configure recipients with
+  `SUPPORT_REPORT_RECIPIENTS`.
+
+## Out of scope
+
+- 24×7 phone support staffing (Enterprise tickets are 24×7 via in-app & email).
+- Customer Success Manager assignment workflow — handled outside the platform.
