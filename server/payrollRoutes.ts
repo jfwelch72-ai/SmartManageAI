@@ -1242,12 +1242,8 @@ const payRunStatusHandler = async (req: any, res: Response, next: NextFunction) 
           timestamp: new Date(),
           payload: {
             payRunId: updated.id,
-            periodStart: updated.payPeriodStart instanceof Date
-              ? updated.payPeriodStart.toISOString().split("T")[0]
-              : String(updated.payPeriodStart),
-            periodEnd: updated.payPeriodEnd instanceof Date
-              ? updated.payPeriodEnd.toISOString().split("T")[0]
-              : String(updated.payPeriodEnd),
+            periodStart: String(updated.payPeriodStart).slice(0, 10),
+            periodEnd: String(updated.payPeriodEnd).slice(0, 10),
             totalGross: Number(updated.totalGrossAmount || 0),
             employeeCount: uniqueEmployeeCount,
           },
@@ -1291,12 +1287,8 @@ const payRunStatusHandler = async (req: any, res: Response, next: NextFunction) 
         timestamp: new Date(),
         payload: {
           payRunId: updated.id,
-          periodStart: updated.payPeriodStart instanceof Date
-            ? updated.payPeriodStart.toISOString().split("T")[0]
-            : String(updated.payPeriodStart),
-          periodEnd: updated.payPeriodEnd instanceof Date
-            ? updated.payPeriodEnd.toISOString().split("T")[0]
-            : String(updated.payPeriodEnd),
+          periodStart: String(updated.payPeriodStart).slice(0, 10),
+          periodEnd: String(updated.payPeriodEnd).slice(0, 10),
           totalGross: Number(updated.totalGrossAmount || 0),
           employeeCount: uniqueEmployeeCount,
         },
@@ -3769,7 +3761,7 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
     // resolves to the same project variant. This keeps mixed-project pay runs
     // from silently picking a state-DOT form for unrelated work.
     const distinctProjectVariants = Array.from(
-      new Set(lineItems.map(l => l.projectVariant).filter((v): v is string => !!v))
+      new Set(lineItems.map(l => l.projectVariant).filter((v): v is PayrollFormVariant => !!v))
     );
     const projectVariant = requestedProjectId
       ? (lineItems[0].projectVariant ?? null)
@@ -4456,7 +4448,7 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
       .from(users)
       .where(and(
         eq(users.organizationId, orgId),
-        eq(users.role)
+        eq(users.role, "ADMIN")
       ))
       .limit(1);
 

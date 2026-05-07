@@ -777,7 +777,7 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
 
     for (const t of tasksRows as Array<Record<string, unknown>>) {
       const status = String(t.status);
-      const isCompleted = TASK_COMPLETED.includes(status);
+      const isCompleted = (TASK_COMPLETED as readonly string[]).includes(status);
       const due = (t.dueDate as Date | null) ?? null;
       const upd = (t.updatedAt as Date | null) ?? (t.completedAt as Date | null) ?? null;
       const dueIso = toIso(due);
@@ -839,7 +839,7 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
 
     for (const p of punchRows as Array<Record<string, unknown>>) {
       const status = String(p.status);
-      const isCompleted = PUNCH_COMPLETED.includes(status);
+      const isCompleted = (PUNCH_COMPLETED as readonly string[]).includes(status);
       const due = (p.dueDate as Date | null) ?? null;
       const dueIso = toIso(due);
       const code = (p.projectCode as string | null) ?? "";
@@ -872,7 +872,7 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
 
     for (const r of rfiRows as Array<Record<string, unknown>>) {
       const status = String(r.status);
-      const isCompleted = RFI_COMPLETED.includes(status);
+      const isCompleted = (RFI_COMPLETED as readonly string[]).includes(status);
       const due = (r.dueDate as Date | null) ?? null;
       const dueIso = toIso(due);
       const code = (r.projectCode as string | null) ?? "";
@@ -905,7 +905,7 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
 
     for (const i of inspRows as Array<Record<string, unknown>>) {
       const status = String(i.status);
-      const isCompleted = INSPECTION_COMPLETED.includes(status);
+      const isCompleted = (INSPECTION_COMPLETED as readonly string[]).includes(status);
       const due = (i.dueDate as Date | null) ?? null;
       const dueIso = toIso(due);
       const code = (i.projectCode as string | null) ?? "";

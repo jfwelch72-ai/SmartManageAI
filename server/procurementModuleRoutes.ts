@@ -529,11 +529,12 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
     }
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
-      conditions.push(or(
+      const searchOr = or(
         ilike(purchaseRequests.title, term),
         ilike(purchaseRequests.prNumber, term),
         sql`EXISTS (SELECT 1 FROM projects p WHERE p.id = ${purchaseRequests.projectId} AND p.name ILIKE ${term})`,
-      ));
+      );
+      if (searchOr) conditions.push(searchOr);
     }
 
     const requesterAlias = db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName }).from(users).as("requester");
@@ -897,12 +898,13 @@ router.get("/api/procurement-module/orders", requireAuth, requireRole(...ROLES),
 
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
-      conditions.push(or(
+      const searchOr = or(
         ilike(purchaseOrders.poNumber, term),
         ilike(purchaseOrders.notes, term),
         sql`EXISTS (SELECT 1 FROM projects p WHERE p.id = ${purchaseOrders.projectId} AND p.name ILIKE ${term})`,
         sql`EXISTS (SELECT 1 FROM crm_organisations v WHERE v.id = ${purchaseOrders.vendorId} AND v.name ILIKE ${term})`,
-      ));
+      );
+      if (searchOr) conditions.push(searchOr);
     }
 
     const pos = await db.select({
@@ -1818,11 +1820,12 @@ router.get("/api/procurement-module/invoices", requireAuth, requireRole(...ROLES
 
     if (req.query.search) {
       const term = `%${String(req.query.search)}%`;
-      conditions.push(or(
+      const searchOr = or(
         ilike(vendorInvoices.invoiceNumber, term),
         sql`EXISTS (SELECT 1 FROM crm_organisations v WHERE v.id = COALESCE(${vendorInvoices.vendorId}, (SELECT vendor_id FROM purchase_orders po WHERE po.id = ${vendorInvoices.poId})) AND v.name ILIKE ${term})`,
         sql`EXISTS (SELECT 1 FROM purchase_orders po2 LEFT JOIN projects p ON p.id = po2.project_id WHERE po2.id = ${vendorInvoices.poId} AND p.name ILIKE ${term})`,
-      ));
+      );
+      if (searchOr) conditions.push(searchOr);
     }
 
     const poAlias = db.select({ id: purchaseOrders.id, poNumber: purchaseOrders.poNumber, vendorId: purchaseOrders.vendorId }).from(purchaseOrders).as("po_alias");
@@ -1986,8 +1989,8 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
         for (const item of items) {
           if (!item.description || typeof item.description !== "string") continue;
           const poItemId = item.poItemId && validPoItemIds.has(item.poItemId) ? item.poItemId : null;
-          const qty = parseFloat(item.quantity) || 0;
-          const cost = parseFloat(item.unitCost) || 0;
+          const qty = parseFloat(item.quantity ?? "0") || 0;
+          const cost = parseFloat(item.unitCost ?? "0") || 0;
           if (qty < 0 || cost < 0) continue;
           await tx.insert(vendorInvoiceItems).values({
             invoiceId: req.params.id,
@@ -1995,7 +1998,7 @@ router.patch("/api/procurement-module/invoices/:id", requireAuth, requireRole(..
             description: item.description.trim(),
             quantity: String(qty),
             unitCost: String(cost),
-            amount: item.amount || String(Math.round(qty * cost * 100) / 100),
+            amount: (item as { amount?: string }).amount || String(Math.round(qty * cost * 100) / 100),
           });
         }
       }

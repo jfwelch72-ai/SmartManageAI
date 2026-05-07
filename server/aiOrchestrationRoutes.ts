@@ -311,8 +311,8 @@ function detectDataIntent(message: string): boolean {
 async function handleDataQuery(
   question: string,
   conversationHistory: { role: string; content: string }[],
-  organizationId: number,
-  userId: number,
+  organizationId: string,
+  userId: string,
 ): Promise<{ answer: string; queryExecuted: boolean }> {
   const sqlGenMessages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: ASK_DATABASE_SYSTEM_PROMPT },
@@ -398,8 +398,9 @@ Example of a correct response:
     }
   }
 
-  const tables = extractAllTableReferences(sqlResult.sql);
-  const scopedSql = wrapWithOrgScope(sqlResult.sql, tables);
+  const safeSql = sqlResult.sql!;
+  const tables = extractAllTableReferences(safeSql);
+  const scopedSql = wrapWithOrgScope(safeSql, tables);
   if (!scopedSql) {
     return {
       answer: "I wasn't able to safely scope that query to your organization. Could you try rephrasing?",
@@ -2198,8 +2199,9 @@ Example of a correct response:
       }
     }
 
-    const tables = extractAllTableReferences(sqlResult.sql);
-    const scopedSql = wrapWithOrgScope(sqlResult.sql, tables);
+    const safeSql = sqlResult.sql!;
+    const tables = extractAllTableReferences(safeSql);
+    const scopedSql = wrapWithOrgScope(safeSql, tables);
     if (!scopedSql) {
       return res.json({
         answer: "I wasn't able to safely scope that query to your organization. Could you try rephrasing?",

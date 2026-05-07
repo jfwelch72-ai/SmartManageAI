@@ -469,7 +469,10 @@ router.post("/api/projects/:code/labor-rates", requireAuth, requireRoleOrFeature
       [result] = await db
         .update(projectLaborRates)
         .set({
-          ...validationResult,
+          defaultRegularRate: String(validationResult.defaultRegularRate),
+          defaultOvertimeRate: String(validationResult.defaultOvertimeRate),
+          burdenMultiplier: String(validationResult.burdenMultiplier),
+          notes: validationResult.notes,
           updatedAt: new Date(),
         })
         .where(eq(projectLaborRates.id, existing.id))
@@ -581,8 +584,8 @@ router.post("/api/projects/:code/employee-rates", requireAuth, requireRoleOrFeat
       [result] = await db
         .update(projectEmployeeRates)
         .set({
-          regularRate: validationResult.regularRate,
-          overtimeRate: validationResult.overtimeRate,
+          regularRate: String(validationResult.regularRate),
+          overtimeRate: String(validationResult.overtimeRate),
           notes: validationResult.notes,
           updatedAt: new Date(),
         })
@@ -1086,7 +1089,7 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
     throw lastError;
   } catch (error) {
     logError("Create project error", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.code === '23505') {
+    if ((error as { code?: string })?.code === '23505') {
       res.status(409).json({ error: "Unable to generate unique project code - please try again" });
     } else {
       next(error);

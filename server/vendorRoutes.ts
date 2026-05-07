@@ -645,7 +645,7 @@ router.post("/api/vendor/pricing", requireAuth, requireRole("VENDOR"), async (re
         if (enrollment.notifyOnPriceUpdate && enrollment.invitedByUserId) {
           await insertNotification({
             userId: enrollment.invitedByUserId,
-            organizationId: enrollment.organizationId || null,
+            organizationId: enrollment.contractorOrgId || null,
             type: "GENERAL",
             title: "New Vendor Pricing Submitted",
             message: `Vendor has submitted ${items.length} pricing item(s) for review.`,

@@ -430,7 +430,7 @@ router.post("/api/account/2fa/setup", requireAuth, async (req: AuthRequest, res,
     pendingTotpSetups.set(userId, { secret, backupCodes });
 
     const userEmail = req.user!.email;
-    const otpauthUrl = generateURI({ issuer: "SmartManageAI", label: userEmail, secret, type: "totp" });
+    const otpauthUrl = generateURI({ issuer: "SmartManageAI", label: userEmail, secret, strategy: "totp" });
     const qrCodeDataUrl = await QRCode.toDataURL(otpauthUrl);
 
     return res.json({
@@ -463,8 +463,8 @@ router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res
     }
 
     const totp = new TOTP();
-    const isValid = totp.verify({ token, secret: setup.secret });
-    if (!isValid) {
+    const isValid = await totp.verify(token, { secret: setup.secret });
+    if (!isValid.valid) {
       return res.status(400).json({ error: "Invalid verification code. Please try again." });
     }
 

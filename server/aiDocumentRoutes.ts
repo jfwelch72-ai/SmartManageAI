@@ -94,6 +94,7 @@ async function getAssignedProjectIds(userId: string): Promise<string[]> {
 }
 
 async function isViewOnlyAiUser(user: AuthRequest['user']): Promise<boolean> {
+  if (!user) return false;
   const effectiveRole = user.effectiveRole || user.role;
   const effective = await getEffectivePermissions(user.id, user.organizationId ?? null, effectiveRole);
   return !!effective.canViewAiSummaries && !effective.canUseAiFeatures;
@@ -1179,7 +1180,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
           });
           throw new PromptInjectionRefusalError(det.matches, doc.name);
         }
-        allDocumentContent.push(...quarantineDocumentBlocks(content));
+        allDocumentContent.push(...(quarantineDocumentBlocks(content as DocumentContentBlock[]) as typeof allDocumentContent));
       } catch (extractError) {
         // Refusal must NOT be swallowed by this per-doc catch — bubble it
         // out of the loop so the route returns 422 instead of silently
@@ -1759,7 +1760,7 @@ Analyze the document and return the structured JSON with all contract details.`;
           if (!validated.ok) {
             throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
           }
-          return { result: validated.data as ContractDocumentAnalysisResult, completion };
+          return { result: validated.data as unknown as ContractDocumentAnalysisResult, completion };
         },
       });
 
@@ -1787,7 +1788,7 @@ Analyze the document and return the structured JSON with all contract details.`;
     if (!validated.ok) {
       throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
     }
-    return validated.data as ContractDocumentAnalysisResult;
+    return validated.data as unknown as ContractDocumentAnalysisResult;
   } catch (error) {
     // Refusals must propagate so the route handler / background worker
     // can return 422 / persist FAILED with the refusal tag.

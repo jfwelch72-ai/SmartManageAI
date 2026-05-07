@@ -1767,8 +1767,12 @@ router.get("/api/calendar/events", requireAuth, async (req: AuthRequest, res, ne
     if (endDate) {
       conditions.push(sql`${calendarEvents.endDate} <= ${endDate as string}`);
     }
-    const eventTypeStr = Array.isArray(eventType) ? eventType[0] : eventType as string | undefined;
-    const isVendorEventTypeFilter = eventTypeStr && eventTypeStr.startsWith("VENDOR_");
+    const eventTypeStr: string | undefined = typeof eventType === "string"
+      ? eventType
+      : Array.isArray(eventType) && typeof eventType[0] === "string"
+        ? eventType[0]
+        : undefined;
+    const isVendorEventTypeFilter = !!(eventTypeStr && eventTypeStr.startsWith("VENDOR_"));
     if (eventTypeStr && !isVendorEventTypeFilter) {
       conditions.push(eq(calendarEvents.eventType, eventTypeStr as any));
     }
@@ -2284,7 +2288,7 @@ interface VaultDocument {
 
 async function buildVaultDocuments(projectId: string, projectCode: string, userId: string, userRole: string): Promise<VaultDocument[]> {
   const { filterFilesByPermissions } = await import("./fileAccessHelpers");
-  const hasManagement = VAULT_MANAGEMENT_ROLES.includes(userRole);
+  const hasManagement = (VAULT_MANAGEMENT_ROLES as readonly string[]).includes(userRole);
   const vaultDocs: VaultDocument[] = [];
 
   const allPlanDocs = await db.select().from(planDocuments).where(eq(planDocuments.projectId, projectId));
