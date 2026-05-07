@@ -115,9 +115,24 @@ autoscale replicas.
   (scanner errors fail-closed → 422) and `permissive` in dev/test
   (scanner errors fail-open). Explicit env always wins;
   `UPLOAD_AV_SCAN_MODE=disabled` keeps the legacy bypass for emergency
-  rollback. Follow-up #2493 covers validating Cloudmersive (or a
-  ClamAV-on-host alternative) under production load before flipping
-  every environment to `enforce`.
+  rollback.
+
+  **Task #2493** closed the remaining gap on the AV-scan boundary:
+  - Every scan outcome (clean / blocked / skipped) is recorded in
+    `audit_log` via `recordUploadScanAudit(...)` in
+    `server/auditBillingStorageRoutes.ts`. The row carries
+    `entityType = "upload_av_scan"`, `entityId = uploadIntent.id`,
+    `action = APPROVE` for clean/skipped and `REJECT` for blocked,
+    and a JSON `newValue` payload with `scannerId`, `reason`,
+    `objectKey`, `contentType`, `sizeBytes`, `organizationId`,
+    `route` (`confirm` vs `multipart_complete`), and the request
+    `correlationId` (`x-request-id`) so each scan can be joined to
+    structured logs and Sentry.
+  - Blocked uploads are now physically quarantined: the offending
+    object is `deleteObjectByKey()`'d from GCS in the same helper
+    before the 422 response is returned, so an "infected" verdict
+    leaves no orphan blob even if a signed URL had already been
+    minted.
 
 ### 5.5 Audit log coverage (`server/auditLogger.ts`)
 Append-only `audit_log` table, no DELETE/UPDATE routes exposed. `userId` is
@@ -176,12 +191,11 @@ runtime-asserted to be a non-empty string (guards against the historical
 
 ## 6. Known residual risks (out of scope for Task #2479)
 
-1. **No AV scanning** on uploads — see § 5.4.
-2. **Pen-testing** — not yet engaged. Tracked separately.
-3. **SOC 2 controls** beyond the technical baseline — separate workstream.
-4. **Per-tenant key separation for OpenAI** — today every tenant shares one
+1. **Pen-testing** — not yet engaged. Tracked separately.
+2. **SOC 2 controls** beyond the technical baseline — separate workstream.
+3. **Per-tenant key separation for OpenAI** — today every tenant shares one
    API key. Bring-your-own-key is a roadmap item, not a present mitigation.
-5. **DLP on outbound email** — SendGrid sends are not scanned for PII before
+4. **DLP on outbound email** — SendGrid sends are not scanned for PII before
    leaving the tenant boundary.
 
 ## 7. Reviewer checklist

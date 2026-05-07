@@ -6,7 +6,8 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { eq, desc, and, inArray, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "./utils/validation";
-import { logCreate } from "./auditLogger";
+import { logCreate, logAudit } from "./auditLogger";
+import { getCorrelationId } from "./middleware/correlationId";
 import { getOrgIdForFilter } from "./orgFilter";
 import { uploadLimiter } from "./rateLimiter";
 import {
@@ -18,6 +19,79 @@ import {
 } from "./utils/pagination";
 
 const router = Router();
+
+/**
+ * Task #2493 — record every upload AV-scan outcome in the audit_log.
+ *
+ * Both the single-shot (`/api/objects/confirm`) and multipart
+ * (`/api/objects/multipart/:uploadId/complete`) confirm paths funnel
+ * through this helper after `scanConfirmedUpload(...)` so we get a
+ * tamper-evident trail of:
+ *   - who triggered the scan and from which org,
+ *   - which object was scanned (path + content-type + size),
+ *   - which scanner was active and what verdict it returned,
+ *   - the request correlation id (`x-request-id`) so the audit row
+ *     can be cross-referenced with structured logs / Sentry.
+ *
+ * Blocked uploads also get the offending object deleted from GCS
+ * here so an "infected" verdict actually quarantines the bytes
+ * instead of leaving an unreferenced (but still-downloadable via
+ * signed URL leak) blob in the bucket.
+ */
+async function recordUploadScanAudit(args: {
+  userId: string;
+  intentId: string;
+  objectKey: string;
+  contentType: string | null;
+  sizeBytes: number | null;
+  organizationId: string | null;
+  scanResult: { status: "clean" | "blocked" | "skipped"; reason?: string; scannerId?: string };
+  route: "confirm" | "multipart_complete";
+  req: AuthRequest;
+}): Promise<void> {
+  const { userId, intentId, objectKey, contentType, sizeBytes, organizationId, scanResult, route, req } = args;
+  const correlationId = getCorrelationId() ?? null;
+
+  if (scanResult.status === "blocked") {
+    try {
+      const { ObjectStorageService } = await objectStoragePromise;
+      const objectStorageService = new ObjectStorageService();
+      await objectStorageService.deleteObjectByKey(objectKey);
+    } catch (err) {
+      logError(
+        "[upload-av] Failed to quarantine (delete) infected object",
+        { objectKey, intentId, correlationId },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
+  const action = scanResult.status === "blocked" ? "REJECT" : "APPROVE";
+  const payload = {
+    op: "upload_av_scan",
+    route,
+    status: scanResult.status,
+    reason: scanResult.reason ?? null,
+    scannerId: scanResult.scannerId ?? null,
+    objectKey,
+    contentType,
+    sizeBytes,
+    organizationId,
+    correlationId,
+  };
+
+  await logAudit(
+    {
+      userId,
+      entityType: "upload_av_scan",
+      entityId: intentId,
+      action,
+      oldValue: null,
+      newValue: JSON.stringify(payload),
+    },
+    req,
+  );
+}
 
 // Legacy schema kept for non-migrated callers. The max is the shared
 // `MAX_PAGE_SIZE` (200) so even the legacy path can never return more
@@ -567,6 +641,17 @@ router.post("/api/objects/multipart/:uploadId/complete", requireAuth, uploadLimi
       contentType: intent.contentType ?? null,
       sizeBytes: intent.fileSize ?? null,
     });
+    await recordUploadScanAudit({
+      userId: req.user!.id,
+      intentId: intent.id,
+      objectKey: intent.objectKey,
+      contentType: intent.contentType ?? null,
+      sizeBytes: intent.fileSize ?? null,
+      organizationId: req.user!.organizationId ?? null,
+      scanResult,
+      route: "multipart_complete",
+      req,
+    });
     if (scanResult.status === "blocked") {
       res.status(422).json({
         error: "Upload rejected by malware scan",
@@ -664,6 +749,17 @@ router.post("/api/objects/confirm", requireAuth, uploadLimiter, async (req: Auth
       organizationId: req.user!.organizationId ?? null,
       contentType: intent.contentType ?? null,
       sizeBytes: intent.fileSize ?? null,
+    });
+    await recordUploadScanAudit({
+      userId: req.user!.id,
+      intentId: intent.id,
+      objectKey: intent.objectKey,
+      contentType: intent.contentType ?? null,
+      sizeBytes: intent.fileSize ?? null,
+      organizationId: req.user!.organizationId ?? null,
+      scanResult,
+      route: "confirm",
+      req,
     });
     if (scanResult.status === "blocked") {
       res.status(422).json({
