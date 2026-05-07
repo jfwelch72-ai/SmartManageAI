@@ -1086,6 +1086,14 @@ router.get(
         if (!gcsFile && sheet.imageUrl) {
           gcsFile = await resolveGcsFile(sheet.imageUrl, null);
         }
+      } else if (sheet.standaloneTakeoffId) {
+        // Standalone takeoff sheets store the source file URL directly in
+        // `imageUrl` (the upload was registered via /api/takeoff/standalone/:id/files).
+        // verifySheetAccess already enforced org ownership on the parent
+        // standalone takeoff, so we just resolve the file here.
+        if (sheet.imageUrl) {
+          gcsFile = await resolveGcsFile(sheet.imageUrl, null);
+        }
       } else {
         res.status(404).json({ error: "Sheet has no parent" });
         return;
@@ -1208,6 +1216,15 @@ router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequ
       if (!gcsFile && sheet.imageUrl) {
         gcsFile = await resolveGcsFile(sheet.imageUrl, null);
       }
+      if (!gcsFile) {
+        res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
+        return;
+      }
+      await objectStorageService.downloadObject(gcsFile, res, 3600);
+    } else if (sheet.standaloneTakeoffId) {
+      // Standalone takeoff sheets keep the source file URL on the sheet's
+      // imageUrl. Org access was already enforced by verifySheetAccess.
+      const gcsFile = sheet.imageUrl ? await resolveGcsFile(sheet.imageUrl, null) : null;
       if (!gcsFile) {
         res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
         return;
