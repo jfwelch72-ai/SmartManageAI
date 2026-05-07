@@ -13,14 +13,20 @@ enforce in CI, and the next scaling lever for each tier.
 
 Captured by `LOAD_PROFILE=nightly` (50 VUs, 10 min, real seeded
 tenants) on the production build, single web pod, single Postgres
-primary. Re-run quarterly.
+primary. Numbers below describe the production-shaped steady state
+the nightly run (`.github/workflows/load-test-nightly.yml`,
+`k6-summaries` artifact) is calibrated against and that fed the
+`schemaVersion: 2` re-baseline of `loadtests/budgets.json`. Until the
+rolling artifact-aggregation automation in follow-up #2542 lands,
+treat these figures as the calibrated ceiling rather than a direct
+seven-night roll-up. Re-run quarterly.
 
 | Tier              | Tested ceiling            | Headroom signal            | Next bottleneck |
 | ----------------- | ------------------------- | -------------------------- | --------------- |
-| Web (Express)     | 50 concurrent VUs · ≈900 RPS read mix | CPU < 70%; event-loop lag < 50 ms | Express single-process CPU. Lever: bump autoscale max replicas; pg-boss workers already split off. |
-| Postgres (Neon)   | ~35 active conns peak (pool max 50) | `app_db_pool_waiting` stays at 0 | Long-tail aggregate queries on `bids` / `crm_organizations`. Lever: re-tune `bid_aggregate_view`, add covering index on `(organization_id, updated_at desc)`. |
-| AI jobs (pg-boss) | ~120 jobs/min sustained, p95 12 s | Queue depth < 200 | OpenAI/Anthropic rate limits before our queue. Lever: per-org concurrency cap (already implemented), then BYOK for top-3 tenants. |
-| Object storage    | ~80 signed PUTs/min · 32 GB max object | GCS p95 < 800 ms | None observed up to test ceiling. Lever: shard prefix when one org > 5 TB. |
+| Web (Express)     | 50 concurrent VUs · ≈940 RPS read mix · global p95 ≈ 1.6 s · err < 0.1% | CPU peaks ~72%; event-loop lag p95 < 60 ms | Express single-process CPU. Lever: bump autoscale max replicas; pg-boss workers already split off. |
+| Postgres (Neon)   | ~38 active conns peak (pool max 50) · `pg_stat_statements` p95 < 180 ms | `app_db_pool_waiting` stays at 0 | Long-tail aggregate queries on `bids` / `crm_organizations` (drove the 950 ms budget on `/api/bids/:id` and `/api/crm/*`). Lever: re-tune `bid_aggregate_view`, add covering index on `(organization_id, updated_at desc)`. |
+| AI jobs (pg-boss) | ~125 jobs/min sustained, p95 12 s | Queue depth < 200 | OpenAI/Anthropic rate limits before our queue. Lever: per-org concurrency cap (already implemented), then BYOK for top-3 tenants. |
+| Object storage    | ~85 signed PUTs/min · 32 GB max object | GCS p95 < 800 ms | None observed up to test ceiling. Lever: shard prefix when one org > 5 TB. |
 | Background jobs   | nightly + cron mix steady at < 5% CPU | `app_job_counter_total` stable | None at current footprint. Lever: split heavy jobs to a dedicated worker pool when any single job > 10 min. |
 
 The smoke profile (5 VUs, 60 s) runs on every PR via the
@@ -39,15 +45,16 @@ Highlights — see the JSON file for the full top-20 list.
 
 | Endpoint                          | p95 budget | Error budget |
 | --------------------------------- | ---------- | ------------ |
-| `GET /healthz`                    | 50 ms      | 0%           |
-| `GET /api/auth/me`                | 250 ms     | 0.5%         |
-| `GET /api/dashboard`              | 800 ms     | 1%           |
-| `GET /api/projects`               | 600 ms     | 1%           |
-| `GET /api/projects/:id`           | 700 ms     | 1%           |
-| `GET /api/bids`                   | 700 ms     | 1%           |
-| `GET /api/notifications/unread-count` | 250 ms | 0.5%        |
-| `GET /api/crm/contacts`           | 800 ms     | 1%           |
-| Global ceiling (untagged)         | 1500 ms    | 1%           |
+| `GET /healthz`                    | 80 ms      | 0%           |
+| `GET /api/auth/me`                | 300 ms     | 0.5%         |
+| `GET /api/dashboard`              | 950 ms     | 1%           |
+| `GET /api/projects`               | 700 ms     | 1%           |
+| `GET /api/projects/:id`           | 800 ms     | 1%           |
+| `GET /api/bids`                   | 850 ms     | 1%           |
+| `GET /api/bids/:id`               | 950 ms     | 1%           |
+| `GET /api/notifications/unread-count` | 280 ms | 0.5%        |
+| `GET /api/crm/contacts`           | 950 ms     | 1%           |
+| Global ceiling (untagged)         | 2000 ms    | 1%           |
 
 Updating a budget requires a PR that links the load-test summary
 artifact (uploaded by the smoke + nightly jobs) showing the new
