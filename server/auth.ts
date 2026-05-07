@@ -190,81 +190,14 @@ export async function authMiddleware(
       isHustlerOwner = true;
     }
 
-    // Create sanitized user object - explicitly omit passwordHash and tokenVersion (security critical)
-    // TypeScript enforces at compile time that only allowed fields are included
+    // Create sanitized user object - explicitly omit passwordHash and tokenVersion (security critical).
+    // We destructure to drop the secrets so any future column added to `users` is automatically
+    // surfaced on `req.user` without having to update this list (and the typechecker enforces that
+    // every SelectUser field is present on SanitizedUser).
+    const { passwordHash: _pw, tokenVersion: _tv, ...safeUser } = user;
+    void _pw; void _tv;
     const sanitized: SanitizedUser = {
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phone: user.phone,
-      role: user.role,
-      isActive: user.isActive,
-      emailVerified: user.emailVerified,
-      costRateRegular: user.costRateRegular,
-      costRateOvertime: user.costRateOvertime,
-      organizationId: user.organizationId,
-      birthdate: user.birthdate,
-      timezone: user.timezone,
-      profileDescription: user.profileDescription,
-      avatarUrl: user.avatarUrl,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      roleLabel: user.roleLabel,
-      walkthroughCompleted: user.walkthroughCompleted,
-      walkthroughStep: user.walkthroughStep,
-      walkthroughStartedAt: user.walkthroughStartedAt,
-      receivesJobMetricAlertEmails: user.receivesJobMetricAlertEmails,
-      jobMetricAlertQuietHoursEnabled: user.jobMetricAlertQuietHoursEnabled,
-      jobMetricAlertQuietHoursStart: user.jobMetricAlertQuietHoursStart,
-      jobMetricAlertQuietHoursEnd: user.jobMetricAlertQuietHoursEnd,
-      jobMetricAlertQuietHoursTimezone: user.jobMetricAlertQuietHoursTimezone,
-      jobMetricAlertQuietHoursWeekdays: user.jobMetricAlertQuietHoursWeekdays,
-      jobMetricAlertQuietHoursDigestEnabled: user.jobMetricAlertQuietHoursDigestEnabled,
-      jobMetricAlertQuietHoursLastDigestAt: user.jobMetricAlertQuietHoursLastDigestAt,
-      jobMetricAlertQuietHoursDigestFormat: user.jobMetricAlertQuietHoursDigestFormat,
-      jobMetricAlertQuietHoursDigestCsvEnabled: user.jobMetricAlertQuietHoursDigestCsvEnabled,
-      jobMetricAlertQuietHoursDigestMaxEvents: user.jobMetricAlertQuietHoursDigestMaxEvents,
-      // Task #797 — locale + 12h/24h + weekday prefs for the digest
-      // timestamps. Surfaced to the client so the in-app preview and
-      // the Notification Preferences UI both see the persisted values.
-      jobMetricAlertQuietHoursDigestLocale: user.jobMetricAlertQuietHoursDigestLocale,
-      jobMetricAlertQuietHoursDigestTimeFormat: user.jobMetricAlertQuietHoursDigestTimeFormat,
-      jobMetricAlertQuietHoursDigestShowWeekday: user.jobMetricAlertQuietHoursDigestShowWeekday,
-      // Task #1021 — per-admin delivery prefs for the CRM transcript backfill
-      // completion summary. Surfaced to the client so Notification Preferences
-      // can render the saved channel + failure-only filter.
-      crmBackfillSummaryChannel: user.crmBackfillSummaryChannel,
-      crmBackfillSummaryOnFailureOnly: user.crmBackfillSummaryOnFailureOnly,
-      // Task #1066 — per-admin mute knobs for the alert delivery failure
-      // fallback emails (Task #1051). Surfaced so Notification Preferences
-      // can render the persisted toggle and per-channel mutes.
-      crmAlertFailureFallbackEnabled: user.crmAlertFailureFallbackEnabled,
-      crmAlertFailureFallbackMutedChannels: user.crmAlertFailureFallbackMutedChannels,
-      // Task #1076 — per-admin opt-in for the two streams of CRM
-      // transcript-backfill alert delivery failure emails. Surfaced so
-      // Notification Preferences can render the persisted value after a
-      // /api/auth/me refetch (PATCH /api/auth/profile already returns
-      // it, but the middleware-cached `req.user` was missing it).
-      alertFailureEmailMode: user.alertFailureEmailMode,
-      // Task #1414 — per-admin opt-out for the
-      // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email so the
-      // settings toggle reflects the saved state across reloads.
-      integrationSyncExhaustedEmailOptOut: user.integrationSyncExhaustedEmailOptOut,
-      // Task #1695 — per-user Plans-surface preferences (labeled toolbar
-      // toggle + plans-tour dismissal marker). Promoted from per-user
-      // localStorage keys so the settings hydrate from the server on
-      // every device the user signs in on.
-      plansToolbarLabeled: user.plansToolbarLabeled,
-      plansTourCompleted: user.plansTourCompleted,
-      // Task #1720 — per-user CRM owner-filter selections promoted
-      // from per-user-id localStorage so the "Show only my orgs /
-      // contacts" picks travel with the user across devices. Same
-      // hydrate/persist contract as the Plans-surface preferences
-      // above; NULL means "no preference saved yet" and the client
-      // falls back to its default ("all").
-      crmContactOwnerFilter: user.crmContactOwnerFilter,
-      crmOrgOwnerFilter: user.crmOrgOwnerFilter,
+      ...safeUser,
       effectiveRole,
       isHustlerOwner,
     };

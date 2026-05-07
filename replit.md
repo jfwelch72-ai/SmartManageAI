@@ -4,16 +4,26 @@ SmartManageAI is a white-label SaaS platform that centralizes and streamlines th
 
 ## Run & Operate
 
-*   **Run**: `npm start`
+*   **Dev**: `npm run dev` (also the `Start application` workflow)
 *   **Build**: `npm run build`
-*   **Typecheck**: `npm run typecheck`
-*   **Codegen**: `npm run codegen`
+*   **Run (built)**: `npm start`
+*   **Typecheck**: `npm run check` (the `typecheck` Replit workflow runs `npx tsc -p tsconfig.json` directly)
 *   **DB Push**: `npm run db:push`
+*   **Smoke test**: `scripts/smoke-test.sh` (probes a booted server)
+*   **CI baseline**: `scripts/ci.sh` (typecheck + build + smoke). See `CONTRIBUTING.md` for the green-baseline rules.
 
 **Required Environment Variables**:
 *   `DATABASE_URL`
-*   `JWT_SECRET`
+*   `SESSION_SECRET` (used as the JWT signing key; the server fails fast on boot if missing)
 *   `ANTHROPIC_API_KEY` (for Takeoff family AI routing)
+
+## Green baseline
+
+The following workflows must boot cleanly and stay green:
+
+*   `Start application` — Express + Vite dev server on port 5000
+*   `artifacts/mockup-sandbox: Component Preview Server` — preview at `/__mockup/`
+*   `typecheck` — currently has a known backlog (see Gotchas → "Typecheck backlog"). New code MUST NOT add to the count.
 
 ## Stack
 
@@ -71,6 +81,7 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **Legacy `drizzle/` directory**: Removed; its content superseded and auto-applied by `reconcileSchemaDrift`.
 *   **AI Provider Routing (Takeoff)**: Ensure `AI_PROVIDER_TAKEOFF` feature flag is correctly configured for Anthropic Claude usage and fallbacks. Embeddings and other AI features still use OpenAI directly.
 *   **`server/storage.ts`**: This file is intentionally *not* deleted yet; other domains will incrementally adopt the new storage seam pattern.
+*   **Typecheck backlog**: `npm run check` currently reports ~446 pre-existing TS errors across ~107 files (mostly Drizzle schema drift, nullable `organizationId` narrowing, and outdated enum unions). The `typecheck` workflow is therefore RED at HEAD. **Rule for all new work**: do not add to the count and do not mask with `// @ts-ignore` / `as any`. A dedicated cleanup task will burn it down to zero. Run `npm run check 2>&1 | grep -c "error TS"` before/after your change to confirm the count did not grow.
 
 ## Pointers
 
