@@ -200,6 +200,68 @@ If you add a new integration that uses a non-`fetch` HTTP client (e.g.
 `server/middleware/correlationId.ts` and set `x-request-id` on the
 outbound request yourself.
 
+## Web Vitals quality alert
+
+The frontend RUM pipeline (`client/src/lib/webVitals.ts` →
+`POST /api/observability/web-vitals` → `app_web_vitals_*` gauges on
+`/metrics`) is alerted on in two places (Task #2525):
+
+| Layer | Source | Channel |
+| --- | --- | --- |
+| Prometheus / Alertmanager | `ops/prometheus/web-vitals-alerts.rules.yml`, routed via `ops/prometheus/alertmanager-routes.yml` | `#load-test-alerts` (Slack, via Alertmanager) |
+| GitHub Actions (every 30m) | `.github/workflows/web-vitals-alert.yml` runs `scripts/check-web-vitals.mjs` | `#load-test-alerts` (Slack, via `SLACK_WEBHOOK_URL` + `notify-slack-on-failure`) |
+
+Both fire when `app_web_vitals_good_ratio{metric="LCP"} < 0.75`
+(and the equivalents for `INP` and `CLS`) is sustained for 30 minutes
+**and** at least 100 samples have been collected for that metric. The
+samples gate keeps a fresh process — autoscale event, deploy — from
+paging on the first one or two beacons.
+
+### Triage steps
+
+1. **Confirm the breach is real.** Open `/metrics` (Bearer
+   `OPS_METRICS_TOKEN`) and check the `app_web_vitals_good_ratio` and
+   `app_web_vitals_samples_total` series. A breach with samples in the
+   single hundreds spread over only one replica is usually noise from
+   one slow client; cross-check against your Prometheus / Grafana
+   dashboard for the same metric across replicas.
+2. **Identify which page regressed.** Search the structured logs for
+   `rum.web_vitals` and group by `pathname`. The slowest paths bubble
+   up via the `values.<METRIC>` field in each beacon line.
+3. **Correlate with deploys.** Check the most recent deploy SHA
+   against the regression onset. The first suspect for an LCP / INP
+   regression is a fat new bundle or a new blocking third-party
+   script; for CLS, a recently-changed above-the-fold layout.
+4. **If the regression is one tenant.** The aggregator is
+   org-agnostic, but the structured `rum.web_vitals` lines carry the
+   path. If a single tenant's heavy dashboard view dominates the
+   beacons, page that team rather than rolling back globally.
+5. **Rolling back.** If the breach started at a deploy boundary,
+   revert that deploy. The good-ratio recovers as soon as fresh
+   beacons land — the in-memory aggregator resets on each process
+   restart, so a redeploy clears the alert as soon as the window
+   refills with healthy samples (`for: 30m` will then naturally
+   resolve).
+6. **Silence vs. ack.** Acknowledge in the Slack thread; only silence
+   the alert (Alertmanager UI) if you are actively rolling back and
+   expect the breach to clear within the next 30 minutes. The GitHub
+   Actions check has no silence — pause it via
+   "Disable workflow" in the Actions tab if you must.
+
+### Tuning the thresholds
+
+The 0.75 floor and 100-sample gate live in two files (kept in lockstep):
+
+- `ops/prometheus/web-vitals-alerts.rules.yml` — `< 0.75` and
+  `samples_total > 100` per rule.
+- `.github/workflows/web-vitals-alert.yml` — `WEB_VITALS_GOOD_RATIO_FLOOR`
+  and `WEB_VITALS_MIN_SAMPLES` env vars consumed by
+  `scripts/check-web-vitals.mjs`.
+
+If you change one, change the other. The 0.75 number comes from
+Google's documented "good" cutoff for Core Web Vitals (see
+`docs/ops/capacity.md` § "Frontend Web Vitals").
+
 ## Disabling Sentry locally
 
 Just don't set `SENTRY_DSN`. Both `initSentry()` and `initBrowserSentry()`

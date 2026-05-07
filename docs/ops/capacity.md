@@ -73,7 +73,21 @@ metric). Budgets:
 Alert when `app_web_vitals_good_ratio{metric="LCP"} < 0.75` over a
 30-minute window. (The aggregator resets per process; an autoscale
 event clears the window — alerting fires only after the window
-re-fills, by design.)
+re-fills, by design.) Equivalent rules for INP and CLS are wired up
+in two places (Task #2525):
+
+- **Prometheus**: `ops/prometheus/web-vitals-alerts.rules.yml` — drop
+  into any Prometheus that scrapes `/metrics`. Routes via the
+  `slack_channel="load-test-alerts"` label
+  (`ops/prometheus/alertmanager-routes.yml`) to the same channel as
+  the nightly load-test failure alert.
+- **GitHub Actions** (for repos without a hosted Prometheus):
+  `.github/workflows/web-vitals-alert.yml` runs
+  `scripts/check-web-vitals.mjs` every 30 minutes and posts to
+  `SLACK_WEBHOOK_URL` via `notify-slack-on-failure` when any of LCP /
+  INP / CLS drops below 0.75 (and at least 100 samples have been
+  collected). Triage steps: `docs/runbooks/observability.md` §
+  "Web Vitals quality alert".
 
 ## 4. Noisy-neighbor isolation
 

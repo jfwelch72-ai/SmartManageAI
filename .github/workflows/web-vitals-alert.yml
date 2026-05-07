@@ -1,0 +1,63 @@
+name: Web Vitals Quality Alert
+
+# Task #2525 — Scheduled production check that the Core Web Vitals
+# "good" ratio for LCP / INP / CLS stays at or above 0.75 (Google's
+# documented "good" bar; see `docs/ops/capacity.md` § "Frontend Web
+# Vitals" and `ops/prometheus/web-vitals-alerts.rules.yml`).
+#
+# This workflow is the GitHub-Actions-hosted equivalent of the
+# Prometheus alert rules in `ops/prometheus/web-vitals-alerts.rules.yml`
+# for repos that do not run their own Prometheus / Alertmanager. It
+# scrapes the production `/metrics` endpoint and posts to the same
+# Slack channel as the nightly load-test failure when the threshold
+# is breached.
+#
+# Required repo configuration:
+#   vars.OPS_METRICS_URL          full URL to the prod /metrics endpoint
+#   secrets.OPS_METRICS_TOKEN     optional bearer token for /metrics
+#   secrets.SLACK_WEBHOOK_URL     same secret used by load-test-nightly
+#
+# When `OPS_METRICS_URL` is unset the script exits 0 (no-op) so forks
+# and freshly-cloned repos do not flood Slack with errors.
+
+on:
+  schedule:
+    # Every 30 minutes — matches the alert-rule `for: 30m` window so
+    # we get one Slack page per sustained breach (Slack will receive a
+    # repeat every 30m until the metric recovers; ack/silence in the
+    # channel as needed).
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check production Web Vitals good-ratio
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    env:
+      OPS_METRICS_URL: ${{ vars.OPS_METRICS_URL }}
+      OPS_METRICS_TOKEN: ${{ secrets.OPS_METRICS_TOKEN }}
+      WEB_VITALS_MIN_SAMPLES: '100'
+      WEB_VITALS_GOOD_RATIO_FLOOR: '0.75'
+      WEB_VITALS_METRICS: 'LCP,INP,CLS'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Evaluate Web Vitals good-ratio
+        run: node scripts/check-web-vitals.mjs
+
+      - name: Notify Slack on breach
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Web Vitals Quality Alert

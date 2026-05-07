@@ -1,0 +1,71 @@
+# Task #2525 — Frontend page-load quality (Core Web Vitals) alerts.
+#
+# Source-of-truth alert rules for any Prometheus instance that scrapes
+# the SmartManageAI `/metrics` endpoint (see `docs/ops/metrics.md`). The
+# gauges referenced here are emitted by `server/opsRoutes.ts` from the
+# in-memory aggregator in `server/webVitalsRoutes.ts` (one series per
+# Core Web Vital).
+#
+# The thresholds match Google's "good" cutoffs (good_ratio ≥ 0.75 is
+# the documented bar in `docs/ops/capacity.md` § "Frontend Web Vitals").
+# `for: 30m` requires the breach to be sustained — a single bad sample
+# right after a process restart will not page.
+#
+# `app_web_vitals_samples_total > 100` gates each rule so we never
+# alert on a window that has not yet collected enough beacons to be
+# meaningful (e.g. immediately after an autoscale event clears the
+# in-memory aggregator).
+#
+# Runbook: docs/runbooks/observability.md § "Web Vitals quality alert".
+
+groups:
+  - name: smartmanage-web-vitals
+    interval: 1m
+    rules:
+      - alert: WebVitalsLcpQualityRegressed
+        expr: |
+          app_web_vitals_good_ratio{metric="LCP"} < 0.75
+          and on(metric) app_web_vitals_samples_total{metric="LCP"} > 100
+        for: 30m
+        labels:
+          severity: warning
+          slack_channel: load-test-alerts
+        annotations:
+          summary: "LCP good-ratio below 75% for 30m"
+          description: |
+            Largest Contentful Paint "good" ratio has been below 75% for
+            30 minutes (current: {{ $value | humanizePercentage }}). Users
+            are seeing slow page loads in production.
+          runbook_url: https://github.com/smartmanageai/smartmanage/blob/main/docs/runbooks/observability.md#web-vitals-quality-alert
+
+      - alert: WebVitalsInpQualityRegressed
+        expr: |
+          app_web_vitals_good_ratio{metric="INP"} < 0.75
+          and on(metric) app_web_vitals_samples_total{metric="INP"} > 100
+        for: 30m
+        labels:
+          severity: warning
+          slack_channel: load-test-alerts
+        annotations:
+          summary: "INP good-ratio below 75% for 30m"
+          description: |
+            Interaction to Next Paint "good" ratio has been below 75% for
+            30 minutes (current: {{ $value | humanizePercentage }}). Users
+            are seeing sluggish interactions in production.
+          runbook_url: https://github.com/smartmanageai/smartmanage/blob/main/docs/runbooks/observability.md#web-vitals-quality-alert
+
+      - alert: WebVitalsClsQualityRegressed
+        expr: |
+          app_web_vitals_good_ratio{metric="CLS"} < 0.75
+          and on(metric) app_web_vitals_samples_total{metric="CLS"} > 100
+        for: 30m
+        labels:
+          severity: warning
+          slack_channel: load-test-alerts
+        annotations:
+          summary: "CLS good-ratio below 75% for 30m"
+          description: |
+            Cumulative Layout Shift "good" ratio has been below 75% for
+            30 minutes (current: {{ $value | humanizePercentage }}). Users
+            are seeing janky layout shifts in production.
+          runbook_url: https://github.com/smartmanageai/smartmanage/blob/main/docs/runbooks/observability.md#web-vitals-quality-alert
