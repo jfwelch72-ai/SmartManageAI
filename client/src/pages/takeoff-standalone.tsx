@@ -339,27 +339,13 @@ export default function TakeoffStandalonePage() {
     });
   };
 
-  if (!id) return <div className="p-6">Missing takeoff id.</div>;
-  if (takeoffQuery.isLoading) {
-    return (
-      <div className="flex items-center justify-center py-16" data-testid="standalone-loading">
-        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-  if (!takeoffQuery.data) {
-    return <div className="p-6">Takeoff not found.</div>;
-  }
-
-  const t = takeoffQuery.data;
   const sheets = sheetsQuery.data ?? [];
-  const files = filesQuery.data ?? [];
-  const tags = tagsQuery.data ?? [];
-  const isUploading = uploadMutation.isPending;
 
   // Task #2561 — Derive per-discipline counts and the grouped/filtered
   // sheet list. Discipline ordering follows DISCIPLINE_CODES so the
   // groups always show in canonical AIA order with "Unclassified" last.
+  // NOTE: These hooks must run on every render — keep them above any
+  // early returns to satisfy the rules of hooks.
   const disciplineCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const s of sheets) {
@@ -401,6 +387,23 @@ export default function TakeoffStandalonePage() {
     }
     return ordered;
   }, [sheets, disciplineFilter]);
+
+  if (!id) return <div className="p-6">Missing takeoff id.</div>;
+  if (takeoffQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center py-16" data-testid="standalone-loading">
+        <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!takeoffQuery.data) {
+    return <div className="p-6">Takeoff not found.</div>;
+  }
+
+  const t = takeoffQuery.data;
+  const files = filesQuery.data ?? [];
+  const tags = tagsQuery.data ?? [];
+  const isUploading = uploadMutation.isPending;
 
   return (
     <div className="container max-w-5xl mx-auto p-6 space-y-6" data-testid="standalone-takeoff-page">
