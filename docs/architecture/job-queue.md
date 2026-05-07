@@ -45,8 +45,12 @@ Key files:
 - `server/jobQueue/handlers/*.ts` — concrete job handlers
   (`ai_takeoff_analyze`, `ai_document_analyze`).
 - `server/worker.ts` — dedicated entrypoint that boots only the queue + handlers,
-  no HTTP server. Runs as the `Job worker` workflow (and as a separate
-  deployment process if/when we move off single-pod dev).
+  no HTTP server. Runs as the `Job worker` workflow in dev and as a
+  separate Replit Reserved-VM "background worker" deployment in prod
+  (Task #2519). The web/autoscale deployment pins `JOB_WORKER_INPROCESS=0`
+  via `.replit`'s `[userenv.production]`, so the web pod only enqueues.
+  See [`docs/ops/runbook.md` §7](../ops/runbook.md) for how to scale the
+  worker pod and read its logs.
 - `server/jobQueueAdminRoutes.ts` — Super Admin REST endpoints for
   queue depth, DLQ list, retry, archive.
 - `client/src/pages/admin/job-queue.tsx` — the admin UI surface.

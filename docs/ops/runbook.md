@@ -216,6 +216,85 @@ climbing; same job appearing repeatedly in Sentry; user reports of
 
 ---
 
+## 7. Scaling and reading logs from the job worker pod
+
+Background jobs (AI takeoff, AI document analysis, PDF tile prerender,
+certified-payroll exports, accounting sync, etc.) run on a **dedicated
+worker process**, not on the autoscale web pod. This isolates AI/PDF
+CPU spikes from request latency.
+
+**Topology** (Task #2519):
+
+| Process | Where | Run command | Job handlers? |
+| ------- | ----- | ----------- | ------------- |
+| Web (HTTP) | Replit autoscale deployment (`.replit [deployment]`) | `npm run start` | No — `JOB_WORKER_INPROCESS=0` is pinned via `[userenv.production]` so the web pod only enqueues. |
+| Job worker | A second Replit deployment (Reserved VM, "background worker") | `npx tsx server/worker.ts` | Yes — `startJobQueue({ withWorkers: true })`. |
+| Dev | The `Job worker` workflow in this repl | `JOB_WORKER_INPROCESS=0 npx tsx server/worker.ts` | Yes (and the dev web workflow stays enqueue-only too). |
+
+### Initial setup (one-time, performed from the main repl)
+
+1. Open Replit Deployments → **Create deployment** → choose **Reserved
+   VM** (background worker; no public port).
+2. Build command: `npm run build`. Run command: `npx tsx server/worker.ts`.
+3. Use the **same** secrets group as the web deployment so
+   `DATABASE_URL`, `SESSION_SECRET`, `ANTHROPIC_API_KEY`,
+   `OPENAI_API_KEY`, `SENDGRID_API_KEY`, `PRIVATE_OBJECT_DIR`, and
+   `PGBOSS_SCHEMA` (if customised) all flow through. Do **not** set
+   `JOB_WORKER_INPROCESS` on the worker — `server/worker.ts` always
+   starts handlers regardless.
+4. Verify boot: the deployment logs should print
+   `Job worker is running. Awaiting work…`.
+
+### Scaling the worker pod
+
+- **Vertical**: bump the Reserved VM size (more vCPU / RAM) in
+  Replit Deployments → *Resources*. Restart the deployment to pick
+  up the change. Use this first when AI / PDF jobs are CPU-bound on
+  a single tenant.
+- **Horizontal**: increase the deployment's instance count. pg-boss
+  uses Postgres `SKIP LOCKED` to lease jobs, so multiple worker
+  pods coordinate safely without extra config. Per-tenant fairness
+  (`teamSize=8, teamConcurrency=8` plus the per-tenant semaphore
+  in the handler wrapper, see `docs/architecture/job-queue.md`)
+  still applies across pods.
+- After scaling, watch `app_job_queue_active_pods` and
+  `app_job_queue_depth{queue="…"}` in `/metrics` and the
+  Super Admin → *Jobs Health* dashboard. Depth that drains within
+  the SLO (≤ 5 min for AI takeoff, ≤ 30 s for tile prerender)
+  means you've sized correctly.
+
+### Reading worker logs
+
+- **Production**: Replit Deployments → select the **Job worker**
+  deployment → *Logs*. Same structured JSON line format as the
+  web pod (`server/utils/logger.ts`), so you can grep by
+  `correlationId`, `jobName`, `organizationId`, etc. From this
+  agent / shell, use `fetchDeploymentLogs({ message: "queue:…" })`
+  scoped to the worker deployment ID.
+- **Dev**: the `Job worker` workflow in this repl. Use
+  `refresh_all_logs` (writes to `/tmp/logs/Job worker_*.log`) or
+  scroll the workflow console.
+- **Sentry**: worker errors land in the same Sentry project as the
+  web pod (the worker calls `initSentry()` at boot). Filter by
+  `release` + `tag:component=job-worker` (set in
+  `server/worker.ts`).
+- **Per-job timing**: `/api/admin/metrics/jobs/<job>?range=24h`
+  surfaces samples regardless of which pod recorded them.
+
+### Failure modes
+
+- **Worker pod down**: web continues to accept requests, but jobs
+  pile up in pg-boss. Symptom is climbing `app_job_queue_depth`
+  with zero `…_succeeded` samples. Restart the worker deployment;
+  it rehydrates from `pgboss.job` on boot. If the crash repeats,
+  treat as §4 ("rolling back a bad deploy") for the worker.
+- **Web pod accidentally running handlers**: indicates
+  `JOB_WORKER_INPROCESS=1` leaked onto the web deployment.
+  Inspect with `viewEnvVars({ environment: "production" })` and
+  delete / set back to `"0"`. Restart the web deployment.
+
+---
+
 ## Wired-up evidence
 
 The pieces below are already implemented; this section is the index so a

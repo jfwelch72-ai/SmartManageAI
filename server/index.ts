@@ -345,12 +345,19 @@ app.use((req, res, next) => {
   });
 
   // Task #2481 — Background job queue (pg-boss).
-  // The HTTP server only enqueues; the dedicated worker process
-  // (`server/worker.ts`, run via the `Job worker` workflow) actually
-  // executes handlers. In dev (NODE_ENV !== "production") we also
-  // register handlers in-process so a single `npm run dev` continues
-  // to do everything end-to-end. Override with JOB_WORKER_INPROCESS=0
-  // to disable, or =1 in prod to run handlers on the web pod.
+  // Task #2519 — The HTTP/web pod only enqueues. Handlers run in a
+  // dedicated worker process (`server/worker.ts`):
+  //   - dev:  the `Job worker` workflow (`tsx server/worker.ts`).
+  //   - prod: a separate Replit Reserved-VM "background worker"
+  //           deployment with run command `npx tsx server/worker.ts`.
+  // The `JOB_WORKER_INPROCESS` env var pinned to "0" on the web pod
+  // (set via `[userenv.production]` in `.replit` and inline in the
+  // dev workflow) is the source of truth. Setting it to "1" reverts
+  // to the legacy in-process worker on the web pod (emergency only).
+  // The default below only applies if the env var is unset (e.g. an
+  // ad-hoc `npm run dev` outside the configured workflow): dev keeps
+  // the historical end-to-end behavior, prod fails closed to
+  // enqueue-only.
   {
     const inProcessDefault = process.env.NODE_ENV !== "production";
     const inProcess = process.env.JOB_WORKER_INPROCESS

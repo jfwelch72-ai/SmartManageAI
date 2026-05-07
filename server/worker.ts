@@ -9,8 +9,9 @@
 //   - PGBOSS_SCHEMA (optional; defaults to "pgboss")
 
 import "dotenv/config";
+import * as Sentry from "@sentry/node";
 import { logError, logInfo } from "./utils/logger";
-import { initSentry } from "./sentry";
+import { initSentry, isSentryEnabled } from "./sentry";
 import { installAsyncErrorShim } from "./utils/expressAsyncShim";
 import { installCorrelatedFetch } from "./utils/correlatedFetch";
 import { startJobQueue, stopJobQueue } from "./jobQueue";
@@ -19,6 +20,13 @@ import { registerAllJobHandlers } from "./jobQueue/handlers";
 installAsyncErrorShim();
 initSentry();
 installCorrelatedFetch();
+
+// Task #2519 — tag every Sentry event from this process so on-call can
+// filter worker-pod errors separately from the web pod in the same
+// project. See docs/ops/runbook.md §7.
+if (isSentryEnabled()) {
+  Sentry.getCurrentScope().setTag("component", "job-worker");
+}
 
 process.on("uncaughtException", (err) => {
   logError("Worker uncaughtException", {}, err);

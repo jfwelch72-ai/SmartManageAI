@@ -123,6 +123,7 @@ LIVEKIT_API_KEY = "APIf6ndSUbgdyfi"
 
 [userenv.production]
 STATUS_ENABLE_REMOTE_PROBES = "true"
+JOB_WORKER_INPROCESS = "0"
 
 [postMerge]
 path = "scripts/post-merge.sh"
