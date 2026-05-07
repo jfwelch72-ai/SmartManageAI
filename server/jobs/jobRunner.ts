@@ -22,6 +22,7 @@ import { captureWeeklyKpiSnapshots } from "../services/portfolioKpiSnapshotServi
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
+import { equipment } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { pruneProjectLogEmailScheduleAttempts } from "./projectLogEmailScheduleAttemptPrune";
@@ -144,6 +145,14 @@ let projectLogEmailFailuresDigestTask: ReturnType<typeof cron.schedule> | null =
 // `ai_estimator_ingest_runs` by the underlying ingestion runner.
 let aiEstimatorIngestionTask: ReturnType<typeof cron.schedule> | null = null;
 let aiEstimatorIngestionTickRunning = false;
+// Task #2496 — nightly auto-generation of preventative maintenance work
+// orders. Walks every active organization that owns equipment, picks an
+// admin user as the actor, and calls `generateDuePmWorkOrders` so the
+// PENDING `equipment_repairs` rows the manual endpoint creates flow
+// without admin action. The PM engine itself is idempotent (it tags
+// each repair with `[PM:<scheduleId>]` and skips schedules that already
+// have an open WO), so re-running on the same day is safe.
+let equipmentPmGenerationTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -1268,7 +1277,96 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
+  // Task #2496 — nightly equipment preventative-maintenance work order
+  // generation. Daily at 03:30 UTC; per-org loop wrapped in
+  // `withJobOrgContext` so RLS keeps each tick scoped to one tenant.
+  equipmentPmGenerationTask = cron.schedule("30 3 * * *", async () => {
+    try {
+      await withSchedulerLock("job:equipmentPmGenerationTask", async () => {
+        const summary = await processEquipmentPmGeneration();
+        recordJobOutcome("equipment_pm_generation", summary.failed === 0);
+        logInfo("Equipment PM generation sweep", summary);
+      });
+    } catch (err) {
+      recordJobOutcome("equipment_pm_generation", false);
+      logJobErrorWithKind("equipment_pm_generation", "Equipment PM generation failed", err);
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, and equipment PM generation schedulers)");
+}
+
+// Task #2496 — daily PM auto-WO generation. Walks every active org that
+// owns at least one piece of equipment, picks an admin/super-admin in
+// the org as the actor (the engine writes that id into
+// `equipment_repairs.problem_reported_by_id`, which has a NOT NULL FK
+// to `users`), and invokes `generateDuePmWorkOrders` inside a tenant
+// DB context. Results are returned so the cron tick can record them on
+// the scheduler audit trail (`recordJobOutcome` + `logInfo`).
+export interface EquipmentPmSweepSummary {
+  orgs: number;
+  generated: number;
+  skipped: number;
+  failed: number;
+  noActor: number;
+}
+
+async function processEquipmentPmGeneration(): Promise<EquipmentPmSweepSummary> {
+  const summary: EquipmentPmSweepSummary = {
+    orgs: 0,
+    generated: 0,
+    skipped: 0,
+    failed: 0,
+    noActor: 0,
+  };
+
+  const orgRows = await db
+    .selectDistinct({ id: equipment.organizationId })
+    .from(equipment)
+    .innerJoin(organizations, eq(organizations.id, equipment.organizationId))
+    .where(eq(organizations.isActive, true));
+
+  if (orgRows.length === 0) return summary;
+
+  const { generateDuePmWorkOrders } = await import("../equipmentPmEngine");
+
+  for (const org of orgRows) {
+    const orgId = org.id;
+    if (!orgId) continue;
+    summary.orgs += 1;
+
+    await withJobOrgContext("equipment.pmGeneration", orgId, async () => {
+      try {
+        const actor = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(
+            eq(users.organizationId, orgId),
+            eq(users.isActive, true),
+            inArray(users.role, ["SUPER_ADMIN", "ADMIN"]),
+          ))
+          .limit(1);
+
+        if (actor.length === 0) {
+          summary.noActor += 1;
+          logWarn("Equipment PM generation skipped: no admin actor available", { orgId });
+          return;
+        }
+
+        const result = await generateDuePmWorkOrders({
+          organizationId: orgId,
+          systemUserId: actor[0].id,
+        });
+        summary.generated += result.generated;
+        summary.skipped += result.skipped;
+      } catch (err) {
+        summary.failed += 1;
+        logError("Equipment PM generation org iteration failed", { orgId, error: String(err) });
+      }
+    });
+  }
+
+  return summary;
 }
 
 export function stopJobRunner() {
@@ -1295,6 +1393,10 @@ export function stopJobRunner() {
   if (complianceCheckTask) {
     complianceCheckTask.stop();
     complianceCheckTask = null;
+  }
+  if (equipmentPmGenerationTask) {
+    equipmentPmGenerationTask.stop();
+    equipmentPmGenerationTask = null;
   }
   if (coiReminderTask) {
     coiReminderTask.stop();
