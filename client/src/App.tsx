@@ -292,6 +292,8 @@ const SubProcessorsPage = lazy(() => import("@/pages/trust").then(m => ({ defaul
 const StatusPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.StatusPage })));
 const PrivacyPolicyPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.PrivacyPolicyPage })));
 const TermsOfServicePage = lazy(() => import("@/pages/trust").then(m => ({ default: m.TermsOfServicePage })));
+const DpaPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.DpaPage })));
+const DataManagementPage = lazy(() => import("@/pages/data-management"));
 
 function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
   const { isEnabled } = useFeatureFlagsHook();
@@ -398,6 +400,8 @@ function Router() {
       <Route path="/sla" component={SlaPage} />
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsOfServicePage} />
+      <Route path="/dpa" component={DpaPage} />
+      <Route path="/data-management"><ProtectedRoute component={DataManagementPage} /></Route>
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
@@ -720,7 +724,7 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status' || location === '/privacy' || location === '/terms';
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status' || location === '/privacy' || location === '/terms' || location === '/dpa';
 
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
@@ -758,7 +762,7 @@ function AuthGatedWidget() {
       return false;
     }
   });
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status' || location === '/privacy' || location === '/terms';
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status' || location === '/privacy' || location === '/terms' || location === '/dpa';
 
   React.useEffect(() => {
     const handleMessaging = (e: Event) => {

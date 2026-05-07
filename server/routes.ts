@@ -153,6 +153,7 @@ import ssoRoutes from "./ssoRoutes";
 import auditExportRoutes from "./auditExportRoutes";
 import retentionRoutes from "./retentionRoutes";
 import privacyRoutes from "./privacyRoutes";
+import orgLifecycleRoutes from "./orgLifecycleRoutes";
 import authProfileRoutes from "./authProfileRoutes";
 import jobQueueAdminRoutes from "./jobQueueAdminRoutes";
 import oauthRoutes from "./oauthRoutes";
@@ -473,6 +474,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", jobQueueAdminRoutes);
   app.use("/api/retention", retentionRoutes);
   app.use("/api/privacy", privacyRoutes);
+  app.use(orgLifecycleRoutes);
 
   // Register Safety Training routes
   app.use(safetyTrainingRoutes);

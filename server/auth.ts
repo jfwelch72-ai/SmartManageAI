@@ -235,6 +235,15 @@ export async function requireActiveOrganization(req: AuthRequest, res: Response,
     return;
   }
 
+  // Allow org admins to cancel a pending deletion during the soft-delete
+  // grace period. The deletion flow flips organizations.is_active=false
+  // immediately on confirmation; without this exemption the cancel
+  // endpoint would itself be blocked, trapping orgs in deletion.
+  if (req.path === "/api/org/deletion-request/cancel" || req.path === "/api/org/deletion-request") {
+    next();
+    return;
+  }
+
   if (req.user.role === "SUPER_ADMIN") {
     next();
     return;

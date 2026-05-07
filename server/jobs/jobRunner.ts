@@ -52,6 +52,7 @@ let coiReminderTask: ReturnType<typeof cron.schedule> | null = null;
 let profitabilityMonitorTask: ReturnType<typeof cron.schedule> | null = null;
 let idleOpportunityTask: ReturnType<typeof cron.schedule> | null = null;
 let orphanUploadTask: ReturnType<typeof cron.schedule> | null = null;
+let orgHardDeleteSweepTask: ReturnType<typeof cron.schedule> | null = null;
 let bidDueDateTask: ReturnType<typeof cron.schedule> | null = null;
 let imapSyncTask: ReturnType<typeof cron.schedule> | null = null;
 let providerSyncTask: ReturnType<typeof cron.schedule> | null = null;
@@ -531,6 +532,26 @@ export function startJobRunner() {
       });
     } catch (err) {
       logError("Orphan upload cleanup failed", { error: String(err) });
+    }
+  });
+
+  // Task #2487: hourly sweep that hard-deletes organizations whose
+  // soft-delete grace period has elapsed (org_deletion_requests with
+  // status=SCHEDULED_HARD_DELETE and hard_delete_scheduled_at <= now()).
+  // Sends a final confirmation email and writes an audit-log entry.
+  orgHardDeleteSweepTask = cron.schedule("17 * * * *", async () => {
+    try {
+      await withSchedulerLock("job:orgHardDeleteSweepTask", async () => {
+        const { runOrgHardDeleteSweep } = await import("./orgHardDeleteSweep");
+        const result = await runOrgHardDeleteSweep();
+        if (result.swept > 0 || result.failed > 0) {
+          logInfo("Org hard-delete sweep", result);
+        }
+        recordJobOutcome("org_hard_delete_sweep", result.failed === 0);
+      });
+    } catch (err) {
+      recordJobOutcome("org_hard_delete_sweep", false);
+      logError("Org hard-delete sweep failed", { error: String(err) });
     }
   });
 
@@ -1294,6 +1315,10 @@ export function stopJobRunner() {
   if (orphanUploadTask) {
     orphanUploadTask.stop();
     orphanUploadTask = null;
+  }
+  if (orgHardDeleteSweepTask) {
+    orgHardDeleteSweepTask.stop();
+    orgHardDeleteSweepTask = null;
   }
   if (imapSyncTask) {
     imapSyncTask.stop();

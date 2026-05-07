@@ -1115,4 +1115,159 @@ export function TermsOfServicePage() {
   );
 }
 
+export function DpaPage() {
+  return (
+    <PageShell
+      title="Data Processing Addendum"
+      description="The DPA that governs SmartManageAI's processing of personal data on behalf of customers."
+    >
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2" data-testid="heading-dpa-title">Data Processing Addendum</h1>
+        <p className="text-muted-foreground" data-testid="text-dpa-tagline">
+          This Data Processing Addendum ("DPA") forms part of the agreement between SmartManageAI, Inc.
+          ("Processor") and Customer ("Controller") for the provision of the SmartManageAI platform. It applies
+          to the Processing of Personal Data on behalf of Controller. A countersigned copy is available on
+          request to <a className="underline" href="mailto:legal@smartmanage.ai">legal@smartmanage.ai</a>.
+        </p>
+        <div className="text-xs text-muted-foreground mt-3" data-testid="text-dpa-last-updated">
+          Last updated: {LEGAL_LAST_UPDATED}
+        </div>
+      </div>
+
+      <LegalSection title="Definitions">
+        <p>
+          Capitalised terms not defined here have the meaning given in applicable Data Protection Laws
+          (including the GDPR, UK GDPR, and CCPA/CPRA). "Personal Data", "Processing", "Data Subject",
+          "Controller", and "Processor" have the meanings given in the GDPR.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Scope and roles">
+        <p>
+          Controller appoints Processor to Process Personal Data on its behalf solely to provide the Services
+          and as further documented in the Agreement. Each party will comply with its obligations under
+          applicable Data Protection Laws.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Processing details">
+        <ul className="list-disc pl-5 space-y-1">
+          <li><span className="font-medium">Subject matter:</span> provision of the SmartManageAI platform.</li>
+          <li><span className="font-medium">Duration:</span> the term of the Agreement plus the deletion period below.</li>
+          <li><span className="font-medium">Nature & purpose:</span> hosting, storing, securing, transmitting and presenting Customer Data.</li>
+          <li><span className="font-medium">Data Subjects:</span> Customer's employees, contractors, vendors, and counterparties.</li>
+          <li><span className="font-medium">Personal Data categories:</span> identity (name, work email, phone), employment data, project &amp; bid data, time entries, and Customer-uploaded content.</li>
+          <li><span className="font-medium">Special categories:</span> none expected; Customer is responsible for not uploading sensitive categories.</li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Processor obligations">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Process Personal Data only on documented instructions from Controller.</li>
+          <li>Ensure persons authorised to Process Personal Data are bound by confidentiality.</li>
+          <li>Implement the technical and organisational measures described in the Security Annex.</li>
+          <li>Assist Controller in responding to Data Subject Requests and meeting Articles 32–36 GDPR.</li>
+          <li>Notify Controller without undue delay (and in any event within 72 hours) of a Personal Data Breach.</li>
+          <li>Make available all information necessary to demonstrate compliance and allow for audits as set out below.</li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Sub-processors">
+        <p>
+          Controller authorises Processor to engage the sub-processors listed at{" "}
+          <Link href="/sub-processors" className="underline" data-testid="link-dpa-subprocessors">/sub-processors</Link>.
+          Processor imposes data-protection terms on each sub-processor that are no less protective than this
+          DPA, remains liable for their acts and omissions, and notifies Controller at least 30 days before
+          adding or replacing a sub-processor. Controller may object on reasonable data-protection grounds.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="International transfers">
+        <p>
+          Where Processor transfers Personal Data outside the UK / EEA to a country not recognised as providing
+          adequate protection, the parties incorporate the EU Standard Contractual Clauses (Module 2) and,
+          where applicable, the UK International Data Transfer Addendum, by reference. Annex I and Annex II of
+          the SCCs are completed by reference to the Processing Details and Security Annex of this DPA.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Data Subject Requests">
+        <p>
+          Processor will, where legally permitted, promptly inform Controller of any request received from a
+          Data Subject and will not respond except on Controller's documented instructions. The Services
+          include self-service controls for export and deletion of Customer Data — see "Return and deletion"
+          below and the data-handling whitepaper.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Audit rights">
+        <p>
+          Processor will make available to Controller, on reasonable request and no more than once per
+          twelve-month period, the most recent third-party audit reports, security questionnaire responses,
+          and a written summary of penetration-test findings. Where these are insufficient, Controller may, on
+          30 days' written notice and at its expense, conduct an audit subject to Processor's reasonable
+          security and confidentiality controls.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Return and deletion of Personal Data">
+        <p>
+          On termination or at Controller's request, Controller may export Customer Data through the Services
+          for up to 30 days. Thereafter Processor will soft-delete Customer Data immediately and hard-delete
+          within 30 days, except to the extent retention is required by law. Backups are cycled out within 30
+          days. The Services include self-service "Delete my organization" controls in Company Settings →
+          Data Management that follow this schedule and write to the audit log.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Liability">
+        <p>
+          Each party's liability arising under or in connection with this DPA is subject to the limitations of
+          liability in the Agreement.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Governing law and order of precedence">
+        <p>
+          This DPA is governed by the law and jurisdiction set out in the Agreement, except where mandated
+          otherwise by applicable Data Protection Laws. In the event of a conflict, the order of precedence is:
+          (1) the SCCs (where applicable), (2) this DPA, (3) the Agreement.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Security Annex">
+        <p>The technical and organisational measures Processor maintains include, at minimum:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>TLS 1.2+ in transit; AES-256 at rest (database, object storage, backups).</li>
+          <li>Postgres Row-Level Security with a fail-closed <code>tenant_isolation</code> policy on every multi-tenant table.</li>
+          <li>Append-only audit log with runtime-validated <code>userId</code>.</li>
+          <li>Postgres-backed rate limiting that holds across replicas.</li>
+          <li>AV scan on every confirmed upload before the ACL policy is written.</li>
+          <li>Quarantine envelope and refusal heuristics on all untrusted-document → LLM paths.</li>
+          <li>24/7 alerting with status posted to <Link className="underline" href="/trust" data-testid="link-dpa-trust">/trust</Link>; Personal Data Breach notification within 72 hours.</li>
+          <li>Documented sub-processors at <Link className="underline" href="/sub-processors" data-testid="link-dpa-subprocessors-2">/sub-processors</Link>; 30-day change notice.</li>
+        </ul>
+        <p>
+          A more detailed description is published in our data-handling whitepaper, available on request to{" "}
+          <a className="underline" href="mailto:security@smartmanage.ai">security@smartmanage.ai</a>.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Contact">
+        <p>
+          Questions about this DPA? Email{" "}
+          <a href="mailto:legal@smartmanage.ai" className="underline" data-testid="link-dpa-contact-email">legal@smartmanage.ai</a>{" "}
+          or write to SmartManageAI, Inc., Attn: Legal.
+        </p>
+      </LegalSection>
+
+      <div className="mt-8">
+        <Link href="/" className="inline-flex items-center gap-1 text-sm underline" data-testid="link-dpa-back-home">
+          ← Back to home
+        </Link>
+      </div>
+    </PageShell>
+  );
+}
+
 export default TrustPage;

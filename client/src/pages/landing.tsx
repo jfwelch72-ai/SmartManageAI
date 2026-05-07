@@ -1353,6 +1353,9 @@ export default function LandingPage() {
                 <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-contact">Contact</a></li>
                 <li><Link href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</Link></li>
+                <li><Link href="/dpa" className="hover:text-foreground transition-colors" data-testid="link-footer-dpa">Data Processing Addendum</Link></li>
+                <li><Link href="/sub-processors" className="hover:text-foreground transition-colors" data-testid="link-footer-subprocessors">Sub-processors</Link></li>
+                <li><Link href="/trust" className="hover:text-foreground transition-colors" data-testid="link-footer-trust">Trust &amp; Security</Link></li>
               </ul>
             </div>
           </div>
