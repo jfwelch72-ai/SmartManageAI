@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -24,7 +25,23 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock, LockOpen, AlertTriangle, RefreshCw, ChevronDown } from "lucide-react";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock, LockOpen, AlertTriangle, RefreshCw, ChevronDown, FileText, GitBranch } from "lucide-react";
 import { measurementHasDrift, selectDriftingMeasurementIds } from "./sheetCalibrationConfidence";
 
 // Task #2319 — Source column visual language. Each calibration source
@@ -86,6 +103,21 @@ interface MeasurementTableProps {
   onRemediateDrift?: (measurementId: string, action: "recapture" | "mark_stale") => void;
   onBulkRemediateDrift?: (action: "recapture" | "mark_stale") => void;
   isRemediatingDrift?: boolean;
+  /**
+   * Task #2581 — Base-bid vs change-order scope tagging. When provided,
+   * each row shows a BASE/CO chip in the label cell, the toolbar
+   * exposes a BASE/CO/ALL filter, and the row right-click menu adds
+   * "Move to base bid" / "Move to change order…" entries that fan out
+   * via `onMoveScope`. `changeOrders` populates the picker dialog;
+   * when omitted (older callers) the affordances stay hidden so the
+   * table remains backwards-compatible.
+   */
+  changeOrders?: Array<{ id: string; changeOrderNumber: string; description?: string | null; status?: string | null }>;
+  onMoveScope?: (
+    measurementId: string,
+    payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+  ) => void;
+  isMovingScope?: boolean;
 }
 
 type SortField = "label" | "type" | "category" | "length" | "area" | "volume" | "count" | "cost";
@@ -106,11 +138,19 @@ export function MeasurementTable({
   onRemediateDrift,
   onBulkRemediateDrift,
   isRemediatingDrift,
+  changeOrders,
+  onMoveScope,
+  isMovingScope,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("label");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [filterType, setFilterType] = useState<string>("all");
+  // Task #2581 — Scope filter (BASE / CO / ALL).
+  const [scopeFilter, setScopeFilter] = useState<"ALL" | "BASE" | "CO">("ALL");
+  // Task #2581 — Holds the measurement the user is moving to a CO.
+  const [moveCandidate, setMoveCandidate] = useState<any | null>(null);
+  const [pickedChangeOrderId, setPickedChangeOrderId] = useState<string>("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   // Task #2334 — `unlockCandidate` carries the measurement row the
@@ -175,6 +215,10 @@ export function MeasurementTable({
       list = list.filter(m => m.type === filterType);
     }
 
+    if (scopeFilter !== "ALL") {
+      list = list.filter(m => (m.scopeTag ?? "BASE") === scopeFilter);
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(m =>
@@ -205,7 +249,40 @@ export function MeasurementTable({
     });
 
     return list;
-  }, [measurements, search, filterType, sortField, sortDir]);
+  }, [measurements, search, filterType, scopeFilter, sortField, sortDir]);
+
+  // Task #2581 — Counts for the scope filter pills so the user can see
+  // the BASE/CO split without flipping the filter to find out.
+  const scopeCounts = useMemo(() => {
+    let base = 0;
+    let co = 0;
+    for (const m of measurements) {
+      if ((m.scopeTag ?? "BASE") === "CO") co += 1;
+      else base += 1;
+    }
+    return { base, co, all: measurements.length };
+  }, [measurements]);
+
+  const changeOrderById = useMemo(() => {
+    const map = new Map<string, { id: string; changeOrderNumber: string; description?: string | null }>();
+    for (const co of changeOrders ?? []) map.set(co.id, co);
+    return map;
+  }, [changeOrders]);
+
+  function openMoveToChangeOrder(m: any) {
+    setMoveCandidate(m);
+    setPickedChangeOrderId(m.changeOrderId ?? "");
+  }
+  function confirmMoveToChangeOrder() {
+    if (!moveCandidate || !onMoveScope || !pickedChangeOrderId) return;
+    onMoveScope(moveCandidate.id, { scopeTag: "CO", changeOrderId: pickedChangeOrderId });
+    setMoveCandidate(null);
+    setPickedChangeOrderId("");
+  }
+  function moveToBaseBid(m: any) {
+    if (!onMoveScope) return;
+    onMoveScope(m.id, { scopeTag: "BASE", changeOrderId: null });
+  }
 
   function getQty(m: any): number {
     if (m.type === "COUNT") return Number(m.count || 1);
@@ -336,6 +413,24 @@ export function MeasurementTable({
             ))}
           </SelectContent>
         </Select>
+        {/*
+          Task #2581 — BASE / CO / ALL scope filter. Shown whenever the
+          embedder wires `onMoveScope` (i.e., a workspace that knows
+          how to persist scope changes); the BASE/CO counts give the
+          estimator at-a-glance context before flipping the filter.
+        */}
+        {onMoveScope && (
+          <Select value={scopeFilter} onValueChange={(v) => setScopeFilter(v as "ALL" | "BASE" | "CO")}>
+            <SelectTrigger className="w-[120px] h-7 text-xs" data-testid="measurement-table-scope-filter">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL" data-testid="scope-filter-option-all">All scopes ({scopeCounts.all})</SelectItem>
+              <SelectItem value="BASE" data-testid="scope-filter-option-base">Base bid ({scopeCounts.base})</SelectItem>
+              <SelectItem value="CO" data-testid="scope-filter-option-co">Change order ({scopeCounts.co})</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <Badge variant="secondary" className="text-[10px] shrink-0">
           {sortedFiltered.length}/{measurements.length}
         </Badge>
@@ -508,8 +603,9 @@ export function MeasurementTable({
           </TableHeader>
           <TableBody>
             {sortedFiltered.map((m, idx) => (
+              <ContextMenu key={m.id}>
+              <ContextMenuTrigger asChild>
               <TableRow
-                key={m.id}
                 className={`text-[11px] cursor-pointer hover:bg-accent/50 ${selectedMeasurementId === m.id ? "bg-primary/10" : ""}`}
                 onClick={() => onSelect(m.id)}
                 data-testid={`measurement-row-${m.id}`}
@@ -545,6 +641,44 @@ export function MeasurementTable({
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color || "#2563eb" }} />
                       <span className="truncate max-w-[120px]">{m.label || `${m.type}-${idx + 1}`}</span>
+                      {/*
+                        Task #2581 — Scope chip. Shown for every row so
+                        the BASE / CO split is visible at a glance.
+                        BASE is the default for legacy rows
+                        (`scopeTag` defaults to "BASE" server-side).
+                        CO chips include the linked change order
+                        number when known so the estimator doesn't
+                        have to cross-reference a separate panel.
+                      */}
+                      {(() => {
+                        const tag = (m.scopeTag ?? "BASE") as "BASE" | "CO";
+                        if (tag === "CO") {
+                          const co = m.changeOrderId ? changeOrderById.get(m.changeOrderId) : null;
+                          const label = co ? `CO ${co.changeOrderNumber}` : "CO";
+                          return (
+                            <span
+                              className="inline-flex items-center gap-0.5 rounded bg-purple-500/15 text-purple-700 dark:text-purple-300 text-[9px] font-medium shrink-0 px-1 py-0.5"
+                              data-testid={`badge-measurement-scope-${m.id}`}
+                              data-scope="CO"
+                              title={co?.description ? `${label} — ${co.description}` : label}
+                            >
+                              <GitBranch className="w-2.5 h-2.5" />
+                              {label}
+                            </span>
+                          );
+                        }
+                        return (
+                          <span
+                            className="inline-flex items-center gap-0.5 rounded bg-slate-500/15 text-slate-700 dark:text-slate-300 text-[9px] font-medium shrink-0 px-1 py-0.5"
+                            data-testid={`badge-measurement-scope-${m.id}`}
+                            data-scope="BASE"
+                            title="Base bid scope"
+                          >
+                            <FileText className="w-2.5 h-2.5" />
+                            Base
+                          </span>
+                        );
+                      })()}
                       {/*
                         Task #2326 — "Locked" badge. When the
                         measurement carries a `lockedScalePxPerFoot`
@@ -726,6 +860,40 @@ export function MeasurementTable({
                   </div>
                 </TableCell>
               </TableRow>
+              </ContextMenuTrigger>
+              {/*
+                Task #2581 — Per-row right-click menu. Hidden when the
+                embedder hasn't wired `onMoveScope` (i.e., a read-only
+                view of the table) so the affordance can't fire a
+                no-op. The "Move to change order…" entry is gated on
+                a non-empty `changeOrders` list — without one, the
+                picker would render an empty Select.
+              */}
+              {onMoveScope && (
+                <ContextMenuContent className="w-56" data-testid={`measurement-row-context-menu-${m.id}`}>
+                  <ContextMenuLabel className="text-[11px] truncate">
+                    {m.label || `${m.type}-${idx + 1}`}
+                  </ContextMenuLabel>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    disabled={isMovingScope || (m.scopeTag ?? "BASE") === "BASE"}
+                    onSelect={() => moveToBaseBid(m)}
+                    data-testid={`context-menu-move-to-base-${m.id}`}
+                  >
+                    <FileText className="w-3 h-3 mr-2" />
+                    Move to base bid
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={isMovingScope || !changeOrders || changeOrders.length === 0}
+                    onSelect={() => openMoveToChangeOrder(m)}
+                    data-testid={`context-menu-move-to-co-${m.id}`}
+                  >
+                    <GitBranch className="w-3 h-3 mr-2" />
+                    Move to change order…
+                  </ContextMenuItem>
+                </ContextMenuContent>
+              )}
+              </ContextMenu>
             ))}
             {sortedFiltered.length === 0 && (
               <TableRow>
@@ -875,6 +1043,81 @@ export function MeasurementTable({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/*
+        Task #2581 — Move-to-change-order picker. Opened from the
+        per-row right-click menu (and from the properties panel via
+        the same `onMoveScope` callback in the workspace). Uses a
+        Dialog rather than an inline dropdown so the change-order
+        list can scroll for projects with many COs without consuming
+        canvas space.
+      */}
+      <Dialog
+        open={moveCandidate !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setMoveCandidate(null);
+            setPickedChangeOrderId("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md" data-testid="dialog-move-to-change-order">
+          <DialogHeader>
+            <DialogTitle>Move to change order</DialogTitle>
+            <DialogDescription>
+              Tag{" "}
+              <span className="font-medium">
+                {moveCandidate?.label || `${moveCandidate?.type ?? "this measurement"}`}
+              </span>{" "}
+              with a change order so it rolls up under that CO instead of the base bid.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-1">
+            <Label className="text-xs">Change order</Label>
+            <Select value={pickedChangeOrderId} onValueChange={setPickedChangeOrderId}>
+              <SelectTrigger className="h-9 text-sm" data-testid="select-move-to-change-order">
+                <SelectValue placeholder="Select a change order…" />
+              </SelectTrigger>
+              <SelectContent>
+                {(changeOrders ?? []).length === 0 && (
+                  <SelectItem value="__none__" disabled>
+                    No change orders on this project yet
+                  </SelectItem>
+                )}
+                {(changeOrders ?? []).map((co) => (
+                  <SelectItem
+                    key={co.id}
+                    value={co.id}
+                    data-testid={`option-change-order-${co.id}`}
+                  >
+                    CO {co.changeOrderNumber}
+                    {co.description ? ` — ${co.description.slice(0, 50)}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setMoveCandidate(null);
+                setPickedChangeOrderId("");
+              }}
+              data-testid="button-cancel-move-to-co"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmMoveToChangeOrder}
+              disabled={!pickedChangeOrderId || isMovingScope}
+              data-testid="button-confirm-move-to-co"
+            >
+              {isMovingScope ? "Moving…" : "Move"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

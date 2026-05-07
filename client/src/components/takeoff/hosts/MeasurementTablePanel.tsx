@@ -37,6 +37,20 @@ export interface MeasurementTablePanelProps {
    */
   onBulkUnlockAndRescale?: (ids: string[]) => void | Promise<void>;
   isBulkUnlocking?: boolean;
+  /**
+   * Task #2581 — Base-bid vs change-order scope tagging pass-throughs.
+   * When `onMoveScope` is wired the table renders the BASE/CO chip,
+   * scope filter, and right-click "Move to…" entries. `changeOrders`
+   * populates the picker dialog. Optional so the panel keeps working
+   * for embedders (bid-context workspaces, tests) that haven't wired
+   * the project-scoped change-order list yet.
+   */
+  changeOrders?: Array<{ id: string; changeOrderNumber: string; description?: string | null; status?: string | null }>;
+  onMoveScope?: (
+    measurementId: string,
+    payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+  ) => void;
+  isMovingScope?: boolean;
 }
 
 function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
@@ -68,6 +82,9 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           onRemediateDrift={props.onRemediateDrift}
           onBulkRemediateDrift={props.onBulkRemediateDrift}
           isRemediatingDrift={props.isRemediatingDrift}
+          changeOrders={props.changeOrders}
+          onMoveScope={props.onMoveScope}
+          isMovingScope={props.isMovingScope}
         />
       </div>
     </div>

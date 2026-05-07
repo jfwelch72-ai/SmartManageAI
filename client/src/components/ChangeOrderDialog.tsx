@@ -206,6 +206,79 @@ const APPROVAL_ROLES = [
   { value: "ESTIMATOR", label: "Estimator" },
 ];
 
+/**
+ * Task #2581 — Takeoff measurement rollup card. Renders the rows the
+ * estimator tagged "CO" against this change order on the takeoff
+ * workspace, with a per-row qty × unit-cost breakdown and the total
+ * `rollupCost` the backend computed. Renders nothing while loading or
+ * when no measurements have been moved over yet so unrelated COs stay
+ * visually clean.
+ */
+interface TakeoffRollupRow {
+  measurementId: string;
+  label: string | null;
+  type: string;
+  quantity: number;
+  unit: string;
+  unitCost: number | null;
+  cost: number;
+}
+interface TakeoffRollupResponse {
+  changeOrderId: string;
+  measurementCount: number;
+  rows: TakeoffRollupRow[];
+  rollupCost: number;
+}
+function ChangeOrderTakeoffRollup({ changeOrderId }: { changeOrderId: string }) {
+  const { data, isLoading } = useQuery<TakeoffRollupResponse>({
+    queryKey: ["/api/change-orders", changeOrderId, "takeoff-rollup"],
+  });
+  if (isLoading || !data || data.measurementCount === 0) return null;
+  return (
+    <div className="p-3 bg-muted/30 rounded-md" data-testid="card-takeoff-rollup">
+      <div className="flex items-center gap-2 mb-2">
+        <Ruler className="w-4 h-4 text-muted-foreground" />
+        <span className="text-sm font-medium">Takeoff Rollup</span>
+        <Badge variant="outline" className="text-[10px] ml-auto" data-testid="badge-takeoff-rollup-count">
+          {data.measurementCount} measurement{data.measurementCount === 1 ? "" : "s"}
+        </Badge>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="text-muted-foreground">
+            <tr className="border-b border-border">
+              <th className="text-left py-1 pr-2 font-normal">Label</th>
+              <th className="text-left py-1 pr-2 font-normal">Type</th>
+              <th className="text-right py-1 pr-2 font-normal">Qty</th>
+              <th className="text-right py-1 pr-2 font-normal">Unit $</th>
+              <th className="text-right py-1 font-normal">Cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data.rows.map((row) => (
+              <tr key={row.measurementId} className="border-b border-border/50" data-testid={`row-takeoff-rollup-${row.measurementId}`}>
+                <td className="py-1 pr-2 truncate max-w-[180px]">{row.label || "—"}</td>
+                <td className="py-1 pr-2 text-muted-foreground">{row.type}</td>
+                <td className="py-1 pr-2 text-right font-mono">{row.quantity.toLocaleString(undefined, { maximumFractionDigits: 2 })} {row.unit}</td>
+                <td className="py-1 pr-2 text-right font-mono">{row.unitCost != null ? `$${row.unitCost.toFixed(2)}` : "—"}</td>
+                <td className="py-1 text-right font-mono">${row.cost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colSpan={4} className="pt-1.5 text-right font-medium">Rollup total</td>
+              <td className="pt-1.5 text-right font-mono font-semibold" data-testid="text-takeoff-rollup-total">
+                ${data.rollupCost.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export function ChangeOrderDialog({
   changeOrder,
   open,
@@ -1344,6 +1417,15 @@ export function ChangeOrderDialog({
               </div>
             </div>
           )}
+
+          {/*
+            Task #2581 — Takeoff measurement rollup. Aggregates every
+            measurement currently tagged with this CO via the scope
+            picker on the takeoff workspace. Hidden when nothing has
+            been moved over yet (the API returns measurementCount: 0)
+            so unrelated COs stay clean.
+          */}
+          <ChangeOrderTakeoffRollup changeOrderId={changeOrder.id} />
 
           {changeOrder.linkedTmTicketId && (
             <div className="p-3 bg-muted/30 rounded-md" data-testid="card-linked-tm">

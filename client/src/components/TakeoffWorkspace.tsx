@@ -1578,6 +1578,74 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // already returns `remediated` (count) and `ids` (success), and
   // any per-row failure was logged server-side; for the toast we
   // just use the aggregate count.
+  // Task #2581 — Project change-order list for the BASE/CO scope picker.
+  // Only fired in project context (change orders are project-scoped). The
+  // query key matches the rest of the app (`["/api/projects", code,
+  // "change-orders"]`) so an in-place CO create from the project
+  // dialog hot-refreshes our picker too. The list is intentionally
+  // lean (`id` + `changeOrderNumber` + `description` are all the chip
+  // and dialog need) — full CO rows live behind the project tab.
+  const projectChangeOrdersEnabled = context?.type === "project" && !!context.projectCode;
+  const { data: projectChangeOrders = [] } = useQuery<
+    Array<{ id: string; changeOrderNumber: string; description?: string | null; status?: string | null }>
+  >({
+    queryKey: ["/api/projects", context?.type === "project" ? context.projectCode : "", "change-orders"],
+    enabled: projectChangeOrdersEnabled,
+  });
+
+  // Task #2581 — Persist a measurement's BASE/CO scope tag. Backend
+  // route also recomputes the parent change-order's `takeoffRollupCost`
+  // when present, so we invalidate both the sheet measurements (chip
+  // updates) and the project change-orders (rollup cost reflects on
+  // the CO list / detail) on success.
+  const moveScopeMutation = useMutation({
+    mutationFn: async ({
+      measurementId,
+      scopeTag,
+      changeOrderId,
+    }: {
+      measurementId: string;
+      scopeTag: "BASE" | "CO";
+      changeOrderId: string | null;
+    }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/takeoff/measurements/${measurementId}/scope`,
+        { scopeTag, changeOrderId },
+      );
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateAfterReview();
+      if (projectChangeOrdersEnabled) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/projects", context!.type === "project" ? context!.projectCode : "", "change-orders"],
+        });
+      }
+      // Task #2581 — Also invalidate the rollup query for the affected
+      // CO so an open ChangeOrderDialog reflects the new measurement
+      // immediately. We can't easily know the *previous* CO id here
+      // (the row's prior tag is server-side state), so we additionally
+      // invalidate the rollup key prefix to refresh any cached
+      // rollups for other COs the row may have just left.
+      if (vars.changeOrderId) {
+        queryClient.invalidateQueries({
+          queryKey: ["/api/change-orders", vars.changeOrderId, "takeoff-rollup"],
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/change-orders"] });
+      toast({
+        title: vars.scopeTag === "CO" ? "Moved to change order" : "Moved to base bid",
+        description:
+          vars.scopeTag === "CO"
+            ? "Measurement now rolls up under the selected CO."
+            : "Measurement returned to the base-bid scope.",
+      });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Move failed", description: e.message, variant: "destructive" }),
+  });
+
   const remediateDriftMutation = useMutation({
     mutationFn: async ({ measurementId, action }: { measurementId: string; action: "recapture" | "mark_stale" }) => {
       const res = await apiRequest(
@@ -4965,6 +5033,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // once: an estimator who chose "Lock existing measurements" on
       // a re-calibration by mistake can release the whole sheet in
       // one click instead of clicking each badge individually.
+      // Task #2581 — BASE/CO scope tagging. Only meaningful when we have
+      // a project context (change orders are project-scoped); the
+      // change-order list stays empty in bid/standalone contexts so
+      // the table hides the "Move to change order…" entry naturally.
+      changeOrders: projectChangeOrdersEnabled ? projectChangeOrders : undefined,
+      onMoveScope: projectChangeOrdersEnabled
+        ? (
+            measurementId: string,
+            payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
+          ) => {
+            moveScopeMutation.mutate({ measurementId, ...payload });
+          }
+        : undefined,
+      isMovingScope: moveScopeMutation.isPending,
       onBulkUnlockAndRescale: async (ids: string[]) => {
         // Use mutateAsync so the table can await success before
         // clearing its selection. If the request rejects (network
