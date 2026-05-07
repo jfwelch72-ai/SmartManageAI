@@ -18,6 +18,7 @@ import MaterialBudgetTracker from "@/components/MaterialBudgetTracker";
 import ProjectRFIs from "@/components/ProjectRFIs";
 import ProjectTransmittals from "@/components/ProjectTransmittals";
 import ProjectSubmittals from "@/components/ProjectSubmittals";
+import CloseoutReadinessCard from "@/components/CloseoutReadinessCard";
 import SubcontractorPortalManager from "@/components/SubcontractorPortalManager";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -113,6 +114,7 @@ import ProjectEquipmentTab from "@/components/project-tabs/ProjectEquipmentTab";
 import PunchListTab from "@/components/PunchListTab";
 import WarrantyTab from "@/components/WarrantyTab";
 import AssetHandoverTab from "@/components/AssetHandoverTab";
+import ProjectCloseoutPage from "@/pages/project-closeout";
 import MaintenanceLogsTab from "@/components/MaintenanceLogsTab";
 import ContractsTab from "@/components/project-tabs/ContractsTab";
 import FinancialsTab from "@/components/project-tabs/FinancialsTab";
@@ -295,6 +297,7 @@ function buildTabConfigs(
     { value: "transmittals", label: "Transmittals", icon: Send, visible: hasManagementAccess(userRole), group: "communication" },
     { value: "submittals", label: "Submittals", icon: FileCheck, visible: hasManagementAccess(userRole), group: "communication" },
 
+    { value: "closeout", label: "Closeout Package", icon: Archive, visible: hasManagementAccess(userRole), group: "closeout" },
     { value: "asset-handover", label: "Handover", icon: ClipboardCheck, visible: showAssetMgmt, group: "closeout" },
     { value: "warranty", label: "Warranty", icon: ShieldCheck, visible: showAssetMgmt, group: "closeout" },
     { value: "maintenance-logs", label: "Maintenance", icon: Wrench, visible: showAssetMgmt, group: "closeout" },
@@ -984,6 +987,12 @@ export default function ProjectDetailPage() {
               financialsLoading={financialsLoading}
               setActiveTab={handleSetActiveTab}
             />
+            <CloseoutReadinessCard
+              projectCode={projectCode}
+              onOpenCloseout={() => handleSetActiveTab("closeout")}
+              onOpenPunchList={() => handleSetActiveTab("punch-list")}
+              onOpenSubmittals={() => handleSetActiveTab("submittals")}
+            />
             {/* Task #2404 — Auto-pickup of standalone takeoffs that match this project. */}
             <SuggestedTakeoffsCard destinationKind="project" destinationId={project.id as string} />
             <GeofenceEnforcementCard project={project} projectCode={projectCode} />
@@ -1247,6 +1256,10 @@ export default function ProjectDetailPage() {
               projectCode={project.code}
               userRole={user?.role || ""}
             />
+          </TabsContent>
+
+          <TabsContent value="closeout">
+            <ProjectCloseoutPage projectCode={projectCode} />
           </TabsContent>
 
           <TabsContent value="asset-handover">

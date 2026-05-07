@@ -721,4 +721,84 @@ router.post(
   },
 );
 
+// ─── WALKTHROUGH MODE — group items by location/area for site walks ───────────
+router.get(
+  "/projects/:code/punch-list/walkthrough",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json({ areas: [] });
+
+      const project = await getProjectByCode(req.params.code);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.json({ areas: [] });
+      }
+
+      const includeClosedRaw = req.query.includeClosed;
+      const includeClosed =
+        typeof includeClosedRaw === "string" && /^(1|true|yes)$/i.test(includeClosedRaw);
+
+      const conditions: ReturnType<typeof eq>[] = [eq(punchListItems.projectId, project.id)];
+      const items = await db
+        .select()
+        .from(punchListItems)
+        .where(and(...conditions))
+        .orderBy(punchListItems.location, punchListItems.itemNumber);
+
+      const visible = includeClosed
+        ? items
+        : items.filter((i) => i.status !== "VERIFIED" && i.status !== "REJECTED");
+
+      type AreaSummary = {
+        area: string;
+        total: number;
+        open: number;
+        inProgress: number;
+        resolved: number;
+        verified: number;
+        critical: number;
+        items: PunchListItem[];
+      };
+
+      const byArea = new Map<string, AreaSummary>();
+      for (const it of visible) {
+        const area = (it.location?.trim() || "Unassigned");
+        const e = byArea.get(area) ?? {
+          area,
+          total: 0, open: 0, inProgress: 0, resolved: 0, verified: 0, critical: 0,
+          items: [],
+        };
+        e.total += 1;
+        if (it.status === "OPEN") e.open += 1;
+        else if (it.status === "IN_PROGRESS") e.inProgress += 1;
+        else if (it.status === "RESOLVED") e.resolved += 1;
+        else if (it.status === "VERIFIED") e.verified += 1;
+        if (it.priority === "CRITICAL") e.critical += 1;
+        e.items.push(it);
+        byArea.set(area, e);
+      }
+
+      const areas = Array.from(byArea.values()).sort((a, b) => {
+        // Areas with critical items first, then by remaining work, then alphabetical
+        if (a.critical !== b.critical) return b.critical - a.critical;
+        const aRemain = a.open + a.inProgress;
+        const bRemain = b.open + b.inProgress;
+        if (aRemain !== bRemain) return bRemain - aRemain;
+        return a.area.localeCompare(b.area);
+      });
+
+      res.json({
+        project: { id: project.id, code: project.code, name: project.name },
+        totalAreas: areas.length,
+        totalItems: visible.length,
+        areas: areas.map((a) => ({ ...a, items: a.items.map(enrichItem) })),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 export default router;

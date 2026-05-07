@@ -83,6 +83,7 @@ import permitRoutes from "./permitRoutes";
 import complianceRoutes from "./complianceRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
+import closeoutRoutes from "./closeoutRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
 import projectDistributionListRoutes from "./projectDistributionListRoutes";
 import projectLogEmailScheduleRoutes from "./projectLogEmailScheduleRoutes";
@@ -311,6 +312,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", materialTestRoutes);
   app.use("/api", ppeComplianceRoutes);
   app.use("/api", warrantyRoutes);
+
+  // Register project closeout package routes (templates, auto-pull, ZIP+TOC export, dashboard summary)
+  app.use(closeoutRoutes);
 
   // Register AI routes through single orchestration layer (consolidates document, scheduling, takeoff, CFO analytics routes)
   app.use("/api", aiOrchestrationRoutes);
