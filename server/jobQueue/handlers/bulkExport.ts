@@ -50,7 +50,13 @@ export function registerBulkExportJob(): void {
         });
         throw err;
       }
+      // Task #2535 — emit a couple of intermediate steps before/after the
+      // generator runs so any UI subscribed to the job id sees the bar
+      // advance even when the generator itself doesn't emit progress.
+      // Generators that DO call `ctx.progress(...)` will overwrite these.
+      await ctx.progress(20, `Gathering ${payload.exportType} data`);
       const result = await gen(payload.params, ctx);
+      await ctx.progress(95, "Finalizing export file");
       await ctx.progress(100, "Export complete");
       logInfo("bulk_export completed", { exportType: payload.exportType, jobId: ctx.jobId });
       return result;

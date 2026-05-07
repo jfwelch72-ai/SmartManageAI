@@ -124,7 +124,22 @@ export async function draftTakeoffFromPlans(opts: {
   // model. Not a filter — pair with `disciplines` to narrow inputs.
   tradeFilter?: string;
   scopeNotes?: string;
+  /**
+   * Optional progress callback invoked at each major phase. Used by the
+   * `ai_estimator_draft` queue handler to surface step-by-step progress
+   * to the UI (Task #2535). Best-effort — handler errors are swallowed.
+   */
+  onProgress?: (pct: number, message: string) => void | Promise<void>;
 }): Promise<{ result: TakeoffDraftResult | null; blocked?: boolean; reason?: string }> {
+  const reportProgress = async (pct: number, message: string): Promise<void> => {
+    if (!opts.onProgress) return;
+    try {
+      await opts.onProgress(pct, message);
+    } catch {
+      /* progress is best-effort */
+    }
+  };
+  await reportProgress(10, "Indexing plan sheets");
   const urls = await resolveOrgPlanDocuments(opts.organizationId, {
     documentIds: opts.planDocumentIds,
     projectId: opts.projectId,
@@ -134,6 +149,10 @@ export async function draftTakeoffFromPlans(opts: {
   if (urls.length === 0) {
     return { result: null, reason: "No plan documents found for your organization" };
   }
+  await reportProgress(
+    25,
+    `Reading ${Math.min(urls.length, MAX_PLAN_DOCS_PER_DRAFT)} plan document${urls.length === 1 ? "" : "s"}`,
+  );
   // Task #2466 Phase 1 — cap raised to MAX_PLAN_DOCS_PER_DRAFT (8) and
   // every doc is wrapped in try/catch so a single oversized PDF can't
   // poison the whole draft. A full per-trade map-reduce (split docs by
@@ -156,6 +175,7 @@ export async function draftTakeoffFromPlans(opts: {
   if (rawBlocks.length === 0) {
     return { result: null, reason: "Unable to read any of the provided plan documents" };
   }
+  await reportProgress(50, "Screening plan content for safety");
 
   // Task #2494 — Refuse on high-signal prompt-injection payloads embedded
   // in any of the plan documents, then quarantine every untrusted text/
@@ -197,6 +217,7 @@ export async function draftTakeoffFromPlans(opts: {
   }
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
+  await reportProgress(70, "Calling AI estimator");
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
@@ -239,6 +260,7 @@ export async function draftTakeoffFromPlans(opts: {
   });
   if (gov.blocked) return { result: null, blocked: true, reason: gov.reason };
 
+  await reportProgress(90, "Validating draft");
   const validated = validateAiJsonOutput(TAKEOFF_DRAFT_OUTPUT_SCHEMA, gov.result);
   if (!validated.ok) {
     logError("AI Estimator takeoff draft returned invalid JSON", { reason: validated.reason });

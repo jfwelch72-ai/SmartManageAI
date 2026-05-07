@@ -53,7 +53,22 @@ export async function generateDraftEstimate(opts: {
   bidId: string;
   takeoffSheetIds?: string[];
   scopeNotes?: string;
+  /**
+   * Optional progress callback invoked at each major phase. Used by the
+   * `ai_estimator_draft` queue handler to surface step-by-step progress
+   * to the UI (Task #2535). Best-effort — handler errors are swallowed.
+   */
+  onProgress?: (pct: number, message: string) => void | Promise<void>;
 }): Promise<{ result: DraftEstimateResult | null; blocked?: boolean; reason?: string }> {
+  const reportProgress = async (pct: number, message: string): Promise<void> => {
+    if (!opts.onProgress) return;
+    try {
+      await opts.onProgress(pct, message);
+    } catch {
+      /* progress is best-effort */
+    }
+  };
+  await reportProgress(10, "Verifying bid access");
   // 0. Verify the bid actually belongs to this org (IDOR guard).
   try {
     await assertBidInOrg(opts.bidId, opts.organizationId);
@@ -63,6 +78,7 @@ export async function generateDraftEstimate(opts: {
     }
     throw err;
   }
+  await reportProgress(25, "Loading takeoff measurements");
 
   // 1. Pull takeoff measurements (if any) for the bid. We always intersect
   //    against the parent bid AND, if the caller supplied sheet ids, against
@@ -94,6 +110,7 @@ export async function generateDraftEstimate(opts: {
     return { id: m.id, label: m.label, type: m.type, value: Number(v) };
   });
 
+  await reportProgress(45, "Loading learned cost rates");
   // 2. Pull learned-rates so the model can ground unit costs in tenant data.
   const rates = await listLearnedRatesForOrg(opts.organizationId);
   const rateSummary = rates.slice(0, 60).map((r) => ({
@@ -103,6 +120,7 @@ export async function generateDraftEstimate(opts: {
     ...summarizeRate(r),
   }));
 
+  await reportProgress(60, "Retrieving prior estimating context");
   // 3. Pull context from the knowledge index.
   const contextRows = await retrieveContext({
     organizationId: opts.organizationId,
@@ -124,6 +142,7 @@ export async function generateDraftEstimate(opts: {
   }
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
+  await reportProgress(75, "Calling AI estimator");
   const sysPrompt = `You are a senior construction estimator drafting a working estimate for a contractor in their own workspace.
 You ONLY use the data provided: the takeoff measurements, the org's learned cost rates, and prior bids/estimates from this org.
 Never invent unit costs that are not anchored in the provided rates or context. If a rate is missing, set unitCost to 0 and note it in rationale.
@@ -175,6 +194,7 @@ Return strict JSON: {
   });
   if (gov.blocked) return { result: null, blocked: true, reason: gov.reason };
 
+  await reportProgress(92, "Validating draft");
   const parsed = safeJson<DraftEstimateResult>(gov.result);
   if (!parsed) {
     logError("Draft estimate AI returned non-JSON", { bidId: opts.bidId });

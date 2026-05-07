@@ -47,8 +47,14 @@ export function registerPdfTilePrerenderJob(): void {
         });
         throw err;
       }
-      await ctx.progress(40, "Rendering tiles");
+      // Task #2535 — emit intermediate phases so any UI subscribed to the
+      // job id sees the bar advance through the render pipeline. The
+      // renderer itself receives `ctx` and may emit finer-grained
+      // progress that overrides these defaults.
+      await ctx.progress(25, "Downloading PDF pages");
+      await ctx.progress(40, `Rendering tiles${payload.zoom ? ` @ zoom ${payload.zoom}` : ""}`);
       const result = await registeredRenderer(payload, ctx);
+      await ctx.progress(90, "Uploading tiles to storage");
       await ctx.progress(100, "Tiles ready");
       return result;
     },

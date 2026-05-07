@@ -19,6 +19,14 @@ export function registerAiEstimatorJob(): void {
     async (payload, ctx: JobContext) => {
       const mode = payload.mode ?? "takeoff";
       await ctx.progress(5, `Starting estimator ${mode} draft`);
+      // Task #2535 — bridge per-phase progress emitted by the underlying
+      // service ("Indexing sheets" / "Calling AI" / "Validating draft" /
+      // etc.) to the job queue's progress channel so any UI subscribed
+      // to the job id sees the bar advance through real phases instead
+      // of jumping from 0 → 100.
+      const onProgress = async (pct: number, message: string): Promise<void> => {
+        await ctx.progress(pct, message);
+      };
       // Lazy-import to keep boot fast and to avoid pulling unrelated
       // service dependencies into the HTTP-only pod.
       let result: unknown;
@@ -26,16 +34,18 @@ export function registerAiEstimatorJob(): void {
         const { generateDraftEstimate } = await import(
           "../../services/aiEstimator/draftEstimate"
         );
-        result = await generateDraftEstimate(
-          payload.draftOptions as Parameters<typeof generateDraftEstimate>[0],
-        );
+        result = await generateDraftEstimate({
+          ...(payload.draftOptions as Parameters<typeof generateDraftEstimate>[0]),
+          onProgress,
+        });
       } else {
         const { draftTakeoffFromPlans } = await import(
           "../../services/aiEstimator/takeoffDraft"
         );
-        result = await draftTakeoffFromPlans(
-          payload.draftOptions as Parameters<typeof draftTakeoffFromPlans>[0],
-        );
+        result = await draftTakeoffFromPlans({
+          ...(payload.draftOptions as Parameters<typeof draftTakeoffFromPlans>[0]),
+          onProgress,
+        });
       }
       await ctx.progress(100, "Draft complete");
       logInfo("AI estimator draft completed via queue", { jobId: ctx.jobId, mode });
