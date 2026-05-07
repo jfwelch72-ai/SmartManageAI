@@ -453,6 +453,26 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     const insertData = { ...validationResult.data, uploadedById: req.user!.id, objectKey };
     const [newDoc] = await db.insert(planDocuments).values([insertData]).returning();
+    // Task #2517 — Best-effort enqueue PDF tile prerender on the
+    // pg-boss queue. Failure to enqueue must not block the upload
+    // response.
+    try {
+      const { enqueueJob } = await import("./jobQueue");
+      await enqueueJob(
+        "pdf_tile_prerender",
+        { planDocumentId: newDoc.id },
+        {
+          organizationId: callerOrgId!,
+          userId: req.user!.id,
+          idempotencyKey: `pdf_tile_prerender:${newDoc.id}`,
+        },
+      );
+    } catch (enqErr) {
+      logWarn("pdf_tile_prerender enqueue failed (upload route)", {
+        planDocumentId: newDoc.id,
+        error: String(enqErr),
+      });
+    }
     
     await db.insert(filePermissions).values([{
       fileId: newDoc.id,
@@ -627,6 +647,25 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
       mimeType: contentType,
       uploadedById: req.user!.id,
     }]).returning();
+    // Task #2517 — Best-effort enqueue PDF tile prerender for from-url
+    // imports. Failure must not break the upload response.
+    try {
+      const { enqueueJob } = await import("./jobQueue");
+      await enqueueJob(
+        "pdf_tile_prerender",
+        { planDocumentId: newDoc.id },
+        {
+          organizationId: req.user!.organizationId!,
+          userId: req.user!.id,
+          idempotencyKey: `pdf_tile_prerender:${newDoc.id}`,
+        },
+      );
+    } catch (enqErr) {
+      logWarn("pdf_tile_prerender enqueue failed (from-url route)", {
+        planDocumentId: newDoc.id,
+        error: String(enqErr),
+      });
+    }
 
     await db.insert(filePermissions).values([{
       fileId: newDoc.id,

@@ -115,65 +115,43 @@ router.get("/stats", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFe
   }
 });
 
+// Task #2517 — Audit-log export migrated to the pg-boss queue
+// (`bulk_export` / `audit_log`). The route enqueues the job and
+// returns a job id; the client polls `/api/jobs/:id` and downloads
+// the result via the signed URL in `output.url`.
 router.get("/export", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), requireFeature("AUDIT_EXPORT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const { format = "csv", dateFrom, dateTo, entityType, action } = req.query as Record<string, string>;
-
-    const conditions: SQL[] = [];
-    if (entityType) conditions.push(eq(auditLog.entityType, entityType));
-    if (action) conditions.push(eq(auditLog.action, action as any));
-    if (dateFrom) conditions.push(gte(auditLog.createdAt, new Date(dateFrom)));
-    if (dateTo) conditions.push(lte(auditLog.createdAt, new Date(dateTo)));
-
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-
-    const logs = await db.select({
-      id: auditLog.id,
-      userId: auditLog.userId,
-      entityType: auditLog.entityType,
-      entityId: auditLog.entityId,
-      action: auditLog.action,
-      oldValue: auditLog.oldValue,
-      newValue: auditLog.newValue,
-      ipAddress: auditLog.ipAddress,
-      userAgent: auditLog.userAgent,
-      createdAt: auditLog.createdAt,
-      userEmail: users.email,
-    })
-      .from(auditLog)
-      .leftJoin(users, eq(auditLog.userId, users.id))
-      .where(whereClause)
-      .orderBy(desc(auditLog.createdAt))
-      .limit(10000);
-
-    if (format === "json") {
-      res.setHeader("Content-Type", "application/json");
-      res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().split("T")[0]}.json"`);
-      return res.json(logs);
+    const user = req.user!;
+    if (!user.organizationId) {
+      return res.status(403).json({ error: "Organization context required" });
     }
-
-    const headers = ["ID", "User Email", "Entity Type", "Entity ID", "Action", "Old Value", "New Value", "IP Address", "User Agent", "Timestamp"];
-    const csvRows = [headers.join(",")];
-
-    for (const log of logs) {
-      const row = [
-        log.id,
-        log.userEmail || "",
-        log.entityType || "",
-        log.entityId || "",
-        log.action,
-        `"${(log.oldValue || "").replace(/"/g, '""')}"`,
-        `"${(log.newValue || "").replace(/"/g, '""')}"`,
-        log.ipAddress || "",
-        `"${(log.userAgent || "").replace(/"/g, '""')}"`,
-        log.createdAt?.toISOString() || "",
-      ];
-      csvRows.push(row.join(","));
-    }
-
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().split("T")[0]}.csv"`);
-    res.send(csvRows.join("\n"));
+    const rawFormat = (req.query.format as string | undefined) || "csv";
+    const format = rawFormat === "json" ? "json" : "csv";
+    const params = {
+      organizationId: user.organizationId,
+      format,
+      entityType: (req.query.entityType as string | undefined) || undefined,
+      action: (req.query.action as string | undefined) || undefined,
+      dateFrom: (req.query.dateFrom as string | undefined) || undefined,
+      dateTo: (req.query.dateTo as string | undefined) || undefined,
+    };
+    const { enqueueJob } = await import("./jobQueue");
+    const { AUDIT_LOG_EXPORT_TYPE } = await import("./jobQueue/exports/auditExport");
+    const enq = await enqueueJob(
+      "bulk_export",
+      { exportType: AUDIT_LOG_EXPORT_TYPE, params },
+      {
+        organizationId: user.organizationId,
+        userId: user.id,
+        idempotencyKey: `audit_log_export:${user.organizationId}:${format}:${params.entityType ?? ""}:${params.action ?? ""}:${params.dateFrom ?? ""}:${params.dateTo ?? ""}:${Date.now()}`,
+      },
+    );
+    res.status(202).json({
+      jobId: enq.jobId,
+      idempotencyKey: enq.idempotencyKey,
+      deduplicated: enq.deduplicated,
+      status: "QUEUED",
+    });
   } catch (error) {
     next(error);
   }

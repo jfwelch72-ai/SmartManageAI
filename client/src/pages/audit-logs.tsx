@@ -12,6 +12,8 @@ import { FeatureGate } from "@/components/FeatureGate";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
+import { enqueueAndDownloadExport } from "@/lib/jobs";
 
 interface AuditStats {
   actionStats: { action: string; count: number }[];
@@ -46,6 +48,7 @@ const ACTION_TYPES = ["CREATE", "UPDATE", "DELETE", "APPROVE", "REJECT"];
 
 export default function AuditLogsPage() {
   const isMobile = useIsMobile();
+  const { toast } = useToast();
   const [entityType, setEntityType] = useState<string>("all");
   const [action, setAction] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
@@ -103,6 +106,26 @@ export default function AuditLogsPage() {
     return `/api/audit/export?${params.toString()}`;
   };
 
+  // Task #2517 — Audit-log export now runs on the pg-boss queue.
+  // Hit the GET endpoint to enqueue, poll until the worker uploads the
+  // artifact to GCS, then trigger a download from the signed URL.
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "json" | null>(null);
+  const handleExport = async (format: "csv" | "json") => {
+    setExportingFormat(format);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      await enqueueAndDownloadExport(buildExportUrl(format), `audit-log-${today}.${format}`);
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Could not export audit log",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   const totalLogs = stats?.actionStats.reduce((sum, s) => sum + s.count, 0) ?? 0;
   const pagination = searchData?.pagination;
 
@@ -118,18 +141,32 @@ export default function AuditLogsPage() {
           <p className="text-muted-foreground mt-1" data-testid="text-audit-logs-subtitle">Enterprise Compliance</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <a href={buildExportUrl("csv")} download data-testid="button-export-csv">
-            <Button variant="outline">
+          <Button
+            variant="outline"
+            onClick={() => handleExport("csv")}
+            disabled={exportingFormat !== null}
+            data-testid="button-export-csv"
+          >
+            {exportingFormat === "csv" ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
               <Download className="h-4 w-4 mr-2" />
-              Export CSV
-            </Button>
-          </a>
-          <a href={buildExportUrl("json")} download data-testid="button-export-json">
-            <Button variant="outline">
+            )}
+            Export CSV
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => handleExport("json")}
+            disabled={exportingFormat !== null}
+            data-testid="button-export-json"
+          >
+            {exportingFormat === "json" ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
               <FileText className="h-4 w-4 mr-2" />
-              Export JSON
-            </Button>
-          </a>
+            )}
+            Export JSON
+          </Button>
         </div>
       </div>
 

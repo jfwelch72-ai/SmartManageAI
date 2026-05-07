@@ -343,10 +343,41 @@ export async function enqueueJob<TPayload>(
   });
   if (!jobId) {
     // pg-boss returns null when a singleton with the same key is
-    // already queued / active.
-    return { jobId: idempotencyKey, idempotencyKey, deduplicated: true };
+    // already queued / active. Look up the real existing job id via
+    // singletonkey so the client can poll /api/jobs/:id correctly.
+    const existing = await findActiveJobBySingletonKey(name, idempotencyKey);
+    return {
+      jobId: existing ?? idempotencyKey,
+      idempotencyKey,
+      deduplicated: true,
+    };
   }
   return { jobId, idempotencyKey, deduplicated: false };
+}
+
+async function findActiveJobBySingletonKey(
+  name: JobName,
+  singletonKey: string,
+): Promise<string | null> {
+  try {
+    const dbi = await getBoss().getDb();
+    const schema = process.env.PGBOSS_SCHEMA || "pgboss";
+    const result = await dbi.executeSql(
+      `SELECT id FROM ${schema}.job
+        WHERE name = $1 AND singletonkey = $2
+          AND state IN ('created','retry','active')
+        ORDER BY createdon DESC LIMIT 1`,
+      [name, singletonKey],
+    );
+    const row = (result?.rows ?? [])[0] as { id?: string } | undefined;
+    return row?.id ?? null;
+  } catch (err) {
+    logWarn("findActiveJobBySingletonKey failed", {
+      name,
+      error: String(err),
+    });
+    return null;
+  }
 }
 
 export interface JobStatus {

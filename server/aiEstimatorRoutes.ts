@@ -49,8 +49,6 @@ import {
 } from "./services/aiEstimator/ingestion";
 import { logCreate, logDelete } from "./auditLogger";
 import { suggestInline } from "./services/aiEstimator/inlineSuggest";
-import { generateDraftEstimate } from "./services/aiEstimator/draftEstimate";
-import { draftTakeoffFromPlans } from "./services/aiEstimator/takeoffDraft";
 import {
   createSession,
   getSessionForUser,
@@ -646,23 +644,41 @@ router.post(
     const data = validateBody(draftEstimateSchema, req.body, res);
     if (!data) return;
     try {
-      const out = await generateDraftEstimate({
-        organizationId: req.user!.organizationId!,
-        userId: req.user!.id,
-        bidId: data.bidId,
-        takeoffSheetIds: data.takeoffSheetIds,
-        scopeNotes: data.scopeNotes,
+      // Task #2517 — Long-running estimator drafts move to the
+      // pg-boss queue (`ai_estimator_draft`). The route returns a
+      // job id immediately and the client polls `/api/jobs/:id` for
+      // the result (`output.result` / `output.blocked` / etc).
+      const { enqueueJob } = await import("./jobQueue");
+      const enq = await enqueueJob(
+        "ai_estimator_draft",
+        {
+          mode: "estimate",
+          draftOptions: {
+            organizationId: req.user!.organizationId!,
+            userId: req.user!.id,
+            bidId: data.bidId,
+            takeoffSheetIds: data.takeoffSheetIds,
+            scopeNotes: data.scopeNotes,
+          },
+        },
+        {
+          organizationId: req.user!.organizationId!,
+          userId: req.user!.id,
+          idempotencyKey: `ai_estimator_draft:estimate:${data.bidId}:${req.user!.id}`,
+        },
+      );
+      res.status(202).json({
+        jobId: enq.jobId,
+        idempotencyKey: enq.idempotencyKey,
+        deduplicated: enq.deduplicated,
+        status: "QUEUED",
       });
-      if (out.blocked) return blockedResponse(res, out.reason);
-      if (!out.result) return res.status(200).json({ fallback: true, message: out.reason ?? "AI did not produce a draft" });
-      res.json(out.result);
     } catch (err) {
-      logError("Draft estimate failed", { error: String(err) });
-      res.status(500).json({ error: "Draft estimate failed" });
+      logError("Draft estimate enqueue failed", { error: String(err) });
+      res.status(500).json({ error: "Failed to enqueue draft estimate" });
     }
   },
 );
-
 // =====================================================================
 // Draft a takeoff from one or more plan documents.
 // =====================================================================
@@ -696,32 +712,33 @@ router.post(
       projectId: data.projectId,
       scopeNotes: data.scopeNotes,
     };
-    if (data.async) {
-      try {
-        const { enqueueJob } = await import("./jobQueue");
-        const enqueued = await enqueueJob(
-          "ai_estimator_draft",
-          { mode: "takeoff", draftOptions },
-          { organizationId, userId },
-        );
-        return res.json({
-          status: "QUEUED",
-          jobId: enqueued.jobId,
-          deduplicated: enqueued.deduplicated,
-        });
-      } catch (err) {
-        logError("Draft takeoff enqueue failed", { error: String(err) });
-        return res.status(500).json({ error: "Draft takeoff enqueue failed" });
-      }
-    }
     try {
-      const out = await draftTakeoffFromPlans(draftOptions);
-      if (out.blocked) return blockedResponse(res, out.reason);
-      if (!out.result) return res.status(200).json({ fallback: true, message: out.reason });
-      res.json(out.result);
+      // Task #2517 — Enqueue plan-document → takeoff drafting on
+      // the pg-boss queue (`ai_estimator_draft`). HTTP returns a
+      // job id; client polls `/api/jobs/:id` (or subscribes via
+      // SSE / `useJobProgress`) for the result. The `async` flag
+      // from Task #2530 is now the implicit default and accepted
+      // for backward compatibility.
+      const { enqueueJob } = await import("./jobQueue");
+      const idemBasis = data.planDocumentIds?.slice().sort().join(",") || data.projectId || "";
+      const enq = await enqueueJob(
+        "ai_estimator_draft",
+        { mode: "takeoff", draftOptions },
+        {
+          organizationId,
+          userId,
+          idempotencyKey: `ai_estimator_draft:takeoff:${idemBasis}:${userId}`,
+        },
+      );
+      res.status(202).json({
+        jobId: enq.jobId,
+        idempotencyKey: enq.idempotencyKey,
+        deduplicated: enq.deduplicated,
+        status: "QUEUED",
+      });
     } catch (err) {
-      logError("Draft takeoff failed", { error: String(err) });
-      res.status(500).json({ error: "Draft takeoff failed" });
+      logError("Draft takeoff enqueue failed", { error: String(err) });
+      res.status(500).json({ error: "Failed to enqueue draft takeoff" });
     }
   },
 );

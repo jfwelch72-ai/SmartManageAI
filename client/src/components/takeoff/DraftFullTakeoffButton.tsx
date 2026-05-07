@@ -44,14 +44,18 @@ export function DraftFullTakeoffButton({ projectId }: Props) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [fetchingResult, setFetchingResult] = useState(false);
 
+  // Task #2517 / #2530 — POST enqueues an `ai_estimator_draft` job and
+  // returns `{ jobId }`. The dialog then drives a live progress bar via
+  // `useJobProgress` (SSE) and pulls the final draft via
+  // `handleJobComplete` once the job reports `completed`.
   const draftIt = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<{ jobId?: string }> => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft-takeoff", {
         projectId,
         scopeNotes: scopeNotes.trim() || undefined,
         async: true,
       });
-      return r.json();
+      return (await r.json()) as { jobId?: string };
     },
     onSuccess: (data: { jobId?: string }) => {
       if (data.jobId) {

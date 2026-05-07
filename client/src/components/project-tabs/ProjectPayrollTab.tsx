@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { enqueueAndDownloadExport } from "@/lib/jobs";
 import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff, Download, History } from "lucide-react";
 import {
   DropdownMenu,
@@ -691,32 +692,16 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     if (!data?.wageDecision) return;
     setExportingFormat(format);
     try {
+      // Task #2517 — Now runs on the pg-boss queue. The GET enqueues
+      // and returns a job id; the helper polls and downloads from the
+      // signed URL written by the worker.
       const url = `/api/payroll/wage-decisions/${encodeURIComponent(
         data.wageDecision,
       )}/acknowledgement-export?format=${format}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) {
-        let msg = `Export failed (${res.status})`;
-        try {
-          const body = await res.json();
-          if (body?.error) msg = body.error;
-        } catch {
-          /* non-JSON error body — fall back to status */
-        }
-        throw new Error(msg);
-      }
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = blobUrl;
       const stem = `wage-decision-acknowledgements-${data.wageDecision.replace(/[^A-Za-z0-9_-]+/g, "_")}-${new Date()
         .toISOString()
         .slice(0, 10)}`;
-      a.download = `${stem}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(blobUrl);
+      await enqueueAndDownloadExport(url, `${stem}.${format}`);
     } catch (err) {
       toast({
         title: "Export failed",

@@ -1491,24 +1491,36 @@ export class BidStorageDrizzle implements IBidStorage {
         .select()
         .from(bidDocuments)
         .where(eq(bidDocuments.bidId, bid.id));
+      // Task #2517 — Track inserted plan-doc rows so we can enqueue a
+      // best-effort `pdf_tile_prerender` job per document AFTER the
+      // transaction commits (enqueueing inside the tx would race the
+      // worker against the not-yet-committed row).
+      const insertedPlanDocIds: string[] = [];
       if (bidDocs.length > 0) {
         for (const doc of bidDocs) {
-          await tx.insert(planDocuments).values({
-            projectId: createdProject.id,
-            type: doc.type,
-            title: doc.title,
-            fileName: doc.fileName,
-            fileUrl: doc.fileUrl,
-            objectKey: doc.objectKey,
-            fileSize: doc.fileSize,
-            mimeType: doc.mimeType,
-            uploadedById: doc.uploadedById,
-          });
+          const [inserted] = await tx
+            .insert(planDocuments)
+            .values({
+              projectId: createdProject.id,
+              type: doc.type,
+              title: doc.title,
+              fileName: doc.fileName,
+              fileUrl: doc.fileUrl,
+              objectKey: doc.objectKey,
+              fileSize: doc.fileSize,
+              mimeType: doc.mimeType,
+              uploadedById: doc.uploadedById,
+            })
+            .returning({ id: planDocuments.id });
+          if (inserted?.id) insertedPlanDocIds.push(inserted.id);
         }
         logInfo(
           `[Bid Conversion] Transferred ${bidDocs.length} bid documents to project plan_documents`,
         );
       }
+      // Stash the plan-doc IDs on the transaction return path; the
+      // outer caller will fan out enqueues post-commit.
+      (createdProject as { _planDocumentIds?: string[] })._planDocumentIds = insertedPlanDocIds;
 
       // Duplicate takeoff sheets/measurements/categories/groups
       const bidSheets = await tx
@@ -1747,6 +1759,34 @@ export class BidStorageDrizzle implements IBidStorage {
 
       return createdProject;
     });
+
+    // Task #2517 — Best-effort enqueue PDF tile prerender for every
+    // plan document carried over from the bid. Runs AFTER the tx
+    // commits so the worker is guaranteed to see the new rows.
+    const planDocIds =
+      (newProject as { _planDocumentIds?: string[] })._planDocumentIds ?? [];
+    if (planDocIds.length > 0) {
+      try {
+        const { enqueueJob } = await import("../jobQueue");
+        for (const planDocId of planDocIds) {
+          await enqueueJob(
+            "pdf_tile_prerender",
+            { planDocumentId: planDocId },
+            {
+              organizationId: newProject.gcOrganizationId!,
+              userId: input.actorId,
+              idempotencyKey: `pdf_tile_prerender:${planDocId}`,
+            },
+          );
+        }
+      } catch (enqErr) {
+        logWarn("pdf_tile_prerender enqueue failed (bid conversion)", {
+          projectId: newProject.id,
+          count: planDocIds.length,
+          error: enqErr instanceof Error ? enqErr.message : String(enqErr),
+        });
+      }
+    }
 
     // Task #1386 — fire-and-forget Davis-Bacon auto-sync.
     if (newProject.wageDecision && newProject.gcOrganizationId) {

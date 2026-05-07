@@ -2022,6 +2022,12 @@ router.post("/api/projects/:id/prevailing-wage-summary/acknowledge-rate-changes"
 // projects in the org currently referencing the decision is included as
 // a header section in the PDF and as repeated columns in the CSV so
 // auditors can see the full blast radius without a second lookup.
+//
+// Task #2517 — Both the per-decision and the org-wide acknowledgement
+// exports moved off the inline request path and onto the `bulk_export`
+// pg-boss queue (`payroll_ack_export`). The route returns a job id;
+// the client polls `/api/jobs/:id` and downloads the artifact via the
+// signed URL in `output.url`.
 router.get(
   "/api/payroll/wage-decisions/:decisionNumber/acknowledgement-export",
   requireAuth,
@@ -2042,381 +2048,33 @@ router.get(
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid format", details: parsed.error.flatten() });
       }
-      const outputFormat = parsed.data.format ?? "csv";
-
-      // Pull every rate-change row (acknowledged or not) for this
-      // (org, decision) pair. The unique constraint on
-      // (org, decision, classification) guarantees one row per
-      // classification, so this yields the latest change/ack metadata
-      // we have on file. We will LEFT JOIN this against the *full*
-      // classification set below so classifications without a recorded
-      // change still appear in the report.
-      const changeRows = await db
-        .select({
-          classification: wageDecisionRateChanges.classification,
-          changeKind: wageDecisionRateChanges.changeKind,
-          oldBaseRate: wageDecisionRateChanges.oldBaseRate,
-          newBaseRate: wageDecisionRateChanges.newBaseRate,
-          oldFringeRate: wageDecisionRateChanges.oldFringeRate,
-          newFringeRate: wageDecisionRateChanges.newFringeRate,
-          oldTotalRate: wageDecisionRateChanges.oldTotalRate,
-          newTotalRate: wageDecisionRateChanges.newTotalRate,
-          detectedAt: wageDecisionRateChanges.detectedAt,
-          acknowledgedAt: wageDecisionRateChanges.acknowledgedAt,
-          acknowledgedByUserId: wageDecisionRateChanges.acknowledgedByUserId,
-          acknowledgerFirstName: users.firstName,
-          acknowledgerLastName: users.lastName,
-          acknowledgerEmail: users.email,
-        })
-        .from(wageDecisionRateChanges)
-        .leftJoin(users, eq(wageDecisionRateChanges.acknowledgedByUserId, users.id))
-        .where(
-          and(
-            eq(wageDecisionRateChanges.organizationId, orgId),
-            eq(wageDecisionRateChanges.decisionNumber, decisionNumber),
-          ),
-        );
-      const changeByKey = new Map<string, (typeof changeRows)[number]>();
-      for (const r of changeRows) {
-        changeByKey.set(normalizeClassificationKey(r.classification), r);
-      }
-
-      // Org-scoped list of projects that reference this wage decision so
-      // the report tells auditors *which* projects are affected, not just
-      // the decision number in the abstract.
-      const projectRows = await db
-        .select({
-          id: projects.id,
-          code: projects.code,
-          name: projects.name,
-        })
-        .from(projects)
-        .where(
-          and(
-            eq(projects.gcOrganizationId, orgId),
-            eq(projects.wageDecision, decisionNumber),
-          ),
-        )
-        .orderBy(asc(projects.name));
-
-      // Build the *full* classification set on this wage decision:
-      //   1. Every classification carried by the cached DOL Davis-Bacon
-      //      decision payload (the canonical "every classification on
-      //      the wage decision" list).
-      //   2. Every project-override classification on any org project
-      //      that references this decision (these may not be in the DOL
-      //      feed if the override classification is org-defined).
-      // Then we LEFT JOIN the change/ack metadata above, so unchanged /
-      // never-flagged classifications still appear in the report tagged
-      // "No recorded rate change / Unacknowledged" — auditors see the
-      // entire compliance surface, not just rows that happen to have an
-      // active flag row right now. This addresses the gap where
-      // `wage_decision_rate_changes` only retains classifications that
-      // currently have a persisted change record.
-      type EnumeratedClassification = {
-        classification: string;
-        sources: Set<"DOL_FEED" | "PROJECT_OVERRIDE">;
-      };
-      const enumerated = new Map<string, EnumeratedClassification>();
-      const ensure = (name: string, source: "DOL_FEED" | "PROJECT_OVERRIDE") => {
-        const trimmed = (name || "").trim();
-        if (!trimmed) return;
-        const key = normalizeClassificationKey(trimmed);
-        const existing = enumerated.get(key);
-        if (existing) {
-          existing.sources.add(source);
-        } else {
-          enumerated.set(key, { classification: trimmed, sources: new Set([source]) });
-        }
-      };
-      try {
-        const cachedRates = await listCachedDecisionClassifications(orgId, decisionNumber);
-        if (cachedRates) {
-          for (const r of cachedRates) {
-            if (r?.classification) ensure(r.classification, "DOL_FEED");
-          }
-        }
-      } catch (err) {
-        logWarn("Acknowledgement export: cached decision listing failed", {
-          orgId,
-          decisionNumber,
-          error: String(err),
-        });
-      }
-      if (projectRows.length > 0) {
-        const overrideRows = await db
-          .select({ name: jobClassifications.name })
-          .from(prevailingWageRates)
-          .innerJoin(jobClassifications, eq(prevailingWageRates.classificationId, jobClassifications.id))
-          .where(
-            and(
-              eq(prevailingWageRates.organizationId, orgId),
-              eq(prevailingWageRates.wageDecision, decisionNumber),
-              inArray(
-                prevailingWageRates.projectId,
-                projectRows.map((p) => p.id),
-              ),
-            ),
-          );
-        for (const o of overrideRows) ensure(o.name, "PROJECT_OVERRIDE");
-      }
-      // Finally: any classification that has a change record but no
-      // longer appears in the DOL cache or as a project override (e.g.
-      // it has been removed from the feed) should still appear so its
-      // acknowledgement history isn't silently hidden from the report.
-      for (const r of changeRows) ensure(r.classification, "DOL_FEED");
-
-      const rows = Array.from(enumerated.values())
-        .map((e) => {
-          const change = changeByKey.get(normalizeClassificationKey(e.classification));
-          const sourceLabel = Array.from(e.sources).sort().join("+");
-          return { entry: e, change, sourceLabel };
-        })
-        .sort((a, b) => a.entry.classification.localeCompare(b.entry.classification));
-
-      const fmtRate = (v: unknown): string => {
-        if (v === null || v === undefined) return "";
-        const n = typeof v === "string" ? parseFloat(v) : Number(v);
-        if (!Number.isFinite(n)) return "";
-        return n.toFixed(2);
-      };
-      const fmtName = (
-        first: string | null | undefined,
-        last: string | null | undefined,
-        email: string | null | undefined,
-        userId: string | null | undefined,
-      ): string => {
-        const name = `${first ?? ""} ${last ?? ""}`.trim();
-        return name || email || (userId ?? "");
-      };
-      const projectsLabel =
-        projectRows.length === 0
-          ? "(no projects reference this decision)"
-          : projectRows
-              .map((p) => (p.code ? `${p.code} ${p.name}` : p.name))
-              .join("; ");
-
-      const generatedAt = new Date();
-      const fileStem = `wage-decision-acknowledgements-${decisionNumber.replace(/[^A-Za-z0-9_-]+/g, "_")}-${generatedAt.toISOString().slice(0, 10)}`;
-
-      const ackStatusLabel = (
-        change: (typeof changeRows)[number] | undefined,
-      ): string => {
-        if (!change) return "No recorded rate change";
-        return change.acknowledgedAt ? "Acknowledged" : "Unacknowledged";
-      };
-
-      if (outputFormat === "json") {
-        return res.json({
+      const format = parsed.data.format ?? "csv";
+      const { enqueueJob } = await import("./jobQueue");
+      const { PAYROLL_ACK_EXPORT_TYPE } = await import("./jobQueue/exports/payrollAcknowledgement");
+      const enq = await enqueueJob(
+        "bulk_export",
+        {
+          exportType: PAYROLL_ACK_EXPORT_TYPE,
+          params: { scope: "decision", organizationId: orgId, decisionNumber, format },
+        },
+        {
           organizationId: orgId,
-          decisionNumber,
-          generatedAt: generatedAt.toISOString(),
-          projects: projectRows,
-          classifications: rows.map(({ entry, change, sourceLabel }) => ({
-            classification: entry.classification,
-            sources: Array.from(entry.sources).sort(),
-            sourceLabel,
-            changeKind: change?.changeKind ?? null,
-            oldBaseRate: change?.oldBaseRate ?? null,
-            newBaseRate: change?.newBaseRate ?? null,
-            oldFringeRate: change?.oldFringeRate ?? null,
-            newFringeRate: change?.newFringeRate ?? null,
-            oldTotalRate: change?.oldTotalRate ?? null,
-            newTotalRate: change?.newTotalRate ?? null,
-            detectedAt: change?.detectedAt instanceof Date
-              ? change.detectedAt.toISOString()
-              : change?.detectedAt ?? null,
-            acknowledgedAt: change?.acknowledgedAt instanceof Date
-              ? change.acknowledgedAt.toISOString()
-              : change?.acknowledgedAt ?? null,
-            acknowledgedByUserId: change?.acknowledgedByUserId ?? null,
-            acknowledgedByName: change?.acknowledgedByUserId
-              ? fmtName(
-                  change.acknowledgerFirstName,
-                  change.acknowledgerLastName,
-                  change.acknowledgerEmail,
-                  change.acknowledgedByUserId,
-                )
-              : null,
-            acknowledgementStatus: ackStatusLabel(change),
-          })),
-        });
-      }
-
-      if (outputFormat === "csv") {
-        const escape = (val: unknown) => {
-          if (val === null || val === undefined) return "";
-          const s = String(val);
-          return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-        };
-        const header = [
-          "Wage Decision",
-          "Classification",
-          "Source",
-          "Change Kind",
-          "Old Base Rate",
-          "New Base Rate",
-          "Old Fringe Rate",
-          "New Fringe Rate",
-          "Old Total Rate",
-          "New Total Rate",
-          "Detected At",
-          "Acknowledged At",
-          "Acknowledged By",
-          "Acknowledgement Status",
-          "Affected Projects",
-        ];
-        const lines = [header.join(",")];
-        if (rows.length === 0) {
-          lines.push(
-            [
-              decisionNumber,
-              "(no classifications resolved for this wage decision)",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "",
-              "No recorded rate change",
-              projectsLabel,
-            ].map(escape).join(","),
-          );
-        } else {
-          for (const { entry, change, sourceLabel } of rows) {
-            const ackName = change?.acknowledgedByUserId
-              ? fmtName(
-                  change.acknowledgerFirstName,
-                  change.acknowledgerLastName,
-                  change.acknowledgerEmail,
-                  change.acknowledgedByUserId,
-                )
-              : "";
-            lines.push(
-              [
-                decisionNumber,
-                entry.classification,
-                sourceLabel,
-                change?.changeKind ?? "",
-                fmtRate(change?.oldBaseRate),
-                fmtRate(change?.newBaseRate),
-                fmtRate(change?.oldFringeRate),
-                fmtRate(change?.newFringeRate),
-                fmtRate(change?.oldTotalRate),
-                fmtRate(change?.newTotalRate),
-                change?.detectedAt instanceof Date
-                  ? change.detectedAt.toISOString()
-                  : (change?.detectedAt ?? ""),
-                change?.acknowledgedAt instanceof Date
-                  ? change.acknowledgedAt.toISOString()
-                  : (change?.acknowledgedAt ?? ""),
-                ackName,
-                ackStatusLabel(change),
-                projectsLabel,
-              ].map(escape).join(","),
-            );
-          }
-        }
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader("Content-Disposition", `attachment; filename="${fileStem}.csv"`);
-        return res.send(lines.join("\n"));
-      }
-
-      // PDF — bind a pdfkit doc to the response stream so very large
-      // reports never have to materialize in memory.
-      const PDFDocument = (await import("pdfkit")).default;
-      const doc = new PDFDocument({ size: "LETTER", margin: 50 });
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `attachment; filename="${fileStem}.pdf"`);
-      doc.pipe(res);
-
-      doc.fontSize(16).font("Helvetica-Bold").text("Prevailing Wage Acknowledgement Report", { align: "left" });
-      doc.moveDown(0.3);
-      doc.fontSize(10).font("Helvetica").fillColor("#444444");
-      doc.text(`Wage Decision: ${decisionNumber}`);
-      doc.text(`Generated: ${generatedAt.toISOString()}`);
-      doc.text(
-        `Affected Projects (${projectRows.length}): ${
-          projectRows.length === 0
-            ? "(no projects reference this decision)"
-            : projectRows.map((p) => (p.code ? `${p.code} — ${p.name}` : p.name)).join(", ")
-        }`,
-        { width: 500 },
+          userId: authReq.user!.id,
+          idempotencyKey: `payroll_ack_export:decision:${orgId}:${decisionNumber}:${format}:${Date.now()}`,
+        },
       );
-      doc.moveDown(0.5);
-      doc.fillColor("#000000");
-      const ackedCount = changeRows.filter((r) => r.acknowledgedAt).length;
-      const unackedCount = changeRows.length - ackedCount;
-      doc
-        .fontSize(11)
-        .font("Helvetica-Bold")
-        .text(
-          `Classifications: ${rows.length} (with rate change ${changeRows.length} — ${ackedCount} acknowledged, ${unackedCount} unacknowledged)`,
-        );
-      doc.moveDown(0.3);
-
-      if (rows.length === 0) {
-        doc.fontSize(10).font("Helvetica").text(
-          "No classifications resolved for this wage decision. Either the DOL Davis-Bacon decision has not been cached for this organization, or no project references it with overrides.",
-          { width: 500 },
-        );
-      } else {
-        for (const { entry, change, sourceLabel } of rows) {
-          const ackName = change?.acknowledgedByUserId
-            ? fmtName(
-                change.acknowledgerFirstName,
-                change.acknowledgerLastName,
-                change.acknowledgerEmail,
-                change.acknowledgedByUserId,
-              )
-            : "";
-          const ackStatus = !change
-            ? "No recorded rate change"
-            : change.acknowledgedAt
-              ? `Acknowledged by ${ackName || "unknown"} on ${
-                  change.acknowledgedAt instanceof Date
-                    ? change.acknowledgedAt.toISOString()
-                    : change.acknowledgedAt
-                }`
-            : "Unacknowledged";
-          doc.fontSize(10).font("Helvetica-Bold").text(`• ${entry.classification}`);
-          doc.font("Helvetica").fontSize(9);
-          doc.text(`   Source: ${sourceLabel}`);
-          if (change) {
-            doc.text(`   Change kind: ${change.changeKind}`);
-            doc.text(
-              `   Base: ${fmtRate(change.oldBaseRate) || "—"} → ${fmtRate(change.newBaseRate) || "—"}    Fringe: ${
-                fmtRate(change.oldFringeRate) || "—"
-              } → ${fmtRate(change.newFringeRate) || "—"}    Total: ${fmtRate(change.oldTotalRate) || "—"} → ${
-                fmtRate(change.newTotalRate) || "—"
-              }`,
-            );
-            doc.text(
-              `   Detected: ${
-                change.detectedAt instanceof Date ? change.detectedAt.toISOString() : (change.detectedAt ?? "—")
-              }`,
-            );
-          }
-          doc.text(`   ${ackStatus}`);
-          doc.moveDown(0.4);
-        }
-      }
-      doc.end();
-      return;
+      return res.status(202).json({
+        jobId: enq.jobId,
+        idempotencyKey: enq.idempotencyKey,
+        deduplicated: enq.deduplicated,
+        status: "QUEUED",
+      });
     } catch (error) {
       next(error);
     }
   },
 );
 
-// Org-wide variant of the acknowledgement export: returns rows for every
-// wage decision referenced by any project in the caller's org, suitable
-// for an annual compliance binder that spans multiple decisions.
 router.get(
   "/api/payroll/acknowledgement-export",
   requireAuth,
@@ -2433,276 +2091,33 @@ router.get(
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid format", details: parsed.error.flatten() });
       }
-      const outputFormat = parsed.data.format ?? "csv";
-
-      const rows = await db
-        .select({
-          decisionNumber: wageDecisionRateChanges.decisionNumber,
-          classification: wageDecisionRateChanges.classification,
-          changeKind: wageDecisionRateChanges.changeKind,
-          oldBaseRate: wageDecisionRateChanges.oldBaseRate,
-          newBaseRate: wageDecisionRateChanges.newBaseRate,
-          oldFringeRate: wageDecisionRateChanges.oldFringeRate,
-          newFringeRate: wageDecisionRateChanges.newFringeRate,
-          oldTotalRate: wageDecisionRateChanges.oldTotalRate,
-          newTotalRate: wageDecisionRateChanges.newTotalRate,
-          detectedAt: wageDecisionRateChanges.detectedAt,
-          acknowledgedAt: wageDecisionRateChanges.acknowledgedAt,
-          acknowledgedByUserId: wageDecisionRateChanges.acknowledgedByUserId,
-          acknowledgerFirstName: users.firstName,
-          acknowledgerLastName: users.lastName,
-          acknowledgerEmail: users.email,
-        })
-        .from(wageDecisionRateChanges)
-        .leftJoin(users, eq(wageDecisionRateChanges.acknowledgedByUserId, users.id))
-        .where(eq(wageDecisionRateChanges.organizationId, orgId))
-        .orderBy(asc(wageDecisionRateChanges.decisionNumber), asc(wageDecisionRateChanges.classification));
-
-      const projectRows = await db
-        .select({
-          code: projects.code,
-          name: projects.name,
-          wageDecision: projects.wageDecision,
-        })
-        .from(projects)
-        .where(and(eq(projects.gcOrganizationId, orgId), sql`${projects.wageDecision} IS NOT NULL`))
-        .orderBy(asc(projects.wageDecision), asc(projects.name));
-      const projectsByDecision = new Map<string, string[]>();
-      for (const p of projectRows) {
-        const key = (p.wageDecision || "").trim();
-        if (!key) continue;
-        const label = p.code ? `${p.code} ${p.name}` : p.name;
-        const list = projectsByDecision.get(key) ?? [];
-        list.push(label);
-        projectsByDecision.set(key, list);
-      }
-
-      const fmtRate = (v: unknown): string => {
-        if (v === null || v === undefined) return "";
-        const n = typeof v === "string" ? parseFloat(v) : Number(v);
-        if (!Number.isFinite(n)) return "";
-        return n.toFixed(2);
-      };
-      const fmtName = (
-        first: string | null | undefined,
-        last: string | null | undefined,
-        email: string | null | undefined,
-        userId: string | null | undefined,
-      ): string => {
-        const name = `${first ?? ""} ${last ?? ""}`.trim();
-        return name || email || (userId ?? "");
-      };
-
-      const generatedAt = new Date();
-      if (outputFormat === "json") {
-        return res.json({
+      const format = parsed.data.format ?? "csv";
+      const { enqueueJob } = await import("./jobQueue");
+      const { PAYROLL_ACK_EXPORT_TYPE } = await import("./jobQueue/exports/payrollAcknowledgement");
+      const enq = await enqueueJob(
+        "bulk_export",
+        {
+          exportType: PAYROLL_ACK_EXPORT_TYPE,
+          params: { scope: "org", organizationId: orgId, format },
+        },
+        {
           organizationId: orgId,
-          generatedAt: generatedAt.toISOString(),
-          rows: rows.map((r) => ({
-            decisionNumber: r.decisionNumber,
-            classification: r.classification,
-            changeKind: r.changeKind,
-            oldBaseRate: r.oldBaseRate,
-            newBaseRate: r.newBaseRate,
-            oldFringeRate: r.oldFringeRate,
-            newFringeRate: r.newFringeRate,
-            oldTotalRate: r.oldTotalRate,
-            newTotalRate: r.newTotalRate,
-            detectedAt: r.detectedAt instanceof Date ? r.detectedAt.toISOString() : r.detectedAt,
-            acknowledgedAt: r.acknowledgedAt instanceof Date ? r.acknowledgedAt.toISOString() : r.acknowledgedAt,
-            acknowledgedByUserId: r.acknowledgedByUserId,
-            acknowledgedByName: r.acknowledgedByUserId
-              ? fmtName(r.acknowledgerFirstName, r.acknowledgerLastName, r.acknowledgerEmail, r.acknowledgedByUserId)
-              : null,
-            affectedProjects: projectsByDecision.get(r.decisionNumber) ?? [],
-          })),
-        });
-      }
-
-      const fileStem = `wage-decision-acknowledgements-org-${generatedAt.toISOString().slice(0, 10)}`;
-
-      if (outputFormat === "pdf") {
-        // Task #1547 — org-wide compliance binder PDF. Mirrors the
-        // per-decision PDF (`/api/payroll/wage-decisions/:decisionNumber/
-        // acknowledgement-export?format=pdf`) but groups rows by wage
-        // decision so a single binder spans every decision referenced by
-        // any project in the caller's org. Streamed straight to the
-        // response so very large multi-decision binders never have to
-        // materialize in memory.
-        const PDFDocument = (await import("pdfkit")).default;
-        const doc = new PDFDocument({ size: "LETTER", margin: 50 });
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="${fileStem}.pdf"`);
-        doc.pipe(res);
-
-        doc
-          .fontSize(16)
-          .font("Helvetica-Bold")
-          .text("Prevailing Wage Acknowledgement Report — Organization-wide", { align: "left" });
-        doc.moveDown(0.3);
-        doc.fontSize(10).font("Helvetica").fillColor("#444444");
-        doc.text(`Generated: ${generatedAt.toISOString()}`);
-
-        const decisionNumbers = Array.from(
-          new Set<string>([
-            ...rows.map((r) => r.decisionNumber),
-            ...projectsByDecision.keys(),
-          ]),
-        ).sort();
-        const ackedTotal = rows.filter((r) => r.acknowledgedAt).length;
-        const unackedTotal = rows.length - ackedTotal;
-        doc.text(
-          `Wage Decisions: ${decisionNumbers.length}    Rate-change rows: ${rows.length} (${ackedTotal} acknowledged, ${unackedTotal} unacknowledged)`,
-        );
-        doc.moveDown(0.5);
-        doc.fillColor("#000000");
-
-        if (decisionNumbers.length === 0) {
-          doc
-            .fontSize(10)
-            .font("Helvetica")
-            .text(
-              "No wage decisions are referenced by any project in this organization, and no rate-change records exist.",
-              { width: 500 },
-            );
-        } else {
-          const rowsByDecision = new Map<string, typeof rows>();
-          for (const r of rows) {
-            const list = rowsByDecision.get(r.decisionNumber) ?? [];
-            list.push(r);
-            rowsByDecision.set(r.decisionNumber, list);
-          }
-
-          for (const decisionNumber of decisionNumbers) {
-            const decisionRows = rowsByDecision.get(decisionNumber) ?? [];
-            const decisionProjects = projectsByDecision.get(decisionNumber) ?? [];
-            const decisionAcked = decisionRows.filter((r) => r.acknowledgedAt).length;
-            const decisionUnacked = decisionRows.length - decisionAcked;
-
-            doc.moveDown(0.4);
-            doc.fontSize(12).font("Helvetica-Bold").fillColor("#000000");
-            doc.text(`Wage Decision: ${decisionNumber}`);
-            doc.font("Helvetica").fontSize(9).fillColor("#444444");
-            doc.text(
-              `Affected Projects (${decisionProjects.length}): ${
-                decisionProjects.length === 0
-                  ? "(no projects reference this decision)"
-                  : decisionProjects.join(", ")
-              }`,
-              { width: 500 },
-            );
-            doc.text(
-              `Rate-change rows: ${decisionRows.length} (${decisionAcked} acknowledged, ${decisionUnacked} unacknowledged)`,
-            );
-            doc.fillColor("#000000");
-            doc.moveDown(0.2);
-
-            if (decisionRows.length === 0) {
-              doc
-                .fontSize(9)
-                .font("Helvetica")
-                .text("   No recorded rate changes for this decision.", { width: 500 });
-              continue;
-            }
-
-            for (const r of decisionRows) {
-              const ackName = r.acknowledgedByUserId
-                ? fmtName(
-                    r.acknowledgerFirstName,
-                    r.acknowledgerLastName,
-                    r.acknowledgerEmail,
-                    r.acknowledgedByUserId,
-                  )
-                : "";
-              const ackStatus = r.acknowledgedAt
-                ? `Acknowledged by ${ackName || "unknown"} on ${
-                    r.acknowledgedAt instanceof Date
-                      ? r.acknowledgedAt.toISOString()
-                      : r.acknowledgedAt
-                  }`
-                : "Unacknowledged";
-              doc.fontSize(10).font("Helvetica-Bold").text(`• ${r.classification}`);
-              doc.font("Helvetica").fontSize(9);
-              doc.text(`   Change kind: ${r.changeKind}`);
-              doc.text(
-                `   Base: ${fmtRate(r.oldBaseRate) || "—"} → ${fmtRate(r.newBaseRate) || "—"}    Fringe: ${
-                  fmtRate(r.oldFringeRate) || "—"
-                } → ${fmtRate(r.newFringeRate) || "—"}    Total: ${fmtRate(r.oldTotalRate) || "—"} → ${
-                  fmtRate(r.newTotalRate) || "—"
-                }`,
-              );
-              doc.text(
-                `   Detected: ${
-                  r.detectedAt instanceof Date ? r.detectedAt.toISOString() : (r.detectedAt ?? "—")
-                }`,
-              );
-              doc.text(`   ${ackStatus}`);
-              doc.moveDown(0.4);
-            }
-          }
-        }
-        doc.end();
-        return;
-      }
-
-      const escape = (val: unknown) => {
-        if (val === null || val === undefined) return "";
-        const s = String(val);
-        return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-      };
-      const header = [
-        "Wage Decision",
-        "Classification",
-        "Change Kind",
-        "Old Base Rate",
-        "New Base Rate",
-        "Old Fringe Rate",
-        "New Fringe Rate",
-        "Old Total Rate",
-        "New Total Rate",
-        "Detected At",
-        "Acknowledged At",
-        "Acknowledged By",
-        "Acknowledgement Status",
-        "Affected Projects",
-      ];
-      const lines = [header.join(",")];
-      for (const r of rows) {
-        const ackName = r.acknowledgedByUserId
-          ? fmtName(r.acknowledgerFirstName, r.acknowledgerLastName, r.acknowledgerEmail, r.acknowledgedByUserId)
-          : "";
-        const ackStatus = r.acknowledgedAt ? "Acknowledged" : "Unacknowledged";
-        const affected = (projectsByDecision.get(r.decisionNumber) ?? []).join("; ");
-        lines.push(
-          [
-            r.decisionNumber,
-            r.classification,
-            r.changeKind,
-            fmtRate(r.oldBaseRate),
-            fmtRate(r.newBaseRate),
-            fmtRate(r.oldFringeRate),
-            fmtRate(r.newFringeRate),
-            fmtRate(r.oldTotalRate),
-            fmtRate(r.newTotalRate),
-            r.detectedAt instanceof Date ? r.detectedAt.toISOString() : (r.detectedAt ?? ""),
-            r.acknowledgedAt instanceof Date ? r.acknowledgedAt.toISOString() : (r.acknowledgedAt ?? ""),
-            ackName,
-            ackStatus,
-            affected,
-          ].map(escape).join(","),
-        );
-      }
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="wage-decision-acknowledgements-org-${generatedAt.toISOString().slice(0, 10)}.csv"`,
+          userId: authReq.user!.id,
+          idempotencyKey: `payroll_ack_export:org:${orgId}:${format}:${Date.now()}`,
+        },
       );
-      return res.send(lines.join("\n"));
+      return res.status(202).json({
+        jobId: enq.jobId,
+        idempotencyKey: enq.idempotencyKey,
+        deduplicated: enq.deduplicated,
+        status: "QUEUED",
+      });
     } catch (error) {
       next(error);
     }
   },
 );
+
 // Task #1480 — chronological audit history of every PM acknowledgement
 // of a Davis-Bacon rate-change flag for the project's wage decision.
 // The live `wage_decision_rate_changes` table only retains the *most

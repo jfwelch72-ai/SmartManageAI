@@ -387,6 +387,11 @@ router.get("/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, next
   }
 });
 
+// Task #2517 — Bulk change-order PDF export migrated to the
+// pg-boss queue (`bulk_export` / `change_order_bulk_pdf`). Auth and
+// project access are still checked synchronously; once they pass we
+// enqueue and return a job id. The client polls `/api/jobs/:id` and
+// downloads the resulting ZIP via the signed URL in `output.url`.
 router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"], "canAccessProjects"), async (req: AuthRequest, res: Response, next) => {
   try {
     const projectId = req.params.projectId;
@@ -412,131 +417,34 @@ router.get("/project/:projectId/bulk-pdf", requireAuth, requireRoleOrFeature(["A
     }
 
     const selectedIdsParam = req.query.ids as string | undefined;
-    let coQuery = db.select().from(changeOrders).where(eq(changeOrders.projectId, projectId));
-    const allCOs = await coQuery;
-
-    const draftStatuses = ["DRAFT", "PENDING_APPROVAL"];
-    let eligibleCOs = allCOs.filter(co => !draftStatuses.includes(co.status));
-
-    if (selectedIdsParam) {
-      const selectedIds = new Set(selectedIdsParam.split(','));
-      eligibleCOs = eligibleCOs.filter(co => selectedIds.has(co.id));
+    const orgId = projectData.gcOrganizationId || req.user!.organizationId!;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
     }
-
-    if (eligibleCOs.length === 0) {
-      res.status(400).json({ error: "No eligible change orders to export" });
-      return;
-    }
-
-    let orgBranding: { organizationName: string; primaryColor?: string } | undefined;
-    if (projectData.gcOrganizationId) {
-      const { organizations } = await import("@shared/schema");
-      const [org] = await db.select({ name: organizations.name, primaryColor: organizations.primaryColor }).from(organizations).where(eq(organizations.id, projectData.gcOrganizationId)).limit(1);
-      if (org) orgBranding = { organizationName: org.name, primaryColor: org.primaryColor || undefined };
-    }
-
-    const { generateChangeOrderPDF } = await import("./co-pdf-service");
-    const archiver = (await import("archiver")).default;
-
-    const archive = archiver('zip', { zlib: { level: 5 } });
-    const safeProjectCode = projectData.code.replace(/[^a-zA-Z0-9-]/g, '_');
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="ChangeOrders_${safeProjectCode}.zip"`);
-    archive.pipe(res);
-
-    for (const co of eligibleCOs) {
-      try {
-        let costBreakdownData = null;
-        try {
-          if (co.costBreakdownJson) {
-            costBreakdownData = typeof co.costBreakdownJson === 'string' ? safeJsonParse(co.costBreakdownJson, null) : co.costBreakdownJson;
-          }
-        } catch (parseErr) {
-          logWarn(`Skipping malformed costBreakdownJson for CO ${co.changeOrderNumber}`);
-        }
-
-        let costCodeLabel: string | null = null;
-        if (co.costCodeId) {
-          const [cc] = await db.select({ code: orgCostCodes.code, description: orgCostCodes.description }).from(orgCostCodes).where(eq(orgCostCodes.id, co.costCodeId)).limit(1);
-          if (cc) costCodeLabel = `${cc.code} — ${cc.description}`;
-        }
-
-        const [requestedBy] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.requestedById)).limit(1);
-        let approvedByName: string | undefined;
-        if (co.approvedById) {
-          const [approver] = await db.select({ firstName: users.firstName, lastName: users.lastName }).from(users).where(eq(users.id, co.approvedById)).limit(1);
-          if (approver) approvedByName = `${approver.firstName} ${approver.lastName}`;
-        }
-
-        let linkedRfiNumber: string | null = null;
-        if (co.linkedRfiId) {
-          const [rfi] = await db.select({ rfiNumber: rfis.rfiNumber }).from(rfis).where(eq(rfis.id, co.linkedRfiId)).limit(1);
-          if (rfi) linkedRfiNumber = rfi.rfiNumber;
-        }
-
-        let linkedTmTicketNumber: string | null = null;
-        if (co.linkedTmTicketId) {
-          const [tm] = await db.select({ ticketNumber: tmTickets.ticketNumber }).from(tmTickets).where(eq(tmTickets.id, co.linkedTmTicketId)).limit(1);
-          if (tm) linkedTmTicketNumber = tm.ticketNumber;
-        }
-
-        let contractNumber: string | null = null;
-        if (co.contractId) {
-          const { contracts } = await import("@shared/schema");
-          const [contract] = await db.select({ contractNumber: contracts.contractNumber }).from(contracts).where(eq(contracts.id, co.contractId)).limit(1);
-          if (contract) contractNumber = contract.contractNumber;
-        }
-
-        const approvalRows = await db.select({
-          approval: {
-            approverRole: changeOrderApprovals.approverRole,
-            status: changeOrderApprovals.status,
-            stepOrder: changeOrderApprovals.stepOrder,
-            comments: changeOrderApprovals.comments,
-            decidedAt: changeOrderApprovals.decidedAt,
-          },
-        }).from(changeOrderApprovals).where(eq(changeOrderApprovals.changeOrderId, co.id)).orderBy(changeOrderApprovals.stepOrder);
-
-        const revisionRows = await db.select({
-          revision: {
-            revisionNumber: changeOrderRevisions.revisionNumber,
-            previousStatus: changeOrderRevisions.previousStatus,
-            newStatus: changeOrderRevisions.newStatus,
-            description: changeOrderRevisions.description,
-            createdAt: changeOrderRevisions.createdAt,
-          },
-        }).from(changeOrderRevisions).where(eq(changeOrderRevisions.changeOrderId, co.id)).orderBy(changeOrderRevisions.revisionNumber);
-
-        const stream = generateChangeOrderPDF({
-          changeOrder: {
-            ...co,
-            costCodeLabel,
-            linkedTmTicketNumber,
-            linkedRfiNumber,
-            contractNumber,
-            requestedByName: requestedBy ? `${requestedBy.firstName} ${requestedBy.lastName}` : undefined,
-            approvedByName,
-          },
-          project: { name: projectData.name, code: projectData.code, clientName: projectData.clientName || undefined, locationAddress: projectData.locationAddress },
-          lineItems: costBreakdownData,
-          approvals: approvalRows.map(a => ({ ...a.approval, decidedAt: a.approval.decidedAt ? String(a.approval.decidedAt) : null })),
-          revisions: revisionRows.map(r => ({ ...r.revision, createdAt: String(r.revision.createdAt) })),
-          branding: orgBranding,
-        });
-
-        const safeNumber = co.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_');
-        archive.append(stream, { name: `${safeNumber}.pdf` });
-      } catch (coErr) {
-        logError(`Failed to generate PDF for CO ${co.changeOrderNumber}:`, {}, coErr instanceof Error ? coErr : new Error(String(coErr)));
-      }
-    }
-
-    await archive.finalize();
+    const changeOrderIds = selectedIdsParam ? selectedIdsParam.split(",").filter(Boolean) : undefined;
+    const { enqueueJob } = await import("./jobQueue");
+    const { CHANGE_ORDER_BULK_PDF_EXPORT_TYPE } = await import("./jobQueue/exports/changeOrderBulkPdf");
+    const enq = await enqueueJob(
+      "bulk_export",
+      {
+        exportType: CHANGE_ORDER_BULK_PDF_EXPORT_TYPE,
+        params: { organizationId: orgId, projectId, changeOrderIds },
+      },
+      {
+        organizationId: orgId,
+        userId: req.user!.id,
+        idempotencyKey: `co_bulk_pdf:${projectId}:${changeOrderIds?.slice().sort().join(",") ?? "all"}:${Date.now()}`,
+      },
+    );
+    return res.status(202).json({
+      jobId: enq.jobId,
+      idempotencyKey: enq.idempotencyKey,
+      deduplicated: enq.deduplicated,
+      status: "QUEUED",
+    });
   } catch (error) {
-    logError("Bulk PDF export error:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (!res.headersSent) {
-      next(error);
-    }
+    logError("Bulk PDF enqueue error:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (!res.headersSent) next(error);
   }
 });
 

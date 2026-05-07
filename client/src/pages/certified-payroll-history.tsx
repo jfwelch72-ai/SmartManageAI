@@ -29,6 +29,7 @@ import {
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { enqueueAndDownloadExport } from "@/lib/jobs";
 import { useAuth } from "@/hooks/use-auth";
 
 interface CertifiedPayrollReportRow {
@@ -214,30 +215,14 @@ export default function CertifiedPayrollHistoryPage() {
   const handleExportAcknowledgements = async (fmt: "csv" | "json" | "pdf") => {
     setAckExportFormat(fmt);
     try {
-      const res = await fetch(`/api/payroll/acknowledgement-export?format=${fmt}`, {
-        credentials: "include",
-      });
-      if (!res.ok) {
-        let msg = `Export failed (${res.status})`;
-        try {
-          const body = await res.json();
-          if (body?.error) msg = body.error;
-        } catch {
-          /* non-JSON error body — fall back to status */
-        }
-        throw new Error(msg);
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `wage-decision-acknowledgements-org-${new Date()
+      // Task #2517 — Now runs on the pg-boss queue. The GET enqueues
+      // and returns a job id; the helper polls and downloads from the
+      // signed URL written by the worker.
+      const url = `/api/payroll/acknowledgement-export?format=${fmt}`;
+      const filename = `wage-decision-acknowledgements-org-${new Date()
         .toISOString()
         .slice(0, 10)}.${fmt}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+      await enqueueAndDownloadExport(url, filename);
     } catch (err) {
       toast({
         title: "Export failed",

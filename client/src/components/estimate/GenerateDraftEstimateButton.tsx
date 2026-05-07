@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Loader2, Sparkles, Check } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { pollJobUntilDone } from "@/lib/jobs";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -39,13 +40,26 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
   const [scopeNotes, setScopeNotes] = useState("");
   const [draft, setDraft] = useState<DraftResult | null>(null);
 
+  // Task #2517 — POST enqueues an `ai_estimator_draft` job and returns
+  // `{ jobId }`. Poll `/api/jobs/:id` until terminal then unwrap the
+  // draft from `output`.
   const generate = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<DraftResult & { fallback?: boolean; message?: string }> => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft-estimate", {
         bidId,
         scopeNotes: scopeNotes.trim() || undefined,
       });
-      return r.json();
+      const enq = (await r.json()) as { jobId?: string };
+      if (!enq.jobId) throw new Error("Server did not return a job id");
+      const status = await pollJobUntilDone<DraftResult & { fallback?: boolean; message?: string }>(
+        enq.jobId,
+        { intervalMs: 2000, timeoutMs: 10 * 60_000 },
+      );
+      if (status.state !== "completed") {
+        throw new Error(status.error || `Draft job ${status.state}`);
+      }
+      if (!status.output) throw new Error("Draft job returned no output");
+      return status.output;
     },
     onSuccess: (data: DraftResult & { fallback?: boolean; message?: string }) => {
       if (data.fallback) {

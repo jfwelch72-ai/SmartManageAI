@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { enqueueAndDownloadExport } from "@/lib/jobs";
 import {
   getExportResponseErrorToast,
   getExportThrownErrorToast,
@@ -318,26 +319,15 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
 
   const [bulkPdfLoading, setBulkPdfLoading] = useState(false);
   const handleBulkExportPdf = useCallback(async () => {
+    // Task #2517 — Bulk change-order PDF export now runs on the
+    // pg-boss queue. The GET enqueues a job; we poll until the worker
+    // uploads the ZIP to GCS, then trigger a download from the signed
+    // URL it returns.
     setBulkPdfLoading(true);
     try {
       const idsParam = selectedIds.size > 0 ? `?ids=${Array.from(selectedIds).join(',')}` : '';
-      const res = await fetch(`/api/change-orders/project/${projectId}/bulk-pdf${idsParam}`, { credentials: "include" });
-      if (!res.ok) {
-        toast(
-          await getExportResponseErrorToast(res, {
-            artifact: "PDF ZIP",
-            subject: "change order",
-          }),
-        );
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `ChangeOrders_${projectCode}.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const url = `/api/change-orders/project/${projectId}/bulk-pdf${idsParam}`;
+      await enqueueAndDownloadExport(url, `ChangeOrders_${projectCode}.zip`);
       toast({ title: "Exported", description: "Change orders exported as PDF ZIP" });
     } catch (e: unknown) {
       toast(getExportThrownErrorToast(e, { artifact: "PDF ZIP", subject: "change order" }));
