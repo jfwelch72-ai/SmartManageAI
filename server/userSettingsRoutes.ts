@@ -497,6 +497,12 @@ router.post("/api/account/2fa/verify", requireAuth, async (req: AuthRequest, res
       userAgent: req.headers["user-agent"] || null,
     });
 
+    // Task #2495 — central audit_log entry for MFA enable. The existing
+    // activity_log row stays for the in-app session UI; audit_log is
+    // the SOC 2 trail.
+    const { logAuthEvent } = await import("./auditLogger");
+    await logAuthEvent(userId, "MFA_ENABLED", { method: "totp" }, req);
+
     pendingTotpSetups.delete(userId);
 
     return res.json({ success: true, message: "Two-factor authentication has been enabled." });
@@ -534,6 +540,10 @@ router.post("/api/account/2fa/disable", requireAuth, async (req: AuthRequest, re
       ipAddress: (req.headers["x-forwarded-for"] as string) || req.socket.remoteAddress || null,
       userAgent: req.headers["user-agent"] || null,
     });
+
+    // Task #2495 — central audit_log entry for MFA disable.
+    const { logAuthEvent } = await import("./auditLogger");
+    await logAuthEvent(userId, "MFA_DISABLED", { method: "totp" }, req);
 
     return res.json({ success: true, message: "Two-factor authentication has been disabled." });
   } catch (error) {

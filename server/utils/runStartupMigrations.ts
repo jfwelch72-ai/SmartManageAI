@@ -107,6 +107,7 @@ import { ensureStatusPageTables } from "./ensureStatusPageTables";
 import { backfillStatusProbeDailyHistory } from "./backfillStatusProbeDailyHistory";
 import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
 import { ensureBillingEnumValues } from "./ensureBillingEnumValues";
+import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCrmEmailLoggingTables } from "./ensureCrmEmailLoggingTables";
 import { ensureUsersManagerIdColumn } from "./ensureUsersManagerIdColumn";
 import { ensureProjectTemplateTables } from "./ensureProjectTemplateTables";
@@ -148,7 +149,6 @@ import { runExhaustedSyncRetryAlertsBackfillOnce } from "./runExhaustedSyncRetry
 import { runRestoreAuditBackfillOnce } from "./runRestoreAuditBackfillOnce";
 import { runScaleCalibrationBackfillOnce } from "./runScaleCalibrationBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
-import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
 import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
 
@@ -387,6 +387,11 @@ const migrations: MigrationStep[] = [
   // (`subscription_status.suspended`, `usage_key.{ai_tokens,ai_jobs,storage_bytes}`)
   // that reconcileSchemaDrift can't synthesize for existing enum types.
   { name: "billing_enum_values", category: "ADD_ENUM", fn: ensureBillingEnumValues },
+  // Task #2495 — auth + role-change audit_action enum values must exist
+  // before the auth routes try to write LOGIN/LOGOUT/PASSWORD_*/ROLE_*
+  // rows. Without this, `logAudit` would silently drop them on a long-
+  // lived deploy DB created before the enum was extended.
+  { name: "audit_action_enum_values", category: "ADD_ENUM", fn: ensureAuditActionEnumValues },
   { name: "crm_email_logging_tables", category: "CREATE_TABLE", fn: ensureCrmEmailLoggingTables },
   { name: "users_manager_id_column", category: "ADD_COLUMN", fn: ensureUsersManagerIdColumn },
   { name: "project_template_tables", category: "CREATE_TABLE", fn: ensureProjectTemplateTables },

@@ -236,7 +236,25 @@ export const auditActionEnum = pgEnum("audit_action", [
   // `POST /api/library-items/bulk-duplicate` from Task #2113), so a
   // 500-row wipe or a 500-row fan-out is filterable in the audit
   // trail rather than buried as a generic DELETE/CREATE entry.
-  "BULK_DELETE", "BULK_DUPLICATE"
+  "BULK_DELETE", "BULK_DUPLICATE",
+  // Task #2495: auth + role-change events surfaced in the central
+  // audit_log so SOC 2 readiness has a single queryable trail across
+  // money paths and identity changes (see threat_model.md § 5.5).
+  // LOGIN / LOGOUT / LOGIN_FAILED replace the per-row activity_log
+  // entries previously written from authProfileRoutes; PASSWORD_*
+  // covers user-initiated change, admin-initiated reset email send,
+  // and reset-token redemption; ROLE_CHANGED captures both the
+  // platform `/platform/users/:id/role` swap and the in-org
+  // `PATCH /api/users/:id` role swap. ROLE_GRANTED / ROLE_REVOKED
+  // cover HUSTLER `hustler_organizations` membership lifecycle so
+  // an oversight grant is never invisible. MFA_ENABLED / MFA_DISABLED
+  // are reserved for the upcoming MFA work — having the enum value
+  // already promoted means the future MFA route can audit-log
+  // without an additional schema push.
+  "LOGIN", "LOGOUT", "LOGIN_FAILED",
+  "PASSWORD_CHANGE", "PASSWORD_RESET", "PASSWORD_RESET_REQUESTED",
+  "ROLE_CHANGED", "ROLE_GRANTED", "ROLE_REVOKED",
+  "MFA_ENABLED", "MFA_DISABLED"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

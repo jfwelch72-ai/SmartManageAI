@@ -6,6 +6,7 @@ import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { sendEmail } from "./email";
 import { sensitiveLimiter } from "./rateLimiter";
+import { logRoleChange } from "./auditLogger";
 import { z } from "zod";
 import crypto from "crypto";
 
@@ -426,6 +427,18 @@ router.delete("/hustler/unlink-organization/:organizationId", requireAuth, requi
       .set({ isActive: false })
       .where(eq(hustlerOrganizations.id, link.id));
 
+    // Task #2495 — HUSTLER oversight revoke: write a ROLE_REVOKED audit
+    // row so removing a HUSTLER link is traceable in the central trail.
+    await logRoleChange(
+      req.user.id,
+      req.user.id,
+      link.roleOverride || "HUSTLER",
+      null,
+      "HUSTLER_ORG",
+      { organizationId, source: "self_unlink" },
+      req,
+    );
+
     logInfo( `[Hustler] Unlinked org: user=${req.user.id} org=${organizationId}`);
 
     res.json({
@@ -793,6 +806,18 @@ router.post("/hustler/link-requests/:requestId/respond", requireAuth, sensitiveL
         })
         .where(eq(hustlerLinkRequests.id, requestId));
 
+      // Task #2495 — HUSTLER grant audit: a new (or reactivated) link
+      // gives the HUSTLER user oversight access to another org's data.
+      await logRoleChange(
+        req.user.id,
+        req.user.id,
+        existingLink ? (existingLink.roleOverride || null) : null,
+        request.roleOverride || "HUSTLER",
+        "HUSTLER_ORG",
+        { organizationId: request.organizationId, source: "invite_response", requestId },
+        req,
+      );
+
       logInfo(`[Hustler] Invite accepted: user=${req.user.id} org=${request.organizationId}`);
 
       res.json({
@@ -927,6 +952,18 @@ router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req
     const jwtToken = generateToken(userId, existingUser.tokenVersion ?? 0);
     setAuthCookie(res, jwtToken);
 
+    // Task #2495 — HUSTLER grant via email link: ROLE_GRANTED audit row
+    // so an externally-redeemed invite is not invisible.
+    await logRoleChange(
+      userId,
+      userId,
+      existingLink ? (existingLink.roleOverride || null) : null,
+      request.roleOverride || "HUSTLER",
+      "HUSTLER_ORG",
+      { organizationId: request.organizationId, source: "email_token" },
+      req,
+    );
+
     logInfo(`[Hustler] Invite accepted via email link: user=${userId} org=${request.organizationId}`);
 
     const { passwordHash: _, tokenVersion: __, ...sanitizedUser } = existingUser;
@@ -1023,6 +1060,17 @@ router.post("/hustler/link-requests/accept-token", requireAuth, sensitiveLimiter
       .select()
       .from(organizations)
       .where(eq(organizations.id, request.organizationId));
+
+    // Task #2495 — HUSTLER grant via authenticated accept-token flow.
+    await logRoleChange(
+      req.user.id,
+      req.user.id,
+      existingLink ? (existingLink.roleOverride || null) : null,
+      request.roleOverride || "HUSTLER",
+      "HUSTLER_ORG",
+      { organizationId: request.organizationId, source: "accept_token" },
+      req,
+    );
 
     logInfo(`[Hustler] Token invite accepted: user=${req.user.id} org=${request.organizationId}`);
 

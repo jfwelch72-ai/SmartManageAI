@@ -146,7 +146,9 @@ runtime-asserted to be a non-empty string (guards against the historical
 | Change orders (create/status/approve) | Yes (`server/changeOrder*Routes.ts`) |
 | Billing events (create) | Yes (`server/auditBillingStorageRoutes.ts`) |
 | AIA pay applications (create / status / record-payment) | **Yes (added Task #2479)** |
-| Auth events (login, logout, role change) | Partial — login/logout via `auditLog` rows, role changes via dashboard routes. |
+| Auth events (login, login-failed, logout, password change/reset) | **Yes (added Task #2495)** — `LOGIN`, `LOGIN_FAILED`, `LOGOUT`, `PASSWORD_CHANGE`, `PASSWORD_RESET`, `PASSWORD_RESET_REQUESTED` actions written via `logAuthEvent` from `server/authProfileRoutes.ts`, `server/workforceRoutes.ts`, and `server/platformRoutes.ts`. The activity_log rows are kept for the in-app session UI; audit_log is the SOC 2 trail. |
+| MFA changes (enable / disable) | **Yes (added Task #2495)** — `MFA_ENABLED` / `MFA_DISABLED` audit rows written from `server/userSettingsRoutes.ts` (`/api/account/2fa/verify` enable, `/api/account/2fa/disable` disable). |
+| Role changes (platform, in-org, HUSTLER oversight grant/revoke) | **Yes (added Task #2495)** — `ROLE_CHANGED` for `users.role` swaps via `/platform/users/:id/role` and `PATCH /api/users/:id`; `ROLE_GRANTED` / `ROLE_REVOKED` for `hustler_organizations` membership changes via `/hustler/link-requests/respond`, `/accept-invite`, `/accept-token`, and `DELETE /hustler/unlink-organization/:id`. All routed through the typed `logRoleChange` helper in `server/auditLogger.ts`. |
 | Data export | Yes (export limiter rows + per-route audit). |
 
 ### 5.6 AI prompt-injection defenses

@@ -197,7 +197,7 @@ import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALE
 import { assertSeatAvailable } from "./services/billing/seatEnforcement";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { sensitiveLimiter } from "./rateLimiter";
-import { logAudit, logUpdate } from "./auditLogger";
+import { logAudit, logUpdate, logAuthEvent, logRoleChange } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyUserOrgAccess } from "./orgFilter";
 import { orgScopedCache } from "./cache";
@@ -3066,6 +3066,21 @@ router.patch("/api/users/:id", requireAuth, requireRole("ADMIN"), async (req: Au
       );
     }
 
+    // Task #2495 — audit base-role swaps in addition to the existing
+    // role-label log above. Without this, an org admin promoting a user
+    // from FIELD_WORKER to MANAGER left no trail in audit_log.
+    if (role !== undefined && role !== targetUser.role) {
+      await logRoleChange(
+        req.user!.id,
+        req.params.id,
+        targetUser.role,
+        role,
+        "ORG",
+        { organizationId: targetUser.organizationId || null },
+        req,
+      );
+    }
+
     const { passwordHash, tokenVersion, ...userWithoutPassword } = updatedUser;
     res.json(userWithoutPassword);
   } catch (error: any) {
@@ -3193,6 +3208,12 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
       .update(users)
       .set({ passwordHash: newPasswordHash, updatedAt: new Date() })
       .where(eq(users.id, req.user!.id));
+
+    // Task #2495 — central audit row for password change. Note that the
+    // active route is the one in authProfileRoutes (mounted earlier);
+    // this audit call covers any future ordering swap so we don't lose
+    // the trail by accident.
+    await logAuthEvent(req.user!.id, "PASSWORD_CHANGE", null, req);
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {

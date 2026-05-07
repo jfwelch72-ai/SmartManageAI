@@ -99,7 +99,7 @@ import { requireAuth, hashPassword, type AuthRequest } from "./auth";
 import { authLimiter } from "./rateLimiter";
 import { eq, desc, sql, and, isNull, inArray, type SQL } from "drizzle-orm";
 import { z } from "zod";
-import { logAudit } from "./auditLogger";
+import { logAudit, logAuthEvent } from "./auditLogger";
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { sanitizeEmail } from "./sanitization";
 import { passwordSchema } from "@shared/utils/passwordPolicy";
@@ -1060,6 +1060,16 @@ const router = Router();
           // Log failure but don't expose to user (security: prevents email enumeration)
           logError(`CRITICAL: Credential reset email FAILED to send for: ${sanitizedEmail}`);
         }
+
+        // Task #2495 — central audit_log entry for the reset request so a
+        // SOC 2 reviewer can trace which account a token was minted for
+        // even if the email never arrives.
+        await logAuthEvent(
+          user.id,
+          "PASSWORD_RESET_REQUESTED",
+          { initiatedBy: "user", emailSent },
+          req,
+        );
       }
 
       // Always return success message to prevent email enumeration attacks
@@ -1119,13 +1129,15 @@ const router = Router();
         usedAt: new Date(),
       }).where(eq(passwordResetTokens.id, resetToken.id));
 
-      await logAudit({
-        action: "UPDATE",
-        entityType: "users",
-        entityId: resetToken.userId,
-        userId: resetToken.userId,
-        newValue: JSON.stringify({ passwordReset: true }),
-      });
+      // Task #2495 — promoted from generic UPDATE to the typed
+      // PASSWORD_RESET action so the central audit trail surfaces
+      // credential mutations distinctly from ordinary user-row edits.
+      await logAuthEvent(
+        resetToken.userId,
+        "PASSWORD_RESET",
+        { tokenVersionBumped: true },
+        req,
+      );
 
       const completedUserId = resetToken?.userId;
       logInfo(`Credential reset completed for user: ${completedUserId}`);

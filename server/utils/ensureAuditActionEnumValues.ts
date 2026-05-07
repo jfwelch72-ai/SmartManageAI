@@ -1,50 +1,55 @@
-import { logInfo } from "./logger";
+import { logInfo, logError } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { logError } from "./logger";
 
 /**
- * Task #1180 — adds the ARCHIVE / UNARCHIVE values to the long-lived
- * `audit_action` Postgres enum. The certified payroll archive /
- * unarchive admin endpoints in `server/payrollRoutes.ts` write audit
- * rows with these actions, but `reconcileSchemaDrift` (Task #1075)
- * auto-creates *missing enum types* and cannot add new values to a
- * type that already exists. Without this migration, long-lived dev /
- * production DBs would silently drop those audit rows because
- * `logAudit` swallows the enum-mismatch insert error.
- *
- * Task #1847 — adds RESTORE so the soft-delete restore routes
- * (`POST /api/plan-document-markups/:id/restore` and the bulk
- * `POST .../markups/restore`) can write a first-class action value
- * instead of the previous `action: "UPDATE"` / `action: "CREATE"`
- * shim with an `op: "restore"` JSON payload. Auditors filtering for
- * "who restored what and when" no longer need to parse JSON out of
- * the `newValue` column.
- *
- * Task #2096 — adds RESET so the prebuilt-catalog reset route
- * (`POST /api/library-items/reset-prebuilt-catalog`, added in
- * Task #2083) can write a first-class action value instead of the
- * previous `action: "UPDATE"` shim on
- * `entityType = "libraryPrebuiltCatalog"`. Without this value,
- * destructive admin resets blend in with ordinary edits when
- * reviewing the audit log.
- *
- * Task #2153 — adds BULK_DELETE and BULK_DUPLICATE so the bulk
- * library-item routes (`DELETE /api/library-items/bulk` and
- * `POST /api/library-items/bulk-duplicate`, both added in
- * Task #2113) can write first-class action values rather than be
- * indistinguishable from per-row CRUD entries. Without these,
- * a 500-row wipe or a 500-row fan-out duplication looks identical
- * to ordinary single-item activity in the audit trail.
+ * Task #2495 — adds the auth + role-change audit action values to the
+ * long-lived `audit_action` enum on a running DB. `reconcileSchemaDrift`
+ * (Task #1075) auto-creates *missing enum types* but cannot add new
+ * values to a type that already exists, so deploy environments would
+ * otherwise be missing these values and any insert that uses them
+ * would fail at the DB layer. `logAudit` swallows that failure
+ * (silent dropped audit), which is exactly what the SOC 2 trail
+ * cannot afford. Run on startup, idempotent.
  */
-const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE", "RESET", "BULK_DELETE", "BULK_DUPLICATE"];
+// CUMULATIVE list of every non-foundational `audit_action` value that has
+// been added to the Drizzle enum after the original schema landed. New
+// additions MUST be appended here as well — never remove or replace, since
+// long-lived deploy DBs may still be missing any prior addition. The
+// foundational values (CREATE/UPDATE/DELETE/...) are not listed because
+// they shipped with the very first migration and are guaranteed to exist
+// on every environment.
+const REQUIRED_AUDIT_ACTION_VALUES = [
+  // Task #1180 — certified payroll archive history
+  "ARCHIVE",
+  "UNARCHIVE",
+  // Task #1847 — explicit RESTORE for soft-delete restores
+  "RESTORE",
+  // Task #2096 — explicit RESET for destructive admin resets
+  "RESET",
+  // Task #2153 — bulk library mutations
+  "BULK_DELETE",
+  "BULK_DUPLICATE",
+  // Task #2495 — auth + role-change events
+  "LOGIN",
+  "LOGOUT",
+  "LOGIN_FAILED",
+  "PASSWORD_CHANGE",
+  "PASSWORD_RESET",
+  "PASSWORD_RESET_REQUESTED",
+  "ROLE_CHANGED",
+  "ROLE_GRANTED",
+  "ROLE_REVOKED",
+  "MFA_ENABLED",
+  "MFA_DISABLED",
+];
 
 export async function ensureAuditActionEnumValues(): Promise<void> {
   try {
     const result = await db.execute(sql`
       SELECT unnest(enum_range(NULL::audit_action))::text AS val
     `);
-    const existing = new Set((result.rows as { val: string }[]).map(r => r.val));
+    const existing = new Set((result.rows as { val: string }[]).map((r) => r.val));
 
     let added = 0;
     for (const val of REQUIRED_AUDIT_ACTION_VALUES) {
@@ -59,8 +64,8 @@ export async function ensureAuditActionEnumValues(): Promise<void> {
     }
   } catch (err) {
     // The enum may not exist yet on a brand-new DB; reconcileSchemaDrift will
-    // create it later from the Drizzle schema (which already includes both
-    // values), so swallow the error rather than blocking startup.
+    // create it later from the Drizzle schema (which already includes all
+    // the required values), so swallow the error rather than blocking startup.
     logError(
       "[migration] Failed to ensure audit_action enum values:",
       {},

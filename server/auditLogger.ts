@@ -147,5 +147,80 @@ export async function logReject(
   }, req, tx);
 }
 
+// ---------------------------------------------------------------------------
+// Task #2495 — auth + role-change audit helpers.
+// Goal: every login, logout, password change/reset, and role grant/revoke
+// lands in the central `audit_log` table so the SOC 2 trail is unified
+// (see threat_model.md § 5.5).
+// ---------------------------------------------------------------------------
+
+type AuthAuditAction =
+  | "LOGIN"
+  | "LOGOUT"
+  | "LOGIN_FAILED"
+  | "PASSWORD_CHANGE"
+  | "PASSWORD_RESET"
+  | "PASSWORD_RESET_REQUESTED"
+  | "MFA_ENABLED"
+  | "MFA_DISABLED";
+
+/**
+ * Log an authentication event (login, logout, password change, etc.) for
+ * `userId`. `actorUserId` defaults to `userId` (the user acting on themselves)
+ * but can be passed explicitly for admin-initiated flows like a SUPER_ADMIN
+ * triggering a password-reset email on behalf of another user — in that
+ * case `userId` is the target whose credential changed and `actorUserId`
+ * is who initiated it.
+ */
+export async function logAuthEvent(
+  userId: string,
+  action: AuthAuditAction,
+  details: Record<string, unknown> | null,
+  req?: Request,
+  actorUserId?: string,
+  tx?: DbTransaction
+): Promise<void> {
+  await logAudit({
+    userId: actorUserId || userId,
+    entityType: "users",
+    entityId: userId,
+    action: action as InsertAuditLog["action"],
+    oldValue: null,
+    newValue: details ? JSON.stringify(details) : null,
+  }, req, tx);
+}
+
+/**
+ * Log a role change on a user. `scope` distinguishes a base-role swap on
+ * the `users.role` column (`PLATFORM` / `ORG`) from a HUSTLER oversight
+ * grant on `hustler_organizations` (`HUSTLER_ORG`). `oldRole` may be
+ * `null` for a brand-new grant; `newRole` may be `null` for a revoke.
+ */
+export async function logRoleChange(
+  actorUserId: string,
+  targetUserId: string,
+  oldRole: string | null,
+  newRole: string | null,
+  scope: "PLATFORM" | "ORG" | "HUSTLER_ORG",
+  details: Record<string, unknown> | null,
+  req?: Request,
+  tx?: DbTransaction
+): Promise<void> {
+  let action: InsertAuditLog["action"];
+  if (scope === "HUSTLER_ORG") {
+    action = (newRole ? "ROLE_GRANTED" : "ROLE_REVOKED") as InsertAuditLog["action"];
+  } else {
+    action = "ROLE_CHANGED" as InsertAuditLog["action"];
+  }
+  await logAudit({
+    userId: actorUserId,
+    entityType: scope === "HUSTLER_ORG" ? "hustlerOrganizations" : "users",
+    entityId: targetUserId,
+    action,
+    oldValue: oldRole ? JSON.stringify({ role: oldRole, scope }) : null,
+    newValue: JSON.stringify({ role: newRole, scope, ...(details || {}) }),
+  }, req, tx);
+}
+
 // Export the transaction type for use in other files
 export type { DbTransaction };

@@ -456,7 +456,7 @@ import { authLimiter, sensitiveLimiter } from "./rateLimiter";
 import { eq, desc, sql, and, or, inArray, isNull, gt } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
-import { logUpdate, logAudit } from "./auditLogger";
+import { logUpdate, logAudit, logAuthEvent } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { emailVerificationTokens } from "@shared/schema";
 import { sendEmail, getEmailVerificationHtml, getEmailVerificationText } from "./email";
@@ -641,6 +641,15 @@ const upload = multer({
           updateData.lockedUntil = new Date(Date.now() + LOCKOUT_DURATION_MS);
         }
         await db.update(users).set(updateData).where(eq(users.id, user.id));
+        // Task #2495 — surface failed-credential attempts in the central
+        // audit_log so SOC 2 reviewers can correlate brute-force activity
+        // against the rate-limiter window without joining activity_log.
+        await logAuthEvent(
+          user.id,
+          "LOGIN_FAILED",
+          { reason: "invalid_password", failedAttempts: newAttempts, locked: newAttempts >= MAX_FAILED_ATTEMPTS },
+          req,
+        );
         res.status(401).json({ error: "Invalid credentials" });
         return;
       }
@@ -680,6 +689,9 @@ const upload = multer({
       } catch (err) {
         logWarn("Failed to log login session/activity", { userId: user.id, error: err instanceof Error ? err.message : String(err) });
       }
+      // Task #2495 — central audit_log entry for the login (in addition to
+      // the existing activity_log row, which is per-session UI history).
+      await logAuthEvent(user.id, "LOGIN", { method: "password" }, req);
 
       const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
       // Mobile clients (which cannot reliably read Set-Cookie headers from
@@ -706,6 +718,8 @@ const upload = multer({
         ipAddress: logoutIp,
         userAgent: logoutUa,
       }).catch((err) => logWarn("Failed to log logout activity", { userId, error: err instanceof Error ? err.message : String(err) }));
+      // Task #2495 — central audit_log entry for the logout.
+      logAuthEvent(userId, "LOGOUT", null, req).catch(() => {});
 
       db.update(userSessions)
         .set({ revokedAt: new Date() })
@@ -1354,7 +1368,11 @@ const upload = multer({
       const token = generateToken(userId, newTokenVersion);
       setAuthCookie(res, token);
 
-      await logAudit({ userId, action: "password_change", entityType: "users", entityId: userId, oldValue: null, newValue: null }, req as any);
+      // Task #2495 — use the typed PASSWORD_CHANGE enum value via the
+      // logAuthEvent helper. Previously this passed `action: "password_change"`,
+      // which is not a member of `audit_action` and silently failed at the
+      // DB layer (swallowed by the logAudit catch).
+      await logAuthEvent(userId, "PASSWORD_CHANGE", { tokenVersionBumped: true }, req);
 
       try {
         await db.insert(activityLog).values({

@@ -144,7 +144,7 @@ import { requireAuth, type AuthRequest, hashPassword, generateToken } from "./au
 import { eq, count, desc, sql, and, gte, lte, isNotNull, like, ilike, sum, inArray, or } from "drizzle-orm";
 import crypto from "crypto";
 import { sendEmail, getAdminPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
-import { logAudit } from "./auditLogger";
+import { logAudit, logAuthEvent, logRoleChange } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { z } from "zod";
 import { passwordSchema } from "@shared/utils/passwordPolicy";
@@ -621,14 +621,17 @@ router.patch("/platform/users/:userId/role", requireAuth, requireSuperAdmin, asy
       .where(eq(users.id, userId))
       .returning();
 
-    await logAudit({
-      action: "UPDATE",
-      entityType: "users",
-      entityId: userId,
-      userId: req.user!.id,
-      oldValue: JSON.stringify({ role: oldRole }),
-      newValue: JSON.stringify({ role, email: user.email }),
-    }, req);
+    // Task #2495 — typed ROLE_CHANGED action via logRoleChange so
+    // platform-level role swaps are filterable in the audit trail.
+    await logRoleChange(
+      req.user!.id,
+      userId,
+      oldRole,
+      role,
+      "PLATFORM",
+      { targetEmail: user.email },
+      req,
+    );
 
     const { passwordHash: _, tokenVersion: _tv, ...userWithoutSensitive } = updated;
     res.json({ user: userWithoutSensitive, message: `Role changed from ${oldRole} to ${role}` });
@@ -1080,13 +1083,17 @@ router.post("/platform/users/:userId/reset-password", requireAuth, requireSuperA
       text: getPasswordResetEmailText(resetLink, user.firstName),
     });
 
-    await logAudit({
-      action: "UPDATE",
-      entityType: "users",
-      entityId: user.id,
-      userId: req.user!.id,
-      newValue: JSON.stringify({ adminPasswordReset: true, targetEmail: user.email }),
-    }, req);
+    // Task #2495 — typed PASSWORD_RESET_REQUESTED audit row for the
+    // admin-initiated reset email. `actorUserId` records the admin who
+    // initiated it; `userId` (entityId) records the target whose
+    // credential is about to change.
+    await logAuthEvent(
+      user.id,
+      "PASSWORD_RESET_REQUESTED",
+      { initiatedBy: "admin", targetEmail: user.email, actorEmail: req.user!.email },
+      req,
+      req.user!.id,
+    );
 
     logInfo(`Admin-initiated credential reset for user: ${user.email} by admin: ${req.user!.email}`);
     res.json({ message: `Password reset email sent to ${user.email}` });
