@@ -950,7 +950,7 @@ const upload = multer({
           accessToken: typeof m.accessToken === "string" && m.accessToken.length > 0
             ? m.accessToken
             : "e2e-sandbox-access-token",
-          refreshToken: typeof m.refreshToken === "string" ? m.refreshToken : null,
+          refreshToken: typeof m.refreshToken === "string" ? m.refreshToken : undefined,
           expiresAt: typeof m.expiresAt === "string"
             ? new Date(m.expiresAt)
             : new Date(Date.now() + 3_600_000),
@@ -1427,6 +1427,7 @@ const upload = multer({
       const [user] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
       if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
+      if (!user.passwordHash) { res.status(400).json({ error: "User has no password set" }); return; }
       const isValid = await verifyPassword(currentPassword, user.passwordHash);
       if (!isValid) { res.status(400).json({ error: "Current password is incorrect" }); return; }
 

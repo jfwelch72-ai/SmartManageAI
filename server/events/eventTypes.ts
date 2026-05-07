@@ -271,6 +271,7 @@ export type DomainEvent =
   | InspectorReportApprovedEvent
   | InspectorReportRejectedEvent
   | SuretyBondActivatedEvent
+  | SuretyBondCanceledEvent
   | CrmCallLoggedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
@@ -458,6 +459,7 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "surety_bond.expiring",
   "surety_bond.expired",
   "surety_bond.released",
+  "surety_bond.canceled",
   "dbe_goal.changed",
   "crm_certification.created",
   "crm_certification.deleted",
@@ -568,7 +570,8 @@ export interface SuretyBondExpiredEvent extends EventEnvelope {
   payload: {
     bondId: string;
     projectId: string | null;
-    expirationDate: string | null;
+    expirationDate?: string | null;
+    bondNumber?: string | null;
   };
 }
 
@@ -577,7 +580,17 @@ export interface SuretyBondReleasedEvent extends EventEnvelope {
   payload: {
     bondId: string;
     projectId: string | null;
-    releasedBy: string;
+    releasedBy?: string;
+    bondNumber?: string | null;
+  };
+}
+
+export interface SuretyBondCanceledEvent extends EventEnvelope {
+  type: "surety_bond.canceled";
+  payload: {
+    bondId: string;
+    projectId: string | null;
+    bondNumber?: string | null;
   };
 }
 

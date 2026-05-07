@@ -3,7 +3,7 @@ import { db } from "./db";
 import { projects, users, media, projectNotes, insertProjectNoteSchema, insertMediaSchema, filePermissions, organizations, orgCostCodes, insertOrgCostCodeSchema, projectCostCodes, conversations, conversationParticipants, messages, photoCustodyRecords } from "@shared/schema";
 import { eq, and, sql, desc } from "drizzle-orm";
 import { z } from "zod";
-import { type AuthRequest, requireAuth, requireRole } from "./auth";
+import { type AuthRequest, requireAuth, requireRole, requireOrgUser } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { sanitizeText } from "./sanitization";
 import { emitMessageNew } from "./messagingEvents";
@@ -150,7 +150,7 @@ router.post("/api/projects/:code/notes", requireAuth, requireRole("ADMIN", "MANA
       const [fieldNoteMsg] = await db
         .insert(messages)
         .values({
-          conversationId: projectConversation.id,
+          conversationId: projectConversation!.id,
           senderId: userId,
           content: sanitizeText(newNote.text) ?? "",
           isFieldNote: true,
@@ -373,7 +373,8 @@ router.delete("/api/media/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SU
 
 router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const projectId = req.params.id;
 
     const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
@@ -459,7 +460,8 @@ router.get("/api/projects/:id/cost-codes", requireAuth, async (req: AuthRequest,
 
 router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const projectId = req.params.id;
 
     const [project] = await db.select({ id: projects.id, gcOrganizationId: projects.gcOrganizationId })
@@ -511,7 +513,8 @@ router.post("/api/projects/:id/cost-codes", requireAuth, requireRole("ADMIN"), a
 router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { getCostCodesForTrade } = await import("@shared/costCodes");
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const [org] = await db.select({ tradeType: organizations.tradeType }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
     const tradeType = org?.tradeType || "OTHER";
     const staticCodes = getCostCodesForTrade(tradeType);
@@ -552,7 +555,8 @@ router.get("/api/cost-codes", requireAuth, async (req: AuthRequest, res, next) =
 
 router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const rows = await db
       .select({
         id: orgCostCodes.id,
@@ -579,7 +583,8 @@ router.get("/api/cost-codes/org", requireAuth, async (req: AuthRequest, res, nex
 
 router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const isCustom = req.body.isCustom !== false;
 
     if (isCustom) {
@@ -602,7 +607,7 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
     const [row] = await db.insert(orgCostCodes).values(insertData).returning();
     res.status(201).json(row);
   } catch (error) {
-    if (error?.code === "23505") {
+    if ((error as { code?: string })?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
     logError("Error creating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -612,7 +617,8 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
 
 router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const id = Number(req.params.id);
     const { code, description, division, isActive, isCustom } = req.body;
 
@@ -639,7 +645,7 @@ router.patch("/api/cost-codes/:id", requireAuth, requireRole("ADMIN"), async (re
     const [row] = await db.update(orgCostCodes).set(updates).where(and(eq(orgCostCodes.id, id), eq(orgCostCodes.organizationId, orgId))).returning();
     res.json(row);
   } catch (error) {
-    if (error?.code === "23505") {
+    if ((error as { code?: string })?.code === "23505") {
       return res.status(409).json({ error: "A cost code with that code already exists" });
     }
     logError("Error updating org cost code:", {}, error instanceof Error ? error : new Error(String(error)));

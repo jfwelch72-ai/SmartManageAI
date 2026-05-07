@@ -150,7 +150,8 @@ const router = Router();
 
 router.get("/api/overtime-requests/approvers", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const approvers = await db
       .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, role: users.role })
       .from(users)
@@ -259,6 +260,8 @@ router.get("/api/overtime-requests/my", requireAuth, async (req: AuthRequest, re
 
 router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const byShiftsSchema = z.object({
       shiftIds: z.array(z.string().min(1)).min(1),
     });
@@ -267,7 +270,6 @@ router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN"
       res.json([]);
       return;
     }
-    const orgId = req.user!.organizationId!;
     const requests = await db.select().from(overtimeRequests)
       .where(and(
         eq(overtimeRequests.organizationId, orgId),
@@ -281,7 +283,8 @@ router.post("/api/overtime-requests/by-shifts", requireAuth, requireRole("ADMIN"
 
 router.get("/api/overtime-requests/pending", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const requests = await db.select().from(overtimeRequests)
       .where(and(
         eq(overtimeRequests.organizationId, orgId),
@@ -425,7 +428,8 @@ router.post("/api/overtime-requests/:id/reject", requireAuth, requireRole("ADMIN
 
 router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const rules = await db.select().from(overtimeRules)
       .where(eq(overtimeRules.organizationId, orgId))
       .orderBy(desc(overtimeRules.createdAt));
@@ -437,8 +441,10 @@ router.get("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"), 
 
 router.get("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const [rule] = await db.select().from(overtimeRules)
-      .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, req.user!.organizationId!)));
+      .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, orgId)));
     if (!rule) { res.status(404).json({ error: "Rule not found" }); return; }
     res.json(formatRuleResponse(rule));
   } catch (error) {
@@ -482,9 +488,10 @@ router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"),
       consecutiveDayThreshold: z.number().optional().default(7),
     });
 
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const data = parseOrRespond(schema, req.body, res);
     if (!data) return;
-    const orgId = req.user!.organizationId!;
 
     const dailyThreshold = data.dailyThreshold || String(data.dailyOtThreshold);
     const weeklyThreshold = data.weeklyThreshold || String(data.weeklyOtThreshold);
@@ -568,6 +575,8 @@ router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"),
 
 router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const schema = z.object({
       dailyOtThreshold: z.number().optional(),
       dailyDtThreshold: z.number().optional(),
@@ -585,7 +594,6 @@ router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAG
 
     const data = parseOrRespond(schema, req.body, res);
     if (!data) return;
-    const orgId = req.user!.organizationId!;
 
     const [existing] = await db.select().from(overtimeRules)
       .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, orgId)));
@@ -660,7 +668,8 @@ router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAG
 
 router.delete("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
-    const orgId = req.user!.organizationId!;
+    const orgId = requireOrgUser(req, res);
+    if (!orgId) return;
     const [existing] = await db.select().from(overtimeRules)
       .where(and(eq(overtimeRules.id, req.params.id), eq(overtimeRules.organizationId, orgId)));
     if (!existing) { res.status(404).json({ error: "Rule not found" }); return; }

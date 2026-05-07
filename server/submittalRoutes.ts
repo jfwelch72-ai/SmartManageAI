@@ -458,16 +458,16 @@ router.get("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADM
       conditions.push(eq(submittals.projectId, projectId as string));
     }
     if (status) {
-      conditions.push(eq(submittals.status, status as typeof submittals.$inferSelect.status));
+      conditions.push(eq(submittals.status, status as typeof submittals.status.enumValues[number]));
     }
     if (phase) {
-      conditions.push(eq(submittals.phase, phase as typeof submittals.$inferSelect.phase));
+      conditions.push(eq(submittals.phase, phase as typeof submittals.phase.enumValues[number]));
     }
     if (submittalType) {
-      conditions.push(eq(submittals.submittalType, submittalType as typeof submittals.$inferSelect.submittalType));
+      conditions.push(eq(submittals.submittalType, submittalType as typeof submittals.submittalType.enumValues[number]));
     }
     if (category) {
-      conditions.push(eq(submittals.submittalCategory, category as NonNullable<typeof submittals.$inferSelect.submittalCategory>));
+      conditions.push(eq(submittals.submittalCategory, category as typeof submittals.submittalCategory.enumValues[number]));
     }
 
     const filtered = await db
@@ -1102,7 +1102,7 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature
       return res.status(404).json({ error: "File not found" });
     }
 
-    const file = currentAttachments[fileIndex];
+    const file = currentAttachments[fileIndex] as { id?: string; uploadedById?: string; objectKey?: string; fileUrl?: string };
     const userRole = req.user!.role;
     if (file.uploadedById !== req.user!.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole)) {
       return res.status(403).json({ error: "You don't have permission to delete this file" });

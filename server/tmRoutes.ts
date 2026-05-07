@@ -213,8 +213,9 @@ function registerTMApprovalRoutes(app: Express) {
         newValue: JSON.stringify({ ticketNumber: ticket.ticketNumber }),
       });
 
+      const ticketProject = await db.query.projects.findFirst({ where: eq(projects.id, ticket.projectId), columns: { gcOrganizationId: true } });
       await notifyApprovers(
-        ticket.organizationId,
+        ticketProject?.gcOrganizationId ?? "",
         userId,
         {
           type: "TM_TICKET_SUBMITTED",
@@ -290,9 +291,10 @@ function registerTMApprovalRoutes(app: Express) {
 
       if (ticket.projectId) {
         try {
+          const proj = await db.query.projects.findFirst({ where: eq(projects.id, ticket.projectId), columns: { gcOrganizationId: true } });
           await eventBus.emit({
             version: 1,
-            orgId: ticket.organizationId || "",
+            orgId: proj?.gcOrganizationId ?? "",
             actorId: userId,
             timestamp: new Date(),
             type: "tm_ticket.approved" as const,
@@ -300,9 +302,9 @@ function registerTMApprovalRoutes(app: Express) {
               ticketId: ticket.id,
               projectId: ticket.projectId,
               costCode: ticket.costCode || null,
-              laborCost: parseFloat(ticket.laborTotal?.toString() || "0"),
-              equipmentCost: parseFloat(ticket.equipmentTotal?.toString() || "0"),
-              materialCost: parseFloat(ticket.materialTotal?.toString() || "0"),
+              laborCost: parseFloat(ticket.totalLaborCost?.toString() || "0"),
+              equipmentCost: parseFloat(ticket.totalEquipmentCost?.toString() || "0"),
+              materialCost: parseFloat(ticket.totalMaterialCost?.toString() || "0"),
               grandTotal: parseFloat(ticket.grandTotal?.toString() || "0"),
             },
           });
@@ -1349,8 +1351,14 @@ export function registerTMTicketRoutes(app: Express) {
         };
       });
 
+      const scopeModifierIdsJson = scopeModifierIds && (scopeModifierIds as unknown as string[]).length > 0
+        ? JSON.stringify(scopeModifierIds)
+        : null;
+      const scopeModifierNamesJson = scopeModifierNames && (scopeModifierNames as unknown as string[]).length > 0
+        ? JSON.stringify(scopeModifierNames)
+        : null;
       const newTicket = await db.transaction(async (tx) => {
-        const [ticket] = await tx.insert(tmTickets).values({
+        const insertValues: typeof tmTickets.$inferInsert = {
           ...restTicketData,
           workDate: restTicketData.workDate ?? new Date().toISOString().slice(0, 10),
           projectId,
@@ -1363,16 +1371,17 @@ export function registerTMTicketRoutes(app: Express) {
           workTypeCode: workTypeCode || null,
           workTypeName: workTypeName || null,
           categoryName: categoryName || null,
-          scopeModifierIds: scopeModifierIds ? JSON.stringify(scopeModifierIds) : null,
-          scopeModifierNames: scopeModifierNames ? JSON.stringify(scopeModifierNames) : null,
+          scopeModifierIds: scopeModifierIdsJson,
+          scopeModifierNames: scopeModifierNamesJson,
           canonicalName: canonicalName || null,
           scopeUnit: scopeUnit || null,
           scopeQuantity: scopeQuantity != null ? String(scopeQuantity) : null,
           costCode: costCode || null,
           status: "DRAFT",
-        }).returning();
+        };
+        const [ticket] = await tx.insert(tmTickets).values(insertValues).returning();
 
-        await syncTicketScopeModifiers(tx, ticket.id, scopeModifierIds, scopeModifierNames);
+        await syncTicketScopeModifiers(tx, ticket.id, scopeModifierIdsJson, scopeModifierNamesJson);
 
         if (laborEntries && laborEntries.length > 0) {
           await tx.insert(tmTicketLaborEntries).values(mapLaborEntries(laborEntries, ticket.id));
@@ -1435,21 +1444,47 @@ export function registerTMTicketRoutes(app: Express) {
       const validated = validateBody(updateTmTicketSchema, req.body, res);
       if (!validated) return;
       
-      const { laborEntries, equipmentEntries, materialEntries, ...ticketData } = validated;
-      
+      const {
+        laborEntries,
+        equipmentEntries,
+        materialEntries,
+        signatureDataUrl: _sig,
+        description: _desc,
+        clientRepresentativeName: _crn,
+        scopeQuantity: rawScopeQuantity,
+        scopeModifierIds: _smIds,
+        scopeModifierNames: _smNames,
+        workDate: rawWorkDate,
+        tfrRepresentativeId: rawTfrRepId,
+        organizationSowItemId: rawSowItemId,
+        ...ticketData
+      } = validated;
+      const scopeIdsJson = Array.isArray(_smIds) && _smIds.length > 0
+        ? JSON.stringify(_smIds)
+        : null;
+      const scopeNamesJson = Array.isArray(_smNames) && _smNames.length > 0
+        ? JSON.stringify(_smNames)
+        : null;
+      const setValues: Partial<typeof tmTickets.$inferInsert> = {
+        ...ticketData,
+        scopeModifierIds: scopeIdsJson,
+        scopeModifierNames: scopeNamesJson,
+        scopeQuantity: rawScopeQuantity != null ? String(rawScopeQuantity) : null,
+        ...(rawWorkDate ? { workDate: rawWorkDate } : {}),
+        ...(rawTfrRepId ? { tfrRepresentativeId: rawTfrRepId } : {}),
+        organizationSowItemId: rawSowItemId ?? null,
+        status: "DRAFT",
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null,
+        updatedAt: new Date(),
+      };
       const [updatedTicket] = await db.update(tmTickets)
-        .set({
-          ...ticketData,
-          status: "DRAFT",
-          rejectedAt: null,
-          rejectedById: null,
-          rejectionReason: null,
-          updatedAt: new Date(),
-        })
+        .set(setValues)
         .where(eq(tmTickets.id, ticketId))
         .returning();
 
-      await syncTicketScopeModifiers(db, ticketId, ticketData.scopeModifierIds, ticketData.scopeModifierNames);
+      await syncTicketScopeModifiers(db, ticketId, scopeIdsJson, scopeNamesJson);
       
       await db.delete(tmTicketLaborEntries).where(eq(tmTicketLaborEntries.ticketId, ticketId));
       if (laborEntries && laborEntries.length > 0) {

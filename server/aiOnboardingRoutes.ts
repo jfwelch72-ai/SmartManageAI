@@ -743,7 +743,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
       
       for (const template of templates) {
         try {
-          const templateWorkTypes = safeJsonParse(template.workTypesJson, []);
+          const templateWorkTypes = safeJsonParse<Array<{ name?: string; unit?: string; rate?: number | string }>>(template.workTypesJson, []);
           for (let wtIdx = 0; wtIdx < templateWorkTypes.length; wtIdx++) {
             const wt = templateWorkTypes[wtIdx];
             if (wt && wt.name) {
@@ -766,7 +766,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
         }
 
         try {
-          const calculators = safeJsonParse(template.calculatorConfigJson, []);
+          const calculators = safeJsonParse<Array<{ name?: string; output?: string; type?: string; inputs?: unknown[] }>>(template.calculatorConfigJson, []);
           for (let calcIdx = 0; calcIdx < calculators.length; calcIdx++) {
             const calc = calculators[calcIdx];
             if (calc && calc.name) {

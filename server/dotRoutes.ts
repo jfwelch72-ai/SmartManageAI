@@ -1807,7 +1807,7 @@ router.patch(
     const canManage = await userHasManagePermission(req, "canManageHaulTickets");
     const patch = canManage
       ? rawPatch
-      : pickAllowedFields(rawPatch, ["notes"] as const).picked;
+      : pickAllowedFields<typeof rawPatch, "notes">(rawPatch, ["notes"]).picked;
     if (!canManage && Object.keys(patch).length === 0) {
       return res.status(403).json({ error: "Approval-only role must use /approve or /reject endpoints for status changes" });
     }
@@ -1917,7 +1917,7 @@ router.post(
         reportId: row.id,
         projectId: row.projectId,
         reportDate: String(row.reportDate),
-        inspectorId: row.inspectorId,
+        inspectorId: row.inspectorId ?? req.user!.id,
       },
     });
     await dotAudit(req, "CREATE", "daily_inspector_report", row.id, null, row);
@@ -2539,7 +2539,7 @@ router.post(
         certificationId: row.id,
         projectId: row.projectId ?? null,
         materialType: row.materialDescription ?? null,
-        isBuyAmericaCompliant: row.buyAmericaStatus === "COMPLIANT" ? true : row.buyAmericaStatus === "NON_COMPLIANT" ? false : null,
+        isBuyAmericaCompliant: row.buyAmericaStatus === "VERIFIED" ? true : row.buyAmericaStatus === "NON_COMPLIANT" ? false : null,
       },
     });
     await dotAudit(req, "CREATE", "material_certification", row.id, null, row);
@@ -2744,7 +2744,7 @@ router.post(
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
       type: "haul_ticket.approved",
-      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber },
+      payload: { ticketId: row.id, projectId: row.projectId, approvedBy: req.user!.id, totalCost: row.totalCost ?? null },
     });
     if (prev.recordedById) {
       await notifySubmitter(prev.recordedById, {
@@ -2783,7 +2783,7 @@ router.post(
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
       type: "haul_ticket.rejected",
-      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber, reason: req.body?.notes ?? null },
+      payload: { ticketId: row.id, projectId: row.projectId, rejectedBy: req.user!.id, reason: req.body?.notes ?? null },
     });
     if (prev.recordedById) {
       await notifySubmitter(prev.recordedById, {
@@ -3158,7 +3158,7 @@ router.post(
 function makeSuretyTransition(
   path: string,
   target: "RELEASED" | "EXPIRED" | "CANCELED",
-  eventType: string,
+  eventType: "surety_bond.released" | "surety_bond.expired" | "surety_bond.canceled",
   notifyTitle: string,
 ) {
   router.post(
@@ -3229,7 +3229,7 @@ router.post(
     await eventBus.emit({
       version: 1, orgId, actorId: req.user!.id, timestamp: new Date(),
       type: "haul_ticket.voided",
-      payload: { haulTicketId: row.id, projectId: row.projectId, ticketNumber: row.ticketNumber, reason: req.body?.notes ?? null },
+      payload: { ticketId: row.id, projectId: row.projectId, voidedBy: req.user!.id, reason: req.body?.notes ?? null },
     });
     if (prev.recordedById) {
       await notifySubmitter(prev.recordedById, {
@@ -3984,8 +3984,8 @@ router.get(
   requireAuth,
   exportLimiter,
   requireAnyFeaturePermission(
-    "canViewProjects",
-    "canManageProjects",
+    "canAccessProjects",
+    "canCreateProjects",
     "canViewDbeGoals",
     "canManageDbeGoals",
     "canViewHaulTickets",

@@ -748,7 +748,7 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       userId: req.user!.id,
       entityType: "TIME_CLOCK_SHIFT",
       entityId: activeShift.id,
-      action: isOverride ? "CLOCK_OUT_OVERRIDE" : "CLOCK_OUT",
+      action: "CLOCK_OUT",
       oldValue: JSON.stringify({ clockIn: activeShift.clockIn }),
       newValue: JSON.stringify({ clockOut: now, totalHours, accuracy: data.accuracy, spoofingFlag }),
     }, req);
@@ -2004,10 +2004,10 @@ router.post("/api/time-clock/site-leave", requireAuth, async (req, res, next) =>
 
     const [leave] = await db.insert(siteLeaves).values({
       shiftId: shift.id,
-      userId: user.id,
-      projectId: shift.projectId,
-      reason: sanitizeText(data.reason) || "",
-      category: data.category!,
+      userId: user.id!,
+      projectId: shift.projectId!,
+      reason: sanitizeText(data.reason) ?? "",
+      category: data.category,
       estimatedReturnMinutes: data.estimatedReturnMinutes ?? null,
       departedAt: new Date(),
       departLatitude: data.latitude ?? null,

@@ -2,7 +2,8 @@ import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { bids, bidDocuments, takeoffSheets, quantityCategories, projects, subcontractorContracts, subcontractors, subcontractorPayments } from "@shared/schema";
 import { eq, desc, and, sql, max } from "drizzle-orm";
-import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { z } from "zod";
+import { requireAuth, requireRole, requireOrgUser, type AuthRequest } from "./auth";
 import { logCreate } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { verifyOrgAccess, requireOrgOwnership } from "./orgFilter";
@@ -170,6 +171,10 @@ router.get("/api/subcontractor-payables", requireRole("ADMIN", "MANAGER"), async
   try {
     const user = req.user!;
     const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!isSuperAdmin && !user.organizationId) {
+      res.status(403).json({ error: "Organization required" });
+      return;
+    }
     const orgConditions = isSuperAdmin ? [] : [eq(projects.gcOrganizationId, user.organizationId!)];
 
     const payables = await db
@@ -393,7 +398,7 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
     res.status(201).json(category);
   } catch (error) {
     logError("Error creating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
       next(error);
@@ -412,14 +417,16 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
 
     const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
     if (!isSuperAdmin) {
+      const userOrgId = req.user!.organizationId;
+      if (!userOrgId) { res.status(403).json({ error: "Organization required" }); return; }
       if (existing.projectId) {
         const [project] = await db.select({ id: projects.id }).from(projects)
-          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, req.user!.organizationId!)))
+          .where(and(eq(projects.id, existing.projectId), eq(projects.gcOrganizationId, userOrgId)))
           .limit(1);
         if (!project) { res.status(403).json({ error: "Access denied" }); return; }
       } else if (existing.bidId) {
         const [bid] = await db.select({ id: bids.id }).from(bids)
-          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, req.user!.organizationId!)))
+          .where(and(eq(bids.id, existing.bidId), eq(bids.gcOrganizationId, userOrgId)))
           .limit(1);
         if (!bid) { res.status(403).json({ error: "Access denied" }); return; }
       } else {
@@ -450,7 +457,7 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
     res.json(updated);
   } catch (error) {
     logError("Error updating quantity category:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid category data", details: error.errors });
     } else {
       next(error);
@@ -539,11 +546,11 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
     res.status(201).json({
       ...markup,
       points: safeParsePoints(markup.points) || [],
-      authorName: req.user!.name,
+      authorName: `${req.user!.firstName ?? ""} ${req.user!.lastName ?? ""}`.trim(),
     });
   } catch (error) {
     logError("Error creating markup:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid markup data", details: error.errors });
     } else {
       next(error);
@@ -1475,7 +1482,7 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
     res.status(201).json(link);
   } catch (error) {
     logError("Error creating sheet link:", {}, error instanceof Error ? error : new Error(String(error)));
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid link data", details: error.errors });
     } else {
       next(error);
@@ -1781,8 +1788,9 @@ router.post("/api/takeoff/conditions/import-csv", requireAuth, async (req: AuthR
     const orgCtx = requireOrgOwnership(req, res);
     if (!orgCtx) return;
     const { takeoffConditions } = await import("@shared/schema");
-    const resolvedOrgId = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
+    const resolvedOrgId: string | null | undefined = orgCtx.isSuperAdmin ? req.body.organizationId : orgCtx.orgId;
     if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
+    const orgIdFinal: string = resolvedOrgId;
     const { rows } = req.body;
     if (!Array.isArray(rows) || rows.length === 0) {
       res.status(400).json({ error: "No rows provided" }); return;
@@ -1810,7 +1818,7 @@ router.post("/api/takeoff/conditions/import-csv", requireAuth, async (req: AuthR
       if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
       await db.insert(takeoffConditions).values({
         organizationId: resolvedOrgId,
-        name: sanitizeShortText(row.name) || "",
+        name: sanitizeShortText(row.name) ?? "",
         measurementType: measType,
         color: typeof row.color === "string" && /^#[0-9a-fA-F]{3,8}$/.test(row.color) ? row.color : "#3b82f6",
         categoryName: typeof row.categoryName === "string" ? sanitizeShortText(row.categoryName) : null,
@@ -1845,6 +1853,7 @@ router.post("/api/takeoff/conditions/apply-to-project", requireAuth, async (req:
       res.status(403).json({ error: "Project does not belong to your organization" }); return;
     }
     const targetOrgId = project.gcOrganizationId || orgCtx.orgId;
+    if (!targetOrgId) { res.status(400).json({ error: "Organization required" }); return; }
     const conds = await db.select().from(takeoffConditions)
       .where(and(eq(takeoffConditions.organizationId, resolvedOrgId!), sql`${takeoffConditions.id} = ANY(${conditionIds})`));
 
@@ -1921,7 +1930,7 @@ router.post("/api/takeoff/scale-templates", requireAuth, async (req: AuthRequest
     if (!resolvedOrgId) { res.status(400).json({ error: "organizationId is required" }); return; }
     const [template] = await db.insert(savedScaleTemplates).values({
       organizationId: resolvedOrgId!,
-      name: sanitizeShortText(req.body.name) || "",
+      name: sanitizeShortText(req.body.name) ?? "",
       label: req.body.label,
       pxPerFoot: req.body.pxPerFoot,
       category: req.body.category || "custom",
@@ -1964,7 +1973,7 @@ router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res
     const [condition] = await db.insert(takeoffConditions).values(parsed).returning();
     res.json(condition);
   } catch (error) {
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid condition data", details: error.errors });
       return;
     }
@@ -1990,7 +1999,7 @@ router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest
     const [updated] = await db.update(takeoffConditions).set(updateData).where(and(...conditions)).returning();
     res.json(updated);
   } catch (error) {
-    if (error.name === "ZodError") {
+    if (error instanceof z.ZodError) {
       res.status(400).json({ error: "Invalid condition data", details: error.errors });
       return;
     }
