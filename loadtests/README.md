@@ -86,3 +86,28 @@ budget reflects steady-state"). The schema:
 ```
 
 Endpoint keys MUST match the `name` field in `lib/endpoints.js`.
+
+## Rolling re-baseline (automated)
+
+`rebaseline-budgets.mjs` aggregates the last N nightly `k6-summaries`
+artifacts and produces a candidate `budgets.json` plus a per-endpoint
+comparison table. The nightly workflow runs it after the k6 suite
+finishes (see `.github/workflows/load-test-nightly.yml` →
+`rebaseline-budgets` job). When any endpoint's rolling p95 drifts more
+than `REBASELINE_THRESHOLD` (default 20%) from the committed budget,
+the workflow opens / refreshes a draft PR titled
+*"loadtest: re-baseline budgets"*. Otherwise the table is posted to
+the workflow run summary.
+
+Run it locally against a directory of summary JSON files:
+
+```sh
+node loadtests/rebaseline-budgets.mjs \
+  --summaries-dir=./artifacts \
+  --out-budgets=./candidate-budgets.json \
+  --out-summary=./rebaseline-summary.md \
+  --threshold=0.20
+```
+
+Exit codes: `0` = within tolerance, `10` = drift detected, `2` =
+usage / IO error. See `docs/ops/capacity.md` §5a for the procedure.

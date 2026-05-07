@@ -116,6 +116,40 @@ the quiet cohort's budgets, the next lever is:
 
 ## 5. Re-baselining procedure
 
+### 5a. Automated rolling re-baseline (preferred)
+
+The nightly workflow (`.github/workflows/load-test-nightly.yml`)
+includes a `rebaseline-budgets` job that runs after the k6 suite
+finishes. It downloads the most recent `REBASELINE_WINDOW` (default 7)
+`k6-summaries` artifacts via the GitHub REST API, runs
+`loadtests/rebaseline-budgets.mjs`, and:
+
+- Computes a per-endpoint rolling p95 (worst per-run p95 across the
+  window) plus rolling error rate.
+- Compares the rolling p95 to the committed `loadtests/budgets.json`.
+- When any endpoint drifts more than `REBASELINE_THRESHOLD` (default
+  20%) the job opens (or refreshes) a draft PR titled
+  *"loadtest: re-baseline budgets"* containing the candidate file +
+  the per-endpoint comparison table. The candidate values are rounded
+  up with the same headroom rules listed in 5b below.
+- Otherwise the comparison table is posted to the workflow run
+  summary so creep is still visible without any human action.
+
+Tunables — set as workflow env vars / repo variables:
+
+- `REBASELINE_WINDOW` — number of recent successful nightly runs to
+  aggregate (default 7).
+- `REBASELINE_THRESHOLD` — fractional drift that triggers a PR
+  (default 0.20 = 20%).
+
+The PR is **draft**: a human still reviews the table, edits the
+tested-ceiling table in §1 if needed, then marks it ready and merges.
+
+### 5b. Manual re-baseline (fallback)
+
+Use this when the automated job is disabled or you need a fresh
+baseline against a non-CI environment.
+
 1. `git checkout main && npm ci && npm run build`
 2. Boot against a fresh DB seeded with a realistic tenant mix
    (`scripts/seed-test-company.ts` × 3 orgs).
@@ -124,7 +158,8 @@ the quiet cohort's budgets, the next lever is:
     scripts/run-load-test.sh baseline`
 4. Open `loadtests/results/baseline-summary.json`; copy the new
    p95 / error-rate values into `loadtests/budgets.json` (round
-   *up*, leave headroom).
+   *up*, leave headroom — cheap reads to the next 20 ms, list /
+   aggregate reads to the next 50 ms).
 5. Update the tested ceiling table at the top of this document.
 6. Commit both files in one PR titled "loadtest: re-baseline budgets
    YYYY-MM".

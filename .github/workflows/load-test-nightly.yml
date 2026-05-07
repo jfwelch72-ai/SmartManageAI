@@ -16,7 +16,20 @@ on:
   workflow_dispatch: {}
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
+  actions: read
+
+env:
+  # How many of the most recent `k6-summaries` artifacts to roll into
+  # the rebaseline window. Mirrors the "rolling 7-day p95" guidance in
+  # docs/ops/capacity.md §5.
+  REBASELINE_WINDOW: '7'
+  # Drift threshold (fraction). When any endpoint's rolling p95 sits
+  # this far from the committed budget, the workflow opens / refreshes
+  # the "loadtest: re-baseline budgets" PR. Otherwise the comparison is
+  # only posted to the workflow summary.
+  REBASELINE_THRESHOLD: '0.20'
 
 jobs:
   nightly-load:
@@ -113,3 +126,112 @@ jobs:
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           job-name: Nightly Load Test
+
+  rebaseline-budgets:
+    name: Rolling rebaseline of loadtests/budgets.json
+    needs: nightly-load
+    if: ${{ always() && needs.nightly-load.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Pull the most recent N nightly `k6-summaries` artifacts so the
+      # rebaseline script can compute a rolling p95 / error rate per
+      # endpoint. We use the GitHub REST API directly so we control the
+      # window size without needing a third-party action.
+      - name: Download recent k6-summaries artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINDOW: ${{ env.REBASELINE_WINDOW }}
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/summaries
+          # List the last $WINDOW successful runs of THIS workflow on the
+          # default branch, then download their `k6-summaries` artifact
+          # if present. The current run's artifact is included via the
+          # workflow_run id we already have.
+          WORKFLOW_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows" \
+            --jq ".workflows[] | select(.path == \".github/workflows/load-test-nightly.yml\") | .id")
+          echo "[rebaseline] workflow id: ${WORKFLOW_ID}"
+          RUN_IDS=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_ID}/runs?branch=${GITHUB_REF_NAME}&status=success&per_page=${WINDOW}" \
+            --jq '.workflow_runs[].id')
+          # Always include the current run too — it just finished.
+          RUN_IDS=$(printf "%s\n%s" "${{ github.run_id }}" "${RUN_IDS}" | sort -u)
+          for RUN_ID in ${RUN_IDS}; do
+            ART_ID=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts" \
+              --jq '.artifacts[] | select(.name == "k6-summaries") | .id' | head -n1)
+            if [ -z "${ART_ID}" ]; then
+              echo "[rebaseline] run ${RUN_ID}: no k6-summaries artifact"
+              continue
+            fi
+            DEST="artifacts/summaries/run-${RUN_ID}"
+            mkdir -p "${DEST}"
+            echo "[rebaseline] downloading artifact ${ART_ID} from run ${RUN_ID}"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/artifacts/${ART_ID}/zip" > "${DEST}.zip"
+            unzip -q -o "${DEST}.zip" -d "${DEST}" || echo "[rebaseline] WARN: unzip failed for ${RUN_ID}"
+            rm -f "${DEST}.zip"
+          done
+          find artifacts/summaries -name '*.json' | head
+
+      - name: Compute candidate budgets
+        id: rebaseline
+        run: |
+          set +e
+          node loadtests/rebaseline-budgets.mjs \
+            --summaries-dir=./artifacts/summaries \
+            --out-budgets=./.rebaseline/budgets.json \
+            --out-summary=./.rebaseline/summary.md \
+            --threshold=${REBASELINE_THRESHOLD}
+          STATUS=$?
+          set -e
+          # Exit code 10 = drift detected; 0 = within tolerance; anything
+          # else = real failure.
+          if [ "${STATUS}" = "10" ]; then
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+          elif [ "${STATUS}" = "0" ]; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "[rebaseline] script exited ${STATUS}" >&2
+            exit "${STATUS}"
+          fi
+
+      - name: Append rebaseline report to workflow summary
+        if: always()
+        run: |
+          if [ -f ./.rebaseline/summary.md ]; then
+            cat ./.rebaseline/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Stage candidate budgets
+        if: steps.rebaseline.outputs.drift == 'true'
+        run: |
+          # Replace the committed file with the candidate so
+          # create-pull-request picks up the diff.
+          cp ./.rebaseline/budgets.json loadtests/budgets.json
+
+      - name: Open or update rebaseline PR
+        if: steps.rebaseline.outputs.drift == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: loadtest/rebaseline-budgets
+          base: ${{ github.ref_name }}
+          commit-message: "loadtest: re-baseline budgets from rolling nightly window"
+          title: "loadtest: re-baseline budgets"
+          body-path: ./.rebaseline/summary.md
+          labels: |
+            loadtest
+            automated
+          draft: true
+          delete-branch: false

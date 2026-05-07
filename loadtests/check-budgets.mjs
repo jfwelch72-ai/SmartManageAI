@@ -9,6 +9,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { indexMetrics, findMetric } from "./lib/summary.mjs";
 
 const args = process.argv.slice(2);
 let cohortFilter = null;
@@ -115,53 +116,6 @@ if (minMeasured > 0 && ok.length < minMeasured) {
 }
 
 console.log(`[budgets] all ${ok.length} measured endpoints within budget`);
-
-// Build a normalized index: { baseName: [{ tags: {k:v}, metric }, ...], ... }
-// so we can match by required-tag subset regardless of the order/extra
-// tags k6 includes in the submetric key.
-function indexMetrics(metrics) {
-  const out = {};
-  for (const [key, metric] of Object.entries(metrics)) {
-    const m = key.match(/^([^{]+)(?:\{(.*)\})?$/);
-    if (!m) continue;
-    const baseName = m[1];
-    const tagStr = m[2] || "";
-    const tags = {};
-    if (tagStr) {
-      for (const pair of tagStr.split(",")) {
-        const eq = pair.indexOf(":");
-        if (eq < 0) continue;
-        const k = pair.slice(0, eq).trim();
-        const v = pair.slice(eq + 1).trim();
-        if (k) tags[k] = v;
-      }
-    }
-    (out[baseName] ||= []).push({ tags, metric });
-  }
-  return out;
-}
-
-// Find a metric whose tags include ALL required tags. Never falls back
-// to the untagged/global metric — that fallback was masking real
-// missing-data conditions in earlier revisions and could cause heavy-
-// cohort traffic to leak into the quiet-cohort budget check.
-function findMetric(indexed, baseName, requiredTags) {
-  const candidates = indexed[baseName] || [];
-  const requiredKeys = Object.keys(requiredTags);
-  if (requiredKeys.length === 0) {
-    // Untagged lookup is only safe when no filter was requested.
-    const untagged = candidates.find((c) => Object.keys(c.tags).length === 0);
-    return untagged ? untagged.metric : null;
-  }
-  const matches = candidates.filter((c) =>
-    requiredKeys.every((k) => c.tags[k] === requiredTags[k]),
-  );
-  if (matches.length === 0) return null;
-  // Prefer the most specific match (fewest extra tags) so a tag-rich
-  // submetric doesn't shadow a tighter one.
-  matches.sort((a, b) => Object.keys(a.tags).length - Object.keys(b.tags).length);
-  return matches[0].metric;
-}
 
 function round(n) { return n == null ? null : Math.round(n * 10) / 10; }
 function round4(n) { return n == null ? null : Math.round(n * 10000) / 10000; }
