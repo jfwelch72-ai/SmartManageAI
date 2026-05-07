@@ -14,6 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { Progress } from "@/components/ui/progress";
+import { useJobProgress } from "@/hooks/use-job-progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   Upload, Sparkles, Clock, CheckCircle2, AlertTriangle,
@@ -592,8 +594,10 @@ export function useDocumentAnalysisMutations(config: {
   const { toast } = useToast();
 
   const analyzeMutation = useMutation({
-    mutationFn: async (data: any) => {
-      return await apiRequest("POST", config.analyzeEndpoint, data);
+    mutationFn: async (data: any): Promise<{ id?: string; jobId?: string; status?: string }> => {
+      const res = await apiRequest("POST", config.analyzeEndpoint, data);
+      const body = await res.json();
+      return body as { id?: string; jobId?: string; status?: string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.analysesEndpoint] });
@@ -606,8 +610,10 @@ export function useDocumentAnalysisMutations(config: {
   });
 
   const reanalyzeMutation = useMutation({
-    mutationFn: async (id: string) => {
-      return await apiRequest("POST", config.reanalyzeEndpointFn(id));
+    mutationFn: async (id: string): Promise<{ id?: string; jobId?: string; status?: string }> => {
+      const res = await apiRequest("POST", config.reanalyzeEndpointFn(id));
+      const body = await res.json();
+      return body as { id?: string; jobId?: string; status?: string };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: [config.analysesEndpoint] });
@@ -675,6 +681,7 @@ export function UploadDialog({
   entitySelectTestId,
   helpText,
   analyzePending,
+  jobId,
   onUploadComplete,
   renderExtras,
 }: {
@@ -689,9 +696,12 @@ export function UploadDialog({
   entitySelectTestId: string;
   helpText: string;
   analyzePending: boolean;
+  jobId?: string | null;
   onUploadComplete: (result: any) => void;
   renderExtras?: () => ReactNode;
 }) {
+  const job = useJobProgress(jobId ?? null);
+  const showProgress = !!jobId && job.status === "running";
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
@@ -733,16 +743,96 @@ export function UploadDialog({
             </div>
           )}
 
-          {analyzePending && (
-            <Alert>
+          {(analyzePending || showProgress) && (
+            <Alert data-testid="alert-analysis-progress">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <AlertDescription>
-                Uploading and analyzing document... This may take a moment.
+              <AlertDescription className="space-y-2">
+                <div data-testid="text-analysis-progress-message">
+                  {showProgress
+                    ? job.message || "Analyzing document..."
+                    : "Uploading and analyzing document... This may take a moment."}
+                </div>
+                {showProgress && (
+                  <>
+                    <Progress
+                      value={job.progress}
+                      className="h-2"
+                      data-testid="progress-analysis"
+                    />
+                    <div className="text-xs text-muted-foreground tabular-nums" data-testid="text-analysis-progress-pct">
+                      {job.progress}%
+                    </div>
+                  </>
+                )}
               </AlertDescription>
             </Alert>
           )}
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Task #2518 — persistent in-page banner for an in-flight document
+ * analysis job. Lives outside the upload dialog so the SSE subscription
+ * survives the dialog auto-closing right after `POST /analyze` succeeds.
+ * Renders nothing once the job hits a terminal state.
+ */
+export function JobProgressBanner({
+  jobId,
+  label = "Analyzing document",
+  onDismiss,
+}: {
+  jobId: string | null | undefined;
+  label?: string;
+  onDismiss?: () => void;
+}) {
+  const job = useJobProgress(jobId ?? null);
+  if (!jobId) return null;
+  if (job.status === "idle" || job.status === "completed") return null;
+  const failed = job.status === "failed";
+  return (
+    <Alert variant={failed ? "destructive" : "default"} data-testid="alert-job-progress-banner">
+      {failed ? (
+        <AlertTriangle className="h-4 w-4" />
+      ) : (
+        <Loader2 className="h-4 w-4 animate-spin" />
+      )}
+      <AlertDescription className="space-y-2">
+        <div className="flex items-center justify-between gap-3">
+          <span data-testid="text-job-progress-banner-message">
+            {failed
+              ? job.message || `${label} failed.`
+              : job.message || `${label}...`}
+          </span>
+          <div className="flex items-center gap-2">
+            <span
+              className="text-xs text-muted-foreground tabular-nums"
+              data-testid="text-job-progress-banner-pct"
+            >
+              {job.progress}%
+            </span>
+            {failed && onDismiss && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={onDismiss}
+                data-testid="button-job-progress-banner-dismiss"
+              >
+                Dismiss
+              </Button>
+            )}
+          </div>
+        </div>
+        {!failed && (
+          <Progress
+            value={job.progress}
+            className="h-2"
+            data-testid="progress-job-progress-banner"
+          />
+        )}
+      </AlertDescription>
+    </Alert>
   );
 }

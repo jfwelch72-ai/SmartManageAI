@@ -23,6 +23,7 @@ import {
   ResultTextSection,
   ResultListSection,
   ResultDateListSection,
+  JobProgressBanner,
 } from "@/components/ai-document/DocumentAnalysisPage";
 
 interface BidDocumentAnalysis extends AnalysisItem {
@@ -91,6 +92,12 @@ export default function AIBidAnalysisPage() {
         <Button onClick={() => setShowUploadDialog(true)} data-testid="button-new-analysis"><Upload className="h-4 w-4 mr-2" />Analyze New Document</Button>
       </div>
 
+      <JobProgressBanner
+        jobId={mutations.analyzeMutation.data?.jobId}
+        label="Analyzing bid document"
+        onDismiss={() => mutations.analyzeMutation.reset()}
+      />
+
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Sparkles className="h-4 w-4" />Total Analyses</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{analyses.length}</div><p className="text-xs text-muted-foreground">Documents analyzed</p></CardContent></Card>
         <Card><CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2"><Clock className="h-4 w-4" />In Progress</CardTitle></CardHeader><CardContent><div className="text-2xl font-bold">{pendingAnalyses.length}</div><p className="text-xs text-muted-foreground">Currently processing</p></CardContent></Card>
@@ -116,7 +123,7 @@ export default function AIBidAnalysisPage() {
         </TabsContent>
       </Tabs>
 
-      <UploadDialog open={showUploadDialog} onOpenChange={setShowUploadDialog} title="Analyze Bid Document" description="Upload a bid invitation, RFP, or scope document for AI analysis" entityLabel="Bid" entities={bids} selectedEntityId={selectedBidId} onEntityChange={setSelectedBidId} entitySelectTestId="select-bid" helpText="Upload bid invitation, RFP, or scope document (PDF or image)" analyzePending={mutations.analyzeMutation.isPending} onUploadComplete={handleUploadComplete} />
+      <UploadDialog open={showUploadDialog} onOpenChange={setShowUploadDialog} title="Analyze Bid Document" description="Upload a bid invitation, RFP, or scope document for AI analysis" entityLabel="Bid" entities={bids} selectedEntityId={selectedBidId} onEntityChange={setSelectedBidId} entitySelectTestId="select-bid" helpText="Upload bid invitation, RFP, or scope document (PDF or image)" analyzePending={mutations.analyzeMutation.isPending} jobId={mutations.analyzeMutation.data?.jobId ?? null} onUploadComplete={handleUploadComplete} />
 
       <AnalysisResultDialog
         analysis={selectedAnalysis}

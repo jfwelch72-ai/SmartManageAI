@@ -46,6 +46,7 @@ import {
   Scissors
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { useJobProgress } from "@/hooks/use-job-progress";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
@@ -212,6 +213,7 @@ const TRADE_TYPE_OPTIONS = [
 export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
+  const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -405,8 +407,9 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
       const response = await apiRequest("POST", "/api/ai-features/takeoff/analyze", body);
       return response.json();
     },
-    onSuccess: (data: { analysisId: string; estimatedTime: number }) => {
+    onSuccess: (data: { analysisId: string; estimatedTime: number; jobId?: string }) => {
       setAnalysisId(data.analysisId);
+      setAnalysisJobId(data.jobId ?? null);
       setIsAnalyzing(true);
       toast({
         title: "AI Analysis Started",
@@ -732,17 +735,11 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
         )}
 
         {isPending && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              <span className="text-sm">AI is analyzing your blueprint...</span>
-            </div>
-            <Progress value={45} className="h-2" />
-            <p className="text-xs text-muted-foreground">
-              Detecting {analysisResults?.tradeType || "trade"}-specific items
-              {analysisMode === "DETAILED" && " (multi-pass verification)"}
-            </p>
-          </div>
+          <AiTakeoffPendingProgress
+            jobId={analysisJobId}
+            tradeLabel={analysisResults?.tradeType || "trade"}
+            analysisMode={analysisMode}
+          />
         )}
       </div>
 
@@ -1324,6 +1321,50 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+/**
+ * Task #2518 — render the live progress bar for an in-flight AI takeoff
+ * job. Subscribes to the job-progress SSE feed via `useJobProgress` so
+ * users see the actual percentage the worker is publishing instead of a
+ * static 45% placeholder.
+ */
+function AiTakeoffPendingProgress({
+  jobId,
+  tradeLabel,
+  analysisMode,
+}: {
+  jobId: string | null;
+  tradeLabel: string;
+  analysisMode: "QUICK" | "DETAILED";
+}) {
+  const job = useJobProgress(jobId);
+  const hasLive = !!jobId && job.status !== "idle";
+  const value = hasLive ? job.progress : 5;
+  return (
+    <div className="space-y-3" data-testid="ai-takeoff-pending-progress">
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-primary" />
+        <span className="text-sm" data-testid="text-ai-takeoff-progress-message">
+          {hasLive && job.message
+            ? job.message
+            : "AI is analyzing your blueprint..."}
+        </span>
+      </div>
+      <Progress value={value} className="h-2" data-testid="progress-ai-takeoff" />
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>
+          Detecting {tradeLabel}-specific items
+          {analysisMode === "DETAILED" && " (multi-pass verification)"}
+        </span>
+        {hasLive && (
+          <span className="tabular-nums" data-testid="text-ai-takeoff-progress-pct">
+            {job.progress}%
+          </span>
+        )}
+      </div>
     </div>
   );
 }
