@@ -146,6 +146,33 @@ router.put(
   },
 );
 
+/**
+ * GET /api/estimates/:id/factors-override — returns the per-estimate
+ * override (or null) alongside the org defaults so the UI can show
+ * which factors are pinned vs inherited without doing a follow-up
+ * call to /api/org/estimating-factors.
+ */
+router.get(
+  "/api/estimates/:id/factors-override",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = req.user!.organizationId;
+      if (!orgId) return res.status(403).json({ error: "No organization" });
+      const estimate = await getEstimateForOrg(req.params.id, orgId);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+      const orgRow = await getOrgFactors(orgId);
+      const orgDefaults = pickFactors(orgRow as unknown as Record<string, unknown>);
+      res.json({
+        override: (estimate.estimatingFactorsOverride as Record<string, unknown> | null) ?? null,
+        orgDefaults,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.post(
   "/api/estimates/:id/factors-override",
   requireAuth,
