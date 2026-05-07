@@ -23,6 +23,7 @@ import { useState, useEffect } from "react";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { getNotificationDestination } from "@/lib/notificationDestination";
 import { JobMetricAlertBellItem } from "@/components/notifications/JobMetricAlertItem";
+import { BackgroundActivityTray } from "@/components/BackgroundActivityTray";
 
 const ASK_AI_STORAGE_KEY = "smartmanage-ask-ai-enabled";
 
@@ -131,6 +132,8 @@ export default function TopHeader() {
                 )}
             </Button>
           )}
+
+          {hasContractorAccess(userRole) && <BackgroundActivityTray />}
 
           {hasContractorAccess(userRole) && (
             <DropdownMenu open={notificationsOpen} onOpenChange={setNotificationsOpen}>

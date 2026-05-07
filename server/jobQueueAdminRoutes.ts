@@ -5,14 +5,133 @@
 import { Router, type Response, type NextFunction } from "express";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import {
+  enqueueJob,
+  getBoss,
   getJobStatus,
   getQueueDepths,
   listDeadLetterJobs,
   retryDeadLetterJob,
+  type JobName,
 } from "./jobQueue";
-import { logError } from "./utils/logger";
+import { logError, logWarn } from "./utils/logger";
 
 const router = Router();
+
+// Task #2583 — List recent background jobs for the current user so the
+// nav-bar "Background activity" tray can show everything in flight, not
+// just the per-bid plan-set ingest. Filters strictly by userId in the
+// pg-boss job payload, then enforces tenant scoping on top.
+router.get(
+  "/jobs/mine",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const orgId = req.user?.organizationId ?? null;
+      const isSuper = req.user?.role === "SUPER_ADMIN";
+      const limit = Math.min(Number(req.query.limit) || 25, 100);
+      const dbi = await getBoss().getDb();
+      const schema = process.env.PGBOSS_SCHEMA || "pgboss";
+      // Active or recently terminal (last 24h) jobs owned by this user.
+      // Cross-tenant safety: SUPER_ADMIN sees their own; other users
+      // additionally constrained to their org.
+      const params: unknown[] = [userId];
+      let orgClause = "";
+      if (!isSuper && orgId) {
+        params.push(orgId);
+        orgClause = ` AND COALESCE(data->>'organizationId', '') = $${params.length}`;
+      }
+      params.push(limit);
+      const result = await dbi.executeSql(
+        `SELECT id, name, state, data, output, retrycount, createdon, startedon, completedon
+           FROM ${schema}.job
+          WHERE data->>'userId' = $1${orgClause}
+            AND (
+              state IN ('created','active','retry')
+              OR completedon > NOW() - INTERVAL '24 hours'
+            )
+          ORDER BY createdon DESC
+          LIMIT $${params.length}`,
+        params,
+      );
+      const rows = (result?.rows ?? []) as Array<Record<string, unknown>>;
+      const items = rows.map((r) => {
+        const data = (r.data ?? {}) as { payload?: unknown; idempotencyKey?: string };
+        return {
+          id: String(r.id),
+          name: String(r.name ?? ""),
+          state: String(r.state ?? ""),
+          retryCount: Number(r.retrycount ?? 0),
+          createdOn: r.createdon ?? null,
+          startedOn: r.startedon ?? null,
+          completedOn: r.completedon ?? null,
+          idempotencyKey: data.idempotencyKey ?? null,
+        };
+      });
+      res.json({ items });
+    } catch (err) {
+      logWarn("List my jobs failed", { error: String(err) });
+      next(err);
+    }
+  },
+);
+
+// Task #2583 — User-scoped retry: re-enqueues a failed/expired/cancelled
+// job that belongs to the caller. Differs from the SUPER_ADMIN DLQ retry
+// in that it tenant-checks the underlying job before re-enqueueing.
+router.post(
+  "/jobs/:id/retry",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user?.id;
+      if (!userId) return res.status(401).json({ error: "Unauthorized" });
+      const status = await getJobStatus(req.params.id);
+      if (!status) return res.status(404).json({ error: "Job not found" });
+      const data = (status.data ?? {}) as {
+        organizationId?: string | null;
+        userId?: string | null;
+        payload?: unknown;
+        idempotencyKey?: string;
+      };
+      const isSuper = req.user?.role === "SUPER_ADMIN";
+      if (!isSuper) {
+        // Strict ownership: the job's payload MUST identify this user
+        // and this org. Missing metadata is a deny — we don't grant
+        // retry on jobs whose ownership we can't positively prove.
+        if (!data.userId || data.userId !== userId) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+        if (
+          !data.organizationId ||
+          !req.user?.organizationId ||
+          data.organizationId !== req.user.organizationId
+        ) {
+          return res.status(403).json({ error: "Forbidden" });
+        }
+      }
+      if (!["failed", "expired", "cancelled"].includes(status.state)) {
+        return res
+          .status(409)
+          .json({ error: `Job is ${status.state}, only failed/expired/cancelled jobs can be retried` });
+      }
+      const result = await enqueueJob(status.name as JobName, data.payload, {
+        organizationId: data.organizationId ?? null,
+        userId: data.userId ?? userId,
+        idempotencyKey: `${data.idempotencyKey ?? status.id}:retry:${Date.now()}`,
+      });
+      res.json(result);
+    } catch (err) {
+      logError(
+        "User retry job failed",
+        { id: req.params.id },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      next(err);
+    }
+  },
+);
 
 // Authenticated job status — used by the frontend to poll a job they
 // kicked off. Tenant scoping: only allow if the job's payload matches
