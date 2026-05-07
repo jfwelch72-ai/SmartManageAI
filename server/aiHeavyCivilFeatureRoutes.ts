@@ -23,8 +23,49 @@ import { governedAiCall } from "./services/aiGovernance";
 // here; the unrouted `openai` client is no longer referenced in this file.
 import { routedChatCompletion } from "./ai/providers";
 import { extractDocumentContent } from "./ai/documentExtractor";
+import {
+  detectPromptInjection,
+  quarantineDocumentBlocks,
+  shouldRefusePromptInjection,
+  PromptInjectionRefusalError,
+  isPromptInjectionRefusal,
+  validateAiJsonOutput,
+} from "./ai/promptInjectionGuard";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { validateBody } from "./utils/validation";
+
+// Task #2494 — Output schemas for the heavy-civil AI doc routes. These keep
+// the LLM honest (must return JSON of the expected shape) and stop a
+// hijacked / hallucinated payload from ever reaching the UI / DB.
+const BID_TAB_OUTPUT_SCHEMA = z.object({
+  items: z.array(z.unknown()).optional(),
+  confidence: z.number().optional(),
+  notes: z.string().nullable().optional(),
+}).passthrough();
+
+const HAUL_OCR_OUTPUT_SCHEMA = z.object({
+  ticketNumber: z.string().nullable().optional(),
+  ticketDate: z.string().nullable().optional(),
+  materialClass: z.string().nullable().optional(),
+  source: z.string().nullable().optional(),
+  destination: z.string().nullable().optional(),
+  truckNumber: z.string().nullable().optional(),
+  driverName: z.string().nullable().optional(),
+  quantity: z.string().nullable().optional(),
+  unit: z.string().nullable().optional(),
+  unitCost: z.string().nullable().optional(),
+  confidence: z.number().optional(),
+  notes: z.string().nullable().optional(),
+}).passthrough();
+
+function refusedResponse(res: Response, err: PromptInjectionRefusalError) {
+  return res.status(422).json({
+    error: "Document refused — prompt-injection payload detected.",
+    code: err.code,
+    matches: err.matches.map((m) => m.id),
+    fallback: true,
+  });
+}
 
 const router = Router();
 
@@ -95,10 +136,27 @@ router.post(
         return res.status(404).json({ error: "Document not found in your organization" });
       }
 
-      const blocks = await extractDocumentContent(url);
-      if (blocks.length === 0) {
+      const rawBlocks = await extractDocumentContent(url);
+      if (rawBlocks.length === 0) {
         return fallbackResponse(res, "Unable to read the uploaded bid tab document. Please enter pay items manually.");
       }
+
+      // Task #2494 — refuse on high-signal prompt-injection payloads and
+      // wrap every untrusted text/image block in the quarantine envelope
+      // before sending it to the LLM.
+      const extractedText = rawBlocks
+        .filter((c) => c.type === "text")
+        .map((c) => (c as { text: string }).text)
+        .join("\n");
+      const detection = detectPromptInjection(extractedText);
+      if (shouldRefusePromptInjection(detection)) {
+        logWarn("Bid-tab extract refused: prompt-injection detected", {
+          documentId: data.documentId,
+          matches: detection.matches.map((m) => m.id),
+        });
+        return refusedResponse(res, new PromptInjectionRefusalError(detection.matches, data.documentId));
+      }
+      const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
       const govResult = await governedAiCall<string | null>({
         orgId: req.user!.organizationId!,
@@ -132,12 +190,19 @@ router.post(
       });
 
       if (govResult.blocked) return blockedResponse(res, govResult.reason);
-      const parsed = safeJson<{ items?: unknown[]; confidence?: number; notes?: string }>(govResult.result);
-      if (!parsed || !Array.isArray(parsed.items)) {
+      const validated = validateAiJsonOutput(BID_TAB_OUTPUT_SCHEMA, govResult.result);
+      if (!validated.ok || !Array.isArray(validated.data.items)) {
         return fallbackResponse(res, "AI returned no parseable pay items. Please enter manually.");
       }
-      res.json({ items: parsed.items, confidence: parsed.confidence ?? 0, notes: parsed.notes ?? null });
+      res.json({
+        items: validated.data.items,
+        confidence: validated.data.confidence ?? 0,
+        notes: validated.data.notes ?? null,
+      });
     } catch (error) {
+      if (isPromptInjectionRefusal(error)) {
+        return refusedResponse(res, error);
+      }
       logError("Bid-tab extraction failed", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Bid-tab extraction failed", fallback: true });
     }
@@ -179,10 +244,26 @@ router.post(
       const url = await resolveDocumentUrl(data, req.user!.organizationId!);
       if (!url) return res.status(404).json({ error: "Document not found in your organization" });
 
-      const blocks = await extractDocumentContent(url);
-      if (blocks.length === 0) {
+      const rawBlocks = await extractDocumentContent(url);
+      if (rawBlocks.length === 0) {
         return fallbackResponse(res, "Could not read the uploaded ticket photo. Enter values manually.");
       }
+
+      // Task #2494 — quarantine + refusal guard for the haul-ticket OCR
+      // path. Same pattern as the bid-tab extractor.
+      const extractedText = rawBlocks
+        .filter((c) => c.type === "text")
+        .map((c) => (c as { text: string }).text)
+        .join("\n");
+      const detection = detectPromptInjection(extractedText);
+      if (shouldRefusePromptInjection(detection)) {
+        logWarn("Haul-ticket OCR refused: prompt-injection detected", {
+          documentId: data.documentId,
+          matches: detection.matches.map((m) => m.id),
+        });
+        return refusedResponse(res, new PromptInjectionRefusalError(detection.matches, data.documentId));
+      }
+      const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
       const govResult = await governedAiCall<string | null>({
         orgId: req.user!.organizationId!,
@@ -216,10 +297,13 @@ router.post(
       });
 
       if (govResult.blocked) return blockedResponse(res, govResult.reason);
-      const parsed = safeJson<Record<string, unknown>>(govResult.result);
-      if (!parsed) return fallbackResponse(res, "AI returned no parseable fields. Enter manually.");
-      res.json(parsed);
+      const validated = validateAiJsonOutput(HAUL_OCR_OUTPUT_SCHEMA, govResult.result);
+      if (!validated.ok) return fallbackResponse(res, "AI returned no parseable fields. Enter manually.");
+      res.json(validated.data);
     } catch (error) {
+      if (isPromptInjectionRefusal(error)) {
+        return refusedResponse(res, error);
+      }
       logError("Haul ticket OCR failed", {}, error instanceof Error ? error : new Error(String(error)));
       res.status(500).json({ error: "Haul ticket OCR failed", fallback: true });
     }

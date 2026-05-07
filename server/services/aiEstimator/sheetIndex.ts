@@ -35,6 +35,26 @@ import type { AiContentPart } from "../../ai/providers/types";
 import { governedAiCall } from "../aiGovernance";
 import { assertBidInOrg, ResourceOwnershipError } from "./access";
 import { logError, logInfo, logWarn } from "../../utils/logger";
+// Task #2494 — All untrusted plan-sheet content sent to the LLM must flow
+// through the prompt-injection guard. Refusing on high-signal payloads and
+// validating the JSON shape stops a hostile uploaded plan set from
+// hijacking the sheet-classifier.
+import { z } from "zod";
+import {
+  detectPromptInjection,
+  quarantineDocumentBlocks,
+  shouldRefusePromptInjection,
+  validateAiJsonOutput,
+} from "../../ai/promptInjectionGuard";
+
+const SHEET_INDEX_OUTPUT_SCHEMA = z.object({
+  sheets: z.array(z.object({
+    sheetIndex: z.number(),
+    discipline: z.string(),
+    sheetNumber: z.string().nullable().optional(),
+    confidence: z.number().optional(),
+  })),
+});
 
 const ALLOWED_DISCIPLINES = new Set<string>(SHEET_DISCIPLINES);
 
@@ -53,15 +73,6 @@ interface AiSheetClassification {
   discipline: string;
   sheetNumber: string | null;
   confidence: number; // 0..1
-}
-
-function safeJson<T>(text: string | null | undefined): T | null {
-  if (!text) return null;
-  try {
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -142,14 +153,31 @@ export async function indexPlanSheetsForBid(opts: {
   const docs = planDocRows.slice(0, 8);
   for (const doc of docs) {
     if (!doc.fileUrl) continue;
-    let blocks;
+    let rawBlocks;
     try {
-      blocks = await extractDocumentContent(doc.fileUrl);
+      rawBlocks = await extractDocumentContent(doc.fileUrl);
     } catch (e) {
       logWarn("[sheetIndex] extract failed", { url: doc.fileUrl, error: String(e) });
       continue;
     }
-    if (!blocks || blocks.length === 0) continue;
+    if (!rawBlocks || rawBlocks.length === 0) continue;
+
+    // Task #2494 — refuse on high-signal prompt-injection payloads
+    // embedded in the plan set, then wrap every untrusted text/image
+    // block in the quarantine envelope.
+    const extractedText = rawBlocks
+      .filter((c) => c.type === "text")
+      .map((c) => (c as { text: string }).text)
+      .join("\n");
+    const detection = detectPromptInjection(extractedText);
+    if (shouldRefusePromptInjection(detection)) {
+      logWarn("[sheetIndex] AI sheet classification refused (prompt injection)", {
+        planDocumentId: doc.id,
+        matches: detection.matches.map((m) => m.id),
+      });
+      continue;
+    }
+    const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
     const sysPrompt = `You read construction plan sets and classify each page by AIA discipline.
 Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1 }] }
@@ -193,16 +221,16 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
       break;
     }
 
-    const parsed = safeJson<{ sheets: AiSheetClassification[] }>(gov.result);
-    if (!parsed || !Array.isArray(parsed.sheets)) {
-      logWarn("[sheetIndex] AI returned non-JSON for doc", { docId: doc.id });
+    const validated = validateAiJsonOutput(SHEET_INDEX_OUTPUT_SCHEMA, gov.result);
+    if (!validated.ok) {
+      logWarn("[sheetIndex] AI returned non-JSON / invalid shape for doc", { docId: doc.id, reason: validated.reason });
       continue;
     }
 
     // Map per-page classifications back onto takeoff_sheets rows that
     // share a (planId, sheetIndex) tuple. When planId is missing we
     // fall back to the bid + sheetIndex lookup.
-    for (const entry of parsed.sheets) {
+    for (const entry of validated.data.sheets as AiSheetClassification[]) {
       if (typeof entry.sheetIndex !== "number") continue;
       const target = sheets.find((s) =>
         s.planId
