@@ -74,6 +74,44 @@ export default function BillingPage() {
     },
   });
 
+  // Task #2482: Stripe Checkout + Customer Portal mutations.
+  const checkoutMutation = useMutation({
+    mutationFn: async (planTier: PlanTier) => {
+      const res = await apiRequest("POST", "/api/billing/checkout", {
+        planTier,
+        seats: 1,
+      });
+      return res.json() as Promise<{ url: string }>;
+    },
+    onSuccess: ({ url }) => {
+      if (url) window.location.href = url;
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Checkout unavailable",
+        description: e?.message || "Stripe is not configured for this deployment.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const portalMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/billing/portal", {});
+      return res.json() as Promise<{ url: string }>;
+    },
+    onSuccess: ({ url }) => {
+      if (url) window.location.href = url;
+    },
+    onError: (e: any) => {
+      toast({
+        title: "Portal unavailable",
+        description: e?.message || "Stripe Customer Portal could not be opened.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const changePlanMutation = useMutation({
     mutationFn: async (planTier: PlanTier) => {
       const res = await apiRequest("POST", "/api/billing/subscription", { planTier });
@@ -170,6 +208,36 @@ export default function BillingPage() {
             Dev Mode
           </Badge>
         ) : null}
+        {/* Task #2482: Admin-only Stripe self-serve actions. */}
+        {isAdmin && (
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={portalMutation.isPending}
+              onClick={() => portalMutation.mutate()}
+              data-testid="button-billing-portal"
+            >
+              {portalMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+              ) : null}
+              Manage billing
+            </Button>
+            {entitlements.planTier === "free" && (
+              <Button
+                size="sm"
+                disabled={checkoutMutation.isPending}
+                onClick={() => checkoutMutation.mutate("starter")}
+                data-testid="button-billing-checkout"
+              >
+                {checkoutMutation.isPending ? (
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                ) : null}
+                Subscribe
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       <Card>

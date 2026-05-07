@@ -148,6 +148,7 @@ import { logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { z } from "zod";
 import { passwordSchema } from "@shared/utils/passwordPolicy";
+import { assertSeatAvailable } from "./services/billing/seatEnforcement";
 
 const router = Router();
 
@@ -930,6 +931,22 @@ router.post("/platform/users", requireAuth, requireSuperAdmin, async (req: AuthR
     const [org] = await db.select({ id: organizations.id }).from(organizations).where(eq(organizations.id, organizationId)).limit(1);
     if (!org) {
       return res.status(404).json({ error: "Organization not found" });
+    }
+
+    // Task #2482: enforce seat limit before persisting a new active user.
+    // Throws SeatLimitExceededError (HTTP 402) when the org is full so
+    // the central error middleware returns a clean billing-aware error.
+    try {
+      await assertSeatAvailable(organizationId, 1);
+    } catch (err: any) {
+      if (err?.code === "SEAT_LIMIT_EXCEEDED") {
+        return res.status(402).json({
+          error: err.message,
+          code: err.code,
+          seat: err.seat,
+        });
+      }
+      throw err;
     }
 
     const passwordHash = await hashPassword(password);

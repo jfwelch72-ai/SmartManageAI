@@ -194,6 +194,7 @@ import type { UserRole } from "@shared/schema";
 import { eq, and, sql, gte, lte, desc, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { KNOWN_WIDGET_TYPES, migrateV2ToV3, getDefaultLayoutForRole, PRESET_PALETTES } from "./dashboardDefaults";
+import { assertSeatAvailable } from "./services/billing/seatEnforcement";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logAudit, logUpdate } from "./auditLogger";
@@ -2953,6 +2954,20 @@ router.post("/api/users", requireAuth, requireRole("ADMIN"), async (req: AuthReq
 
     if (role === "SUPER_ADMIN" && req.user?.role !== "SUPER_ADMIN") {
       res.status(403).json({ error: "Cannot assign Super Admin role" }); return;
+    }
+
+    // Task #2482: enforce seat limit on the org-admin user-create
+    // path the same way as POST /platform/users.
+    if (req.user?.organizationId) {
+      try {
+        await assertSeatAvailable(req.user.organizationId, 1);
+      } catch (err: any) {
+        if (err?.code === "SEAT_LIMIT_EXCEEDED") {
+          res.status(402).json({ error: err.message, code: err.code, seat: err.seat });
+          return;
+        }
+        throw err;
+      }
     }
 
     const passwordHash = await hashPassword(password);

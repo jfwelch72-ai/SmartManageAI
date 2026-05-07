@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, bigint, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, bigint, pgEnum, doublePrecision, index, unique, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { addonKeyEnum, addonStatusEnum, alertFailureEmailModeEnum, backfillSummaryChannelEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
@@ -212,12 +212,71 @@ export const organizationSubscriptions = pgTable("organization_subscriptions", {
   billingProvider: billingProviderEnum("billing_provider").notNull().default("manual"),
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
+  // Task #2482: stripe_price_id for the seat-priced base subscription item
+  // so the webhook handler can read seat counts from the subscription item.
+  stripePriceId: text("stripe_price_id"),
+  currentPeriodStart: timestamp("current_period_start"),
   currentPeriodEnd: timestamp("current_period_end"),
+  // Task #2482: per-org quota overrides. NULL = use plan default from
+  // PLAN_LIMITS in shared/billing/plans.ts. Non-null overrides win — this
+  // lets sales/support grant a one-off bump without changing plan tier.
+  seatLimitOverride: integer("seat_limit_override"),
+  aiTokenQuotaOverride: integer("ai_token_quota_override"),
+  storageGbQuotaOverride: integer("storage_gb_quota_override"),
+  // Task #2482: dunning state. `paymentFailedAt` is set on the FIRST
+  // failed-payment webhook and cleared on the next successful payment.
+  // `gracePeriodEndsAt` is when the org flips to "suspended" if still
+  // unpaid. `suspendedAt` is set when the suspension actually fires.
+  paymentFailedAt: timestamp("payment_failed_at"),
+  gracePeriodEndsAt: timestamp("grace_period_ends_at"),
+  suspendedAt: timestamp("suspended_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdIdx: index("org_subscriptions_org_id_idx").on(table.organizationId),
+  stripeCustomerIdx: index("org_subscriptions_stripe_customer_idx").on(table.stripeCustomerId),
+  stripeSubscriptionIdx: index("org_subscriptions_stripe_subscription_idx").on(table.stripeSubscriptionId),
 }));
+
+// Task #2482: idempotency log for Stripe webhook events. Stripe retries
+// webhooks aggressively on 5xx, so the handler MUST be idempotent. We
+// upsert by `stripeEventId` (unique) and short-circuit on duplicate.
+// Keeping the row also gives us a per-org audit trail of every webhook
+// the platform processed.
+export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  stripeEventId: text("stripe_event_id").notNull().unique(),
+  eventType: text("event_type").notNull(),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  payload: jsonb("payload").notNull(),
+  processedAt: timestamp("processed_at").notNull().defaultNow(),
+  status: text("status").notNull().default("processed"),
+  errorMessage: text("error_message"),
+}, (table) => ({
+  eventIdIdx: index("stripe_webhook_event_id_idx").on(table.stripeEventId),
+  orgIdIdx: index("stripe_webhook_org_id_idx").on(table.organizationId),
+  processedAtIdx: index("stripe_webhook_processed_at_idx").on(table.processedAt),
+}));
+
+export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
+
+// Task #2482: dunning email log. One row per (org, kind, attempt) so we
+// don't double-send a particular notice in the same failed-payment cycle.
+// `cycleStartedAt` is the `paymentFailedAt` value of the cycle the email
+// belongs to — when it changes, dunning starts from the top.
+export const billingDunningEmails = pgTable("billing_dunning_emails", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  cycleStartedAt: timestamp("cycle_started_at").notNull(),
+  sentAt: timestamp("sent_at").notNull().defaultNow(),
+  recipientEmail: text("recipient_email").notNull(),
+}, (table) => ({
+  orgKindCycleUnique: unique("billing_dunning_org_kind_cycle_unique").on(table.organizationId, table.kind, table.cycleStartedAt),
+  orgIdIdx: index("billing_dunning_org_id_idx").on(table.organizationId),
+}));
+
+export type BillingDunningEmail = typeof billingDunningEmails.$inferSelect;
 
 export const insertOrganizationSubscriptionSchema = createInsertSchema(organizationSubscriptions).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationSubscription = z.infer<typeof insertOrganizationSubscriptionSchema>;

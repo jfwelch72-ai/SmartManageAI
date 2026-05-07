@@ -17,6 +17,7 @@ import { logWarn, logInfo } from "../../utils/logger";
 import { openaiProvider } from "./openaiProvider";
 import { anthropicProvider } from "./anthropicProvider";
 import { isFeatureEnabled } from "../../services/featureFlagService";
+import { consume as consumeBillingUsage, checkQuota as checkBillingQuota, QuotaExceededError } from "../../services/billing/usageMetering";
 import {
   buildPriorContextSystemMessage,
   capturePriorContext,
@@ -124,6 +125,21 @@ function withPriorContextSystem(
 export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatResponse> {
   const { orgId, featureKey, priorContext } = opts;
   const allowFallback = opts.allowFallback !== false;
+
+  // Task #2482 — pre-flight quota gate. We require headroom for one
+  // more ai_jobs unit BEFORE invoking the provider. checkQuota will
+  // either return allowed=true (under plan, OR over plan with metered
+  // Stripe billing configured), or allowed=false in which case we
+  // throw QuotaExceededError so the caller can surface a 402 instead
+  // of silently spending tokens for an account that won't be billed.
+  // We pass amount=1 for ai_jobs only — token volume isn't known
+  // until after the provider responds, so token-tier gating happens
+  // post-call inside `consume`.
+  const preflight = await checkBillingQuota(orgId, "ai_jobs", 1);
+  if (!preflight.allowed) {
+    throw new QuotaExceededError(preflight, "ai_jobs");
+  }
+
   const routing = await resolveRouting(orgId);
 
   if (routing.source === "anthropic-not-configured") {
@@ -178,6 +194,54 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
       responseText: result.choices[0]?.message?.content ?? null,
     });
   }
+
+  // Task #2482 — meter AI usage per org. `consume` performs the
+  // plan-overage decision and, when the org is on Stripe with a
+  // metered price configured for the key, emits a Stripe usage record
+  // for the overage units. We run it post-call so a slow/missing
+  // billing DB never blocks a successful AI response. If the org has
+  // already exceeded its plan AND has no metered price configured,
+  // `consume` throws QuotaExceededError — we log it; the next
+  // pre-flight checkQuota call from the caller will gate further work.
+  void (async () => {
+    const tokens = (result.usage?.prompt_tokens ?? 0) + (result.usage?.completion_tokens ?? 0);
+    try {
+      if (tokens > 0) await consumeBillingUsage(orgId, "ai_tokens", tokens);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        logWarn("AI token quota exceeded (call already completed; future calls will be blocked)", {
+          orgId,
+          featureKey,
+          used: e.meter.used,
+          limit: e.meter.limit,
+        });
+      } else {
+        logWarn("AI ai_tokens metering failed (non-blocking)", {
+          orgId,
+          featureKey,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    try {
+      await consumeBillingUsage(orgId, "ai_jobs", 1);
+    } catch (e) {
+      if (e instanceof QuotaExceededError) {
+        logWarn("AI job quota exceeded (call already completed; future calls will be blocked)", {
+          orgId,
+          featureKey,
+          used: e.meter.used,
+          limit: e.meter.limit,
+        });
+      } else {
+        logWarn("AI ai_jobs metering failed (non-blocking)", {
+          orgId,
+          featureKey,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+  })();
 
   return result;
 }

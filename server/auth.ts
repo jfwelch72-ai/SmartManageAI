@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
-import { users, organizations, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
+import { users, organizations, organizationSubscriptions, hustlerOrganizations, userDashboardPermissions, type User, type SelectUser } from "@shared/schema";
 import { eq, sql, and } from "drizzle-orm";
 import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
 import type { UserRole } from "@shared/schema";
@@ -243,7 +243,50 @@ export async function requireActiveOrganization(req: AuthRequest, res: Response,
     return;
   }
 
+  // Task #2482 — billing-driven write freeze. When the org's
+  // subscription has been auto-suspended by the dunning cycle (after
+  // DUNNING_GRACE_PERIOD_DAYS days of unpaid invoice), block mutating
+  // requests to enforce read-only mode. Reads (GET/HEAD/OPTIONS) and
+  // billing-recovery endpoints stay open so the customer can update
+  // their payment method or view past data.
+  const method = req.method.toUpperCase();
+  const isMutation = method === "POST" || method === "PUT" || method === "PATCH" || method === "DELETE";
+  if (isMutation && !isBillingRecoveryPath(req.path)) {
+    const [sub] = await db
+      .select({ status: organizationSubscriptions.status })
+      .from(organizationSubscriptions)
+      .where(eq(organizationSubscriptions.organizationId, req.user.organizationId))
+      .limit(1);
+    if (sub?.status === "suspended") {
+      res.status(402).json({
+        error: "Billing suspended",
+        message: "Your subscription is suspended for non-payment. Update your payment method on the Billing page to restore write access.",
+        suspended: true,
+        billingSuspended: true,
+      });
+      return;
+    }
+  }
+
   next();
+}
+
+/**
+ * Allowlist of paths that must remain writable even when the org's
+ * subscription is suspended — otherwise the customer couldn't
+ * recover. Covers self-serve checkout, the Stripe Customer Portal
+ * link, manual->Stripe migration, the dunning cycle endpoint, logout,
+ * and CSRF token issuance.
+ */
+function isBillingRecoveryPath(path: string): boolean {
+  return (
+    path === "/api/auth/logout" ||
+    path === "/api/billing/checkout" ||
+    path === "/api/billing/portal" ||
+    path === "/api/billing/migrate-to-stripe" ||
+    path === "/api/billing/dunning/run" ||
+    path.startsWith("/api/stripe/webhook")
+  );
 }
 
 // Middleware to require authentication

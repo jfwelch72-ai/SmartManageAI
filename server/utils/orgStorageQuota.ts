@@ -3,6 +3,11 @@ import { eq } from "drizzle-orm";
 import { organizations, DEFAULT_ORG_STORAGE_QUOTA_BYTES, MIN_ORG_STORAGE_QUOTA_BYTES, MAX_ORG_STORAGE_QUOTA_BYTES, ORG_STORAGE_QUOTA_WARNING_THRESHOLD } from "@shared/schema";
 import { ObjectStorageService, objectStorageClient } from "../objectStorage";
 import { logError } from "./logger";
+import {
+  recordStorageSnapshot,
+  checkQuota as checkBillingQuota,
+  reportMeteredOverage,
+} from "../services/billing/usageMetering";
 
 /**
  * Task #1955 — per-organization object-storage quota helpers.
@@ -135,6 +140,50 @@ export async function assertWithinStorageQuota(
       attemptedBytes,
     });
   }
+  // Task #2482 — plan-tier storage quota decision. Run synchronously
+  // BEFORE persisting bytes so we can hard-block the upload when the
+  // org is over its plan storage limit AND no metered Stripe price
+  // is configured. checkQuota returns allowed=true when the org is
+  // under plan, or over plan but billed via Stripe metered storage —
+  // in either case the upload proceeds and we emit the overage units
+  // (when applicable). allowed=false means block.
+  const projected = usage.usageBytes + attemptedBytes;
+  let check;
+  try {
+    check = await checkBillingQuota(orgId, "storage_bytes", attemptedBytes);
+  } catch (err) {
+    // Don't block uploads on a billing-DB outage; we already passed
+    // the per-org hard cap. Log and proceed.
+    logError(
+      "[storage-quota] Plan-tier quota check failed (proceeding on hard cap only)",
+      { orgId },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return usage;
+  }
+  if (!check.allowed) {
+    throw new StorageQuotaExceededError({
+      currentUsageBytes: usage.usageBytes,
+      quotaBytes: check.limit,
+      attemptedBytes,
+    });
+  }
+  // Snapshot + Stripe overage emission can run async — they don't
+  // gate the upload, only update the dashboard and push billing units.
+  void (async () => {
+    try {
+      await recordStorageSnapshot(orgId, projected);
+      if (check.billedToStripe && check.overage > 0) {
+        await reportMeteredOverage(orgId, "storage_bytes", Math.min(attemptedBytes, check.overage));
+      }
+    } catch (err) {
+      logError(
+        "[storage-quota] Failed to record/bill storage usage (non-blocking)",
+        { orgId, projected },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  })();
   return usage;
 }
 

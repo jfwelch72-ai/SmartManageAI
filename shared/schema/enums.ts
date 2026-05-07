@@ -512,11 +512,17 @@ export const organizationDocumentVisibilityEnum = pgEnum("organization_document_
 
 // Subscription & Billing Enums
 export const planTierEnum = pgEnum("plan_tier", ["free", "starter", "professional", "enterprise"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "paused"]);
+// Task #2482: added "suspended" for orgs frozen after the dunning grace
+// period elapses without a successful payment. Distinct from "paused"
+// (admin-initiated pause) and "canceled" (subscription terminated).
+export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "paused", "suspended"]);
 export const billingProviderEnum = pgEnum("billing_provider", ["stripe", "manual"]);
 export const addonStatusEnum = pgEnum("addon_status", ["active", "inactive"]);
 export const addonKeyEnum = pgEnum("addon_key", ["ai_pm", "ai_cfo", "ai_email", "website_seo", "bid_network", "ai_vision", "integration_qbo", "integration_esign", "ai_governance_pack"]);
-export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs"]);
+// Task #2482: added "ai_tokens" (monthly AI token spend per org) and
+// "storage_bytes" (running storage footprint per org). Both are billed
+// against per-plan quotas (see PLAN_LIMITS in shared/billing/plans.ts).
+export const usageKeyEnum = pgEnum("usage_key", ["ai_vision_docs", "ai_tokens", "storage_bytes", "ai_jobs"]);
 
 // Pricebook Import Job Status Enum
 export const pricebookImportJobStatusEnum = pgEnum("pricebook_import_job_status", ["PENDING", "PROCESSING", "COMPLETED", "FAILED"]);

@@ -504,38 +504,96 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   },
 };
 
-// Usage limits by plan tier
+// Usage limits by plan tier — single source of truth for entitlement
+// gating across the platform. -1 = unlimited.
+//
+// Task #2482: added `aiTokens` (monthly token budget across all AI calls)
+// and `aiJobs` (monthly count of distinct AI requests). Existing
+// `aiVisionDocs` remains for the AI Vision document add-on which is
+// metered independently. Per-org overrides live on
+// `organization_subscriptions.{seat,ai_token,storage_gb}_quota_override`.
 export const PLAN_LIMITS: Record<PlanTier, {
   projects: number;
-  users: number;
+  users: number;        // alias for "seats"
   storageGb: number;
   aiVisionDocs: number;
+  aiTokens: number;
+  aiJobs: number;
 }> = {
   free: {
     projects: 2,
     users: 1,
     storageGb: 0.5,
     aiVisionDocs: 3,
+    aiTokens: 50_000,
+    aiJobs: 25,
   },
   starter: {
     projects: 10,
     users: 5,
     storageGb: 10,
     aiVisionDocs: 10,
+    aiTokens: 500_000,
+    aiJobs: 500,
   },
   professional: {
     projects: 50,
     users: 25,
     storageGb: 50,
     aiVisionDocs: 50,
+    aiTokens: 5_000_000,
+    aiJobs: 5_000,
   },
   enterprise: {
     projects: -1, // Unlimited
     users: -1, // Unlimited
     storageGb: 500,
     aiVisionDocs: 200,
+    aiTokens: 50_000_000,
+    aiJobs: 50_000,
   },
 };
+
+// Task #2482: dunning grace period in days. After payment fails, the org
+// receives reminder emails on day 0/3/7 and is suspended on day 14 unless
+// payment succeeds. Suspended orgs still have READ access to their data.
+export const DUNNING_GRACE_PERIOD_DAYS = 14;
+
+// Task #2482: env-var names that hold the Stripe price IDs for each
+// plan and add-on. They're env-var names rather than hard-coded IDs so
+// the same code runs against dev/staging/prod with different Stripe
+// accounts. Looking up `process.env[STRIPE_PRICE_ENV_VARS.starter]`
+// gives the active price ID; missing env = the plan can't be checked
+// out via Stripe yet (manual mode only).
+export const STRIPE_PRICE_ENV_VARS: Record<PlanTier, string> = {
+  free: "STRIPE_PRICE_FREE",
+  starter: "STRIPE_PRICE_STARTER",
+  professional: "STRIPE_PRICE_GROWTH",
+  enterprise: "STRIPE_PRICE_SCALE",
+};
+
+export const STRIPE_ADDON_PRICE_ENV_VARS: Record<AddOnKey, string> = {
+  ai_pm: "STRIPE_PRICE_ADDON_AI_PM",
+  ai_cfo: "STRIPE_PRICE_ADDON_AI_CFO",
+  ai_email: "STRIPE_PRICE_ADDON_AI_EMAIL",
+  website_seo: "STRIPE_PRICE_ADDON_WEBSITE_SEO",
+  bid_network: "STRIPE_PRICE_ADDON_BID_NETWORK",
+  ai_vision: "STRIPE_PRICE_ADDON_AI_VISION",
+  integration_qbo: "STRIPE_PRICE_ADDON_INTEGRATION_QBO",
+  integration_esign: "STRIPE_PRICE_ADDON_INTEGRATION_ESIGN",
+  ai_governance_pack: "STRIPE_PRICE_ADDON_AI_GOVERNANCE",
+};
+
+// Task #2482: env-var name for the metered Stripe price that records
+// AI vision document overage. When the org exceeds its quota and the
+// plan allows overage billing, we emit a Stripe usage record against
+// this price. Missing env = overage is hard-blocked instead of billed.
+export const STRIPE_METERED_PRICE_ENV_VARS = {
+  ai_vision_docs: "STRIPE_METERED_PRICE_AI_VISION_DOCS",
+  ai_tokens: "STRIPE_METERED_PRICE_AI_TOKENS",
+  ai_jobs: "STRIPE_METERED_PRICE_AI_JOBS",
+  storage_bytes: "STRIPE_METERED_PRICE_STORAGE",
+} as const;
 
 /**
  * Check if a feature is available for a given plan tier and add-ons

@@ -116,6 +116,7 @@ import emailWebhookRoutes from "./emailWebhookRoutes";
 import { auditWebhookSecretsAtBoot } from "./webhookSecretsAudit";
 import kpiRoutes from "./kpiRoutes";
 import billingRoutes from "./billingRoutes";
+import stripeWebhookRoutes from "./stripeWebhookRoutes";
 import dashboardRoutes from "./dashboardRoutes";
 import libraryRoutes from "./libraryRoutes";
 import opsRoutes from "./opsRoutes";
@@ -422,6 +423,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", clientChatRoutes);
 
   app.use("/api/billing", billingRoutes);
+  // Task #2482: Stripe webhook endpoint. CSRF-exempt via server/csrf.ts.
+  // Signature verification uses req.rawBody captured by the JSON parser
+  // in server/index.ts.
+  app.use("/api/stripe", stripeWebhookRoutes);
 
   registerAllProviders();
   app.use("/api/integrations", integrationRoutes);

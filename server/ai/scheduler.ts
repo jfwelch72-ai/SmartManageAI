@@ -68,6 +68,29 @@ export async function initializeAIScheduler() {
   
   // Initialize weekly change order alert (every Monday at 8:00 AM)
   await initializeWeeklyChangeOrderAlerts();
+
+  // Task #2482 — billing dunning cycle. Runs once per day at 09:00 ET
+  // (single-leader so reminders aren't duplicated across replicas) and
+  // sends day-0/3/7 payment-failure reminders + auto-suspends orgs that
+  // pass DUNNING_GRACE_PERIOD_DAYS without a successful retry.
+  initializeDailyBillingDunningJob();
+}
+
+let dailyDunningTask: cron.ScheduledTask | null = null;
+function initializeDailyBillingDunningJob() {
+  if (dailyDunningTask) dailyDunningTask.stop();
+  logInfo('💳 Scheduling daily billing dunning job (09:00 EST)...');
+  dailyDunningTask = cron.schedule('0 9 * * *', async () => {
+    try {
+      await withSchedulerLock('billing:dunning-daily', async () => {
+        const { runDunningCycle } = await import('../services/billing/dunning');
+        const summary = await runDunningCycle();
+        logInfo('💳 Dunning cycle complete', summary as Record<string, unknown>);
+      });
+    } catch (err) {
+      logError('❌ Daily dunning job failed', {}, err instanceof Error ? err : new Error(String(err)));
+    }
+  }, { timezone: 'America/New_York' });
 }
 
 /**

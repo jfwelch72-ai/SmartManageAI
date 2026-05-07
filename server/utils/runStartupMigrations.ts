@@ -106,6 +106,7 @@ import { ensureStandaloneTakeoffTables } from "./ensureStandaloneTakeoffTables";
 import { ensureStatusPageTables } from "./ensureStatusPageTables";
 import { backfillStatusProbeDailyHistory } from "./backfillStatusProbeDailyHistory";
 import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
+import { ensureBillingEnumValues } from "./ensureBillingEnumValues";
 import { ensureCrmEmailLoggingTables } from "./ensureCrmEmailLoggingTables";
 import { ensureUsersManagerIdColumn } from "./ensureUsersManagerIdColumn";
 import { ensureProjectTemplateTables } from "./ensureProjectTemplateTables";
@@ -382,6 +383,10 @@ const migrations: MigrationStep[] = [
   { name: "status_page_tables", category: "CREATE_TABLE", fn: ensureStatusPageTables },
   { name: "status_probe_daily_history_backfill", category: "ALTER_TABLE", fn: backfillStatusProbeDailyHistory },
   { name: "mobile_offline_enum_values", category: "ADD_ENUM", fn: ensureMobileOfflineEnumValues },
+  // Task #2482 — billing & subscription productization adds enum values
+  // (`subscription_status.suspended`, `usage_key.{ai_tokens,ai_jobs,storage_bytes}`)
+  // that reconcileSchemaDrift can't synthesize for existing enum types.
+  { name: "billing_enum_values", category: "ADD_ENUM", fn: ensureBillingEnumValues },
   { name: "crm_email_logging_tables", category: "CREATE_TABLE", fn: ensureCrmEmailLoggingTables },
   { name: "users_manager_id_column", category: "ADD_COLUMN", fn: ensureUsersManagerIdColumn },
   { name: "project_template_tables", category: "CREATE_TABLE", fn: ensureProjectTemplateTables },
