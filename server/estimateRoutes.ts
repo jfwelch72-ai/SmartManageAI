@@ -29,6 +29,39 @@ import {
 } from "@shared/schema";
 import { computeAssemblyQuantity, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { computeNetAreaInFt2 } from "@shared/utils/geometry";
+import {
+  applyOrgFactors,
+  normalizeFactors,
+  DEFAULT_ESTIMATING_FACTORS,
+} from "./services/aiEstimator/orgFactorsApply";
+import { getOrgFactors as getOrgFactorsForEstimate } from "./services/aiEstimator/orgFactors";
+
+// Task #2576 — Resolve the effective EstimatingFactors bag for an
+// estimate (per-estimate override wins; otherwise org default). Used
+// by every GET that returns roll-up totals so the bid/project/totals
+// endpoints all agree on a single number.
+async function resolveAppliedFactors(
+  estimateOrgId: string,
+  perEstimateOverride: unknown,
+): Promise<ReturnType<typeof normalizeFactors>> {
+  if (perEstimateOverride && typeof perEstimateOverride === "object") {
+    return normalizeFactors(perEstimateOverride as Record<string, unknown>);
+  }
+  try {
+    const row = await getOrgFactorsForEstimate(estimateOrgId);
+    return normalizeFactors({
+      laborBurdenPercent: row.laborBurdenPercent,
+      smallToolsPercent: row.smallToolsPercent,
+      overheadPercent: row.overheadPercent,
+      profitPercent: row.profitPercent,
+      bondPercent: row.bondPercent,
+      escalationPercent: row.escalationPercent,
+      wasteFactorPercent: row.defaultWasteFactor,
+    });
+  } catch {
+    return { ...DEFAULT_ESTIMATING_FACTORS };
+  }
+}
 import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
@@ -433,7 +466,25 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         totalCost: 0,
       });
 
-      res.json({ estimate: { ...estimate, lineItems, totals } });
+      // Task #2576 — Single source of truth for factorized totals: the
+      // org default + per-estimate override flow through applyOrgFactors
+      // so bid/project/exports all return the same grand total.
+      const estOrgId = project.gcOrganizationId ?? null;
+      const appliedFactors = estOrgId
+        ? await resolveAppliedFactors(estOrgId, (estimate as { estimatingFactorsOverride?: unknown }).estimatingFactorsOverride ?? null)
+        : { ...DEFAULT_ESTIMATING_FACTORS };
+      const appliedTotals = applyOrgFactors(
+        {
+          materialCost: totals.materialCost,
+          laborCost: totals.laborCost,
+          equipmentCost: totals.equipmentCost,
+          consumablesCost: totals.consumablesCost,
+          subcontractCost: totals.subcontractCost,
+        },
+        appliedFactors,
+      );
+
+      res.json({ estimate: { ...estimate, lineItems, totals, appliedTotals } });
     } catch (error) {
       next(error);
     }
@@ -552,7 +603,23 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         totalCost: 0,
       });
 
-      res.json({ estimate: { ...estimate, lineItems, totals } });
+      // Task #2576 — Apply org factors + per-estimate override.
+      const estOrgId = bid.gcOrganizationId ?? null;
+      const appliedFactors = estOrgId
+        ? await resolveAppliedFactors(estOrgId, (estimate as { estimatingFactorsOverride?: unknown }).estimatingFactorsOverride ?? null)
+        : { ...DEFAULT_ESTIMATING_FACTORS };
+      const appliedTotals = applyOrgFactors(
+        {
+          materialCost: totals.materialCost,
+          laborCost: totals.laborCost,
+          equipmentCost: totals.equipmentCost,
+          consumablesCost: totals.consumablesCost,
+          subcontractCost: totals.subcontractCost,
+        },
+        appliedFactors,
+      );
+
+      res.json({ estimate: { ...estimate, lineItems, totals, appliedTotals } });
     } catch (error) {
       next(error);
     }

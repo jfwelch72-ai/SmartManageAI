@@ -21,7 +21,9 @@ export type JobName =
   | "ai_estimator_draft"
   | "pdf_tile_prerender"
   | "accounting_sync"
-  | "bulk_export";
+  | "bulk_export"
+  // Task #2576 — Background plan-set ingest (page count + sheet split).
+  | "plan_set_ingest";
 
 export interface JobContext {
   jobId: string;
@@ -444,6 +446,7 @@ export async function getQueueDepths(): Promise<
     "pdf_tile_prerender",
     "accounting_sync",
     "bulk_export",
+    "plan_set_ingest",
   ] as JobName[]) {
     if (!out.find((o) => o.name === name)) {
       try {

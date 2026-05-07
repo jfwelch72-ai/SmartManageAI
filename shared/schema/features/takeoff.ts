@@ -263,10 +263,18 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   reviewedById: varchar("reviewed_by_id").references(() => users.id, { onDelete: "set null" }),
   reviewedAt: timestamp("reviewed_at"),
   reviewNote: text("review_note"),
+  // Task #2576 — Base-bid vs Change-Order scope. 'BASE' is the original
+  // base-bid scope; 'CO' marks measurements that were added (or
+  // re-categorised) into a change order. The CO is identified by
+  // `changeOrderId`. Defaults keep existing rows on BASE.
+  scopeTag: text("scope_tag").notNull().default("BASE"),
+  changeOrderId: varchar("change_order_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   sheetIdx: index("takeoff_measurements_sheet_idx").on(table.sheetId),
+  scopeTagIdx: index("takeoff_measurements_scope_tag_idx").on(table.scopeTag),
+  changeOrderIdx: index("takeoff_measurements_change_order_idx").on(table.changeOrderId),
   categoryIdx: index("takeoff_measurements_category_idx").on(table.categoryId),
   groupIdx: index("takeoff_measurements_group_idx").on(table.groupId),
   locationIdx: index("takeoff_measurements_location_idx").on(table.locationId),

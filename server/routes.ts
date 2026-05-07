@@ -215,6 +215,11 @@ import auditBillingStorageRoutes from "./auditBillingStorageRoutes";
 import crewRoutes2 from "./crewRoutes2";
 import skillRoutes from "./skillRoutes";
 import assemblyRoutes from "./assemblyRoutes";
+// Task #2576 — Takeoff & Estimating Phase A trustworthiness routes.
+import orgEstimatingFactorsRoutes from "./orgEstimatingFactorsRoutes";
+import takeoffScopeRoutes from "./takeoffScopeRoutes";
+import aiEstimatorAssemblyRoutes from "./aiEstimatorAssemblyRoutes";
+import planSetIngestRoutes from "./planSetIngestRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentRoutes from "./equipmentRoutes";
 import mobileSyncRoutes from "./mobileSyncRoutes";
@@ -715,6 +720,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Assembly routes
   app.use(assemblyRoutes);
+
+  // Task #2576 — Takeoff & Estimating Phase A.
+  app.use(orgEstimatingFactorsRoutes);
+  app.use(takeoffScopeRoutes);
+  app.use(aiEstimatorAssemblyRoutes);
+  app.use(planSetIngestRoutes);
 
   // Internal Messaging System Routes (extracted to messagingRoutes.ts)
   await messagingSetup;

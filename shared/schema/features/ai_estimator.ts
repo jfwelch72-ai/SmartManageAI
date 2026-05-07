@@ -460,6 +460,20 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
   productivityOverrides: jsonb("productivity_overrides").default(sql`'{}'::jsonb`),
   cityCostIndexDefault: doublePrecision("city_cost_index_default").notNull().default(1.0),
   prevailingWageDefault: boolean("prevailing_wage_default").notNull().default(false),
+  // Task #2576 — Roll-up factors applied in estimate totals + exports.
+  // All values are percentages stored as fractions (0.10 = 10%).
+  // Defaults of 0 mean "no markup applied" so existing tenants are
+  // unaffected until they configure values via the settings UI.
+  laborBurdenPercent: doublePrecision("labor_burden_percent").notNull().default(0),
+  smallToolsPercent: doublePrecision("small_tools_percent").notNull().default(0),
+  overheadPercent: doublePrecision("overhead_percent").notNull().default(0),
+  profitPercent: doublePrecision("profit_percent").notNull().default(0),
+  bondPercent: doublePrecision("bond_percent").notNull().default(0),
+  escalationPercent: doublePrecision("escalation_percent").notNull().default(0),
+  // Org-wide default waste factor surfaced as a single trust-setting
+  // alongside the other markups. Per-category overrides still live in
+  // `wasteFactorsByCategory` and win when set.
+  defaultWasteFactor: doublePrecision("default_waste_factor").notNull().default(0),
   notes: text("notes"),
   updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

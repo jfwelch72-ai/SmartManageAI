@@ -10,6 +10,7 @@ import { registerAccountingSyncJob } from "./accountingSync";
 import { registerBulkExportJob } from "./bulkExport";
 import { registerOrganizationExportGenerator } from "./organizationExport";
 import { registerStubTileRenderer } from "./tileRendererStub";
+import { registerPlanSetIngestJob } from "./planSetIngest";
 // Task #2517 — Side-effect imports register concrete `bulk_export`
 // generators for the audit, change-orders, and payroll surfaces.
 import "../exports/auditExport";
@@ -25,6 +26,7 @@ export function registerAllJobHandlers(): void {
   registerPdfTilePrerenderJob();
   registerAccountingSyncJob();
   registerBulkExportJob();
+  registerPlanSetIngestJob();
   // Generator registrations for `bulk_export` go here so the dedicated
   // worker process picks them up at boot. Adding inline registration
   // from a route module would silently break the out-of-process worker.

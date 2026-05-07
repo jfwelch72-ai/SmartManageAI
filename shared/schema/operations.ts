@@ -72,6 +72,10 @@ export const estimates = pgTable("estimates", {
   baseBidAmount: decimal("base_bid_amount", { precision: 12, scale: 2 }),
   altPricesJson: text("alt_prices_json"),
   costBreakdownJson: text("cost_breakdown_json"),
+  // Task #2576 — Per-estimate override of org-level estimating factors.
+  // When non-null this JSON snapshot wins over `aiEstimatorOrgFactors`
+  // for roll-up totals. Audit-logged on every write.
+  estimatingFactorsOverride: jsonb("estimating_factors_override"),
   notes: text("notes"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),

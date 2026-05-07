@@ -100,14 +100,34 @@ export async function generateDraftEstimate(opts: {
         .where(inArray(takeoffMeasurements.sheetId, sheetIds))
     : [];
 
+  // Task #2576 — When a measurement has openings (windows / doorways /
+  // equipment pads) the AI summarizer should reason about NET area, not
+  // gross. `resolveNetAreaFt2` is the single source of truth for this
+  // (also used by exports and assembly explosion).
+  const { resolveNetAreaFt2 } = await import("../takeoff/measurementDeductions");
   const measurementSummaries = measurements.slice(0, 100).map((m) => {
-    const v =
-      m.computedAreaFt2 ??
-      m.computedLengthFt ??
-      m.computedVolumeCy ??
-      m.count ??
-      0;
-    return { id: m.id, label: m.label, type: m.type, value: Number(v) };
+    let value: number;
+    let netInfo: { gross: number; deduction: number; net: number } | undefined;
+    if (m.type === "AREA") {
+      const breakdown = resolveNetAreaFt2({
+        grossAreaFt2: m.computedAreaFt2 ?? 0,
+        rawDeductions: m.deductions ?? null,
+        scalePxPerFoot: m.scaleAtCapturePxPerFoot ?? null,
+      });
+      value = breakdown.netAreaFt2;
+      if (breakdown.deductionCount > 0) {
+        netInfo = {
+          gross: Number(breakdown.grossAreaFt2.toFixed(2)),
+          deduction: Number(breakdown.deductionAreaFt2.toFixed(2)),
+          net: Number(breakdown.netAreaFt2.toFixed(2)),
+        };
+      }
+    } else {
+      value = Number(
+        m.computedLengthFt ?? m.computedVolumeCy ?? m.count ?? 0,
+      );
+    }
+    return { id: m.id, label: m.label, type: m.type, value, ...(netInfo ? { netInfo } : {}) };
   });
 
   await reportProgress(45, "Loading learned cost rates");
@@ -200,9 +220,77 @@ Return strict JSON: {
     logError("Draft estimate AI returned non-JSON", { bidId: opts.bidId });
     return { result: null, reason: "AI did not return parseable JSON" };
   }
+
+  // Task #2576 — Wire assemblies into the AI drafter. For each
+  // measurement that matches an active org assembly via
+  // (costCode, drivingMeasurementType), explode it through the
+  // assembly so the draft includes the bill-of-materials lines the AI
+  // wouldn't otherwise know about. Each appended line carries an
+  // `assembly_explode` provenance marker on its rationale and a
+  // synthetic citation id so the UI can distinguish it from
+  // AI-authored lines. Best-effort: failure to look up an assembly
+  // never fails the draft.
+  const aiLines = Array.isArray(parsed.lines) ? parsed.lines : [];
+  const assemblyLines: DraftLineItem[] = [];
+  try {
+    const { findAssemblyForMeasurement } = await import("./assemblies");
+    const { buildExplodedLines } = await import("./explodeAssembly");
+    for (const m of measurements) {
+      const drivingType =
+        m.type === "AREA" ? "AREA" :
+        m.type === "LINEAR" ? "LINEAR" :
+        m.type === "VOLUME" ? "VOLUME" :
+        m.type === "COUNT" ? "COUNT" : null;
+      if (!drivingType) continue;
+      // Cost code on a measurement is recorded via its label / category
+      // mapping; we treat the label as the cost-code probe key when
+      // present so callers who tag measurements get assembly coverage.
+      const costCode = (m.label ?? "").trim() || null;
+      if (!costCode) continue;
+      const assembly = await findAssemblyForMeasurement({
+        organizationId: opts.organizationId,
+        costCode,
+        drivingMeasurementType: drivingType,
+      }).catch(() => null);
+      if (!assembly) continue;
+      const exploded = buildExplodedLines({
+        assembly,
+        components: assembly.components,
+        measurement: {
+          id: m.id,
+          computedAreaFt2: m.computedAreaFt2 ?? null,
+          computedLengthFt: m.computedLengthFt ?? null,
+          computedVolumeCy: m.computedVolumeCy ?? null,
+          count: m.count ?? null,
+          deductions: m.deductions ?? null,
+          scaleAtCapturePxPerFoot: m.scaleAtCapturePxPerFoot ?? null,
+        },
+      });
+      for (const line of exploded) {
+        assemblyLines.push({
+          description: line.description,
+          costCode: assembly.costCode ?? null,
+          quantity: line.quantity,
+          unit: line.unit,
+          unitCost: line.unitCost,
+          laborHours: null,
+          totalCost: line.totalCost,
+          rationale: `assembly_explode:${assembly.id}:${assembly.name}`,
+          citationIds: [`assembly:${assembly.id}`, `measurement:${m.id}`],
+        });
+      }
+    }
+  } catch (err) {
+    logError(
+      "Assembly explosion in AI drafter failed (non-fatal)",
+      { bidId: opts.bidId },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  }
+
   return {
     result: {
-      lines: Array.isArray(parsed.lines) ? parsed.lines : [],
+      lines: [...aiLines, ...assemblyLines],
       notes: parsed.notes ?? "",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
       citations: citationsFromRows(contextRows),
