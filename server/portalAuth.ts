@@ -3,6 +3,7 @@ import crypto from "crypto";
 import bcrypt from "bcrypt";
 import type { Request, Response, NextFunction } from "express";
 import { db } from "./db";
+import { withOrgContext } from "./dbContext";
 import { subcontractorPortalTokens } from "@shared/schema";
 import { eq, and, gt, isNull } from "drizzle-orm";
 
@@ -148,9 +149,15 @@ export async function resolvePortalTokenRow(
   return null;
 }
 
+// Task #2478 — SSE bypass list (mirrors `server/middleware/orgContext.ts`).
+// Long-lived streaming portal endpoints must not pin a pg pool client.
+const PORTAL_SSE_BYPASS_PATHS: ReadonlyArray<string> = [
+  "/portal/chat/events",
+];
+
 export async function requirePortalAuth(req: PortalRequest, res: Response, next: NextFunction): Promise<void> {
   const rawToken = (req.query.token as string) || req.headers["x-portal-token"] as string;
-  
+
   if (!rawToken) {
     res.status(401).json({ error: "Portal access token required" });
     return;
@@ -164,11 +171,6 @@ export async function requirePortalAuth(req: PortalRequest, res: Response, next:
       return;
     }
 
-    await db
-      .update(subcontractorPortalTokens)
-      .set({ lastAccessedAt: new Date() })
-      .where(eq(subcontractorPortalTokens.id, matchedToken.id));
-
     req.portalToken = {
       id: matchedToken.id,
       organizationId: matchedToken.organizationId,
@@ -179,7 +181,51 @@ export async function requirePortalAuth(req: PortalRequest, res: Response, next:
       permissions: matchedToken.permissions || ["view"],
     };
 
-    next();
+    // Task #2478 — wrap subsequent route execution in a tenant-scoped DB
+    // context so portal-token-authenticated routes get the same RLS
+    // protection as `req.user`-authenticated routes. SSE endpoints
+    // bypass to avoid pinning a pool client for the stream lifetime.
+    const isSse = PORTAL_SSE_BYPASS_PATHS.includes(req.path);
+    if (isSse) {
+      await db
+        .update(subcontractorPortalTokens)
+        .set({ lastAccessedAt: new Date() })
+        .where(eq(subcontractorPortalTokens.id, matchedToken.id));
+      next();
+      return;
+    }
+
+    await withOrgContext(
+      {
+        organizationId: matchedToken.organizationId,
+        isSuperadmin: false,
+        source: `portal:${req.method} ${req.path}`,
+      },
+      () =>
+        new Promise<void>((resolve) => {
+          let settled = false;
+          const settle = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          res.on("finish", settle);
+          res.on("close", settle);
+          // The lastAccessedAt update now runs INSIDE the org context.
+          db
+            .update(subcontractorPortalTokens)
+            .set({ lastAccessedAt: new Date() })
+            .where(eq(subcontractorPortalTokens.id, matchedToken.id))
+            .catch((err) => {
+              logError(
+                "[requirePortalAuth] lastAccessedAt update failed",
+                { tokenId: matchedToken.id },
+                err instanceof Error ? err : new Error(String(err)),
+              );
+            })
+            .finally(() => next());
+        }),
+    );
   } catch (error) {
     next(error);
   }

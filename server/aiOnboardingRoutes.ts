@@ -1317,8 +1317,8 @@ router.patch("/ai/walkthrough/step", requireAuth, async (req: AuthRequest, res, 
     await db.update(users)
       .set(updateData)
       .where(and(
-        eq(users.id, req.user.id),
-        eq(users.organizationId, req.user.organizationId)
+        eq(users.id, req.user!.id),
+        eq(users.organizationId, req.user!.organizationId)
       ));
 
     res.json({

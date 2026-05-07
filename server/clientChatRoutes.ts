@@ -1,6 +1,7 @@
 import { logError } from "./utils/logger";
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
+import { withOrgContext } from "./dbContext";
 import { portalChatThreads, portalChatMessages, clientPortalAccess } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { notifyChatTeamMembers } from "./portalRoutes";
@@ -52,7 +53,31 @@ async function requireClientPortalAuth(req: ClientPortalChatRequest, res: Respon
       name: access.name,
     };
 
-    next();
+    // Task #2478 — wrap client-portal-authenticated routes in a
+    // tenant-scoped DB context so RLS protects every query against
+    // cross-tenant leakage. The streaming `/client-portal/chat/events`
+    // endpoint does its own auth inline below and is skipped (it only
+    // pushes from the in-memory portal SSE bus).
+    const res2 = res;
+    await withOrgContext(
+      {
+        organizationId: access.organizationId,
+        isSuperadmin: false,
+        source: `client-portal:${req.method} ${req.path}`,
+      },
+      () =>
+        new Promise<void>((resolve) => {
+          let settled = false;
+          const settle = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+          };
+          res2.on("finish", settle);
+          res2.on("close", settle);
+          next();
+        }),
+    );
   } catch (error) {
     next(error);
   }

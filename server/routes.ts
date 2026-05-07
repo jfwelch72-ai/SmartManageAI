@@ -259,6 +259,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Check org suspension for all authenticated requests (SUPER_ADMIN bypasses)
   app.use(requireActiveOrganization);
 
+  // Task #2478 — wrap every authenticated request in a Postgres RLS
+  // session context (sets `app.current_org_id` / `app.is_superadmin`)
+  // so the row-level security policies installed by
+  // `migrations/0096_enable_tenant_rls.sql` enforce tenant isolation
+  // at the database layer regardless of any missed application-level
+  // WHERE clause.
+  const { orgContextMiddleware } = await import("./middleware/orgContext");
+  app.use(orgContextMiddleware);
+
   // Apply general API rate limiter to all API routes BEFORE registering any routes
   app.use("/api", apiLimiter);
 

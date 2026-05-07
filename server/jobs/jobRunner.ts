@@ -9,6 +9,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
+import { withJobOrgContext } from "../dbContext";
 import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification, type UserRole } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
@@ -3766,6 +3767,12 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
   let totalSkippedNoBirthdays = 0;
 
   for (const org of orgs) {
+    // Task #2478 — wrap the per-org body in a tenant-scoped DB context so
+    // RLS pins every query inside to org.id. Outer `continue` statements
+    // inside the wrapped block are rewritten as `return` since we're now
+    // inside an async callback. Inner-loop `continue`s (over contactRows /
+    // byDate) are unchanged.
+    await withJobOrgContext("crm.contactBirthdayWeeklyDigest", org.id, async () => {
     try {
       // Task #696: respect per-user opt-out of the CRM birthday digest. We
       // LEFT JOIN user_settings so users who never visited the preferences
@@ -3789,14 +3796,14 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
             eq(userSettings.crmBirthdayDigestOptOut, false),
           ),
         ));
-      if (recipients.length === 0) continue;
+      if (recipients.length === 0) return;
 
       // Task #698: weekly digest only goes to users whose birthday reminder
       // cadence is explicitly WEEKLY. Default cadence is DAILY_LOOKAHEAD, so
       // existing users must opt in to keep receiving the weekly summary.
       const weeklyCadenceMap = await loadBirthdayCadences(recipients.map((r) => r.id));
       const weeklyRecipients = recipients.filter((r) => weeklyCadenceMap.get(r.id) === "WEEKLY");
-      if (weeklyRecipients.length === 0) continue;
+      if (weeklyRecipients.length === 0) return;
 
       // Resolve each recipient's effective timezone and current local
       // wall-clock once. We need both the time-of-day (to gate the user's
@@ -3823,7 +3830,7 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
             if (!match) totalSkippedTimeOfDay++;
             return match;
           });
-      if (eligible.length === 0) continue;
+      if (eligible.length === 0) return;
 
       // 7-day per-user dedupe: skip recipients who already received a
       // birthday digest within the rolling window. Belt-and-braces against
@@ -3846,7 +3853,7 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
         }
         return true;
       });
-      if (toNotify.length === 0) continue;
+      if (toNotify.length === 0) return;
 
       // Load org contacts with valid birthday month/day once per org and
       // reuse the parsed list across recipients.
@@ -3913,12 +3920,13 @@ export async function processCrmContactBirthdayDigest(opts: { ignoreTimeOfDay?: 
         }
       }
 
-      if (notifs.length === 0) continue;
+      if (notifs.length === 0) return;
       await insertNotifications(notifs);
       totalDigests += notifs.length;
     } catch (err) {
       logError("CRM contact birthday digest org iteration failed", { orgId: org.id, error: String(err) });
     }
+    });
   }
 
   // Task #700: always record per-tick counters to the in-process metrics
@@ -4128,6 +4136,11 @@ async function processCrmContactBirthdayDailyDigest() {
   let totalDigests = 0;
 
   for (const org of orgs) {
+    // Task #2478 — wrap the per-org body in a tenant-scoped DB context.
+    // Inside this block Postgres RLS enforces that every query touches
+    // only this org's rows, even if a future code change forgets the
+    // explicit `organizationId = org.id` filter below.
+    await withJobOrgContext("crm.contactBirthdayDailyDigest", org.id, async () => {
     try {
       const contacts = await db
         .select({
@@ -4170,7 +4183,7 @@ async function processCrmContactBirthdayDailyDigest() {
         });
       }
 
-      if (matching.length === 0) continue;
+      if (matching.length === 0) return;
 
       // Group items by owner. Items with no owner go to the org-wide bucket
       // (admins / managers / estimators) so they aren't dropped silently.
@@ -4196,7 +4209,7 @@ async function processCrmContactBirthdayDailyDigest() {
         }
       }
       const orphanHasToday = orphanItems.some((i) => i.daysUntil === 0);
-      if (byOwner.size === 0 && !orphanHasToday) continue;
+      if (byOwner.size === 0 && !orphanHasToday) return;
 
       // Validate owner ids still belong to the org and are active users.
       let validOwnerIds = new Set<string>();
@@ -4309,12 +4322,13 @@ async function processCrmContactBirthdayDailyDigest() {
         }
       }
 
-      if (notifs.length === 0) continue;
+      if (notifs.length === 0) return;
       await insertNotifications(notifs);
       totalDigests += notifs.length;
     } catch (err) {
       logError("CRM contact birthday daily digest org iteration failed", { orgId: org.id, error: String(err) });
     }
+    }); // end withJobOrgContext
   }
 
   if (totalDigests > 0) {
@@ -4361,6 +4375,12 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
   let totalDigests = 0;
 
   for (const org of orgs) {
+    // Task #2478 — wrap the per-org body in a tenant-scoped DB context.
+    // All `db.*` calls inside touch only `org.id`'s rows even if a future
+    // change forgets the explicit `WHERE organization_id` filter. Outer
+    // `continue` statements were rewritten as `return` since we're inside
+    // an async callback now.
+    await withJobOrgContext("payroll.certifiedPayrollDigest", org.id, async () => {
     try {
       // Task #1181: pull the per-org cadence/weekday/hour/timezone alongside
       // the legacy `enabled` boolean. Backward compat: if there's no settings
@@ -4379,10 +4399,10 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
         .limit(1);
 
       // Org-level hard off-switch retained from Task #1116.
-      if (settings && settings.enabled === false) continue;
+      if (settings && settings.enabled === false) return;
 
       const cadence = (settings?.cadence ?? "WEEKLY") as "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
-      if (cadence === "OFF") continue;
+      if (cadence === "OFF") return;
 
       const weekday = settings?.weekday ?? 1;
       const hour = settings?.hour ?? 8;
@@ -4391,19 +4411,19 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 
       const local = getLocalDateParts(now, tz);
       // Hour-precision gate (cron fires hourly).
-      if (local.hour !== hour) continue;
-      if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) continue;
+      if (local.hour !== hour) return;
+      if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) return;
       if (cadence === "BIWEEKLY" && lastSentAt) {
         const daysSince = (now.getTime() - new Date(lastSentAt).getTime()) / (24 * 60 * 60 * 1000);
-        if (daysSince < 13) continue;
+        if (daysSince < 13) return;
       }
       // Idempotency: don't send the same daily/weekly digest twice in the
       // same firing hour (e.g. if cron fires twice or the job is run
       // manually). For DAILY skip if a digest has gone out in the last 23h.
       if (lastSentAt) {
         const hoursSince = (now.getTime() - new Date(lastSentAt).getTime()) / (60 * 60 * 1000);
-        if (cadence === "DAILY" && hoursSince < 23) continue;
-        if (cadence === "WEEKLY" && hoursSince < 23) continue;
+        if (cadence === "DAILY" && hoursSince < 23) return;
+        if (cadence === "WEEKLY" && hoursSince < 23) return;
       }
 
       const windowDays = cadence === "DAILY" ? 1 : cadence === "BIWEEKLY" ? 14 : 7;
@@ -4428,7 +4448,7 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
           gte(certifiedPayrollReports.generatedAt, since),
         ));
 
-      if (rows.length === 0) continue;
+      if (rows.length === 0) return;
 
       type Bucket = { projectName: string; variant: string; count: number };
       const buckets = new Map<string, Bucket>();
@@ -4467,7 +4487,7 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
         }
       }
 
-      if (recipientIds.length === 0) continue;
+      if (recipientIds.length === 0) return;
 
       const totalReports = rows.length;
       const projectCount = projectIds.size + (rows.some((r) => !r.projectId) ? 1 : 0);
@@ -4509,6 +4529,7 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
     } catch (err) {
       logError("Certified payroll weekly digest org iteration failed", { orgId: org.id, error: String(err) });
     }
+    });
   }
 
   if (totalDigests > 0) {

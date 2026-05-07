@@ -46,6 +46,11 @@ else
   echo "[ci] SKIP typecheck (SKIP_TYPECHECK=1)"
 fi
 
+# Task #2478 — block new files from bypassing the RLS-aware `db` proxy.
+# Cheap (<1s), so always on.
+run_step "tenant-isolation lint (scripts/check-db-imports.mjs)" \
+  node scripts/check-db-imports.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else

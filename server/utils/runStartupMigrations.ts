@@ -14,6 +14,7 @@ import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureInteg
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
 import { ensureWageDecisionRateChanges } from "./ensureWageDecisionRateChanges";
 import { ensureSageAccountMappingsTable } from "./ensureSageAccountMappingsTable";
+import { ensureRlsPolicies } from "./ensureRlsPolicies";
 import { ensureWageDecisionRateChangeAcknowledgements } from "./ensureWageDecisionRateChangeAcknowledgements";
 import { ensureOneShotJobRuns } from "./ensureOneShotJobRuns";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
@@ -211,6 +212,13 @@ const migrations: MigrationStep[] = [
   // qbo_account_mappings so the admin Sage mapping panel can map
   // SmartManageAI cost codes onto Sage GL accounts.
   { name: "sage_account_mappings", category: "CREATE_TABLE", fn: ensureSageAccountMappingsTable },
+  // Task #2478 — enable Postgres row-level security on every multi-tenant
+  // table so a missed application-level WHERE clause cannot leak rows
+  // across tenants. Permissive when no `app.current_org_id` session var
+  // is set, so legacy code paths keep working unchanged. Mirrors
+  // migrations/0096_enable_tenant_rls.sql. See
+  // docs/architecture/tenant-isolation.md.
+  { name: "tenant_rls_policies", category: "ALTER_TABLE", fn: ensureRlsPolicies },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing
