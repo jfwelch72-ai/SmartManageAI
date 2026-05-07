@@ -23,6 +23,7 @@ import {
 } from "@/components/MaterialCalculator";
 import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { EstimatePdfExportButton } from "@/components/EstimatePdfExportButton";
+import { EstimatePhaseCExports } from "@/components/EstimatePhaseCExports";
 import { EstimateExcelExportButton } from "@/components/EstimateExcelExportButton";
 import AiEstimatorChatPanel from "@/components/AiEstimatorChatPanel";
 import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
@@ -747,6 +748,10 @@ export default function BidEstimate() {
               disabled={estimate.lineItems.length === 0}
             />
             <EstimateExcelExportButton
+              estimateId={estimate.id}
+              disabled={estimate.lineItems.length === 0}
+            />
+            <EstimatePhaseCExports
               estimateId={estimate.id}
               disabled={estimate.lineItems.length === 0}
             />

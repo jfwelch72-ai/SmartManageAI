@@ -1752,6 +1752,29 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   sourceTakeoffId: varchar("source_takeoff_id"),
   sourceMeasurementId: varchar("source_measurement_id"),
 
+  // Task #2578 — Phase C: line type discriminator
+  // BASE | ALTERNATE | ALLOWANCE | CONTINGENCY (validated via Zod;
+  // see estimateLineTypeSchema in shared/schema/features/estimate_pricing.ts).
+  lineType: text("line_type").notNull().default("BASE"),
+  // FK enforced at the DB level (see migration 0102) — kept as plain varchar
+  // here to avoid a circular import on the alternate-groups table.
+  alternateGroupId: varchar("alternate_group_id"),
+  // 'FIXED' | 'PERCENT_OF_BASE' (only meaningful when lineType='ALLOWANCE')
+  allowanceBasis: text("allowance_basis"),
+  // Only meaningful when lineType='CONTINGENCY'
+  contingencyPercent: decimal("contingency_percent", { precision: 5, scale: 2 }),
+
+  // Cost-book provenance (visible source / code / as-of on lines)
+  costBookEntryId: varchar("cost_book_entry_id"),
+  costBookSource: text("cost_book_source"),
+  costBookSourceCode: text("cost_book_source_code"),
+  costBookAsOfDate: date("cost_book_as_of_date"),
+  costBookGeoFactor: decimal("cost_book_geo_factor", { precision: 6, scale: 3 }),
+
+  // Crew composition / equipment-day pricing
+  crewTemplateId: varchar("crew_template_id"),
+  crewDays: decimal("crew_days", { precision: 8, scale: 2 }),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1764,6 +1787,7 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),
   jobClassificationIdx: index("estimate_line_items_job_classification_idx").on(table.jobClassificationId),
   organizationSowItemIdx: index("estimate_line_items_org_sow_item_idx").on(table.organizationSowItemId),
+  lineTypeIdx: index("estimate_line_items_line_type_idx").on(table.lineType),
 }));
 
 export const estimateLineItemSubcontractors = pgTable("estimate_line_item_subcontractors", {

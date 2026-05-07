@@ -94,6 +94,9 @@ import notesRoutes from "./notesRoutes";
 import projectNotePagesRoutes from "./projectNotePagesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
+import costBookRoutes from "./costBookRoutes";
+import crewTemplateRoutes from "./crewTemplateRoutes";
+import estimatePricingRoutes from "./estimatePricingRoutes";
 import standaloneTakeoffRoutes from "./standaloneTakeoffRoutes";
 import takeoffSendToEstimateRoutes from "./takeoffSendToEstimateRoutes";
 import { registerTMTicketRoutes } from "./tmRoutes";
@@ -368,6 +371,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register estimate routes
   app.use(estimateRoutes);
+  app.use(costBookRoutes);
+  app.use(crewTemplateRoutes);
+  app.use(estimatePricingRoutes);
 
   // Register T&M ticket routes
   registerTMTicketRoutes(app);
