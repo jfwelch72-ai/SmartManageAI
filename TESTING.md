@@ -12,9 +12,21 @@ condition, so out of the box `npm test` would fail with:
 
 > Refusing to rebuild schema: DATABASE_URL does not look like a test database…
 
-## One-shot setup
+## Zero-setup (Task #2589)
 
-Run this once per workspace:
+`npm test` now bootstraps the sibling test DB itself. On the first run,
+`server/__tests__/globalSetup.ts` notices `DATABASE_URL` doesn't look
+like a test DB, connects to the server's `postgres` admin DB, runs
+`CREATE DATABASE heliumdb_test` (idempotent), writes `.env.test`, and
+points the rest of the suite at it. Subsequent runs short-circuit via
+the `_test_schema_meta` hash and the persisted `.env.test`. Set
+`AUTO_PROVISION_TEST_DB=0` to opt out (e.g. CI, where the runner already
+provisions the DB).
+
+## One-shot setup (manual)
+
+If you'd rather provision the test DB explicitly (e.g. you want a
+non-default name via `TEST_DATABASE_NAME`), run:
 
 ```bash
 npm run test:setup

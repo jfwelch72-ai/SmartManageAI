@@ -10,7 +10,21 @@ import {
 } from "../ai/ocrProvider";
 
 describe("OCR provider registry", () => {
-  afterEach(() => clearOcrProvider());
+  // `getOcrProvider()` lazy-builds a default Tesseract provider when nothing
+  // is registered. The "no provider" assertions below need that fallback
+  // disabled so they can prove the registry is empty.
+  const previousDisabled = process.env.OCR_PROVIDER_DISABLED;
+  beforeEach(() => {
+    process.env.OCR_PROVIDER_DISABLED = "true";
+  });
+  afterEach(() => {
+    clearOcrProvider();
+    if (previousDisabled === undefined) {
+      delete process.env.OCR_PROVIDER_DISABLED;
+    } else {
+      process.env.OCR_PROVIDER_DISABLED = previousDisabled;
+    }
+  });
 
   it("returns null when no provider is registered", () => {
     clearOcrProvider();
