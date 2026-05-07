@@ -51,6 +51,7 @@ import { logInfo, logError } from './utils/logger';
 import { getMonitoringStatus } from './utils/monitoring';
 import { getPoolStats } from './utils/poolHealth';
 import { getAllJobMetrics } from './utils/jobMetrics';
+import { getWebVitalsSnapshot } from './webVitalsRoutes';
 
 const router = Router();
 
@@ -301,6 +302,39 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
     }
   } catch (err) {
     logError('Failed to read job metrics for /metrics', {}, err as Error);
+  }
+
+  // Task #2488 — Frontend RUM gauges. The /api/observability/web-vitals
+  // beacon endpoint maintains a rolling-window aggregator; we expose
+  // p75 / p95 / good-rate per metric so existing Prometheus scrapers
+  // can alert when the budget set in `docs/ops/capacity.md` is breached.
+  try {
+    const snap = getWebVitalsSnapshot();
+    const metricNames = Object.keys(snap);
+    if (metricNames.length) {
+      lines.push('# HELP app_web_vitals_p95 Frontend Core Web Vital p95 (ms; CLS scaled ×1000).');
+      lines.push('# TYPE app_web_vitals_p95 gauge');
+      for (const name of metricNames) {
+        lines.push(`app_web_vitals_p95{metric="${name}"} ${snap[name].p95}`);
+      }
+      lines.push('# HELP app_web_vitals_p75 Frontend Core Web Vital p75 (ms; CLS scaled ×1000).');
+      lines.push('# TYPE app_web_vitals_p75 gauge');
+      for (const name of metricNames) {
+        lines.push(`app_web_vitals_p75{metric="${name}"} ${snap[name].p75}`);
+      }
+      lines.push('# HELP app_web_vitals_good_ratio Fraction of samples rated "good".');
+      lines.push('# TYPE app_web_vitals_good_ratio gauge');
+      for (const name of metricNames) {
+        lines.push(`app_web_vitals_good_ratio{metric="${name}"} ${snap[name].goodPct}`);
+      }
+      lines.push('# HELP app_web_vitals_samples_total Beacon samples observed since process start.');
+      lines.push('# TYPE app_web_vitals_samples_total counter');
+      for (const name of metricNames) {
+        lines.push(`app_web_vitals_samples_total{metric="${name}"} ${snap[name].count}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read web-vitals snapshot for /metrics', {}, err as Error);
   }
 
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');

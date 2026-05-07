@@ -36,6 +36,12 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/api/stripe/webhook",
+    // Task #2488 — anonymous, high-volume RUM beacon. The browser uses
+    // navigator.sendBeacon() on pagehide / visibilitychange=hidden, which
+    // cannot attach custom headers, so requiring CSRF would silently drop
+    // every Web Vitals sample. Server side is fail-soft (always 204, no
+    // DB write, in-memory aggregator only).
+    "/api/observability/web-vitals",
     // Task #2220 — anonymous, tenant-scoped takeoff stylus telemetry.
     // The client emitter uses navigator.sendBeacon on pagehide /
     // visibilitychange to ship the final batch before the tab dies;

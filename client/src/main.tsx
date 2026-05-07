@@ -1,9 +1,13 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { initBrowserSentry } from "./sentry";
+import { initWebVitals } from "./lib/webVitals";
 import "./index.css";
 
 initBrowserSentry();
+// Task #2488 — Frontend RUM (Core Web Vitals → /api/observability/web-vitals).
+// No-op in dev; only ships beacons in production builds.
+initWebVitals();
 import "./override-style.css";
 import "./uppy-core.css";
 import "./uppy-dashboard.css";

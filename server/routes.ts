@@ -253,6 +253,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
   app.use(opsRoutes);
 
+  // Task #2488 — Frontend RUM beacon ingestion. Anonymous + CSRF-exempt
+  // (the browser uses navigator.sendBeacon which cannot attach headers).
+  // Mounted before authMiddleware so vitals from logged-out pages still
+  // make it into the rolling-window aggregator.
+  const { registerWebVitalsRoutes } = await import("./webVitalsRoutes");
+  registerWebVitalsRoutes(app);
+
   // Serve Swagger UI at /api-docs — publicly accessible without authentication
   setupSwagger(app);
 

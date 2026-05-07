@@ -1032,3 +1032,92 @@ jobs:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           job-name: Security Gate (SOC 2 CC8.1 / CC7.1)
           artifact-name: ci-security-report
+
+  load-test-smoke:
+    # Task #2488 — Smoke load test on every PR. Runs the k6 `smoke`
+    # profile (5 VUs, 60s) against a freshly built server backed by a
+    # Postgres service container, then compares per-endpoint p95 +
+    # error-rate against `loadtests/budgets.json`. Fails the PR when a
+    # budget regresses by more than `regressionTolerance` (15%).
+    name: Load Test Smoke (k6 + budgets)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_load
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_load
+      SESSION_SECRET: ci-load-secret-do-not-use-in-prod
+      NODE_ENV: production
+      PORT: '5000'
+      BASE_URL: http://localhost:5000
+      LOAD_TENANT_USERS: ${{ secrets.LOAD_TENANT_USERS || 'loadtest-heavy@example.com:loadtest,loadtest-quiet@example.com:loadtest' }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Push DB schema
+        run: npm run db:push -- --force
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+
+      - name: Seed load-test fixture user
+        # Same deterministic ADMIN fixture the nightly job uses, so the
+        # PR smoke run actually exercises authenticated endpoints
+        # (login, /api/auth/me, /api/dashboard, etc.). Without this,
+        # `login()` in `loadtests/lib/auth.js` would silently fail and
+        # auth-gated regressions would slip past the smoke gate.
+        run: npx tsx scripts/seed-loadtest-user.ts
+
+      - name: Boot server
+        run: |
+          node dist/index.js &
+          echo $! > .server.pid
+          for i in $(seq 1 60); do
+            if curl -sS -o /dev/null --max-time 2 "$BASE_URL/healthz"; then
+              echo "[boot] up after ${i}s"; break
+            fi
+            sleep 1
+          done
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run smoke load test
+        run: scripts/run-load-test.sh smoke
+
+      - name: Upload k6 summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-smoke-summary
+          path: loadtests/results/*.json
+          retention-days: 14
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f .server.pid ]; then
+            kill "$(cat .server.pid)" 2>/dev/null || true
+          fi

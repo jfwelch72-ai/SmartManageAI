@@ -1,0 +1,32 @@
+{
+  "$comment": "Performance budgets for the top 20 endpoints. p95 in ms, error rate is the max fraction of non-2xx/3xx responses tolerated. Baselines were captured against a single-pod dev profile (Replit dev domain, 25 VUs, 2 min). When a real prod baseline is captured, replace the budget values and bump the schemaVersion. The CI checker (loadtests/check-budgets.mjs) fails when p95 exceeds budget by more than `regressionTolerance` percent or when error rate exceeds budget.",
+  "schemaVersion": 1,
+  "regressionTolerance": 0.15,
+  "global": {
+    "p95Ms": 1500,
+    "errorRate": 0.01
+  },
+  "endpoints": {
+    "GET /healthz":                          { "p95Ms": 50,   "errorRate": 0.0  },
+    "GET /readyz":                           { "p95Ms": 200,  "errorRate": 0.0  },
+    "GET /api/auth/me":                      { "p95Ms": 250,  "errorRate": 0.005 },
+    "POST /api/auth/login":                  { "p95Ms": 800,  "errorRate": 0.01 },
+    "GET /api/dashboard":                    { "p95Ms": 800,  "errorRate": 0.01 },
+    "GET /api/projects":                     { "p95Ms": 600,  "errorRate": 0.01 },
+    "GET /api/projects/:id":                 { "p95Ms": 700,  "errorRate": 0.01 },
+    "GET /api/bids":                         { "p95Ms": 700,  "errorRate": 0.01 },
+    "GET /api/bids/:id":                     { "p95Ms": 800,  "errorRate": 0.01 },
+    "GET /api/estimates":                    { "p95Ms": 700,  "errorRate": 0.01 },
+    "GET /api/change-orders":                { "p95Ms": 700,  "errorRate": 0.01 },
+    "GET /api/notifications":                { "p95Ms": 400,  "errorRate": 0.005 },
+    "GET /api/notifications/unread-count":   { "p95Ms": 250,  "errorRate": 0.005 },
+    "GET /api/integration-status":           { "p95Ms": 400,  "errorRate": 0.005 },
+    "GET /api/users/me/preferences":         { "p95Ms": 300,  "errorRate": 0.005 },
+    "GET /api/feature-flags":                { "p95Ms": 300,  "errorRate": 0.005 },
+    "GET /api/crm/contacts":                 { "p95Ms": 800,  "errorRate": 0.01 },
+    "GET /api/crm/organizations":            { "p95Ms": 800,  "errorRate": 0.01 },
+    "GET /api/time-clock/status":            { "p95Ms": 400,  "errorRate": 0.005 },
+    "GET /api/rfis":                         { "p95Ms": 700,  "errorRate": 0.01 },
+    "GET /api/submittals":                   { "p95Ms": 700,  "errorRate": 0.01 }
+  }
+}

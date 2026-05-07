@@ -1,0 +1,115 @@
+name: Nightly Load Test
+
+# Scheduled k6 load-test run against `main`. The smaller smoke profile
+# runs on every PR (see `ci.yml` -> `load-test-smoke` job); this nightly
+# job exercises the full top-20 mix at the configured concurrency and
+# fails when per-endpoint p95 / error budgets in
+# `loadtests/budgets.json` regress beyond the tolerance.
+#
+# The job boots the production build locally against a Postgres service
+# container so it does NOT require a hosted staging URL. Override
+# `BASE_URL` via repo variables if you want to point it at staging.
+
+on:
+  schedule:
+    - cron: '17 7 * * *'  # 07:17 UTC nightly — off-peak everywhere
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  nightly-load:
+    name: Nightly k6 (top-endpoints + noisy-neighbor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_load
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/app_load
+      SESSION_SECRET: load-test-not-a-real-secret
+      NODE_ENV: production
+      PORT: '5000'
+      BASE_URL: ${{ vars.LOAD_TEST_BASE_URL || 'http://localhost:5000' }}
+      LOAD_TENANT_USERS: ${{ secrets.LOAD_TENANT_USERS || 'loadtest-heavy@example.com:loadtest,loadtest-quiet@example.com:loadtest' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Push DB schema
+        run: npm run db:push -- --force
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+
+      - name: Seed load-test fixture user
+        # Deterministic ADMIN fixture for the k6 auth flow. Without this,
+        # `login()` in loadtests/lib/auth.js would fail and authenticated
+        # endpoints would silently fall out of coverage — defeating the
+        # `--require-all` budget gate.
+        run: npx tsx scripts/seed-loadtest-user.ts
+
+      - name: Boot server
+        run: |
+          node dist/index.js &
+          echo $! > .server.pid
+          for i in $(seq 1 60); do
+            if curl -sS -o /dev/null --max-time 2 "${BASE_URL}/healthz"; then
+              echo "[boot] up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+
+      - name: Run nightly load test
+        run: scripts/run-load-test.sh nightly
+
+      - name: Run noisy-neighbor test
+        run: scripts/run-load-test.sh noisy
+
+      - name: Upload k6 summaries
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: k6-summaries
+          path: loadtests/results/*.json
+          retention-days: 30
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [ -f .server.pid ]; then
+            kill "$(cat .server.pid)" 2>/dev/null || true
+          fi
+
+      - name: Notify Slack on failure
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Nightly Load Test
