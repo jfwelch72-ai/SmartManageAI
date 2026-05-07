@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/EmptyState";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff, Printer } from "lucide-react";
+import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff, Printer, RefreshCw } from "lucide-react";
 
 type Material = {
   id: string; sku: string; barcode: string | null; name: string; uom: string;
@@ -76,7 +76,12 @@ export default function InventoryPage() {
   const stockQ = useQuery<StockRow[]>({ queryKey: ["/api/inventory/stock"] });
   const lowStockQ = useQuery<LowStockRow[]>({ queryKey: ["/api/inventory/reports/low-stock"] });
   const slowQ = useQuery<{ days: number; items: SlowMovingRow[] }>({ queryKey: ["/api/inventory/reports/slow-moving"] });
-  const fieldQ = useQuery<FieldActivity>({ queryKey: ["/api/inventory/field-activity"] });
+  const fieldQ = useQuery<FieldActivity>({
+    queryKey: ["/api/inventory/field-activity"],
+    refetchInterval: 45000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
 
   const invalidateAll = () => {
     qc.invalidateQueries({ queryKey: ["/api/inventory/stock"] });
@@ -149,7 +154,13 @@ export default function InventoryPage() {
           </CardContent>
         </Card>
 
-        <FieldActivityPanel data={fieldQ.data} loading={fieldQ.isLoading} />
+        <FieldActivityPanel
+          data={fieldQ.data}
+          loading={fieldQ.isLoading}
+          updatedAt={fieldQ.dataUpdatedAt}
+          isFetching={fieldQ.isFetching}
+          onRefresh={() => fieldQ.refetch()}
+        />
 
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -263,10 +274,22 @@ function timeAgo(iso: string | null): string {
   return `${days}d ago`;
 }
 
-function FieldActivityPanel({ data, loading }: { data: FieldActivity | undefined; loading: boolean }) {
+function FieldActivityPanel({ data, loading, updatedAt, isFetching, onRefresh }: {
+  data: FieldActivity | undefined;
+  loading: boolean;
+  updatedAt: number;
+  isFetching: boolean;
+  onRefresh: () => void;
+}) {
   const txns = data?.transactions ?? [];
   const stale = data?.staleDevices ?? [];
   const threshold = data?.staleThresholdHours ?? 24;
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 15000);
+    return () => clearInterval(id);
+  }, []);
+  const updatedLabel = updatedAt ? timeAgo(new Date(updatedAt).toISOString()) : "never";
   return (
     <Card data-testid="card-field-activity">
       <CardHeader>
@@ -277,11 +300,26 @@ function FieldActivityPanel({ data, loading }: { data: FieldActivity | undefined
             </CardTitle>
             <CardDescription>Recent inventory activity from mobile devices and any trucks that haven&apos;t synced lately.</CardDescription>
           </div>
-          {stale.length > 0 && (
-            <Badge variant="destructive" className="self-start" data-testid="badge-stale-devices">
-              <WifiOff className="w-3.5 h-3.5 mr-1" /> {stale.length} device{stale.length === 1 ? "" : "s"} not synced &gt;{threshold}h
-            </Badge>
-          )}
+          <div className="flex items-center gap-2 self-start">
+            {stale.length > 0 && (
+              <Badge variant="destructive" data-testid="badge-stale-devices">
+                <WifiOff className="w-3.5 h-3.5 mr-1" /> {stale.length} device{stale.length === 1 ? "" : "s"} not synced &gt;{threshold}h
+              </Badge>
+            )}
+            <span className="text-xs text-muted-foreground" data-testid="text-field-updated-at" title={updatedAt ? new Date(updatedAt).toLocaleString() : "never"}>
+              Updated {updatedLabel}
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onRefresh}
+              disabled={isFetching}
+              data-testid="button-refresh-field-activity"
+              aria-label="Refresh field activity"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent>
