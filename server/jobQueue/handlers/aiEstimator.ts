@@ -39,13 +39,45 @@ export function registerAiEstimatorJob(): void {
           onProgress,
         });
       } else {
-        const { draftTakeoffFromPlans } = await import(
-          "../../services/aiEstimator/takeoffDraft"
-        );
-        svc = await draftTakeoffFromPlans({
-          ...(payload.draftOptions as Parameters<typeof draftTakeoffFromPlans>[0]),
-          onProgress,
-        });
+        // Task #2577 Phase B — route plan-set drafts through the
+        // map-reduce drafter when a `bidId` is supplied (or the caller
+        // explicitly opted in via `useMapReduce`). Map-reduce scales
+        // to 200+ sheets and emits sheet citations per measurement,
+        // replacing the legacy 8-doc cap as the primary path. The
+        // legacy `draftTakeoffFromPlans` is retained for project- and
+        // standalone-takeoff drafts that don't yet have an indexed
+        // bid sheet set.
+        const opts = payload.draftOptions as {
+          bidId?: string;
+          useMapReduce?: boolean;
+          organizationId?: string;
+          userId?: string;
+          disciplines?: string[];
+          [k: string]: unknown;
+        };
+        const shouldMapReduce =
+          opts.useMapReduce === true ||
+          (opts.useMapReduce !== false && typeof opts.bidId === "string" && opts.bidId.length > 0);
+        if (shouldMapReduce && opts.bidId && opts.organizationId && opts.userId) {
+          const { mapReduceDraftFromPlans } = await import(
+            "../../services/aiEstimator/mapReduceDraft"
+          );
+          svc = await mapReduceDraftFromPlans({
+            organizationId: opts.organizationId,
+            userId: opts.userId,
+            bidId: opts.bidId,
+            disciplines: opts.disciplines,
+            onProgress,
+          });
+        } else {
+          const { draftTakeoffFromPlans } = await import(
+            "../../services/aiEstimator/takeoffDraft"
+          );
+          svc = await draftTakeoffFromPlans({
+            ...(payload.draftOptions as Parameters<typeof draftTakeoffFromPlans>[0]),
+            onProgress,
+          });
+        }
       }
       await ctx.progress(100, "Draft complete");
       logInfo("AI estimator draft completed via queue", { jobId: ctx.jobId, mode });

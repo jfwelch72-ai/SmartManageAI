@@ -412,6 +412,17 @@ export default function TakeoffWorkspacePage() {
         <Button
           asChild
           size="sm"
+          variant="ghost"
+          className="h-8 gap-1 px-2 sm:px-3 shrink-0"
+          data-testid="button-open-schedule-symbols"
+        >
+          <Link href={`/takeoff/${bidCode}/schedule-symbols`}>
+            <span className="hidden sm:inline">Schedules</span>
+          </Link>
+        </Button>
+        <Button
+          asChild
+          size="sm"
           variant="outline"
           className="h-8 gap-1 px-2 sm:px-3 shrink-0"
           data-testid="button-open-bid-detail"

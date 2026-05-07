@@ -15,6 +15,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { logOAuthRedirectUris } from "./utils/routeHelpers";
 import { setCsrfToken, validateCsrf } from "./csrf";
 import { initializeAIScheduler } from "./ai/scheduler";
+import { buildTesseractProvider, registerOcrProvider } from "./ai/ocrProvider";
 import { aiNotesScheduler } from "./aiNotesScheduler";
 import { crmTaskReminderScheduler } from "./crmTaskReminderScheduler";
 import { crmBackfillAlertDigestScheduler } from "./crmBackfillAlertDigestScheduler";
@@ -536,6 +537,20 @@ app.use((req, res, next) => {
     logOAuthRedirectUris();
     
     const schedulersEnabled = isProduction || process.env.ENABLE_SCHEDULERS === "true";
+
+    // Task #2577 — Register the default OCR provider so plan-set ingest
+    // and the AI estimator can fall back to OCR for raster-only PDFs.
+    // Tesseract.js is dynamically imported on the first recognize() call;
+    // if the package isn't installed the provider silently no-ops, so
+    // this registration is safe in every environment. Set
+    // OCR_PROVIDER=disabled to skip registration entirely.
+    if ((process.env.OCR_PROVIDER ?? "tesseract").toLowerCase() !== "disabled") {
+      try {
+        registerOcrProvider(buildTesseractProvider({ lang: process.env.OCR_LANG ?? "eng" }));
+      } catch (err) {
+        logError("Failed to register OCR provider", {}, err instanceof Error ? err : new Error(String(err)));
+      }
+    }
 
     if (schedulersEnabled) {
       initializeAIScheduler().catch(error => {

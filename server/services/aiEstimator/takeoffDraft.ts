@@ -43,7 +43,11 @@ const TAKEOFF_DRAFT_OUTPUT_SCHEMA = z.object({
 // Task #2466 Phase 1 — bumped from 4 to 8. Each doc still flows through
 // the per-doc try/catch below so a single oversized PDF can't poison the
 // whole draft. Full per-trade map-reduce is a follow-up task.
-const MAX_PLAN_DOCS_PER_DRAFT = 8;
+// Task #2577 Phase B — cap raised from 8 → 50. Plan sets larger than
+// this should be drafted via the map-reduce path (`mapReduceDraftFromPlans`),
+// which the `ai_estimator_draft` job handler now selects automatically
+// when a `bidId` is supplied.
+const MAX_PLAN_DOCS_PER_DRAFT = 50;
 
 export interface DraftTakeoffMeasurement {
   label: string;

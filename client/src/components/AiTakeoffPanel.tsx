@@ -50,6 +50,7 @@ import { useJobProgress } from "@/hooks/use-job-progress";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
+import { TradeTemplatesPanel } from "@/components/takeoff/TradeTemplatesPanel";
 import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
 
 export interface BoundingBox {
@@ -739,6 +740,7 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
               )}
             </Button>
             <DraftFullTakeoffButton bidId={bidId} projectId={projectId} standaloneTakeoffId={standaloneTakeoffId} />
+            {bidId && <TradeTemplatesPanel bidId={bidId} />}
           </div>
         )}
 

@@ -112,6 +112,17 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   // ("AI_DETECTED" | "USER" | "FILENAME_HEURISTIC").
   disciplineConfidence: text("discipline_confidence"),
   disciplineSource: text("discipline_source"),
+  // Task #2577 Phase B — Per-page extracted text. Populated by the
+  // document extractor on first read of a plan PDF (text layer or OCR
+  // fallback). Shape: { "1": "page 1 text", "2": "page 2 text" } where
+  // keys are 1-indexed page numbers as strings. Used by sheet indexing,
+  // map-reduce drafter, and schedule symbol extractor so they don't
+  // each pay for a fresh PDF render. Source flag tracks whether the
+  // text came from the embedded layer ("PDF_TEXT") or an OCR provider
+  // ("OCR_<providerId>").
+  extractedTextByPage: jsonb("extracted_text_by_page"),
+  extractedTextSource: text("extracted_text_source"),
+  extractedTextAt: timestamp("extracted_text_at"),
   assignedTo: varchar("assigned_to"),
   completionStatus: text("completion_status").notNull().default("not_started"),
   targetMeasurements: integer("target_measurements"),
@@ -216,6 +227,12 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   lockedScalePxPerFoot: doublePrecision("locked_scale_px_per_foot"),
   deductions: text("deductions"),
   metadata: text("metadata"),
+  // Task #2577 Phase B Step 4 — Idempotency anchor for AI-derived COUNT
+  // measurements that originate from accepted schedule symbols
+  // (`ai_estimator_legend_symbols.id`). A partial unique index on this
+  // column lets `acceptScheduleSymbols` upsert instead of inserting a
+  // duplicate row when the estimator re-runs the accept flow.
+  sourceSymbolId: varchar("source_symbol_id"),
   subcontractorId: varchar("subcontractor_id"),
   supplierId: varchar("supplier_id"),
   locationTag: text("location_tag"),

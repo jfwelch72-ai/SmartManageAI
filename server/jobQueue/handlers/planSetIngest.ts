@@ -168,6 +168,28 @@ export function registerPlanSetIngestJob(): void {
         }
       }
 
+      // Task #2577 — Cache per-page text on the new sheets so downstream
+      // AI estimator passes (sheet indexer, map-reduce drafter, schedule
+      // symbol extractor) don't have to re-download the PDF and re-run
+      // pdfjs/OCR. Best-effort: failures are logged and swallowed so the
+      // ingest job still reports success.
+      try {
+        await ctx.progress(96, "Caching plan-sheet text (OCR fallback)", { pageCount });
+        const { cachePageTextOnSheets } = await import("../../services/aiEstimator/mapReduceDraft");
+        const cacheResult = await cachePageTextOnSheets({
+          organizationId: payload.organizationId,
+          bidId: payload.bidId,
+        });
+        logInfo("plan_set_ingest text cache complete", {
+          bidId: payload.bidId,
+          updatedSheets: cacheResult.updatedSheets,
+          pagesOcr: cacheResult.pagesOcr,
+          ocrProviderId: cacheResult.ocrProviderId,
+        });
+      } catch (cacheErr) {
+        logError("plan_set_ingest text cache failed (non-fatal)", { bidId: payload.bidId }, cacheErr instanceof Error ? cacheErr : new Error(String(cacheErr)));
+      }
+
       await ctx.progress(98, "Plan set ingest complete", { pageCount, sheetCount: sheetIds.length });
       logInfo("plan_set_ingest finished", {
         bidId: payload.bidId,

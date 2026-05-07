@@ -364,14 +364,20 @@ export const aiEstimatorLegendSymbols = pgTable("ai_estimator_legend_symbols", {
   count: integer("count").notNull().default(0),
   // JSON list of { sheetId, regionBbox } occurrences for click-through.
   occurrences: jsonb("occurrences"),
-  source: text("source").notNull().default("AI_DETECTED"), // 'AI_DETECTED' | 'USER'
+  source: text("source").notNull().default("AI_DETECTED"), // 'AI_DETECTED' | 'USER' | 'AI_SCHEDULE'
   confidence: text("confidence").notNull().default("MEDIUM"), // HIGH | MEDIUM | LOW
+  // Task #2577 Phase B Step 4 — Schedule review lifecycle.
+  // PENDING_REVIEW (default for AI rows), ACCEPTED (after accept),
+  // REJECTED (estimator dismissed), EDITED (estimator tweaked count or
+  // code before / instead of accepting).
+  reviewStatus: text("review_status").notNull().default("PENDING_REVIEW"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("ai_estimator_legend_symbols_org_idx").on(table.organizationId),
   projectIdx: index("ai_estimator_legend_symbols_project_idx").on(table.projectId),
   bidIdx: index("ai_estimator_legend_symbols_bid_idx").on(table.bidId),
+  reviewStatusIdx: index("ai_estimator_legend_symbols_review_status_idx").on(table.reviewStatus),
   uniq: uniqueIndex("ai_estimator_legend_symbols_uniq").on(
     table.organizationId,
     table.bidId,

@@ -139,6 +139,7 @@ const TakeoffStandalonePage = lazy(() => import("@/pages/takeoff-standalone"));
 const TakeoffStandaloneWorkspacePage = lazy(() => import("@/pages/takeoff-standalone-workspace"));
 // Task #2321 — Second-eye review queue page.
 const TakeoffReviewQueuePage = lazy(() => import("@/pages/takeoff-review-queue"));
+const TakeoffScheduleSymbolsPage = lazy(() => import("@/pages/takeoff-schedule-symbols"));
 // Task #2335 — AI takeoff dashboard surfaces persisted scale-mismatch
 // rollups so estimators can spot calibration drift across sheets.
 const AiTakeoffDashboardPage = lazy(() => import("@/pages/ai-takeoff-dashboard"));
@@ -495,6 +496,7 @@ function Router() {
           /takeoff/:bidCode workspace route, otherwise wouter would
           treat "review-queue" as a bid code and 404. */}
       <Route path="/takeoff/review-queue" component={() => <ProtectedRoute component={TakeoffReviewQueuePage} permission={RoutePermissions.TAKEOFF} />} />
+      <Route path="/takeoff/:bidCode/schedule-symbols" component={() => <ProtectedRoute component={TakeoffScheduleSymbolsPage} permission={RoutePermissions.TAKEOFF} />} />
       {/* Task #2550 — Standalone takeoff full workspace. The /workspace
           subpath must be matched BEFORE the bare /:id detail route so
           wouter doesn't treat "workspace" as part of the id. */}

@@ -86,6 +86,24 @@ import {
   upsertLegendSymbol,
   deleteLegendSymbol,
 } from "./services/aiEstimator/legendSymbols";
+// Task #2577 Phase B — Trade material templates, map-reduce drafter,
+// and schedule symbol auto-counting.
+import {
+  listTradeTemplates,
+  applyTradeTemplate,
+  applyTradeTemplateToBid,
+} from "./services/aiEstimator/tradeMaterialTemplates";
+import {
+  mapReduceDraftFromPlans,
+  cachePageTextOnSheets,
+} from "./services/aiEstimator/mapReduceDraft";
+import {
+  extractScheduleSymbolsForBid,
+  listScheduleSymbolsForBid,
+  acceptScheduleSymbols,
+  rejectScheduleSymbols,
+  editScheduleSymbol,
+} from "./services/aiEstimator/scheduleCounts";
 import {
   insertAiEstimatorAssemblySchema,
   insertAiEstimatorAssemblyComponentSchema,
@@ -684,12 +702,23 @@ router.post(
 // =====================================================================
 const draftTakeoffSchema = z
   .object({
-    planDocumentIds: z.array(z.string().min(1)).max(8).optional(),
+    // Task #2577 Phase B — cap raised from 8 → 200 so plan-set drafts
+    // can cover full multi-trade plan sets. Large sets are routed
+    // through the map-reduce drafter automatically when a `bidId` is
+    // supplied (see job handler).
+    planDocumentIds: z.array(z.string().min(1)).max(200).optional(),
     projectId: z.string().min(1).optional(),
     // Task #2551 — Standalone takeoff source. When provided, plan
     // documents are pulled from `standalone_takeoff_files` for the
     // takeoff (org-scoped); planDocumentIds/projectId may be omitted.
     standaloneTakeoffId: z.string().min(1).optional(),
+    // Task #2577 Phase B — when `bidId` is supplied, the job handler
+    // dispatches to `mapReduceDraftFromPlans` (sheet-cited, scales to
+    // 200+ sheets). `useMapReduce: false` forces the legacy path.
+    bidId: z.string().min(1).optional(),
+    disciplines: z.array(z.string().min(1).max(8)).max(20).optional(),
+    tradeFilter: z.string().max(120).optional(),
+    useMapReduce: z.boolean().optional(),
     scopeNotes: z.string().max(2000).optional(),
     // Task #2530 — when true, the route enqueues `ai_estimator_draft`
     // and returns `{ jobId }` so the UI can subscribe to live progress
@@ -700,8 +729,9 @@ const draftTakeoffSchema = z
     (d) =>
       (d.planDocumentIds && d.planDocumentIds.length > 0) ||
       !!d.projectId ||
-      !!d.standaloneTakeoffId,
-    { message: "Provide planDocumentIds, projectId, or standaloneTakeoffId" },
+      !!d.standaloneTakeoffId ||
+      !!d.bidId,
+    { message: "Provide planDocumentIds, projectId, standaloneTakeoffId, or bidId" },
   );
 router.post(
   `${estimatorBase}/draft-takeoff`,
@@ -713,12 +743,23 @@ router.post(
     if (!data) return;
     const organizationId = req.user!.organizationId!;
     const userId = req.user!.id;
+    // Task #2577 Phase B — when a `bidId` is supplied (or the caller
+    // explicitly sets `useMapReduce: true`), the job handler routes to
+    // `mapReduceDraftFromPlans` so 200+ sheet plan sets are covered
+    // with sheet citations instead of being silently truncated to 8
+    // documents by the legacy path.
+    const useMapReduce =
+      data.useMapReduce === true || (data.useMapReduce !== false && !!data.bidId);
     const draftOptions = {
       organizationId,
       userId,
       planDocumentIds: data.planDocumentIds,
       projectId: data.projectId,
       standaloneTakeoffId: data.standaloneTakeoffId,
+      bidId: data.bidId,
+      disciplines: data.disciplines,
+      tradeFilter: data.tradeFilter,
+      useMapReduce,
       scopeNotes: data.scopeNotes,
     };
     try {
@@ -729,11 +770,21 @@ router.post(
       // from Task #2530 is now the implicit default and accepted
       // for backward compatibility.
       const { enqueueJob } = await import("./jobQueue");
-      const idemBasis =
-        data.planDocumentIds?.slice().sort().join(",") ||
-        data.projectId ||
-        data.standaloneTakeoffId ||
-        "";
+      // Task #2577 Phase B — `bidId` is now a first-class scope for
+      // map-reduce drafts; it MUST be part of the dedupe key or
+      // distinct bids for the same user collapse onto one job. We
+      // also fold in disciplines / tradeFilter / useMapReduce so a
+      // narrowed-scope re-run isn't deduped to a prior wide run.
+      const idemBasisParts = [
+        data.planDocumentIds?.slice().sort().join(","),
+        data.projectId,
+        data.standaloneTakeoffId,
+        data.bidId ? `bid:${data.bidId}` : undefined,
+        data.disciplines?.slice().sort().join("+"),
+        data.tradeFilter,
+        useMapReduce ? "mr" : undefined,
+      ].filter((p): p is string => Boolean(p));
+      const idemBasis = idemBasisParts.join("|") || "default";
       const enq = await enqueueJob(
         "ai_estimator_draft",
         { mode: "takeoff", draftOptions },
@@ -1198,6 +1249,226 @@ router.delete(
   async (req: AuthRequest, res: Response) => {
     await deleteLegendSymbol(req.user!.organizationId!, req.params.id);
     res.status(204).send();
+  },
+);
+
+// =====================================================================
+// Task #2577 Phase B Step 1 — Trade material templates.
+// =====================================================================
+router.get(
+  `${estimatorBase}/trade-templates`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (_req: AuthRequest, res: Response) => {
+    res.json({ templates: listTradeTemplates() });
+  },
+);
+
+const applyTemplateSchema = z.object({
+  quantity: z.number().nonnegative(),
+  options: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
+});
+
+router.post(
+  `${estimatorBase}/trade-templates/:id/apply`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(applyTemplateSchema, req.body, res);
+    if (!data) return;
+    try {
+      const out = applyTradeTemplate(req.params.id, {
+        quantity: data.quantity,
+        options: data.options as Record<string, number | string | boolean | undefined | null> | undefined,
+      });
+      if (!out) return res.status(404).json({ error: "Trade template not found" });
+      res.json(out);
+    } catch (err) {
+      logError("trade-template apply failed", { id: req.params.id, error: String(err) });
+      res.status(400).json({ error: err instanceof Error ? err.message : "Failed to apply template" });
+    }
+  },
+);
+
+// Task #2577 Phase B Step 1 — write template line items into the bid's
+// takeoff as DRAFT measurements so estimators can pick a template from
+// the takeoff workspace and immediately see primary + accessory rows
+// in their measurement list. The estimator can then re-classify any
+// row (LINEAR/AREA) or accept-as-is via the normal review queue.
+const applyTemplateToBidSchema = z.object({
+  bidId: z.string().min(1),
+  quantity: z.number().nonnegative(),
+  options: z.record(z.string(), z.union([z.number(), z.string(), z.boolean(), z.null()])).optional(),
+  sheetId: z.string().min(1).optional(),
+});
+
+router.post(
+  `${estimatorBase}/trade-templates/:id/apply-to-bid`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(applyTemplateToBidSchema, req.body, res);
+    if (!data) return;
+    try {
+      const out = await applyTradeTemplateToBid({
+        organizationId: req.user!.organizationId!,
+        bidId: data.bidId,
+        templateId: req.params.id,
+        quantity: data.quantity,
+        options: data.options as Record<string, number | string | boolean | undefined | null> | undefined,
+        sheetId: data.sheetId,
+      });
+      res.json(out);
+    } catch (err) {
+      logError("trade-template apply-to-bid failed", { id: req.params.id, error: String(err) });
+      res.status(400).json({ error: err instanceof Error ? err.message : "Failed to apply template" });
+    }
+  },
+);
+
+// =====================================================================
+// Task #2577 Phase B Step 2 — Map-reduce drafter for large plan sets.
+// =====================================================================
+const mapReduceDraftSchema = z.object({
+  bidId: z.string().min(1),
+  disciplines: z.array(z.string()).optional(),
+});
+
+router.post(
+  `${estimatorBase}/draft/map-reduce`,
+  sensitiveLimiter,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(mapReduceDraftSchema, req.body, res);
+    if (!data) return;
+    const out = await mapReduceDraftFromPlans({
+      organizationId: req.user!.organizationId!,
+      userId: req.user!.id,
+      bidId: data.bidId,
+      disciplines: data.disciplines,
+    });
+    if (out.blocked) return blockedResponse(res, out.reason);
+    if (!out.result) return res.status(400).json({ error: out.reason || "Map-reduce draft produced no result" });
+    res.json(out.result);
+  },
+);
+
+// Cache per-page extracted text on takeoff_sheets — also runs OCR
+// fallback on raster pages when an OCR provider is registered.
+router.post(
+  `${estimatorBase}/bids/:bidId/cache-page-text`,
+  sensitiveLimiter,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const out = await cachePageTextOnSheets({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+    });
+    res.json(out);
+  },
+);
+
+// =====================================================================
+// Task #2577 Phase B Step 4 — Schedule symbol auto-counting.
+// =====================================================================
+router.post(
+  `${estimatorBase}/bids/:bidId/schedule-symbols/extract`,
+  sensitiveLimiter,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const out = await extractScheduleSymbolsForBid({
+      organizationId: req.user!.organizationId!,
+      userId: req.user!.id,
+      bidId: req.params.bidId,
+    });
+    if (out.blocked) return blockedResponse(res, out.reason);
+    res.json({
+      extracted: out.extracted,
+      candidateSheets: out.candidateSheets,
+      reason: out.reason,
+    });
+  },
+);
+
+router.get(
+  `${estimatorBase}/bids/:bidId/schedule-symbols`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const rows = await listScheduleSymbolsForBid({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+    });
+    res.json({ symbols: rows });
+  },
+);
+
+const acceptScheduleSchema = z.object({
+  symbolIds: z.array(z.string().min(1)).min(1),
+});
+
+router.post(
+  `${estimatorBase}/bids/:bidId/schedule-symbols/accept`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(acceptScheduleSchema, req.body, res);
+    if (!data) return;
+    const out = await acceptScheduleSymbols({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolIds: data.symbolIds,
+    });
+    res.json(out);
+  },
+);
+
+const rejectScheduleSchema = z.object({
+  symbolIds: z.array(z.string().min(1)).min(1),
+});
+
+router.post(
+  `${estimatorBase}/bids/:bidId/schedule-symbols/reject`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(rejectScheduleSchema, req.body, res);
+    if (!data) return;
+    const out = await rejectScheduleSymbols({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolIds: data.symbolIds,
+    });
+    res.json(out);
+  },
+);
+
+const editScheduleSchema = z.object({
+  count: z.number().int().nonnegative().optional(),
+  code: z.string().min(1).max(64).optional(),
+  description: z.string().max(500).optional(),
+}).refine((v) => v.count !== undefined || v.code !== undefined || v.description !== undefined, {
+  message: "At least one of count / code / description must be provided",
+});
+
+router.patch(
+  `${estimatorBase}/bids/:bidId/schedule-symbols/:symbolId`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(editScheduleSchema, req.body, res);
+    if (!data) return;
+    const updated = await editScheduleSymbol({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolId: req.params.symbolId,
+      updates: data,
+    });
+    if (!updated) return res.status(404).json({ error: "Schedule symbol not found" });
+    res.json({ symbol: updated });
   },
 );
 

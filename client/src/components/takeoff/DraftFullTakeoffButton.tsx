@@ -38,7 +38,7 @@ interface DraftResult {
  * the `ai_estimator_draft` queue so the dialog can show a real progress bar
  * driven by `useJobProgress` instead of a static spinner.
  */
-export function DraftFullTakeoffButton({ projectId, standaloneTakeoffId }: Props) {
+export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [scopeNotes, setScopeNotes] = useState("");
@@ -53,6 +53,10 @@ export function DraftFullTakeoffButton({ projectId, standaloneTakeoffId }: Props
   const draftIt = useMutation({
     mutationFn: async (): Promise<{ jobId?: string }> => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft-takeoff", {
+        // Task #2577 Phase B — pass `bidId` so the server routes the
+        // draft through the map-reduce drafter (sheet-cited, scales to
+        // 200+ sheets) instead of the legacy 8-doc path.
+        bidId,
         projectId,
         standaloneTakeoffId,
         scopeNotes: scopeNotes.trim() || undefined,
@@ -141,7 +145,11 @@ export function DraftFullTakeoffButton({ projectId, standaloneTakeoffId }: Props
 
   const isWorking = draftIt.isPending || (!!jobId && !draft);
 
-  if (!projectId && !standaloneTakeoffId) return null;
+  // Task #2577 Phase B — `bidId` is now a first-class entrypoint
+  // (the bid-context AI panel passes only `bidId`, no `projectId`).
+  // Guard must allow that path so estimators can trigger the
+  // map-reduce drafter from the takeoff workspace.
+  if (!projectId && !standaloneTakeoffId && !bidId) return null;
 
   return (
     <>

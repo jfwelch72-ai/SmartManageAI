@@ -1,10 +1,137 @@
 import { logError, logWarn, logInfo } from "../utils/logger";
 import { objectStorageClient, ObjectStorageService } from "../objectStorage";
 import { createCanvas } from "canvas";
+import { getOcrProvider } from "./ocrProvider";
 
 const MAX_PDF_PAGES = 5;
 const PDF_RENDER_SCALE = 1.5;
 const MAX_TEXT_LENGTH = 50000;
+
+// Task #2577 Phase B (Step 3) — Per-page text extraction with OCR
+// fallback. The map-reduce drafter and schedule symbol extractor want
+// raw text per page so they can route only the relevant pages to the
+// LLM. `extractPdfPageTexts` returns a 1-indexed map of pageNumber →
+// text. When the embedded text layer is empty for a page AND an OCR
+// provider is registered, the page is rendered to PNG and OCR'd.
+export interface PdfPageTextResult {
+  pages: Record<string, string>;
+  source: "PDF_TEXT" | "OCR" | "MIXED";
+  ocrProviderId: string | null;
+  pagesScanned: number;
+  pagesOcr: number;
+}
+
+export async function extractPdfPageTexts(
+  pdfBuffer: Buffer,
+  opts: { maxPages?: number; ocr?: "auto" | "always" | "never"; startPage?: number; endPage?: number } = {},
+): Promise<PdfPageTextResult> {
+  const maxPages = opts.maxPages ?? 250;
+  const ocrMode = opts.ocr ?? "auto";
+  const provider = ocrMode === "never" ? null : getOcrProvider();
+
+  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const canvasFactory = new NodeCanvasFactory();
+  const loadingTask = pdfjsLib.getDocument({
+    data: new Uint8Array(pdfBuffer),
+    useSystemFonts: true,
+    disableFontFace: true,
+    isEvalSupported: false,
+    canvasFactory: canvasFactory as any,
+  });
+  const pdfDoc = await loadingTask.promise;
+  const startPage = Math.max(1, opts.startPage ?? 1);
+  const inclusiveEnd = Math.min(pdfDoc.numPages, opts.endPage ?? pdfDoc.numPages);
+  const endPage = Math.min(inclusiveEnd, startPage + maxPages - 1);
+  const pages: Record<string, string> = {};
+  let pagesOcr = 0;
+  let usedPdfText = false;
+
+  for (let pageNum = startPage; pageNum <= endPage; pageNum++) {
+    let pageText = "";
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const tc = await page.getTextContent();
+      pageText = tc.items
+        .map((item: any) => item.str || "")
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (pageText.length > 0) usedPdfText = true;
+
+      const needsOcr =
+        provider &&
+        (ocrMode === "always" || (ocrMode === "auto" && pageText.length < 20));
+
+      if (needsOcr) {
+        try {
+          const viewport = page.getViewport({ scale: PDF_RENDER_SCALE });
+          const canvas = createCanvas(viewport.width, viewport.height);
+          const ctx = canvas.getContext("2d");
+          await (page.render({
+            canvasContext: ctx as any,
+            viewport,
+            canvasFactory: canvasFactory as any,
+          } as any)).promise;
+          const png = canvas.toBuffer("image/png");
+          const ocrText = await provider!.recognize({ buffer: png, mimeType: "image/png" });
+          if (ocrText && ocrText.length > pageText.length) {
+            pageText = ocrText;
+            pagesOcr++;
+          }
+        } catch (renderErr) {
+          logWarn(`[extractPdfPageTexts] OCR fallback failed on page ${pageNum}`, {
+            error: renderErr instanceof Error ? renderErr.message : String(renderErr),
+          });
+        }
+      }
+
+      page.cleanup();
+    } catch (err) {
+      logWarn(`[extractPdfPageTexts] failed page ${pageNum}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    if (pageText.length > 0) {
+      pages[String(pageNum)] = pageText.slice(0, 20000);
+    }
+  }
+
+  pdfDoc.destroy();
+
+  const source: PdfPageTextResult["source"] =
+    pagesOcr > 0 && usedPdfText ? "MIXED" : pagesOcr > 0 ? "OCR" : "PDF_TEXT";
+  return {
+    pages,
+    source,
+    ocrProviderId: provider?.id ?? null,
+    pagesScanned: Math.max(0, endPage - startPage + 1),
+    pagesOcr,
+  };
+}
+
+/**
+ * Convenience: download then per-page text. Caller-friendly wrapper
+ * around `extractPdfPageTexts` so callers don't need to re-implement
+ * GCS download + PDF detection. Returns null when the URL is not a
+ * PDF or download fails.
+ */
+export async function extractPageTextsFromUrl(
+  documentUrl: string,
+  opts: { maxPages?: number; ocr?: "auto" | "always" | "never"; startPage?: number; endPage?: number } = {},
+): Promise<PdfPageTextResult | null> {
+  try {
+    const { buffer, contentType } = await downloadFromGcs(documentUrl);
+    const detected = detectFileType(buffer, contentType, documentUrl);
+    if (detected.type !== "pdf") return null;
+    return await extractPdfPageTexts(buffer, opts);
+  } catch (err) {
+    logWarn(`[extractPageTextsFromUrl] failed`, {
+      url: documentUrl.substring(0, 100),
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+}
 
 function parseGcsUrl(url: string): { bucketName: string; objectName: string } | null {
   try {
