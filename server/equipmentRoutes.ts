@@ -1211,6 +1211,22 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
+  // PM auto-WO generation: create equipmentRepairs (PENDING) for any maintenance schedule that
+  // is currently due by date or hour-meter. Idempotent — re-runs safely.
+  router.post("/api/equipment/maintenance/generate-work-orders", requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+    try {
+      const { getOrgIdForFilter } = await import("./orgFilter");
+      const { generateDuePmWorkOrders } = await import("./equipmentPmEngine");
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.status(403).json({ error: "No organization access" });
+      const result = await generateDuePmWorkOrders({
+        organizationId: orgId ?? undefined,
+        systemUserId: req.user!.id,
+      });
+      res.json(result);
+    } catch (err) { next(err); }
+  });
+
   // Get upcoming maintenance due (for alerts) — must be before /:equipmentId routes to avoid route shadowing
   router.get("/api/equipment/maintenance/upcoming", async (req: AuthRequest, res, next) => {
     try {

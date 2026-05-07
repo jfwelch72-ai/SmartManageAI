@@ -61,6 +61,7 @@ export * from "./financial";
 export * from "./flags";
 export * from "./hiring";
 export * from "./hustler";
+export * from "./inventory";
 export * from "./integrations";
 export * from "./kpi";
 export * from "./library";

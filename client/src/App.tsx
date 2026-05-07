@@ -174,6 +174,7 @@ const PublicQuoteAcceptPage = lazy(() => import("@/pages/public-quote-accept"));
 const ScopeSettingsPage = lazy(() => import("@/pages/scope-settings"));
 const EquipmentPage = lazy(() => import("@/pages/equipment"));
 const EquipmentDetailPage = lazy(() => import("@/pages/equipment-detail"));
+const InventoryPage = lazy(() => import("@/pages/inventory"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const PlatformAdminDashboard = lazy(() => import("@/pages/PlatformAdminDashboard"));
 const DotLibraryPage = lazy(() => import("@/pages/DotLibraryPage"));
@@ -523,6 +524,7 @@ function Router() {
       <Route path="/scope-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=scope-settings" />} permission={RoutePermissions.SCOPE_SETTINGS} />} />
       <Route path="/equipment/:code" component={() => <ProtectedRoute component={EquipmentDetailPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
       <Route path="/equipment" component={() => <ProtectedRoute component={EquipmentPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
+      <Route path="/inventory" component={() => <ProtectedRoute component={InventoryPage} permission={RoutePermissions.EQUIPMENT} featurePerm="canManageEquipment" />} />
       <Route path="/lidar-scans" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="LIDAR_SCANNER"><LidarScansPage /></FeatureFlagGate>} permission={RoutePermissions.LIDAR_SCANS} />} />
       <Route path="/permits" component={() => <ProtectedRoute component={PermitsPage} permission={RoutePermissions.PERMITS} />} />
       <Route path="/compliance" component={() => <ProtectedRoute component={CompliancePage} permission={RoutePermissions.COMPLIANCE} />} />

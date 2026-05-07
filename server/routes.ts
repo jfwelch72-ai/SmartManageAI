@@ -723,6 +723,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Equipment Routes (consolidated: management, rental, plan)
   app.use(equipmentRoutes);
 
+  // Inventory Routes (warehouse/yard, materials, transactions, cycle counts)
+  const inventoryRoutes = (await import("./inventoryRoutes")).default;
+  app.use(inventoryRoutes);
+
   // Mobile & Offline Sync Routes
   app.use(mobileSyncRoutes);
 
