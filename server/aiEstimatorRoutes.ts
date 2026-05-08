@@ -1515,6 +1515,9 @@ router.get(
         finishedAt: r.finishedAt,
       })),
     });
+  },
+);
+
 // Task #2628 — AI takeoff calibration feedback loop admin surface.
 //   * GET    /calibration-nudges          — pending nudges for review
 //   * POST   /calibration-nudges/:id/accept — write factor + close nudge

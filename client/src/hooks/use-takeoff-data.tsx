@@ -580,6 +580,20 @@ export function useTakeoffData({
     },
   });
 
+  // Task #2629 — Optimistic concurrency state. Surfaces a conflict
+  // resolution dialog when a teammate's edit advanced the row's
+  // `version` between our last read and our PATCH. The dialog shows
+  // both sides and lets the user pick "keep theirs" (do nothing
+  // beyond the cache refresh) or "overwrite" (re-PATCH without
+  // `expectedVersion`, accepting the legacy last-write-wins fallback).
+  const [measurementConflict, setMeasurementConflict] = useState<{
+    measurementId: string;
+    pendingEdit: Record<string, unknown>;
+    serverRow: TakeoffMeasurement | null;
+    currentVersion: number | null;
+  } | null>(null);
+  const dismissMeasurementConflict = useCallback(() => setMeasurementConflict(null), []);
+
   const updateMeasurementMutation = useMutation({
     // Task #1770 — `skipHistory` is the same opt-out the markup mutation
     // (#1755) uses: bulk callers (e.g. `handleBulkCategoryAssign` in the
@@ -596,11 +610,27 @@ export function useTakeoffData({
     // (only batch / CREATE / DELETE were tracked) and the user could
     // not Undo a rename. Stripped from the PATCH body alongside
     // `skipHistory` so the API surface is unchanged.
-    mutationFn: async ({ id, skipHistory: _skipHistory, previous: _previous, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number; skipHistory?: boolean; previous?: { label?: string | null; costCodeId?: string | null; unitCost?: number | string | null; categoryId?: string | null; groupId?: string | null; lineStyle?: string | null; lineWidth?: number | null; metadata?: string | null; points?: string } }) => {
+    mutationFn: async ({ id, skipHistory: _skipHistory, previous: _previous, expectedVersion, forceOverwrite, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number; skipHistory?: boolean; expectedVersion?: number; forceOverwrite?: boolean; previous?: { label?: string | null; costCodeId?: string | null; unitCost?: number | string | null; categoryId?: string | null; groupId?: string | null; lineStyle?: string | null; lineWidth?: number | null; metadata?: string | null; points?: string } }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot edit measurements while viewing a locked version");
       }
-      const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
+      // Task #2629 — Auto-attach the cached row's `version` as
+      // `expectedVersion` so the server's CAS path engages on every
+      // normal edit. `forceOverwrite` (set by the conflict dialog's
+      // "overwrite" button) opts back into legacy last-write-wins.
+      let resolvedVersion: number | undefined = expectedVersion;
+      if (resolvedVersion === undefined && !forceOverwrite && selectedSheet) {
+        const cached = queryClient.getQueryData<TakeoffMeasurement[]>([
+          "/api/takeoff/sheets",
+          selectedSheet,
+          "measurements",
+        ]);
+        const row = cached?.find((m) => m.id === id) as (TakeoffMeasurement & { version?: number }) | undefined;
+        if (row && typeof row.version === "number") resolvedVersion = row.version;
+      }
+      const body: Record<string, unknown> = { ...data };
+      if (resolvedVersion !== undefined && !forceOverwrite) body.expectedVersion = resolvedVersion;
+      const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, body);
       return res.json();
     },
     onSuccess: (_data: TakeoffMeasurement, variables) => {
@@ -671,6 +701,40 @@ export function useTakeoffData({
           title: "Measurement was deleted",
           description:
             "Another teammate removed this measurement, so your edit could not be saved. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Task #2629 — Optimistic-concurrency 409 conflict. The server
+      // refused the PATCH because the row's `version` advanced after
+      // we last read it (a teammate edited it on another tab). Pull
+      // the current row by invalidating the cache so the canvas
+      // re-renders the server's truth, and tell the user to retry
+      // their edit on the refreshed value rather than silently
+      // overwriting their teammate's change.
+      const errMsg = error instanceof Error ? error.message : String(error ?? "");
+      const errStatus = (error as { status?: number } | null)?.status;
+      const errData = (error as { data?: { reason?: string; current?: TakeoffMeasurement; currentVersion?: number } } | null)?.data;
+      if (errStatus === 409 || errData?.reason === "version_conflict" || /\b409\b|version_conflict/.test(errMsg)) {
+        if (selectedSheet) {
+          queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+        }
+        // Task #2629 — Capture the conflict so the workspace can show
+        // a side-by-side resolution dialog ("keep theirs" vs
+        // "overwrite") instead of just a destructive toast.
+        const { id, skipHistory: _skip, previous: _prev, ...pendingEdit } = variables ?? ({} as Record<string, unknown>);
+        if (id) {
+          setMeasurementConflict({
+            measurementId: String(id),
+            pendingEdit: pendingEdit as Record<string, unknown>,
+            serverRow: errData?.current ?? null,
+            currentVersion: typeof errData?.currentVersion === "number" ? errData.currentVersion : null,
+          });
+        }
+        toast({
+          title: "Edit conflict",
+          description:
+            "Another teammate updated this measurement while you were editing. Pick whose version to keep.",
           variant: "destructive",
         });
         return;
@@ -1995,5 +2059,10 @@ export function useTakeoffData({
     // in this set so the user can see exactly which siblings to fix.
     failedMarkupIds,
     clearFailedMarkupIds,
+    // Task #2629 — Optimistic-concurrency conflict state for the
+    // measurement update path. Consumed by `TakeoffWorkspace` to
+    // render a "keep theirs / overwrite" resolution dialog.
+    measurementConflict,
+    dismissMeasurementConflict,
   };
 }

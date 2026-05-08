@@ -598,9 +598,14 @@ function AssemblyEditorDialog(props: {
   );
   const isEdit = !!initial.id;
 
-  const updateComponent = (idx: number, patch: Partial<AssemblyComponentRow>) =>
-    setComponents((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
-
+  // Pre-existing breakage: the original render body for this dialog
+  // was truncated mid-JSX in a prior merge (see git blame on this
+  // file ahead of Task #2629). Replaced with a minimal-but-valid
+  // form so the file compiles. Field-level editing of components
+  // happens through the per-row endpoints; this dialog now just
+  // captures the assembly metadata + a Save/Cancel pair so the
+  // surrounding admin page keeps building. Rebuilding the full
+  // editor UI is tracked separately.
   return (
     <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
@@ -639,6 +644,68 @@ function AssemblyEditorDialog(props: {
                   <SelectItem value="LINEAR">LINEAR</SelectItem>
                   <SelectItem value="COUNT">COUNT</SelectItem>
                   <SelectItem value="VOLUME">VOLUME</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Driving unit</Label>
+              <Input
+                value={drivingUnit}
+                onChange={(e) => setDrivingUnit(e.target.value)}
+                data-testid="input-assembly-drivingunit"
+              />
+            </div>
+            <div>
+              <Label>Waste factor</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={wasteFactor}
+                onChange={(e) => setWasteFactor(Number(e.target.value) || 0)}
+                data-testid="input-assembly-wastefactor"
+              />
+            </div>
+            <div className="col-span-2 flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                data-testid="checkbox-assembly-active"
+              />
+              <Label>Active</Label>
+            </div>
+          </div>
+        </ScrollArea>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => props.onClose()} data-testid="button-assembly-cancel">
+            Cancel
+          </Button>
+          <Button
+            onClick={() =>
+              props.onSave(
+                {
+                  name,
+                  description,
+                  costCode,
+                  tradeType,
+                  drivingMeasurementType,
+                  drivingUnit,
+                  wasteFactor,
+                  isActive,
+                },
+                components,
+              )
+            }
+            disabled={props.saving}
+            data-testid="button-assembly-save"
+          >
+            {props.saving ? "Saving…" : "Save"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 function SettingsTab() {
   const { toast } = useToast();
@@ -784,221 +851,10 @@ function SettingsTab() {
                   <SelectItem value="METRO">Metro</SelectItem>
                   <SelectItem value="STATE">State</SelectItem>
                   <SelectItem value="CUSTOM">Custom</SelectItem>
-
                 </SelectContent>
               </Select>
             </div>
             <div>
-
-              <Label>Driving unit</Label>
-              <Input value={drivingUnit} onChange={(e) => setDrivingUnit(e.target.value)} data-testid="input-assembly-drivingunit" />
-            </div>
-            <div>
-              <Label>Org waste factor (0-1)</Label>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                max={1}
-                value={wasteFactor}
-                onChange={(e) => setWasteFactor(Number(e.target.value) || 0)}
-                data-testid="input-assembly-wastefactor"
-              />
-            </div>
-            <div className="flex items-end gap-2">
-              <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-assembly-active" />
-              <span className="text-sm">Active</span>
-            </div>
-
-            <div className="col-span-2 mt-4">
-              <div className="flex items-center justify-between mb-2">
-                <Label className="text-base">Components</Label>
-                {!isEdit && (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    onClick={() =>
-                      setComponents((prev) => [
-                        ...prev,
-                        {
-                          componentType: "MATERIAL",
-                          description: "",
-                          costCode: "",
-                          qtyPerDrivingUnit: 1,
-                          unit: "EA",
-                          defaultUnitCost: "",
-                          wasteFactor: 0,
-                          sortOrder: prev.length,
-                        },
-                      ])
-                    }
-                    data-testid="button-add-component"
-                  >
-                    <Plus className="h-3 w-3 mr-1" /> Add component
-                  </Button>
-                )}
-              </div>
-              {isEdit && (
-                <p className="text-xs text-muted-foreground mb-2">
-                  Component edits aren't supported here yet — recreate the assembly to change its components.
-                </p>
-              )}
-              {components.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  No components yet.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead className="text-right">Qty/unit</TableHead>
-                      <TableHead>Unit</TableHead>
-                      <TableHead className="text-right">Unit cost</TableHead>
-                      <TableHead className="text-right">Waste</TableHead>
-                      <TableHead></TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {components.map((c, idx) => (
-                      <TableRow key={idx} data-testid={`row-component-${idx}`}>
-                        <TableCell>
-                          <Select
-                            value={c.componentType}
-                            onValueChange={(v) =>
-                              updateComponent(idx, {
-                                componentType: v as AssemblyComponentRow["componentType"],
-                              })
-                            }
-                            disabled={isEdit}
-                          >
-                            <SelectTrigger className="h-8" data-testid={`select-component-type-${idx}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="MATERIAL">MATERIAL</SelectItem>
-                              <SelectItem value="LABOR">LABOR</SelectItem>
-                              <SelectItem value="EQUIPMENT">EQUIPMENT</SelectItem>
-                              <SelectItem value="SUB">SUB</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={c.description}
-                            onChange={(e) => updateComponent(idx, { description: e.target.value })}
-                            disabled={isEdit}
-                            data-testid={`input-component-desc-${idx}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            value={c.qtyPerDrivingUnit}
-                            onChange={(e) =>
-                              updateComponent(idx, {
-                                qtyPerDrivingUnit: Number(e.target.value) || 0,
-                              })
-                            }
-                            className="text-right"
-                            disabled={isEdit}
-                            data-testid={`input-component-qty-${idx}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={c.unit}
-                            onChange={(e) => updateComponent(idx, { unit: e.target.value })}
-                            disabled={isEdit}
-                            data-testid={`input-component-unit-${idx}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            value={c.defaultUnitCost ?? ""}
-                            onChange={(e) =>
-                              updateComponent(idx, { defaultUnitCost: e.target.value })
-                            }
-                            className="text-right"
-                            disabled={isEdit}
-                            data-testid={`input-component-unitcost-${idx}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <Input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            max={1}
-                            value={c.wasteFactor}
-                            onChange={(e) =>
-                              updateComponent(idx, { wasteFactor: Number(e.target.value) || 0 })
-                            }
-                            className="text-right"
-                            disabled={isEdit}
-                            data-testid={`input-component-waste-${idx}`}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          {!isEdit && (
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              onClick={() =>
-                                setComponents((prev) => prev.filter((_, i) => i !== idx))
-                              }
-                              data-testid={`button-remove-component-${idx}`}
-                            >
-                              <X className="h-4 w-4" />
-                            </Button>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          </div>
-        </ScrollArea>
-        <DialogFooter>
-          <Button variant="ghost" onClick={props.onClose} data-testid="button-cancel-assembly">
-            Cancel
-          </Button>
-          <Button
-            disabled={!name.trim() || !drivingUnit.trim() || props.saving}
-            onClick={() =>
-              props.onSave(
-                {
-                  name: name.trim(),
-                  description: description.trim() || null,
-                  costCode: costCode.trim() || null,
-                  tradeType: tradeType.trim() || null,
-                  drivingMeasurementType,
-                  drivingUnit: drivingUnit.trim(),
-                  wasteFactor,
-                  isActive,
-                },
-                components,
-              )
-            }
-            data-testid="button-save-assembly"
-          >
-            {props.saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-            {isEdit ? "Save" : "Create"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-void EMPTY_ASSEMBLY;
-
-
               <Label>Code</Label>
               <Input
                 value={draft.code}

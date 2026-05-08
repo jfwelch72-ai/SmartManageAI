@@ -297,10 +297,25 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   // `changeOrderId`. Defaults keep existing rows on BASE.
   scopeTag: text("scope_tag").notNull().default("BASE"),
   changeOrderId: varchar("change_order_id"),
+  // Task #2629 — Optimistic-concurrency stamp. Every PATCH bumps the
+  // version; clients must echo back the version they last saw so two
+  // estimators editing the same measurement get a 409 instead of a
+  // last-write-wins overwrite. Defaults to 1 for new rows.
+  version: integer("version").notNull().default(1),
+  // Task #2629 — Measurement → assembly / cost-line link. When set,
+  // edits to the measurement (qty, unitCost, label) feed an
+  // `ai_estimator_rate_samples` row so the org's learned-rate library
+  // grows with every drawn quantity. `lineItemRef` is a free-form
+  // string for callers that haven't migrated to the assemblies catalog
+  // yet (e.g. a SOV item code).
+  assemblyId: varchar("assembly_id"),
+  assemblyComponentId: varchar("assembly_component_id"),
+  lineItemRef: text("line_item_ref"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   sheetIdx: index("takeoff_measurements_sheet_idx").on(table.sheetId),
+  assemblyIdx: index("takeoff_measurements_assembly_idx").on(table.assemblyId),
   scopeTagIdx: index("takeoff_measurements_scope_tag_idx").on(table.scopeTag),
   changeOrderIdx: index("takeoff_measurements_change_order_idx").on(table.changeOrderId),
   categoryIdx: index("takeoff_measurements_category_idx").on(table.categoryId),

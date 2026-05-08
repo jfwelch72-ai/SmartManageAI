@@ -1364,7 +1364,13 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
     const { takeoffMeasurements, takeoffSheets, insertTakeoffMeasurementSchema } = await import("@shared/schema");
 
     const [existingMeasurement] = await db
-      .select({ sheetId: takeoffMeasurements.sheetId, type: takeoffMeasurements.type })
+      .select({
+        sheetId: takeoffMeasurements.sheetId,
+        type: takeoffMeasurements.type,
+        version: takeoffMeasurements.version,
+        unitCost: takeoffMeasurements.unitCost,
+        assemblyId: takeoffMeasurements.assemblyId,
+      })
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
@@ -1406,6 +1412,8 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
     // belong to the (out-of-scope) review-queue endpoint, not a free
     // edit. Strip them defensively here even though the client doesn't
     // send them, so a future curl-wielding caller can't bypass it.
+    // Task #2629 — `version` is server-controlled (CAS in the UPDATE
+    // below); strip any client-supplied value.
     const STRIPPED_PROVENANCE_KEYS = [
       "scaleAtCapturePxPerFoot",
       "scaleAtCaptureLabel",
@@ -1414,6 +1422,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       "reviewedById",
       "reviewedAt",
       "reviewNote",
+      "version",
     ] as const;
     for (const key of STRIPPED_PROVENANCE_KEYS) {
       delete (validated as Record<string, unknown>)[key];
@@ -1459,13 +1468,140 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       }
     }
 
+    // Task #2629 — Optimistic concurrency. Clients echo the version
+    // they last saw via `expectedVersion` (body) or `If-Match` header;
+    // if it doesn't match the row's current version we 409 with the
+    // server's row so the client can prompt the user to merge or
+    // reload. Backwards-compatible: callers that omit the version get
+    // the old last-write-wins behavior so legacy mobile/import paths
+    // keep working until they migrate.
+    const headerMatch = req.headers["if-match"];
+    const expectedVersionRaw =
+      (req.body && (req.body as Record<string, unknown>).expectedVersion) ??
+      (Array.isArray(headerMatch) ? headerMatch[0] : headerMatch);
+    let expectedVersion: number | null = null;
+    if (expectedVersionRaw !== undefined && expectedVersionRaw !== null && expectedVersionRaw !== "") {
+      const parsed = Number(expectedVersionRaw);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        res.status(400).json({ error: "expectedVersion must be a positive integer" });
+        return;
+      }
+      expectedVersion = parsed;
+    }
+
+    const updateConditions =
+      expectedVersion != null
+        ? and(eq(takeoffMeasurements.id, id), eq(takeoffMeasurements.version, expectedVersion))
+        : eq(takeoffMeasurements.id, id);
+
     const [updated] = await db
       .update(takeoffMeasurements)
-      .set({ ...finalValues, updatedAt: new Date() })
-      .where(eq(takeoffMeasurements.id, id))
+      .set({
+        ...finalValues,
+        updatedAt: new Date(),
+        version: sql`${takeoffMeasurements.version} + 1`,
+      })
+      .where(updateConditions)
       .returning();
 
+    if (!updated) {
+      // CAS failed — fetch current row so the client can render a
+      // conflict UI with the server's truth.
+      const [current] = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.id, id))
+        .limit(1);
+      res.status(409).json({
+        error: "Measurement was modified by another user",
+        reason: "version_conflict",
+        expectedVersion,
+        currentVersion: current?.version ?? null,
+        current: current ?? null,
+      });
+      return;
+    }
+
     await logUpdate(req.user!.id, "takeoff_measurement", id, { type: existingMeasurement.type }, { type: effectiveType, label: updated.label }, req);
+
+    // Task #2629 — Measurement → assembly / cost-line link feeds the
+    // org's learned-rate library. Gated to rate-relevant transitions
+    // only (assemblyId changed, or unitCost changed) so that label /
+    // style / group edits — and conflict-retry / overwrite flows that
+    // re-PATCH unchanged values — do NOT keep inserting duplicate
+    // samples for the same measurement and skew medians/percentiles.
+    // Org-quality filter (excluded projects/bids) is applied inside
+    // `recordMeasurementRateSample`. Failures here must NOT fail the
+    // user's edit, so we catch and log.
+    try {
+      const patch = finalValues as Record<string, unknown>;
+      const assemblyIdProvided = Object.prototype.hasOwnProperty.call(patch, "assemblyId");
+      const unitCostProvided = Object.prototype.hasOwnProperty.call(patch, "unitCost");
+      const effectiveAssemblyId = (assemblyIdProvided
+        ? (patch.assemblyId as string | null)
+        : existingMeasurement.assemblyId) ?? null;
+      const effectiveUnitCostRaw = unitCostProvided
+        ? (patch.unitCost as number | string | null)
+        : existingMeasurement.unitCost;
+      const effectiveUnitCost =
+        effectiveUnitCostRaw == null ? null : Number(effectiveUnitCostRaw);
+      const previousUnitCost =
+        existingMeasurement.unitCost == null ? null : Number(existingMeasurement.unitCost);
+      const previousAssemblyId = existingMeasurement.assemblyId ?? null;
+
+      const assemblyChanged = assemblyIdProvided && effectiveAssemblyId !== previousAssemblyId;
+      const unitCostChanged =
+        unitCostProvided && Number(previousUnitCost) !== Number(effectiveUnitCost);
+      const isRateRelevantChange = assemblyChanged || unitCostChanged;
+
+      if (
+        isRateRelevantChange &&
+        effectiveAssemblyId &&
+        effectiveUnitCost != null &&
+        Number.isFinite(effectiveUnitCost) &&
+        effectiveUnitCost > 0 &&
+        req.user!.organizationId
+      ) {
+        const [sheetCtx] = await db
+          .select({
+            bidId: takeoffSheets.bidId,
+            projectId: takeoffSheets.projectId,
+          })
+          .from(takeoffSheets)
+          .where(eq(takeoffSheets.id, existingMeasurement.sheetId))
+          .limit(1);
+        // Resolve unit + costCode from the linked assembly so the
+        // sample is keyed consistently with the rest of the library.
+        // Org-scoped to prevent cross-tenant assemblyId reference.
+        const { aiEstimatorAssemblies } = await import("@shared/schema");
+        const [assembly] = await db
+          .select({
+            costCode: aiEstimatorAssemblies.costCode,
+            drivingUnit: aiEstimatorAssemblies.drivingUnit,
+          })
+          .from(aiEstimatorAssemblies)
+          .where(
+            and(
+              eq(aiEstimatorAssemblies.id, effectiveAssemblyId),
+              eq(aiEstimatorAssemblies.organizationId, req.user!.organizationId),
+            ),
+          )
+          .limit(1);
+        if (assembly?.costCode && assembly?.drivingUnit) {
+          const { recordMeasurementRateSample } = await import("./services/aiEstimator/learnedRates");
+          await recordMeasurementRateSample(req.user!.organizationId, {
+            measurementId: id,
+            costCode: assembly.costCode,
+            unit: assembly.drivingUnit,
+            unitCost: effectiveUnitCost,
+            projectId: sheetCtx?.projectId ?? null,
+            bidId: sheetCtx?.bidId ?? null,
+          });
+        }
+      }
+    } catch (rateErr) {
+      logError("[takeoff] measurement→rate-sample ingest failed", { measurementId: id }, rateErr instanceof Error ? rateErr : new Error(String(rateErr)));
+    }
 
     res.json(updated);
   } catch (error) {

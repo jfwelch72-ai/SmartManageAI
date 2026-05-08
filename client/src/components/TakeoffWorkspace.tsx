@@ -5973,6 +5973,71 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           onSelectSheet={setSelectedSheet}
         />
       )}
+      {/* Task #2629 — Optimistic-concurrency conflict resolution.
+          Surfaces when PATCH /api/takeoff/measurements/:id returns
+          409 because the row's `version` advanced while we were
+          editing. The dialog shows the user's pending edit alongside
+          the server's current row and lets them either keep the
+          teammate's change (cache was already refreshed in onError)
+          or overwrite it (re-PATCHes with `forceOverwrite`). */}
+      {data.measurementConflict && (
+        <Dialog open onOpenChange={(o) => !o && data.dismissMeasurementConflict()}>
+          <DialogContent className="max-w-lg" data-testid="dialog-measurement-conflict">
+            <DialogHeader>
+              <DialogTitle>Edit conflict</DialogTitle>
+              <DialogDescription>
+                Another teammate edited this measurement while you
+                were working on it. Pick whose version to keep.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <div className="font-semibold mb-1">Their version (saved)</div>
+                <pre
+                  className="bg-muted/40 rounded p-2 overflow-auto max-h-48"
+                  data-testid="text-conflict-server"
+                >
+{JSON.stringify(data.measurementConflict.serverRow ?? {}, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <div className="font-semibold mb-1">Your edit (pending)</div>
+                <pre
+                  className="bg-muted/40 rounded p-2 overflow-auto max-h-48"
+                  data-testid="text-conflict-pending"
+                >
+{JSON.stringify(data.measurementConflict.pendingEdit ?? {}, null, 2)}
+                </pre>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => data.dismissMeasurementConflict()}
+                data-testid="button-conflict-keep-theirs"
+              >
+                Keep theirs
+              </Button>
+              <Button
+                onClick={() => {
+                  const c = data.measurementConflict;
+                  if (!c) return;
+                  data.updateMeasurementMutation.mutate({
+                    id: c.measurementId,
+                    ...(c.pendingEdit as Record<string, unknown>),
+                    forceOverwrite: true,
+                    skipHistory: true,
+                  } as Parameters<typeof data.updateMeasurementMutation.mutate>[0]);
+                  data.dismissMeasurementConflict();
+                }}
+                data-testid="button-conflict-overwrite"
+              >
+                Overwrite
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
     </TakeoffWorkspaceProvider>
   );

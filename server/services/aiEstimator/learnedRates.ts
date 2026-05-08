@@ -320,6 +320,44 @@ export async function recordRateSample(
 }
 
 /**
+ * Task #2629 — Record a learned-rate sample for a takeoff measurement
+ * that's been linked to an assembly / cost-line. The org-quality
+ * filter (excluded projects/bids) is shared with the rest of the
+ * learned-rate engine via `recordRateSample` → `getExcludedIds`, so
+ * samples from low-quality bids never poison the library.
+ *
+ * Returns `null` when the input lacks the required (costCode, metric,
+ * unit, value) shape, otherwise the upserted learned-rate row. The
+ * caller is expected to swallow `null` silently — measurement edits
+ * must not fail because the rate-sample insert was a no-op.
+ */
+export async function recordMeasurementRateSample(
+  organizationId: string,
+  input: {
+    measurementId: string;
+    costCode: string | null | undefined;
+    unit: string | null | undefined;
+    unitCost: number | null | undefined;
+    projectId?: string | null;
+    bidId?: string | null;
+  },
+): Promise<AiEstimatorLearnedRate | null> {
+  if (!input.costCode || !input.unit) return null;
+  if (input.unitCost == null || !Number.isFinite(input.unitCost)) return null;
+  if (input.unitCost <= 0) return null;
+  return recordRateSample(organizationId, {
+    costCode: input.costCode,
+    metric: "unit_cost",
+    unit: input.unit,
+    value: input.unitCost,
+    sourceType: "estimate_line_item",
+    sourceRowId: input.measurementId,
+    projectId: input.projectId ?? null,
+    bidId: input.bidId ?? null,
+  });
+}
+
+/**
  * Task #2396 — Batched implementation. The previous implementation
  * looped per-update, calling `recordRateSample` which issues a SELECT,
  * an UPDATE/INSERT and an INSERT against `ai_estimator_rate_samples` for
