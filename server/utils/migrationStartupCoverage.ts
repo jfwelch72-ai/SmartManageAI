@@ -438,4 +438,12 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureEquipmentRepairsPmIdempotency",
     note: "Task #2690 — FK + partial unique index for PM-cycle idempotency, plus a one-shot backfill of historical [PM:<id>] tagged rows.",
   },
+  // Task #2693 — Mobile Sync Conflict Resolution Hardening.
+  // Adds `mobile_sync_events` table (per-push-op structured event log with
+  // strategy/outcome/conflictPayload) and a `logical_clock` column on
+  // `offline_sync_queue` for Lamport timestamps from mobile devices.
+  "0108_mobile_sync_events.sql": {
+    helper: "ensureMobileSyncEventsTable",
+    note: "Task #2693 — mobile_sync_events table + logical_clock on offline_sync_queue.",
+  },
 };

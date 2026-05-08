@@ -1,4 +1,4 @@
-import { getDb } from "./db";
+import { getDb, getMeta, setMeta } from "./db";
 import type { OutboxRecord, SyncEntityType, SyncOperation } from "./types";
 
 function uuid(): string {
@@ -6,6 +6,18 @@ function uuid(): string {
   const r = (n: number) =>
     [...Array(n)].map(() => Math.floor(Math.random() * 16).toString(16)).join("");
   return `${r(8)}-${r(4)}-4${r(3)}-${"89ab"[Math.floor(Math.random() * 4)]}${r(3)}-${r(12)}`;
+}
+
+// Task #2693: Lamport logical clock helper. Reads the current counter from
+// sync_meta, increments it, persists it, and returns the new value. This
+// gives every mutation a device-local ordering number that survives process
+// restarts. The server uses it to break wall-clock ties on mobile_sync_events.
+const LOGICAL_CLOCK_KEY = "logicalClock";
+async function nextLogicalClock(): Promise<number> {
+  const current = await getMeta(LOGICAL_CLOCK_KEY);
+  const next = (current ? parseInt(current, 10) : 0) + 1;
+  await setMeta(LOGICAL_CLOCK_KEY, String(next));
+  return next;
 }
 
 export async function enqueue(input: {
@@ -16,6 +28,7 @@ export async function enqueue(input: {
   attachments?: OutboxRecord["attachments"];
 }): Promise<OutboxRecord> {
   const db = await getDb();
+  const logicalClock = await nextLogicalClock();
   const rec: OutboxRecord = {
     localId: uuid(),
     entityType: input.entityType,
@@ -24,12 +37,13 @@ export async function enqueue(input: {
     payload: input.payload,
     attachments: input.attachments,
     clientTimestamp: new Date().toISOString(),
+    logicalClock,
     status: "PENDING",
     retryCount: 0,
   };
   await db.runAsync(
-    `INSERT INTO outbox(local_id, entity_type, operation, server_id, payload, attachments, client_timestamp, status, retry_count)
-     VALUES(?,?,?,?,?,?,?,?,0)`,
+    `INSERT INTO outbox(local_id, entity_type, operation, server_id, payload, attachments, client_timestamp, status, retry_count, logical_clock)
+     VALUES(?,?,?,?,?,?,?,?,0,?)`,
     [
       rec.localId,
       rec.entityType,
@@ -39,6 +53,7 @@ export async function enqueue(input: {
       rec.attachments ? JSON.stringify(rec.attachments) : null,
       rec.clientTimestamp,
       rec.status,
+      logicalClock,
     ]
   );
   return rec;
@@ -153,6 +168,7 @@ function rowToRecord(r: any): OutboxRecord {
     payload: JSON.parse(r.payload),
     attachments: r.attachments ? JSON.parse(r.attachments) : undefined,
     clientTimestamp: r.client_timestamp,
+    logicalClock: r.logical_clock ?? undefined,
     status: r.status,
     retryCount: r.retry_count,
     lastError: r.last_error,

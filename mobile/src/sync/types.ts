@@ -47,6 +47,10 @@ export interface OutboxRecord {
     size?: number;
   }>;
   clientTimestamp: string;
+  // Task #2693: Lamport logical clock — incremented per mutation on the device,
+  // persisted in sync_meta. The server records it on mobile_sync_events but
+  // uses it only to break wall-clock ties, not as the sole ordering criterion.
+  logicalClock?: number;
   status: "PENDING" | "SYNCING" | "SYNCED" | "FAILED" | "CONFLICT";
   retryCount: number;
   lastError?: string | null;

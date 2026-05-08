@@ -28,7 +28,8 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       status TEXT NOT NULL DEFAULT 'PENDING',
       retry_count INTEGER NOT NULL DEFAULT 0,
       last_error TEXT,
-      conflict_server_updated_at TEXT
+      conflict_server_updated_at TEXT,
+      logical_clock INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS outbox_status_idx ON outbox(status);
@@ -38,6 +39,23 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       value TEXT NOT NULL
     );
   `);
+
+  // Task #2693: Add logical_clock column to pre-existing outbox tables
+  // (devices that installed before this release won't have the column from
+  // CREATE TABLE above since IF NOT EXISTS skips the DDL). SQLite does not
+  // support "ADD COLUMN IF NOT EXISTS" — catch only the "duplicate column"
+  // error; re-throw anything else (disk full, corrupt DB, etc.).
+  try {
+    await _db.execAsync("ALTER TABLE outbox ADD COLUMN logical_clock INTEGER");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // SQLite error code 1 (SQLITE_ERROR) with "duplicate column name" is the
+    // only expected failure on an already-migrated database.
+    if (!msg.toLowerCase().includes("duplicate column")) {
+      throw err;
+    }
+  }
+
   return _db;
 }
 

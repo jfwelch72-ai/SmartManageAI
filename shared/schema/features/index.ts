@@ -73,6 +73,7 @@ export * from "./messaging";
 export * from "./misc";
 export * from "./support";
 export * from "./mobile";
+export * from "./mobileSync";
 export * from "./org_catalog";
 export * from "./performance";
 export * from "./portal";

@@ -100,7 +100,11 @@ export const offlineSyncQueue = pgTable("offline_sync_queue", {
   // Metadata
   deviceId: text("device_id"),
   clientTimestamp: timestamp("client_timestamp"),
-  
+  // Task #2693: Lamport logical clock from the mobile device. Added to the DB
+  // via migration 0108 / ensureMobileSyncEventsTable; column kept here so the
+  // Drizzle type matches the live schema and avoids insert/select drift.
+  logicalClock: integer("logical_clock"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

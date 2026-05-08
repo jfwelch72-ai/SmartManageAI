@@ -220,6 +220,7 @@ export async function push(): Promise<{ pushed: number; conflicts: number }> {
       localId: rec.localId,
       id: rec.serverId ?? undefined,
       clientTimestamp: rec.clientTimestamp,
+      logicalClock: rec.logicalClock,
       attachments,
       ...rec.payload,
     });

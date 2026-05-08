@@ -154,6 +154,7 @@ import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
 import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
 import { ensureEquipmentRepairsPmIdempotency } from "./ensureEquipmentRepairsPmIdempotency";
+import { ensureMobileSyncEventsTable } from "./ensureMobileSyncEventsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -538,6 +539,8 @@ const migrations: MigrationStep[] = [
   // promote-to-final-key, and that consumers gate on as the "valid
   // package exists" predicate.
   { name: "closeout_packages_atomic_columns", category: "ADD_COLUMN", fn: ensureCloseoutPackagesAtomicColumns },
+  // Task #2693 — mobile_sync_events table + logical_clock on offline_sync_queue
+  { name: "mobile_sync_events_table", category: "CREATE_TABLE", fn: ensureMobileSyncEventsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
