@@ -1599,12 +1599,58 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
         .from(takeoffMeasurements)
         .where(eq(takeoffMeasurements.id, id))
         .limit(1);
+
+      // Task #2652 — Look up the teammate who last edited this row so
+      // the client conflict dialog can name them ("Jane Doe just
+      // edited this") instead of the generic "another teammate".
+      // Pulled from the most-recent UPDATE row in `audit_log` for the
+      // measurement; we only need the actor's first/last name. Failure
+      // here must NOT fail the conflict response — the dialog just
+      // falls back to "another teammate".
+      let lastEditor: { id: string; firstName: string | null; lastName: string | null; editedAt: string } | null = null;
+      try {
+        const { auditLog } = await import("@shared/schema");
+        const [row] = await db
+          .select({
+            userId: auditLog.userId,
+            createdAt: auditLog.createdAt,
+            firstName: users.firstName,
+            lastName: users.lastName,
+          })
+          .from(auditLog)
+          .leftJoin(users, eq(users.id, auditLog.userId))
+          .where(
+            and(
+              eq(auditLog.entityType, "takeoff_measurement"),
+              eq(auditLog.entityId, id),
+              eq(auditLog.action, "UPDATE"),
+            ),
+          )
+          .orderBy(desc(auditLog.createdAt))
+          .limit(1);
+        if (row) {
+          lastEditor = {
+            id: row.userId,
+            firstName: row.firstName ?? null,
+            lastName: row.lastName ?? null,
+            editedAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+          };
+        }
+      } catch (err) {
+        logError(
+          "Failed to look up last editor for measurement conflict",
+          { measurementId: id },
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+
       res.status(409).json({
         error: "Measurement was modified by another user",
         reason: "version_conflict",
         expectedVersion,
         currentVersion: current?.version ?? null,
         current: current ?? null,
+        lastEditor,
       });
       return;
     }

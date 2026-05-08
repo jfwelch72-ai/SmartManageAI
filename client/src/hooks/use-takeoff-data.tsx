@@ -591,6 +591,10 @@ export function useTakeoffData({
     pendingEdit: Record<string, unknown>;
     serverRow: TakeoffMeasurement | null;
     currentVersion: number | null;
+    // Task #2652 — Teammate who last edited the row (looked up
+    // server-side from the most recent UPDATE audit_log entry). Null
+    // when the audit lookup failed or no prior UPDATE exists yet.
+    lastEditor: { id: string; firstName: string | null; lastName: string | null; editedAt: string } | null;
   } | null>(null);
   const dismissMeasurementConflict = useCallback(() => setMeasurementConflict(null), []);
 
@@ -714,7 +718,7 @@ export function useTakeoffData({
       // overwriting their teammate's change.
       const errMsg = error instanceof Error ? error.message : String(error ?? "");
       const errStatus = (error as { status?: number } | null)?.status;
-      const errData = (error as { data?: { reason?: string; current?: TakeoffMeasurement; currentVersion?: number } } | null)?.data;
+      const errData = (error as { data?: { reason?: string; current?: TakeoffMeasurement; currentVersion?: number; lastEditor?: { id: string; firstName: string | null; lastName: string | null; editedAt: string } | null } } | null)?.data;
       if (errStatus === 409 || errData?.reason === "version_conflict" || /\b409\b|version_conflict/.test(errMsg)) {
         if (selectedSheet) {
           queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
@@ -722,6 +726,8 @@ export function useTakeoffData({
         // Task #2629 — Capture the conflict so the workspace can show
         // a side-by-side resolution dialog ("keep theirs" vs
         // "overwrite") instead of just a destructive toast.
+        // Task #2652 — Pass through the server-supplied `lastEditor`
+        // so the dialog can name the teammate who saved over the row.
         const { id, skipHistory: _skip, previous: _prev, ...pendingEdit } = variables ?? ({} as Record<string, unknown>);
         if (id) {
           setMeasurementConflict({
@@ -729,6 +735,7 @@ export function useTakeoffData({
             pendingEdit: pendingEdit as Record<string, unknown>,
             serverRow: errData?.current ?? null,
             currentVersion: typeof errData?.currentVersion === "number" ? errData.currentVersion : null,
+            lastEditor: errData?.lastEditor ?? null,
           });
         }
         toast({
