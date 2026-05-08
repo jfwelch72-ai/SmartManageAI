@@ -1,0 +1,85 @@
+Based on the documentation, here's a precise breakdown of why this is a silent, compounding risk that gets more expensive the longer it goes unaddressed.
+What the doc says
+A single line in the Gotchas section:
+Migration Filename Collisions: Historical collisions were renumbered (0085-0093).
+That's it. Nine migrations had to be manually renumbered at some point in the project's history. The documentation acknowledges it happened, offers no explanation of how, and describes no prevention mechanism.
+What migration filename collisions actually are
+Drizzle ORM — like most migration frameworks — applies migrations in filename order. The convention is a numeric prefix: 0001_create_users.sql, 0002_add_email_index.sql, and so on. The framework tracks which migrations have been applied in a metadata table and runs any unapplied ones in sequence.
+A collision happens when two migrations are created with the same numeric prefix — typically when two developers create a migration on separate branches simultaneously:
+Branch A: 0094_add_inventory_locations.sql
+Branch B: 0094_add_equipment_pm_fields.sql
+Both branches pass CI. Both get merged. Now the migrations table has two files claiming to be migration 0094, and the framework has to decide what to do — which is usually: behave unpredictably, skip one, or fail entirely depending on how Drizzle handles the conflict.
+Why the historical renumbering is a red flag
+Renumbering 0085-0093 means nine consecutive migrations collided or were otherwise in conflict. That's not a one-off accident — that's a systematic gap in the development workflow that affected an entire range of migrations across what was likely a significant period of development.
+The fact that it required renumbering rather than just reordering suggests the conflicts were discovered after the migrations had already been applied to at least one environment. Renumbering applied migrations is dangerous because:
+•	The migration metadata table records applied migrations by filename
+•	Renaming a file the database thinks it has already applied makes it look unapplied
+•	Applying it again on a database that already has the schema changes causes errors or silent data corruption
+•	Every environment — development, staging, production — has to be reconciled individually
+Nine migrations renumbered means nine migrations worth of potential environment drift, manual reconciliation, and risk of double-application.
+What prevention mechanisms exist — and don't
+The documentation mentions one relevant CI script: scripts/check-db-imports.mjs, wired into scripts/ci.sh. This checks database import patterns for RLS compliance. It does not check migration filenames.
+There is no mention of:
+•	A CI check that detects duplicate migration prefixes
+•	A migration generation script that automatically assigns the next available number
+•	A branch protection rule that blocks merging when migration conflicts exist
+•	A reconciliation script that detects drift between migration files and the applied migrations table
+•	Any process documentation for how to handle migration conflicts when they're discovered
+The only safeguard described is the one that already failed — human coordination between developers working on separate branches.
+How collisions happen in practice
+The parallel branch problem. Two developers start feature branches on the same day. Both run npm run db:push or the equivalent Drizzle migration generation command. Both get assigned the next sequential number — which is the same number, because both branched from the same base. Neither developer knows the other is creating a migration. Both PRs pass CI. Whichever merges second creates the collision.
+The rebase problem. Developer A creates migration 0094 and merges. Developer B created migration 0094 on their branch before A merged. B rebases onto main, but doesn't realize their migration now conflicts with A's. The rebase succeeds because the files have different names — 0094_add_inventory_locations.sql vs 0094_add_equipment_pm_fields.sql — so git doesn't flag it as a conflict. B merges without noticing.
+The squash merge problem. If PRs are squash-merged, the history that would have shown when each migration was created is lost. The collision only becomes visible when someone looks at the migrations directory and notices two files with the same prefix — which might not happen until npm run db:push is run on a fresh environment.
+The long-lived branch problem. A feature branch that lives for weeks accumulates multiple migrations. By the time it merges, the numeric space it assumed is partially or fully occupied by migrations from other branches that merged in the interim. Renumbering is then required — but renumbering migrations that have already been applied to development databases is painful.
+The specific risk given this codebase
+SmartManageAI is a complex platform with many active feature areas simultaneously:
+•	Inventory management
+•	Equipment PM engine
+•	Project closeout
+•	Billing and subscriptions
+•	Tenant RLS
+•	AI estimator assemblies
+•	Messaging bus
+•	Support tickets
+Each of these is a distinct domain with its own schema changes. The architecture explicitly encourages domain-specific development. That means multiple developers are likely creating migrations concurrently across these domains — which is exactly the conditions under which collisions happen most frequently.
+The historical collision range (0085-0093) suggests this isn't a hypothetical. It already happened at scale.
+What a collision costs when it's caught late
+In development: Annoying. Rename one file, update any references, move on.
+In staging: More painful. The migrations metadata table in staging may need to be manually updated. The schema may need to be inspected to determine which migration was actually applied and which needs to be re-run.
+In production: Potentially severe. If a collision reaches production, the options are:
+•	Take the database offline to manually reconcile the migration state
+•	Apply the missed migration manually with careful validation that it's safe to run on a live schema
+•	Roll back — which may not be possible if data has already been written against the new schema
+For a SaaS platform with multiple tenants, any of these options carries downtime risk and per-tenant reconciliation complexity.
+What the reconcileSchemaDrift function suggests
+The documentation mentions:
+The legacy drizzle/ directory was removed; its content superseded and auto-applied by reconcileSchemaDrift.
+The existence of a reconcileSchemaDrift function implies schema drift has been a real operational problem — not just a theoretical one. A platform that needed to build a reconciliation tool has already experienced the pain of schema state getting out of sync with migration files. Migration collisions are one of the primary causes of exactly that kind of drift.
+What should be done
+Immediately — add a CI collision check. A script that detects duplicate migration prefixes is trivial to write and eliminates the most common collision case entirely:
+# scripts/check-migration-collisions.sh
+duplicates=$(ls shared/schema/migrations/ | grep -oP '^\d+' | sort | uniq -d)
+if [ -n "$duplicates" ]; then
+  echo "Duplicate migration prefixes detected: $duplicates"
+  exit 1
+fi
+Wire this into scripts/ci.sh alongside the existing checks. A PR with a colliding migration prefix fails CI immediately, before any human review is needed.
+Add a migration generation script. Replace ad-hoc migration creation with a script that:
+1.	Reads the current highest prefix in the migrations directory
+2.	Increments it
+3.	Creates the new file with the correct prefix
+This doesn't eliminate race conditions between parallel branches, but it makes the correct behavior the path of least resistance.
+Add a merge-time check. GitHub Actions or the equivalent CI can run the collision check specifically on the diff between the PR branch and main — catching cases where a prefix that didn't exist when the branch was created has since been taken by another merged PR.
+# .github/workflows/ci.yml
+- name: Check migration filename collisions
+  run: bash scripts/check-migration-collisions.sh
+Document the collision resolution process. When a collision is detected, developers need a clear playbook:
+•	Which migration takes the higher number
+•	How to update the metadata table if a migration was already applied under the wrong name
+•	How to communicate to other developers that they need to rebase
+Without a documented process, every collision becomes an improvised incident.
+Audit the current state. Given that 0085-0093 were already renumbered, verify that all environments — development, staging, production — have consistent migration state today. reconcileSchemaDrift may have handled this, but it's worth confirming explicitly given the history.
+The core problem
+Migration filename collisions are a solved problem. Every mature migration workflow either uses timestamps instead of sequential numbers, uses a centralized number assignment script, or enforces uniqueness in CI. SmartManageAI uses sequential numbers, has no assignment script, and has no CI check — and has already experienced a nine-migration collision event that required manual renumbering.
+The fix is a twenty-line bash script wired into an existing CI pipeline. The cost of not having it is another renumbering event — except the next one might happen after those migrations have been applied to a production database with paying customers on it.
+
