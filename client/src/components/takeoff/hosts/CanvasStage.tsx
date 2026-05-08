@@ -1,4 +1,4 @@
-import { Fragment, memo, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, memo, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import {
@@ -366,6 +366,20 @@ function CanvasStageImpl(props: CanvasStageProps) {
     toolToMarkupType,
     collab,
   } = props;
+
+  // Visible world-coordinate rectangle — used for viewport culling so
+  // measurements that are completely off-screen are skipped during render.
+  // A generous 400 px padding prevents "pop-in" at the edges and accounts
+  // for label overflow beyond the measurement geometry itself.
+  const viewportRect = useMemo(() => {
+    const pad = 400;
+    return {
+      left: (-stagePosition.x / stageScale) - pad,
+      top: (-stagePosition.y / stageScale) - pad,
+      right: (-stagePosition.x + stageDimensions.width) / stageScale + pad,
+      bottom: (-stagePosition.y + stageDimensions.height) / stageScale + pad,
+    };
+  }, [stagePosition.x, stagePosition.y, stageScale, stageDimensions.width, stageDimensions.height]);
 
   return (
     // Wrap in a <div style="display:contents"> instead of a bare Fragment so
@@ -817,6 +831,22 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       points = [pos];
                     }
                   }
+                  // Viewport culling — skip shapes that are entirely off-screen.
+                  // This is the single biggest render-performance win for large
+                  // plans with many measurements (only visible subset is drawn).
+                  if (Array.isArray(points) && points.length > 0) {
+                    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                    for (const p of points) {
+                      if (p.x < minX) minX = p.x;
+                      if (p.y < minY) minY = p.y;
+                      if (p.x > maxX) maxX = p.x;
+                      if (p.y > maxY) maxY = p.y;
+                    }
+                    if (maxX < viewportRect.left || minX > viewportRect.right ||
+                        maxY < viewportRect.top  || minY > viewportRect.bottom) {
+                      return null;
+                    }
+                  }
                   const isSelected = selectedMeasurementId === m.id;
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
@@ -877,8 +907,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         const flatPoints = arcPoints.flatMap(p => [p.x, p.y]);
                         return mLineStyle === "double" ? (
                           <Fragment key={m.id}>
-                            <Line points={offsetLinePoints(flatPoints, 2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
-                            <Line points={offsetLinePoints(flatPoints, -2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                            <Line points={offsetLinePoints(flatPoints, 2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} perfectDrawEnabled={false} shadowEnabled={false} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                            <Line points={offsetLinePoints(flatPoints, -2)} stroke={baseColor} strokeWidth={effectiveWidth} opacity={isSelected ? 1 : 0.8} perfectDrawEnabled={false} shadowEnabled={false} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
                           </Fragment>
                         ) : (
                           <Line
@@ -888,6 +918,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             strokeWidth={effectiveWidth}
                             dash={dashArray.length > 0 ? dashArray : undefined}
                             opacity={isSelected ? 1 : 0.8}
+                            perfectDrawEnabled={false}
+                            shadowEnabled={false}
                             onClick={handleMeasurementClick}
                             onTap={handleMeasurementClick}
                           />
@@ -896,8 +928,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     }
                     return mLineStyle === "double" ? (
                       <Fragment key={m.id}>
-                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], 2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
-                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], -2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], 2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} perfectDrawEnabled={false} shadowEnabled={false} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
+                        <Line points={offsetLinePoints([points[0].x, points[0].y, points[1].x, points[1].y], -2)} stroke={baseColor} strokeWidth={effectiveWidth} hitStrokeWidth={isMobile ? 20 : 0} opacity={isSelected ? 1 : 0.8} perfectDrawEnabled={false} shadowEnabled={false} onClick={handleMeasurementClick} onTap={handleMeasurementClick} />
                       </Fragment>
                     ) : (
                       <Line
@@ -908,6 +940,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         dash={dashArray.length > 0 ? dashArray : undefined}
                         hitStrokeWidth={isMobile ? 20 : 0}
                         opacity={isSelected ? 1 : 0.8}
+                        perfectDrawEnabled={false}
+                        shadowEnabled={false}
                         onClick={handleMeasurementClick}
                         onTap={handleMeasurementClick}
                       />
@@ -931,6 +965,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                           fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                           opacity={isSelected ? 1 : 0.8}
                           closed={true}
+                          perfectDrawEnabled={false}
+                          shadowEnabled={false}
                           onClick={handleMeasurementClick}
                           onTap={handleMeasurementClick}
                         />
@@ -944,6 +980,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             fill="rgba(239,68,68,0.15)"
                             closed={true}
                             listening={false}
+                            perfectDrawEnabled={false}
+                            shadowEnabled={false}
                           />
                         ))}
                       </Fragment>
@@ -967,6 +1005,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                           fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
                           opacity={isSelected ? 1 : 0.8}
                           closed={true}
+                          perfectDrawEnabled={false}
+                          shadowEnabled={false}
                           onClick={handleMeasurementClick}
                           onTap={handleMeasurementClick}
                         />
@@ -980,6 +1020,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             fill="rgba(239,68,68,0.15)"
                             closed={true}
                             listening={false}
+                            perfectDrawEnabled={false}
+                            shadowEnabled={false}
                           />
                         ))}
                       </Fragment>
@@ -1034,9 +1076,11 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             stroke={isSelected ? "#fbbf24" : "white"}
                             strokeWidth={isSelected ? 3 : 2}
                             opacity={isSelected ? 1 : 0.85}
+                            shadowEnabled={isSelected}
                             shadowColor="rgba(139,92,246,0.4)"
-                            shadowBlur={isSelected ? 8 : 4}
+                            shadowBlur={8}
                             shadowOffsetY={2}
+                            perfectDrawEnabled={false}
                           />
                           <Text
                             x={0}
@@ -1060,10 +1104,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             cornerRadius={6}
                             stroke={isSelected ? "#fbbf24" : "rgba(255,255,255,0.3)"}
                             strokeWidth={isSelected ? 2 : 1}
+                            shadowEnabled={isSelected}
                             shadowColor="rgba(0,0,0,0.2)"
                             shadowBlur={4}
                             shadowOffsetY={2}
                             opacity={isSelected ? 1 : 0.9}
+                            perfectDrawEnabled={false}
                           />
                           <Text
                             x={28}
@@ -1208,6 +1254,11 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   if (hideAiMeasurements && m.source === "AI") return null;
                   const center = getMeasurementCenter(m);
                   if (!center) return null;
+                  // Viewport culling for labels — skip off-screen label groups.
+                  if (center.x < viewportRect.left || center.x > viewportRect.right ||
+                      center.y < viewportRect.top  || center.y > viewportRect.bottom) {
+                    return null;
+                  }
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
                   const baseColor = catColor || (

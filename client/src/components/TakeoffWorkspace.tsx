@@ -3126,6 +3126,105 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     });
   }, [measurements, pdfImage]);
 
+  // Recalibrate AI measurements that were imported with pdfImage (low-res bitmap)
+  // dimensions instead of pageDims (canvas world-coordinate) dimensions. This
+  // corrects the "cluster at top-left" artifact that occurs when the tile renderer
+  // is active because pdfImage.width << pageDims.width. Runs once per measurement
+  // ID (tracked in recalibratedAiIdsRef) so it does not fight with user drags.
+  const recalibratedAiIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!measurements.length || !pageDims?.width || !pageDims?.height) return;
+    if (!pdfImage?.width || !pdfImage?.height) return;
+    const scaleRatio = pageDims.width / pdfImage.width;
+    // Only run when there is a meaningful mismatch (tile renderer path enlarges
+    // the world-coordinate space relative to the low-res placeholder bitmap).
+    if (scaleRatio < 1.5) return;
+
+    const imgW = pageDims.width;
+    const imgH = pageDims.height;
+    const allAiCount = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
+
+    const toFix = measurements.filter(m => {
+      if (m.source !== "AI") return false;
+      if (recalibratedAiIdsRef.current.has(m.id)) return false;
+      const pts = parseMeasurementPoints(m);
+      if (pts.length === 0) return false; // handled by the empty-points backfill above
+
+      // COUNT badge: computeAiPosition(idx, pdfImage.width) puts x ≈ pdfImage.width +
+      // small offset, which is much less than pageDims.width. Threshold: 3× the
+      // low-res width to give headroom for a few columns.
+      if (m.type === "COUNT" && pts.length === 1) {
+        return pts[0].x < pdfImage.width * 3;
+      }
+
+      // AREA / LINEAR imported from a bounding box: if stored max-x is within the
+      // low-res bitmap range the coordinates are at the wrong scale.
+      if (m.type === "AREA" || m.type === "LINEAR") {
+        let meta: Record<string, unknown> = {};
+        try { meta = typeof m.metadata === "string" ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+        if (!meta.boundingBox) return false;
+        const maxX = Math.max(...pts.map((p: { x: number }) => p.x));
+        return maxX < (pdfImage.width as number) * 1.1;
+      }
+      return false;
+    });
+
+    if (toFix.length === 0) return;
+
+    // Build the full set of patches before touching recalibratedAiIdsRef so
+    // we can roll back cleanly on per-item failure.
+    const patches: Array<{ id: string; points: string }> = [];
+    for (const m of toFix) {
+      let newPoints: Array<{ x: number; y: number }>;
+      if (m.type === "COUNT") {
+        const aiIdx = allAiCount.findIndex(mm => mm.id === m.id);
+        newPoints = [computeAiPosition(Math.max(0, aiIdx), imgW)];
+      } else {
+        let meta: Record<string, unknown> = {};
+        try { meta = typeof m.metadata === "string" ? JSON.parse(m.metadata) : (m.metadata || {}); } catch {}
+        const bbox = meta.boundingBox as { x: number; y: number; w: number; h: number };
+        const x1 = (bbox.x / 100) * imgW;
+        const y1 = (bbox.y / 100) * imgH;
+        const x2 = x1 + (bbox.w / 100) * imgW;
+        const y2 = y1 + (bbox.h / 100) * imgH;
+        if (m.type === "LINEAR") {
+          const isWide = (x2 - x1) >= (y2 - y1);
+          if (isWide) {
+            const midY = (y1 + y2) / 2;
+            newPoints = [{ x: x1, y: midY }, { x: x2, y: midY }];
+          } else {
+            const midX = (x1 + x2) / 2;
+            newPoints = [{ x: midX, y: y1 }, { x: midX, y: y2 }];
+          }
+        } else {
+          newPoints = [
+            { x: x1, y: y1 }, { x: x2, y: y1 },
+            { x: x2, y: y2 }, { x: x1, y: y2 },
+          ];
+        }
+      }
+      patches.push({ id: m.id, points: JSON.stringify(newPoints) });
+    }
+
+    // Mark all IDs before firing so concurrent renders don't re-enqueue them.
+    patches.forEach(p => recalibratedAiIdsRef.current.add(p.id));
+
+    // Fire all PATCHes in parallel — bypassing updateMeasurementMutation so
+    // we get exactly ONE cache invalidation at the end instead of N
+    // (updateMeasurementMutation.onSuccess calls invalidateQueries per-item,
+    // causing N sequential measurement fetches for a single calibration pass).
+    Promise.all(
+      patches.map(({ id, points }) =>
+        apiRequest("PATCH", `/api/takeoff/measurements/${id}`, { points })
+          .catch(() => { recalibratedAiIdsRef.current.delete(id); })
+      )
+    ).then(() => {
+      if (selectedSheet) {
+        queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      }
+    });
+  }, [measurements, pageDims, pdfImage, selectedSheet]);
+
   const getMeasurementBounds = (m: any): { minX: number; minY: number; maxX: number; maxY: number } | null => {
     const pts = parseMeasurementPoints(m);
     if (pts.length === 0) return null;
