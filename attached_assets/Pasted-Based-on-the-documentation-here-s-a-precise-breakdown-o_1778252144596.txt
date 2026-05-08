@@ -1,0 +1,167 @@
+Based on the documentation, here's a precise breakdown of why tag-based idempotency is a fragile guarantee for a system that generates real work orders.
+
+## What the doc says
+
+The relevant passage from the architecture section:
+
+> Equipment PM engine `server/equipmentPmEngine.ts` walks active `equipment_maintenance_schedules` and idempotently inserts PENDING `equipment_repairs` tagged `[PM:<scheduleId>]`; triggered via `POST /api/equipment/maintenance/generate-work-orders`.
+
+One sentence. The entire idempotency mechanism is a string tag embedded in a work order record. That tag is the only thing standing between correct behavior and duplicate work orders flooding the system.
+
+## What idempotency means here and why it matters
+
+The PM engine is a scheduled job that walks every active maintenance schedule and generates work orders for due maintenance. Without idempotency, running the job twice — whether from a retry, a double-trigger, a deployment overlap, or a manual re-run — would create duplicate work orders for the same maintenance event.
+
+Duplicate PM work orders in a construction context are not just data noise. They represent:
+
+- **Real labor cost.** A mechanic dispatched to service a piece of equipment that was already serviced is paid for wasted time
+- **Inventory consumption.** PM work orders trigger parts requests. Duplicates could cause double-ordering of consumables, filters, fluids
+- **Compliance records.** Equipment maintenance records feed safety and regulatory compliance tracking. Duplicate records corrupt the audit trail
+- **Scheduling confusion.** Field supervisors seeing two work orders for the same equipment on the same schedule may not realize they're duplicates — or may realize it only after dispatching crews
+
+The idempotency guarantee is load-bearing. It's what makes it safe to run the PM engine on a schedule, retry it on failure, or trigger it manually without fear of data corruption.
+
+## How the tag-based mechanism works
+
+Based on the documentation, the idempotency check almost certainly works like this:
+
+```typescript
+// Before inserting a new work order, check if one already exists
+const existing = await db
+  .select()
+  .from(equipment_repairs)
+  .where(
+    and(
+      eq(equipment_repairs.scheduleId, schedule.id),
+      like(equipment_repairs.notes, `[PM:${schedule.id}]%`),
+      eq(equipment_repairs.status, 'PENDING')
+    )
+  );
+
+if (existing.length === 0) {
+  await db.insert(equipment_repairs).values({
+    // ... work order fields
+    notes: `[PM:${schedule.id}] ${generatedDescription}`,
+    status: 'PENDING',
+  });
+}
+```
+
+The tag `[PM:<scheduleId>]` is embedded in a text field — almost certainly `notes` or a similar free-text column. The existence check looks for a PENDING record containing that tag before deciding whether to insert.
+
+This is functional under ideal conditions. It breaks under a specific set of real conditions.
+
+## The schedule ID change scenario
+
+The documentation explicitly flags this:
+
+> If a schedule ID changes or a record is renamed, duplicate work orders could be created silently.
+
+Schedule IDs in a relational database are typically auto-generated integers or UUIDs assigned at creation. They shouldn't change — but several real scenarios cause functional ID changes:
+
+**Deletion and recreation.** A maintenance schedule is deleted and recreated — perhaps because the interval changed significantly, the equipment was reassigned, or the schedule was misconfigured. The new schedule gets a new ID. Any existing PENDING work orders tagged with the old ID are now orphaned — they have no corresponding schedule. When the PM engine runs for the new schedule, it finds no existing PENDING work order with the new tag and creates a fresh one. The mechanic now has two open work orders for the same equipment: one orphaned from the deleted schedule, one from the new schedule.
+
+**Migration or data import.** If equipment maintenance schedules are imported from another system, a legacy platform, or a previous tenant migration, the IDs assigned during import may differ from what was previously in the system. Any work orders that existed pre-migration with the old IDs are now untagged from their schedules.
+
+**Schedule archiving and reactivation.** If a schedule is archived — perhaps during a winter shutdown when equipment isn't in use — and then reactivated, depending on how archiving is implemented, the record may be soft-deleted and recreated with a new ID rather than simply toggling an active flag.
+
+**Bulk updates.** An admin operation that bulk-updates schedules — changing the PM interval for all equipment of a certain type — might delete and reinsert records rather than updating them in place, depending on the ORM operation used.
+
+In every case, the result is the same: the idempotency check fails silently, a duplicate work order is created, and nothing in the system flags it as a duplicate.
+
+## The tag mutation scenario
+
+The tag is embedded in a free-text field. Free-text fields are editable. Several things can change the tag content:
+
+**Manual editing.** A supervisor with edit access to work order notes cleans up what looks like system-generated cruft — removes the `[PM:42]` prefix because it looks like noise in the notes field. The idempotency check now can't find the existing work order. Next PM engine run creates a duplicate.
+
+**Application updates.** If the tag format changes — say from `[PM:42]` to `[PM-42]` or `[scheduled:42]` — existing work orders tagged in the old format won't match the new check pattern. Every existing PENDING work order becomes invisible to the idempotency check.
+
+**Notes field truncation.** If the notes field has a length limit and the generated description is long, truncation could corrupt the tag. A tag stored as `[PM:1234` (truncated before the closing bracket) won't match the pattern `[PM:1234]`.
+
+**Encoding issues.** Special characters in notes fields can cause encoding drift — a tag that looks like `[PM:42]` in the application may be stored with different bracket characters depending on input handling, making string matching unreliable.
+
+## The PENDING status dependency
+
+The idempotency check almost certainly filters on `status = 'PENDING'`. This is logical — if a work order has been completed, you want the PM engine to generate a new one for the next cycle. But it creates a timing vulnerability:
+
+**Scenario:** The PM engine runs and generates work order #1 for schedule 42, tagged `[PM:42]`, status PENDING. A technician opens the work order and immediately marks it IN_PROGRESS — perhaps their workflow requires this before they can log parts. The PM engine runs again within the same cycle (a retry, a double-trigger, or a misconfigured cron interval). It checks for PENDING work orders tagged `[PM:42]`. Finds none — the existing one is IN_PROGRESS, not PENDING. Creates work order #2, also tagged `[PM:42]`, status PENDING.
+
+Now there are two open work orders for the same maintenance event. One IN_PROGRESS, one PENDING. The system has no way to know they're duplicates because the idempotency check was bypassed by a status transition.
+
+The correct idempotency check should filter on `status NOT IN ('COMPLETED', 'CANCELLED')` — treating IN_PROGRESS and PENDING as both representing an existing active work order for that schedule cycle.
+
+## The schedule cycle boundary problem
+
+The documentation doesn't describe how the PM engine determines which schedules are "due" in a given run. Presumably it compares the last completed maintenance date against the schedule interval. But there's a boundary condition:
+
+If a schedule is due on day X and the PM engine runs twice on day X — once at midnight and once at noon, perhaps because of a retry or a manual trigger — both runs may conclude the schedule is due (because no PENDING work order existed at midnight, and the one created at midnight is now IN_PROGRESS or was completed within hours). The second run creates a duplicate.
+
+This is a time-window race condition, not a code bug. It's inherent to any idempotency mechanism that relies on checking for existing records rather than using a database-level uniqueness constraint.
+
+## The missing database-level guarantee
+
+The fundamental issue with tag-based idempotency is that it's implemented in application code, not enforced by the database. Application-level checks have race conditions:
+
+```
+Time 0: PM engine instance A checks for existing PENDING work order → none found
+Time 1: PM engine instance B checks for existing PENDING work order → none found  
+Time 2: Instance A inserts work order tagged [PM:42]
+Time 3: Instance B inserts work order tagged [PM:42]
+```
+
+Both instances checked before either inserted. Both found nothing. Both inserted. The result is two work orders tagged `[PM:42]`. The application-level check provided no protection against concurrent execution.
+
+In a multi-pod deployment — which SmartManageAI supports via its cross-replica messaging bus and pod architecture — the PM engine could run on multiple pods simultaneously. Tag-based application-level idempotency provides no protection in this case.
+
+The correct mechanism is a **database-level unique constraint**:
+
+```sql
+ALTER TABLE equipment_repairs 
+ADD CONSTRAINT uq_pm_schedule_cycle 
+UNIQUE (schedule_id, cycle_date);
+```
+
+A unique constraint makes duplicate insertion a database error rather than a silent success, regardless of concurrent execution, race conditions, or tag mutations.
+
+## What a duplicate work order cascade looks like
+
+The downstream effects of a duplicate PM work order aren't contained:
+
+**Inventory impact.** If work orders automatically generate parts requests — which is implied by the inventory management integration described in the architecture — a duplicate work order generates a duplicate parts request. The inventory system issues twice the parts, debiting stock levels twice. The next cycle count will show a variance that looks like shrinkage or theft.
+
+**Cost tracking.** Labor and parts costs are burden-tracked via average unit cost on issue-to-project transactions. Duplicate work orders double the cost burden for a single maintenance event, corrupting project profitability reports.
+
+**Compliance records.** If PM completion is tracked for regulatory compliance — OSHA equipment inspection requirements, for example — duplicate records create ambiguity about actual inspection frequency. An audit showing two inspection records per cycle might raise questions rather than demonstrate compliance.
+
+**Technician confusion.** A technician completing one work order may not close the duplicate. The duplicate sits PENDING indefinitely, appearing in dashboards as overdue maintenance. Eventually someone investigates, can't find evidence the work wasn't done, and dispatches a technician to re-inspect equipment that was properly maintained.
+
+## What should be done
+
+**Add a database-level unique constraint immediately.** This is the only mechanism that provides a true idempotency guarantee regardless of application-level race conditions:
+
+```sql
+-- A schedule can only have one active work order per cycle
+ALTER TABLE equipment_repairs
+ADD CONSTRAINT uq_pm_active_per_schedule
+UNIQUE (schedule_id, cycle_start_date)
+WHERE status NOT IN ('COMPLETED', 'CANCELLED');
+```
+
+This is a partial unique index — it only enforces uniqueness for active work orders, allowing multiple completed records per schedule across different cycles.
+
+**Move the schedule ID to a proper foreign key column.** The schedule ID should be stored in a dedicated `schedule_id` foreign key column on `equipment_repairs`, not embedded in a text tag. This makes the idempotency check a proper indexed column lookup rather than a string pattern match, and enables the unique constraint above.
+
+**Fix the status filter in the idempotency check.** Change any existing application-level check from `status = 'PENDING'` to `status NOT IN ('COMPLETED', 'CANCELLED')` to cover the IN_PROGRESS transition race condition.
+
+**Add a duplicate detection query to the PM engine output.** When `generate-work-orders` runs, it should return a summary: how many schedules were checked, how many work orders were created, how many were skipped as already existing. A run that creates zero work orders when dozens were expected is a signal — either all schedules have active work orders (correct) or the idempotency check is suppressing legitimate generation (a bug).
+
+**Add a deduplication audit job.** A separate job that periodically scans for duplicate active work orders — same equipment, same schedule, overlapping date ranges — and flags them for review. This catches any duplicates that slipped through before the constraint was added, and provides an ongoing safety net.
+
+**Document the schedule lifecycle clearly.** Define explicitly what happens to associated work orders when a schedule is archived, deleted, or modified. The idempotency mechanism depends on schedule ID stability — any operation that changes a schedule ID should automatically handle orphaned work orders.
+
+## The core problem
+
+Tag-based idempotency is a pattern that works well for simple, low-stakes operations where occasional duplicates are tolerable and easy to detect. It is the wrong pattern for a system that generates work orders representing real labor dispatch, parts consumption, cost tracking, and regulatory compliance records.
+
+The PM engine needs idempotency that's enforced by the database, operates on structured columns rather than text patterns, and survives concurrent execution across multiple pods. What it has instead is a string embedded in a notes field — correct under ideal conditions, silent and wrong under the real conditions that production systems routinely encounter.
