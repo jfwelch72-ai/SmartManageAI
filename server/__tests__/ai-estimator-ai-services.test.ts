@@ -12,8 +12,67 @@
 // downstream behaviour without threading governance fixtures.
 
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { sql } from "drizzle-orm";
+import { sql, and, eq, inArray } from "drizzle-orm";
 import bcrypt from "bcrypt";
+import express, {
+  type Express,
+  type Request,
+  type Response,
+  type NextFunction,
+} from "express";
+import request from "supertest";
+
+// Task #2618 — AuthRequest user shape used by the route gate. Holds the
+// per-test caller's identity so the supertest harness can simulate
+// different orgs / roles without standing up the real auth stack.
+type TestUser = {
+  id: string;
+  organizationId: string | null;
+  role: string;
+  effectiveRole?: string;
+} | null;
+let currentUser: TestUser = null;
+
+vi.mock("../auth", () => ({
+  requireAuth: (
+    req: Request & { user?: TestUser },
+    res: Response,
+    next: NextFunction,
+  ) => {
+    if (!currentUser) {
+      res.status(401).json({ error: "Authentication required" });
+      return;
+    }
+    req.user = currentUser;
+    next();
+  },
+  requireFeaturePermission:
+    () =>
+    (req: Request & { user?: TestUser }, _res: Response, next: NextFunction) => {
+      req.user = currentUser ?? undefined;
+      next();
+    },
+  getEffectivePermissions: vi.fn(async () => ({
+    canManageAiEstimator: true,
+  })),
+}));
+
+vi.mock("../rateLimiter", () => {
+  const passthrough = (
+    _req: Request,
+    _res: Response,
+    next: NextFunction,
+  ) => next();
+  return {
+    authLimiter: passthrough,
+    sensitiveLimiter: passthrough,
+    apiLimiter: passthrough,
+    exportLimiter: passthrough,
+    uploadLimiter: passthrough,
+    aiLimiter: passthrough,
+    feedbackLimiter: passthrough,
+  };
+});
 
 vi.mock("../ai/openaiClient", () => ({
   AI_MODEL_GPT5: "gpt-5",
@@ -60,6 +119,9 @@ import {
   projects,
   planDocuments,
   takeoffSheets,
+  takeoffMeasurements,
+  aiEstimatorUserAccess,
+  auditLog,
 } from "@shared/schema";
 import { openai } from "../ai/openaiClient";
 import { recordRateSample } from "../services/aiEstimator/learnedRates";
@@ -77,16 +139,27 @@ interface Ctx {
   userA: string;
   bidA: string;
   bidB: string;
+  bidNoSheets: string;
   projectA: string;
   planDocA: string;
+  sheetA0Id: string;
+  sheetA1Id: string;
+  sheetA2Id: string;
+  sheetA3Id: string;
+  sheetA1Number: string;
+  sheetA2Name: string;
 }
 let ctx: Ctx;
+let app: Express;
 
 async function cleanup(): Promise<void> {
   await db.execute(sql`DELETE FROM ai_estimator_chat_messages WHERE session_id IN (SELECT id FROM ai_estimator_chat_sessions WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"}))`).catch(() => {});
   await db.execute(sql`DELETE FROM ai_estimator_chat_sessions WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
   await db.execute(sql`DELETE FROM ai_estimator_learned_rates WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
-  await db.execute(sql`DELETE FROM takeoff_sheets WHERE sheet_name LIKE ${PREFIX + "%"}`).catch(() => {});
+  await db.execute(sql`DELETE FROM ai_estimator_user_access WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
+  await db.execute(sql`DELETE FROM audit_log WHERE entity_type = 'takeoff_measurement' AND entity_id IN (SELECT id FROM takeoff_measurements WHERE sheet_id IN (SELECT id FROM takeoff_sheets WHERE sheet_name LIKE ${PREFIX + "%"} OR sheet_number LIKE ${PREFIX + "%"}))`).catch(() => {});
+  await db.execute(sql`DELETE FROM takeoff_measurements WHERE sheet_id IN (SELECT id FROM takeoff_sheets WHERE sheet_name LIKE ${PREFIX + "%"} OR sheet_number LIKE ${PREFIX + "%"})`).catch(() => {});
+  await db.execute(sql`DELETE FROM takeoff_sheets WHERE sheet_name LIKE ${PREFIX + "%"} OR sheet_number LIKE ${PREFIX + "%"}`).catch(() => {});
   await db.execute(sql`DELETE FROM plan_documents WHERE file_name LIKE ${PREFIX + "%"}`).catch(() => {});
   await db.execute(sql`DELETE FROM bids WHERE code LIKE ${PREFIX + "%"}`).catch(() => {});
   await db.execute(sql`DELETE FROM projects WHERE code LIKE ${PREFIX + "%"}`).catch(() => {});
@@ -118,11 +191,12 @@ beforeAll(async () => {
       isActive: true,
     })
     .returning();
-  const [bidA, bidB] = await db
+  const [bidA, bidB, bidNoSheets] = await db
     .insert(bids)
     .values([
       { name: "AI Bid A", code: `${PREFIX}BA-${stamp}`, clientName: "Client", gcOrganizationId: orgA.id },
       { name: "AI Bid B", code: `${PREFIX}BB-${stamp}`, clientName: "Client", gcOrganizationId: orgB.id },
+      { name: "AI Bid No Sheets", code: `${PREFIX}BN-${stamp}`, clientName: "Client", gcOrganizationId: orgA.id },
     ])
     .returning();
   const [projectA] = await db
@@ -148,15 +222,56 @@ beforeAll(async () => {
       uploadedById: userA.id,
     })
     .returning();
-  await db
+  // Sheet A0 — the existing fixture (lowest sheetIndex → fallback target).
+  // Sheet A1 — has a sheetNumber to exercise sheet_number citation matching.
+  // Sheet A2 — distinct sheetName to exercise sheet_name citation matching.
+  // Sheet A3 — neither matches a citation; must NOT receive the fallback.
+  const sheetA1Number = `${PREFIX}G-001-${stamp}`;
+  const sheetA2Name = `${PREFIX}sheet-a2-name-${stamp}`;
+  const insertedSheets = await db
     .insert(takeoffSheets)
-    .values({
-      bidId: bidA.id,
-      projectId: projectA.id,
-      imageUrl: "https://example.com/sheet-a.png",
-      sheetIndex: 0,
-      sheetName: `${PREFIX}sheet-a-${stamp}`,
-    });
+    .values([
+      {
+        bidId: bidA.id,
+        projectId: projectA.id,
+        imageUrl: "https://example.com/sheet-a0.png",
+        sheetIndex: 0,
+        sheetName: `${PREFIX}sheet-a0-${stamp}`,
+      },
+      {
+        bidId: bidA.id,
+        projectId: projectA.id,
+        imageUrl: "https://example.com/sheet-a1.png",
+        sheetIndex: 1,
+        sheetNumber: sheetA1Number,
+        sheetName: `${PREFIX}sheet-a1-${stamp}`,
+      },
+      {
+        bidId: bidA.id,
+        projectId: projectA.id,
+        imageUrl: "https://example.com/sheet-a2.png",
+        sheetIndex: 2,
+        sheetName: sheetA2Name,
+      },
+      {
+        bidId: bidA.id,
+        projectId: projectA.id,
+        imageUrl: "https://example.com/sheet-a3.png",
+        sheetIndex: 3,
+        sheetName: `${PREFIX}sheet-a3-${stamp}`,
+      },
+    ])
+    .returning({ id: takeoffSheets.id, sheetIndex: takeoffSheets.sheetIndex });
+  const byIndex = new Map(insertedSheets.map((s) => [s.sheetIndex, s.id]));
+
+  await db.insert(aiEstimatorUserAccess).values({
+    organizationId: orgA.id,
+    userId: userA.id,
+    enabled: true,
+    canTrain: true,
+    enabledAt: new Date(),
+    enabledByUserId: userA.id,
+  });
 
   ctx = {
     orgA: orgA.id,
@@ -164,9 +279,30 @@ beforeAll(async () => {
     userA: userA.id,
     bidA: bidA.id,
     bidB: bidB.id,
+    bidNoSheets: bidNoSheets.id,
     projectA: projectA.id,
     planDocA: planDocA.id,
+    sheetA0Id: byIndex.get(0)!,
+    sheetA1Id: byIndex.get(1)!,
+    sheetA2Id: byIndex.get(2)!,
+    sheetA3Id: byIndex.get(3)!,
+    sheetA1Number,
+    sheetA2Name,
   };
+
+  // Mount the AI Estimator router on a bare Express app so we can hit
+  // POST /ai-estimator/draft/map-reduce/apply via supertest. The auth
+  // and rate-limiter modules are mocked above so the route runs as the
+  // `currentUser` set per-test.
+  const { default: aiEstimatorRouter } = await import("../aiEstimatorRoutes");
+  app = express();
+  app.use(express.json());
+  app.use(aiEstimatorRouter);
+  app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+    if (!res.headersSent) {
+      res.status(500).json({ error: (err as Error)?.message ?? "error" });
+    }
+  });
 }, 60_000);
 
 afterAll(async () => {
@@ -482,5 +618,244 @@ describe("indexPlanSheetsForBid — prompt-injection guard", () => {
     const userContent = JSON.stringify(userMsg.content);
     expect(userContent).toContain("UNTRUSTED_DOCUMENT");
     expect(userContent).toContain("Sheet G-001 cover sheet for the project.");
+  });
+});
+
+// =====================================================================
+// Task #2618 — POST /ai-estimator/draft/map-reduce/apply
+// Asserts citation-to-sheetId mapping, fallback behaviour, tenant
+// isolation via assertBidInOrg, the empty-sheets guard, and the per-row
+// shape (source / status / needsReview + computed* / count column for
+// each measurement type) plus an audit_log CREATE row per insert.
+// =====================================================================
+describe("POST /ai-estimator/draft/map-reduce/apply — sheet routing + tenant isolation", () => {
+  const APPLY_URL = "/ai-estimator/draft/map-reduce/apply";
+
+  beforeAll(async () => {
+    currentUser = {
+      id: ctx.userA,
+      organizationId: ctx.orgA,
+      role: "ESTIMATOR",
+      effectiveRole: "ESTIMATOR",
+    };
+    // Earlier `indexPlanSheetsForBid` tests mutate sheetNumber on the
+    // bidA fixture. Reset to a known-good shape for the apply tests so
+    // citation-matching assertions are deterministic regardless of test
+    // execution order.
+    await db
+      .delete(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.sheetId, [
+        ctx.sheetA0Id,
+        ctx.sheetA1Id,
+        ctx.sheetA2Id,
+        ctx.sheetA3Id,
+      ]));
+    await db.delete(takeoffSheets).where(eq(takeoffSheets.bidId, ctx.bidA));
+    const reinserted = await db
+      .insert(takeoffSheets)
+      .values([
+        {
+          bidId: ctx.bidA,
+          projectId: ctx.projectA,
+          imageUrl: "https://example.com/sheet-a0-apply.png",
+          sheetIndex: 0,
+          sheetName: `${PREFIX}apply-sheet-a0`,
+        },
+        {
+          bidId: ctx.bidA,
+          projectId: ctx.projectA,
+          imageUrl: "https://example.com/sheet-a1-apply.png",
+          sheetIndex: 1,
+          sheetNumber: ctx.sheetA1Number,
+          sheetName: `${PREFIX}apply-sheet-a1`,
+        },
+        {
+          bidId: ctx.bidA,
+          projectId: ctx.projectA,
+          imageUrl: "https://example.com/sheet-a2-apply.png",
+          sheetIndex: 2,
+          sheetName: ctx.sheetA2Name,
+        },
+        {
+          bidId: ctx.bidA,
+          projectId: ctx.projectA,
+          imageUrl: "https://example.com/sheet-a3-apply.png",
+          sheetIndex: 3,
+          sheetName: `${PREFIX}apply-sheet-a3`,
+        },
+      ])
+      .returning({ id: takeoffSheets.id, sheetIndex: takeoffSheets.sheetIndex });
+    const byIndex = new Map(reinserted.map((s) => [s.sheetIndex, s.id]));
+    ctx.sheetA0Id = byIndex.get(0)!;
+    ctx.sheetA1Id = byIndex.get(1)!;
+    ctx.sheetA2Id = byIndex.get(2)!;
+    ctx.sheetA3Id = byIndex.get(3)!;
+  });
+
+  it("routes a sheetNumber citation to the matching sheetId", async () => {
+    const res = await request(app)
+      .post(APPLY_URL)
+      .send({
+        bidId: ctx.bidA,
+        measurements: [
+          {
+            label: `${PREFIX}lbl-num`,
+            type: "LINEAR",
+            value: 42.5,
+            unit: "LF",
+            sheetCitations: [ctx.sheetA1Number],
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(1);
+    const [row] = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, res.body.insertedIds[0]));
+    expect(row.sheetId).toBe(ctx.sheetA1Id);
+    expect(row.source).toBe("AI");
+    expect(row.status).toBe("DRAFT");
+    expect(row.needsReview).toBe(true);
+    expect(row.computedLengthFt).toBeCloseTo(42.5, 6);
+    expect(row.computedAreaFt2).toBeNull();
+    expect(row.computedVolumeCy).toBeNull();
+    expect(row.count).toBeNull();
+
+    const auditRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, "takeoff_measurement"),
+          eq(auditLog.entityId, res.body.insertedIds[0]),
+        ),
+      );
+    expect(auditRows.length).toBe(1);
+    expect(auditRows[0].action).toBe("CREATE");
+    expect(auditRows[0].userId).toBe(ctx.userA);
+  });
+
+  it("routes a sheetName citation to the matching sheetId and populates computedAreaFt2 for AREA", async () => {
+    const res = await request(app)
+      .post(APPLY_URL)
+      .send({
+        bidId: ctx.bidA,
+        measurements: [
+          {
+            label: `${PREFIX}lbl-name`,
+            type: "AREA",
+            value: 1200,
+            unit: "SF",
+            sheetCitations: [ctx.sheetA2Name],
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(1);
+    const [row] = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, res.body.insertedIds[0]));
+    expect(row.sheetId).toBe(ctx.sheetA2Id);
+    expect(row.computedAreaFt2).toBeCloseTo(1200, 6);
+    expect(row.computedLengthFt).toBeNull();
+    expect(row.computedVolumeCy).toBeNull();
+    expect(row.count).toBeNull();
+  });
+
+  it("falls back to the lowest-index sheet when no citation matches, and populates the right column for COUNT and VOLUME", async () => {
+    const res = await request(app)
+      .post(APPLY_URL)
+      .send({
+        bidId: ctx.bidA,
+        measurements: [
+          {
+            label: `${PREFIX}lbl-count`,
+            type: "COUNT",
+            value: 7,
+            unit: "EA",
+            sheetCitations: ["does-not-match-any-sheet"],
+          },
+          {
+            label: `${PREFIX}lbl-volume`,
+            type: "VOLUME",
+            value: 33,
+            unit: "CY",
+            sheetCitations: [],
+          },
+        ],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.inserted).toBe(2);
+
+    const rows = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.id, res.body.insertedIds as string[]));
+    for (const r of rows) {
+      expect(r.sheetId).toBe(ctx.sheetA0Id); // lowest sheetIndex
+      expect(r.source).toBe("AI");
+      expect(r.status).toBe("DRAFT");
+      expect(r.needsReview).toBe(true);
+    }
+    const countRow = rows.find((r) => r.type === "COUNT")!;
+    expect(countRow.count).toBeCloseTo(7, 6);
+    expect(countRow.computedLengthFt).toBeNull();
+    expect(countRow.computedAreaFt2).toBeNull();
+    expect(countRow.computedVolumeCy).toBeNull();
+    const volumeRow = rows.find((r) => r.type === "VOLUME")!;
+    expect(volumeRow.computedVolumeCy).toBeCloseTo(33, 6);
+    expect(volumeRow.count).toBeNull();
+    expect(volumeRow.computedAreaFt2).toBeNull();
+    expect(volumeRow.computedLengthFt).toBeNull();
+  });
+
+  it("returns 404 when the bid belongs to a different org (tenant isolation via assertBidInOrg)", async () => {
+    const beforeRows = await db
+      .select({ id: takeoffMeasurements.id })
+      .from(takeoffMeasurements);
+    const beforeCount = beforeRows.length;
+
+    const res = await request(app)
+      .post(APPLY_URL)
+      .send({
+        bidId: ctx.bidB, // owned by orgB; caller is in orgA
+        measurements: [
+          {
+            label: `${PREFIX}cross-tenant`,
+            type: "LINEAR",
+            value: 1,
+            unit: "LF",
+            sheetCitations: [],
+          },
+        ],
+      });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/bid not found/i);
+
+    const afterRows = await db
+      .select({ id: takeoffMeasurements.id })
+      .from(takeoffMeasurements);
+    expect(afterRows.length).toBe(beforeCount);
+  });
+
+  it("returns 400 when the bid has no takeoff sheets to attach measurements to", async () => {
+    const res = await request(app)
+      .post(APPLY_URL)
+      .send({
+        bidId: ctx.bidNoSheets,
+        measurements: [
+          {
+            label: `${PREFIX}empty-sheets`,
+            type: "AREA",
+            value: 10,
+            unit: "SF",
+            sheetCitations: [],
+          },
+        ],
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no takeoff sheets/i);
   });
 });
