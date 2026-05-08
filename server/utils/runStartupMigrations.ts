@@ -44,6 +44,7 @@ import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
 import { ensureTakeoffStylusTelemetryEventsTable } from "./ensureTakeoffStylusTelemetryEventsTable";
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
+import { ensureCloseoutPackagesAtomicColumns } from "./ensureCloseoutPackagesAtomicColumns";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
@@ -526,6 +527,11 @@ const migrations: MigrationStep[] = [
   // that share a workflow context, used by bulk operations such as
   // applying a calibrated scale to every member of a set.
   { name: "takeoff_sheet_sets_tables", category: "CREATE_TABLE", fn: ensureTakeoffSheetSetsTables },
+  // Task #2689 — GCS-first atomic closeout export. Adds the checksum +
+  // completed_at columns the export route stamps after a verified
+  // promote-to-final-key, and that consumers gate on as the "valid
+  // package exists" predicate.
+  { name: "closeout_packages_atomic_columns", category: "ADD_COLUMN", fn: ensureCloseoutPackagesAtomicColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

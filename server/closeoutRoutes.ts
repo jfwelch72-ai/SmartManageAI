@@ -27,7 +27,9 @@ import { logError } from "./utils/logger";
 import archiver from "archiver";
 import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
-import { objectStorageClient } from "./objectStorage";
+import { createHash } from "crypto";
+import { objectStorageClient, ObjectStorageService } from "./objectStorage";
+import { getCorrelationId } from "./middleware/correlationId";
 
 const router = Router();
 
@@ -722,128 +724,283 @@ router.post(
 
       const filename = `closeout_${project.code}_${new Date().toISOString().slice(0, 10)}.zip`;
 
-      // Stream ZIP to client; also collect to buffer for storage if PRIVATE_OBJECT_DIR is set.
-      res.setHeader("Content-Type", "application/zip");
-      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-
-      const archive = archiver("zip", { zlib: { level: 6 } });
-      const captureStream = new PassThrough();
-      const captureChunks: Buffer[] = [];
-      captureStream.on("data", (c: Buffer) => captureChunks.push(c));
-
-      archive.on("warning", (err) => logError("closeout zip warning", {}, err));
-      archive.on("error", (err) => {
-        logError("closeout zip error", {}, err);
-        if (!res.headersSent) res.status(500).json({ error: "ZIP generation failed" });
-      });
-
-      archive.pipe(res);
-      archive.pipe(captureStream);
-
-      // 1) Add TOC PDF
-      const toc = await generateTocPdf({ name: project.name, code: project.code }, items);
-      archive.append(toc, { name: "00_Table_Of_Contents.pdf" });
-
-      // 2) Group items into category folders, append attachments and sources.
-      const byCat = new Map<string, CloseoutItem[]>();
-      for (const it of items) {
-        const arr = byCat.get(it.category) ?? [];
-        arr.push(it);
-        byCat.set(it.category, arr);
+      const privateDir = process.env.PRIVATE_OBJECT_DIR;
+      if (!privateDir) {
+        return res.status(500).json({ error: "PRIVATE_OBJECT_DIR not configured" });
       }
 
-      let fileCount = 1;
-      const orderedCats = Object.keys(CATEGORY_LABEL).filter((k) => byCat.has(k));
-      let secIdx = 1;
-      for (const cat of orderedCats) {
-        const folder = `${String(secIdx).padStart(2, "0")}_${safeFilename(CATEGORY_LABEL[cat] ?? cat)}`;
-        const list = byCat.get(cat)!;
-        for (const it of list) {
-          // Always include a small README per item describing status, notes and references.
-          const lines: string[] = [];
-          lines.push(`Title: ${it.title}`);
-          lines.push(`Status: ${it.status}`);
-          if (it.description) lines.push(`Description: ${it.description}`);
-          if (it.notes) lines.push(`Notes: ${it.notes}`);
-          if (it.dueDate) lines.push(`Due: ${new Date(it.dueDate).toLocaleDateString()}`);
-          if (it.sources?.length) {
-            lines.push("");
-            lines.push("Linked references:");
-            for (const s of it.sources) {
-              lines.push(`  - [${s.type}] ${s.label}${s.url ? ` (${s.url})` : ""}`);
-            }
-          }
-          const itemFolder = `${folder}/${safeFilename(it.title)}`;
-          archive.append(lines.join("\n"), { name: `${itemFolder}/README.txt` });
-          fileCount += 1;
-
-          // Attached files (manual uploads).
-          for (const att of (it.attachments ?? [])) {
-            const buf = await downloadObjectByUrl(att.url, exportOrgId);
-            if (buf) {
-              archive.append(buf, { name: `${itemFolder}/${safeFilename(att.filename || "file")}` });
-              fileCount += 1;
-            }
-          }
-          // Source URLs (auto-pulled artifacts).
-          for (const src of (it.sources ?? [])) {
-            if (!src.url) continue;
-            const buf = await downloadObjectByUrl(src.url, exportOrgId);
-            if (buf) {
-              const fn = safeFilename(src.label || `${src.type}.bin`);
-              archive.append(buf, { name: `${itemFolder}/${fn}` });
-              fileCount += 1;
-            }
-          }
-        }
-        secIdx += 1;
-      }
-
-      // Insert a placeholder package row immediately; finalize when stream completes.
+      // ── 1) Pre-insert BUILDING placeholder row ──────────────────────────
       const [pkg] = await db.insert(closeoutPackages).values({
         checklistId: checklist.id,
         projectId: project.id,
         status: "BUILDING",
         filename,
         itemCount: items.length,
-        fileCount,
+        fileCount: 0,
         generatedById: req.user!.id,
       }).returning();
 
-      archive.on("end", async () => {
-        try {
-          const buffer = Buffer.concat(captureChunks);
-          const fileSize = buffer.length;
-          let storageKey: string | null = null;
-          const privateDir = process.env.PRIVATE_OBJECT_DIR;
-          if (privateDir) {
-            const orgId = req.user!.organizationId!;
-            const fullPath = `${privateDir}/${orgId}/closeout/${pkg.id}-${filename}`;
-            const slashIdx = fullPath.indexOf("/");
-            const bucketName = fullPath.substring(0, slashIdx);
-            const objectName = fullPath.substring(slashIdx + 1);
-            const file = objectStorageClient.bucket(bucketName).file(objectName);
-            await file.save(buffer, { contentType: "application/zip" });
-            storageKey = fullPath;
-          }
-          await db.update(closeoutPackages).set({
-            status: "READY",
-            storageKey,
-            fileSize,
-            fileCount,
-          }).where(eq(closeoutPackages.id, pkg.id));
-        } catch (err) {
-          logError("closeout: failed to persist generated zip", { pkgId: pkg.id }, err instanceof Error ? err : new Error(String(err)));
-          await db.update(closeoutPackages).set({ status: "FAILED", errorMessage: err instanceof Error ? err.message : String(err) }).where(eq(closeoutPackages.id, pkg.id));
+      const correlationId = getCorrelationId();
+      await logAudit({
+        userId: req.user!.id,
+        action: "CREATE",
+        entityType: "closeoutPackage",
+        entityId: pkg.id,
+        newValue: JSON.stringify({ filename, itemCount: items.length, status: "BUILDING", correlationId }),
+      }, req);
+
+      try {
+        // ── 2) Build the ZIP entirely into a buffer ───────────────────────
+        const { buffer, fileCount } = await buildCloseoutZipBuffer({
+          project: { name: project.name, code: project.code },
+          items,
+          orgId: exportOrgId,
+        });
+
+        // ── 3) Verify locally before any GCS write ─────────────────────────
+        if (!hasZipEndOfCentralDirectory(buffer)) {
+          throw new Error("ZIP integrity check failed (missing central directory)");
         }
-      });
+        const fileSize = buffer.length;
+        const checksum = createHash("sha256").update(buffer).digest("hex");
 
-      await logAudit({ userId: req.user!.id, action: "CREATE", entityType: "closeoutPackage", entityId: pkg.id, newValue: JSON.stringify({ filename, itemCount: items.length }) }, req);
+        // ── 4) Upload to TEMP key, then promote (copy) to FINAL key ────────
+        const slashIdx = privateDir.indexOf("/");
+        const bucketName = slashIdx > 0 ? privateDir.substring(0, slashIdx) : privateDir;
+        const dirPrefix = slashIdx > 0 ? privateDir.substring(slashIdx + 1) : "";
+        const finalObjectName = `${dirPrefix ? dirPrefix + "/" : ""}${exportOrgId}/closeout/${pkg.id}-${filename}`;
+        const tempObjectName = `${dirPrefix ? dirPrefix + "/" : ""}${exportOrgId}/closeout/.tmp/${pkg.id}-${filename}`;
+        const finalKey = `${bucketName}/${finalObjectName}`;
 
-      await archive.finalize();
+        const bucket = objectStorageClient.bucket(bucketName);
+        const tempFile = bucket.file(tempObjectName);
+        const finalFile = bucket.file(finalObjectName);
+
+        try {
+          await tempFile.save(buffer, {
+            contentType: "application/zip",
+            metadata: { metadata: { sha256: checksum, correlationId: correlationId ?? "" } },
+          });
+          // Promote: copy temp → final, then delete temp. Only after the
+          // final-key copy returns success do we treat the package as
+          // committed to GCS. A previously-good final-key object is only
+          // overwritten on a successful copy of a verified buffer.
+          await tempFile.copy(finalFile);
+        } finally {
+          // Always best-effort cleanup of the temp object.
+          try { await tempFile.delete({ ignoreNotFound: true }); } catch (cleanupErr) {
+            logError("closeout: temp key cleanup failed", { pkgId: pkg.id, tempObjectName }, cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)));
+          }
+        }
+
+        // ── 5) Stamp READY with checksum + size + completedAt ─────────────
+        const completedAt = new Date();
+        await db.update(closeoutPackages).set({
+          status: "READY",
+          storageKey: finalKey,
+          fileSize,
+          fileCount,
+          checksum,
+          completedAt,
+          errorMessage: null,
+        }).where(eq(closeoutPackages.id, pkg.id));
+
+        await logAudit({
+          userId: req.user!.id,
+          action: "UPDATE",
+          entityType: "closeoutPackage",
+          entityId: pkg.id,
+          newValue: JSON.stringify({ status: "READY", filename, fileSize, fileCount, checksum, storageKey: finalKey, correlationId }),
+        }, req);
+
+        // ── 6) Mint a short-lived signed URL and return JSON to client ─────
+        let downloadUrl: string | null = null;
+        try {
+          const svc = new ObjectStorageService();
+          downloadUrl = await svc.getSignedDownloadUrl(finalFile, 300);
+        } catch (signErr) {
+          logError("closeout: failed to mint signed URL (package still READY)", { pkgId: pkg.id }, signErr instanceof Error ? signErr : new Error(String(signErr)));
+        }
+
+        return res.json({
+          packageId: pkg.id,
+          status: "READY",
+          filename,
+          fileSize,
+          fileCount,
+          checksum,
+          completedAt: completedAt.toISOString(),
+          downloadUrl,
+          // Fallback if the client cannot use the signed URL directly.
+          downloadEndpoint: `/api/projects/${project.code}/closeout/packages/${pkg.id}/download`,
+        });
+      } catch (buildErr) {
+        const message = buildErr instanceof Error ? buildErr.message : String(buildErr);
+        logError("closeout: export failed", { pkgId: pkg.id, correlationId }, buildErr instanceof Error ? buildErr : new Error(message));
+        await db.update(closeoutPackages).set({
+          status: "FAILED",
+          errorMessage: message,
+        }).where(eq(closeoutPackages.id, pkg.id));
+        await logAudit({
+          userId: req.user!.id,
+          action: "UPDATE",
+          entityType: "closeoutPackage",
+          entityId: pkg.id,
+          newValue: JSON.stringify({ status: "FAILED", error: message, correlationId }),
+        }, req);
+        if (!res.headersSent) {
+          return res.status(500).json({ error: "Closeout export failed", message, packageId: pkg.id });
+        }
+        return;
+      }
     } catch (err) { next(err); }
   },
 );
+
+// ── Download endpoint — 302 to a freshly minted signed URL after re-checking
+// auth + org + that a verified READY package row exists. This is the
+// authoritative delivery path; the client never reads from a live archiver
+// stream.
+router.get(
+  "/api/projects/:code/closeout/packages/:pkgId/download",
+  requireAuth,
+  exportLimiter,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const project = await getProjectByCodeForUser(req.params.code, req, res);
+      if (!project) return;
+
+      const exportOrgId = req.user!.organizationId;
+      if (!exportOrgId) return res.status(403).json({ error: "Organization required" });
+
+      const [pkg] = await db.select().from(closeoutPackages).where(eq(closeoutPackages.id, req.params.pkgId)).limit(1);
+      if (!pkg || pkg.projectId !== project.id) return res.status(404).json({ error: "Package not found" });
+
+      // Cross-tenant safety: the package must belong to a checklist owned
+      // by the caller's org.
+      const [checklist] = await db.select().from(closeoutChecklists).where(eq(closeoutChecklists.id, pkg.checklistId)).limit(1);
+      if (!checklist || checklist.organizationId !== exportOrgId) return res.status(403).json({ error: "Forbidden" });
+
+      if (
+        pkg.status !== "READY" ||
+        !pkg.storageKey ||
+        pkg.fileSize == null ||
+        !pkg.checksum ||
+        !pkg.completedAt
+      ) {
+        return res.status(409).json({ error: "Package is not READY", status: pkg.status });
+      }
+
+      const slashIdx = pkg.storageKey.indexOf("/");
+      if (slashIdx <= 0) return res.status(500).json({ error: "Malformed storageKey" });
+      const bucketName = pkg.storageKey.substring(0, slashIdx);
+      const objectName = pkg.storageKey.substring(slashIdx + 1);
+      const file = objectStorageClient.bucket(bucketName).file(objectName);
+
+      const svc = new ObjectStorageService();
+      const url = await svc.getSignedDownloadUrl(file, 300);
+      return res.redirect(302, url);
+    } catch (err) { next(err); }
+  },
+);
+
+// ── Helpers extracted from the export route so the build path is testable ──
+
+async function buildCloseoutZipBuffer(opts: {
+  project: { name: string; code: string };
+  items: CloseoutItem[];
+  orgId: string;
+}): Promise<{ buffer: Buffer; fileCount: number }> {
+  const { project, items, orgId } = opts;
+  const archive = archiver("zip", { zlib: { level: 6 } });
+  const sink = new PassThrough();
+  const chunks: Buffer[] = [];
+  sink.on("data", (c: Buffer) => chunks.push(c));
+
+  const finished = new Promise<void>((resolve, reject) => {
+    archive.on("warning", (err) => logError("closeout zip warning", {}, err));
+    archive.on("error", reject);
+    sink.on("error", reject);
+    sink.on("end", resolve);
+  });
+  archive.pipe(sink);
+
+  const toc = await generateTocPdf(project, items);
+  archive.append(toc, { name: "00_Table_Of_Contents.pdf" });
+
+  const byCat = new Map<string, CloseoutItem[]>();
+  for (const it of items) {
+    const arr = byCat.get(it.category) ?? [];
+    arr.push(it);
+    byCat.set(it.category, arr);
+  }
+
+  let fileCount = 1;
+  const orderedCats = Object.keys(CATEGORY_LABEL).filter((k) => byCat.has(k));
+  let secIdx = 1;
+  for (const cat of orderedCats) {
+    const folder = `${String(secIdx).padStart(2, "0")}_${safeFilename(CATEGORY_LABEL[cat] ?? cat)}`;
+    const list = byCat.get(cat)!;
+    for (const it of list) {
+      const lines: string[] = [];
+      lines.push(`Title: ${it.title}`);
+      lines.push(`Status: ${it.status}`);
+      if (it.description) lines.push(`Description: ${it.description}`);
+      if (it.notes) lines.push(`Notes: ${it.notes}`);
+      if (it.dueDate) lines.push(`Due: ${new Date(it.dueDate).toLocaleDateString()}`);
+      if (it.sources?.length) {
+        lines.push("");
+        lines.push("Linked references:");
+        for (const s of it.sources) {
+          lines.push(`  - [${s.type}] ${s.label}${s.url ? ` (${s.url})` : ""}`);
+        }
+      }
+      const itemFolder = `${folder}/${safeFilename(it.title)}`;
+      archive.append(lines.join("\n"), { name: `${itemFolder}/README.txt` });
+      fileCount += 1;
+
+      for (const att of (it.attachments ?? [])) {
+        const buf = await downloadObjectByUrl(att.url, orgId);
+        if (buf) {
+          archive.append(buf, { name: `${itemFolder}/${safeFilename(att.filename || "file")}` });
+          fileCount += 1;
+        }
+      }
+      for (const src of (it.sources ?? [])) {
+        if (!src.url) continue;
+        const buf = await downloadObjectByUrl(src.url, orgId);
+        if (buf) {
+          const fn = safeFilename(src.label || `${src.type}.bin`);
+          archive.append(buf, { name: `${itemFolder}/${fn}` });
+          fileCount += 1;
+        }
+      }
+    }
+    secIdx += 1;
+  }
+
+  await archive.finalize();
+  await finished;
+  return { buffer: Buffer.concat(chunks), fileCount };
+}
+
+/**
+ * Lightweight ZIP integrity check — locate the End of Central Directory
+ * Record (EOCD) signature `PK\x05\x06` in the trailing 64 KiB of the
+ * buffer. A truncated or corrupted archive will be missing it. This is
+ * not a full structural validator, but it is sufficient to detect the
+ * common failure modes (early-aborted finalize, half-written buffer).
+ */
+export function hasZipEndOfCentralDirectory(buf: Buffer): boolean {
+  if (buf.length < 22) return false;
+  const eocdSig = 0x06054b50; // little-endian "PK\x05\x06"
+  // EOCD comment is up to 0xFFFF, so scan the trailing window.
+  const start = Math.max(0, buf.length - (22 + 0xFFFF));
+  for (let i = buf.length - 22; i >= start; i--) {
+    if (buf.readUInt32LE(i) === eocdSig) return true;
+  }
+  return false;
+}
 
 // ─── PROJECT-LEVEL DASHBOARD SUMMARY (submittals + punch list + closeout) ─────
 

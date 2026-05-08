@@ -129,22 +129,29 @@ export default function ProjectCloseoutPage({ projectCode }: { projectCode?: str
 
   const handleExport = async () => {
     try {
-      toast({ title: "Building closeout package…", description: "This may take a moment for large projects." });
-      const res = await fetch(`/api/projects/${code}/closeout/export`, {
-        method: "POST",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      toast({ title: "Building closeout package…", description: "Verifying and storing the package before delivery." });
+      const res = await apiRequest("POST", `/api/projects/${code}/closeout/export`, {});
+      const body = (await res.json()) as {
+        packageId: string;
+        status: "READY";
+        filename: string;
+        downloadUrl: string | null;
+        downloadEndpoint: string;
+      };
+      // Prefer the freshly minted signed URL; fall back to our authenticated
+      // re-mint endpoint if the signed URL could not be issued.
+      const target = body.downloadUrl ?? body.downloadEndpoint;
+      // Use a hidden anchor so the browser handles the download / 302.
       const a = document.createElement("a");
-      a.href = url;
-      a.download = `closeout_${code}_${new Date().toISOString().slice(0, 10)}.zip`;
+      a.href = target;
+      a.rel = "noopener";
+      // Only force `download=` on same-origin endpoint; signed GCS URLs
+      // already advertise the right Content-Disposition.
+      if (!body.downloadUrl) a.download = body.filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: "Closeout package downloaded" });
+      toast({ title: "Closeout package ready", description: body.filename });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", code, "closeout"] });
     } catch (e) {
       toast({ title: "Export failed", description: (e as Error).message, variant: "destructive" });

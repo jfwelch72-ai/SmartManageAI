@@ -130,9 +130,18 @@ export const closeoutPackages = pgTable("closeout_packages", {
   fileSize: integer("file_size"),
   itemCount: integer("item_count").notNull().default(0),
   fileCount: integer("file_count").notNull().default(0),
+  // Task #2689 — sha256 hex of the verified ZIP bytes. Populated only on
+  // successful promotion to the final GCS key. Treat as the integrity oracle.
+  checksum: text("checksum"),
   errorMessage: text("error_message"),
   generatedById: varchar("generated_by_id").notNull().references(() => users.id),
   generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  // Task #2689 — wall-clock time the package transitioned to READY (i.e. the
+  // final-key copy returned success and the verified row was committed).
+  // NULL for BUILDING/FAILED rows. The "valid package exists" predicate
+  // everywhere is `status = READY AND storageKey/fileSize/checksum/completedAt
+  // are all non-null`.
+  completedAt: timestamp("completed_at"),
 }, (t) => ({
   checklistIdx: index("closeout_packages_checklist_idx").on(t.checklistId),
   projectIdx: index("closeout_packages_project_idx").on(t.projectId),

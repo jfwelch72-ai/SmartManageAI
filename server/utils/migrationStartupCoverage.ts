@@ -420,4 +420,10 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0077_ai_estimator_enrichment_columns.sql": {
     skip: "(A) idempotent ADD COLUMN IF NOT EXISTS — reconcileSchemaDrift auto-adds (Task #1075). The NOT NULL DEFAULT 0 on rows_enriched is rendered by the synthesizer the same way as ratesUpdated, so fresh DBs and existing DBs converge.",
   },
+  // Task #2689 — GCS-first atomic closeout export. checksum + completed_at
+  // columns on closeout_packages so the package row itself is the integrity
+  // oracle. Mirrored at boot by ensureCloseoutPackagesAtomicColumns.
+  "0106_closeout_packages_atomic_columns.sql": {
+    helper: "ensureCloseoutPackagesAtomicColumns",
+  },
 };
