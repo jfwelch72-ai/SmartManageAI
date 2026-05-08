@@ -1,0 +1,63 @@
+name: AI Takeoff Bench (nightly full set)
+
+# Task #2622 — Nightly run of the full AI takeoff regression bench.
+# The PR gate (`ai-takeoff-bench-smoke` in `ci.yml`) only runs the
+# smoke subset and only when the diff touches the AI estimator surface;
+# this nightly job exercises every fixture (`smoke` + `full`) so we
+# catch drift even on weeks with no estimator changes. Replay mode runs
+# the production reconciliation logic over pre-recorded LLM outputs and
+# is fully offline. A future enhancement (tracked by the existing
+# follow-up "Close the AI takeoff calibration feedback loop") will add
+# a `--mode=live` invocation against a seeded test bid.
+
+on:
+  schedule:
+    - cron: '37 6 * * *'  # 06:37 UTC nightly — off-peak everywhere
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  bench-full:
+    name: AI Takeoff Bench (full, replay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Replay over the full set first — exercises production
+      # reconciliation against pre-recorded model outputs and is the
+      # canary we trust to fail on logic regressions even when the AI
+      # provider is flaky.
+      - name: Run full bench (replay)
+        run: npm run bench:ai-takeoff -- --report=loadtests/ai-takeoff-bench/results/nightly-replay.json
+
+      # Live run against the CURRENT model + CURRENT prompt so the
+      # nightly bench detects accuracy drift from prompt or model
+      # bumps. Skips fixtures that don't ship `live.pagesByDiscipline`
+      # text content. Requires `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
+      # in the repo's nightly-bench secrets group.
+      - name: Run full bench (live)
+        if: ${{ env.OPENAI_API_KEY != '' || env.ANTHROPIC_API_KEY != '' }}
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: npm run bench:ai-takeoff:live -- --report=loadtests/ai-takeoff-bench/results/nightly-live.json
+
+      - name: Upload bench report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-takeoff-bench-nightly-report
+          path: loadtests/ai-takeoff-bench/results/*.json
+          retention-days: 30

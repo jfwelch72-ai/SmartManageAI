@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "id": "mech-plumbing-medical",
+    "description": "Mechanical + plumbing rough-in for a 4-room medical suite. Exercises cross-sheet duplicate (same VAV box appears on M-101 floor plan and M-501 enlarged plan).",
+    "tradesCovered": ["M", "P"],
+    "subset": "full"
+  },
+  "expected": [
+    { "label": "VAV box", "type": "COUNT", "unit": "EA", "value": 8, "discipline": "M", "tolerancePercent": 0 },
+    { "label": "Supply ductwork 12\"", "type": "LINEAR", "unit": "LF", "value": 420, "discipline": "M", "tolerancePercent": 10 },
+    { "label": "Return ductwork 14\"", "type": "LINEAR", "unit": "LF", "value": 380, "discipline": "M", "tolerancePercent": 10 },
+    { "label": "Sink fixture", "type": "COUNT", "unit": "EA", "value": 6, "discipline": "P", "tolerancePercent": 0 },
+    { "label": "Water closet", "type": "COUNT", "unit": "EA", "value": 4, "discipline": "P", "tolerancePercent": 0 },
+    { "label": "DWV pipe 4\"", "type": "LINEAR", "unit": "LF", "value": 240, "discipline": "P", "tolerancePercent": 10 },
+    { "label": "Medical gas outlet", "type": "COUNT", "unit": "EA", "value": 12, "discipline": "P", "tolerancePercent": 0 }
+  ],
+  "replay": {
+    "batches": [
+      {
+        "discipline": "M",
+        "measurements": [
+          { "label": "VAV box", "type": "COUNT", "unit": "EA", "value": 8, "rationale": "M-101 floor plan tags", "sheetCitations": ["M-101"] },
+          { "label": "VAV box", "type": "COUNT", "unit": "EA", "value": 8, "rationale": "M-501 enlarged plan (duplicate observation)", "sheetCitations": ["M-101", "M-501"] },
+          { "label": "Supply ductwork 12\"", "type": "LINEAR", "unit": "LF", "value": 420, "rationale": "M-101", "sheetCitations": ["M-101"] },
+          { "label": "Return ductwork 14\"", "type": "LINEAR", "unit": "LF", "value": 380, "rationale": "M-101", "sheetCitations": ["M-101"] }
+        ]
+      },
+      {
+        "discipline": "P",
+        "measurements": [
+          { "label": "Sink fixture", "type": "COUNT", "unit": "EA", "value": 6, "rationale": "P-101 fixture schedule", "sheetCitations": ["P-101"] },
+          { "label": "Water closet", "type": "COUNT", "unit": "EA", "value": 4, "rationale": "P-101 fixture schedule", "sheetCitations": ["P-101"] },
+          { "label": "DWV pipe 4\"", "type": "LINEAR", "unit": "LF", "value": 240, "rationale": "P-201 plumbing plan", "sheetCitations": ["P-201"] },
+          { "label": "Medical gas outlet", "type": "COUNT", "unit": "EA", "value": 12, "rationale": "P-301 medical gas plan", "sheetCitations": ["P-301"] }
+        ]
+      }
+    ]
+  }
+}

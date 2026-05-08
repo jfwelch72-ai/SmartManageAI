@@ -1,0 +1,36 @@
+{
+  "$comment": "Minimum acceptable scores per fixture for the AI takeoff regression bench (Task #2622). The runner (`scripts/ai-takeoff-bench.mjs`) fails when any fixture's overall metrics regress past `regressionTolerance`, OR when any per-trade metric (`byTrade.<discipline>`) regresses past the same tolerance. Per-trade thresholds prevent a strong score in one trade from masking a regression in another (e.g. M+P, C+L). Keep these conservative on first commit and tighten as the calibration loop feeds real production drift back in.",
+  "schemaVersion": 1,
+  "regressionTolerance": 0.15,
+  "fixtures": {
+    "concrete-foundation-small":  {
+      "minPrecision": 0.80, "minRecall": 0.80, "maxMape": 0.10,
+      "byTrade": {
+        "S": { "minRecall": 0.80, "maxMape": 0.10 },
+        "C": { "minRecall": 0.80, "maxMape": 0.10 }
+      }
+    },
+    "electrical-tenant-fitout":   {
+      "minPrecision": 0.80, "minRecall": 0.80, "maxMape": 0.10,
+      "byTrade": { "E": { "minRecall": 0.80, "maxMape": 0.10 } }
+    },
+    "mech-plumbing-medical":      {
+      "minPrecision": 0.75, "minRecall": 0.75, "maxMape": 0.15,
+      "byTrade": {
+        "M": { "minRecall": 0.75, "maxMape": 0.15 },
+        "P": { "minRecall": 0.75, "maxMape": 0.15 }
+      }
+    },
+    "architectural-finishes":     {
+      "minPrecision": 0.80, "minRecall": 0.80, "maxMape": 0.10,
+      "byTrade": { "A": { "minRecall": 0.80, "maxMape": 0.10 } }
+    },
+    "civil-sitework":             {
+      "minPrecision": 0.75, "minRecall": 0.75, "maxMape": 0.15,
+      "byTrade": {
+        "C": { "minRecall": 0.75, "maxMape": 0.15 },
+        "L": { "minRecall": 0.75, "maxMape": 0.20 }
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "id": "concrete-foundation-small",
+    "description": "Small concrete + structural foundation set: spread footings, grade beams, slab-on-grade. Hand-validated against the original estimator's quantity sheet.",
+    "tradesCovered": ["C", "S"],
+    "subset": "smoke"
+  },
+  "expected": [
+    { "label": "Slab on grade", "type": "AREA", "unit": "SF", "value": 4800, "discipline": "S", "tolerancePercent": 5 },
+    { "label": "Spread footings", "type": "COUNT", "unit": "EA", "value": 12, "discipline": "S", "tolerancePercent": 0 },
+    { "label": "Grade beams", "type": "LINEAR", "unit": "LF", "value": 320, "discipline": "S", "tolerancePercent": 5 },
+    { "label": "Foundation wall", "type": "LINEAR", "unit": "LF", "value": 280, "discipline": "C", "tolerancePercent": 5 },
+    { "label": "Reinforcing steel #5", "type": "LINEAR", "unit": "LF", "value": 6400, "discipline": "S", "tolerancePercent": 10 }
+  ],
+  "replay": {
+    "batches": [
+      {
+        "discipline": "S",
+        "measurements": [
+          { "label": "Slab on grade", "type": "AREA", "unit": "SF", "value": 4800, "rationale": "S-101 slab plan", "sheetCitations": ["S-101"] },
+          { "label": "Spread footings", "type": "COUNT", "unit": "EA", "value": 12, "rationale": "S-201 schedule", "sheetCitations": ["S-201"] },
+          { "label": "Grade beams", "type": "LINEAR", "unit": "LF", "value": 320, "rationale": "S-101 grade beam tag", "sheetCitations": ["S-101"] },
+          { "label": "Reinforcing steel #5", "type": "LINEAR", "unit": "LF", "value": 6400, "rationale": "S-301 rebar schedule", "sheetCitations": ["S-301"] }
+        ]
+      },
+      {
+        "discipline": "C",
+        "measurements": [
+          { "label": "Foundation wall", "type": "LINEAR", "unit": "LF", "value": 280, "rationale": "C-101 site plan perimeter", "sheetCitations": ["C-101"] },
+          { "label": "Slab on grade", "type": "AREA", "unit": "SF", "value": 4800, "rationale": "C-101 building footprint (cross-discipline duplicate)", "sheetCitations": ["S-101"] }
+        ]
+      }
+    ]
+  },
+  "live": {
+    "pagesByDiscipline": {
+      "S": [
+        {
+          "sheetCitation": "S-101",
+          "text": "STRUCTURAL FOUNDATION PLAN — SHEET S-101\n\nBUILDING FOOTPRINT: 60 ft x 80 ft (4,800 SF) slab-on-grade, 5\" thick, 4000 PSI concrete with #4 @ 18\" o.c. each way.\n\nGRADE BEAMS: GB-1 around full perimeter and at column lines. Total length per plan = 320 LF, 12\" wide x 24\" deep.\n\nREFER TO S-201 FOR SPREAD FOOTING SCHEDULE.\nREFER TO S-301 FOR REINFORCING SCHEDULE.\n\nNOTES:\n1. All concrete shall be 4,000 PSI at 28 days.\n2. Coordinate slab penetrations with M/E/P plans.\n3. Compacted subgrade per geotech report."
+        },
+        {
+          "sheetCitation": "S-201",
+          "text": "SPREAD FOOTING SCHEDULE — SHEET S-201\n\nMARK    SIZE         REINF      QTY\nF-1     4'-0\" x 4'-0\" x 12\"   (5) #5 EW BOT       8 EA\nF-2     5'-0\" x 5'-0\" x 14\"   (6) #5 EW BOT       4 EA\n\nTOTAL SPREAD FOOTINGS: 12 EA\n\nLocated at column lines per S-101. See S-301 for typical rebar details."
+        },
+        {
+          "sheetCitation": "S-301",
+          "text": "REINFORCING SCHEDULE — SHEET S-301\n\nGRADE BEAM GB-1: (4) #5 TOP, (4) #5 BOT, #4 ties @ 12\" o.c.\n  - Length: 320 LF (per S-101)\n  - Longitudinal #5 = 8 bars * 320 LF = 2,560 LF\n\nFOOTINGS F-1/F-2: (5)-(6) #5 EW BOT — see S-201.\n  - F-1: 8 ftgs * 10 bars * 4 LF = 320 LF\n  - F-2: 4 ftgs * 12 bars * 5 LF = 240 LF\n\nSLAB ON GRADE: #4 @ 18\" o.c. each way (not #5).\n\nWALL DOWELS to grade beams: #5 @ 16\" o.c., 3'-0\" embed = ~3,280 LF.\n\nTOTAL #5 REINFORCING: approximately 6,400 LF."
+        }
+      ],
+      "C": [
+        {
+          "sheetCitation": "C-101",
+          "text": "CIVIL SITE PLAN — SHEET C-101\n\nBUILDING FOOTPRINT: 60' x 80' = 4,800 SF (matches structural S-101).\n\nFOUNDATION WALL (perimeter retaining wall, 8\" CMU on 12\" concrete footing):\n  - North face: 80 LF\n  - South face: 80 LF\n  - East face: 60 LF\n  - West face: 60 LF\n  - TOTAL: 280 LF of foundation wall\n\nThis wall encloses the crawl space along the building perimeter.\nReference S-101 for slab and grade beam scope (do not duplicate)."
+        }
+      ]
+    }
+  }
+}

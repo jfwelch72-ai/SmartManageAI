@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "id": "architectural-finishes",
+    "description": "Architectural finish schedule for a small office: paint, carpet, ACT ceiling, doors.",
+    "tradesCovered": ["A"],
+    "subset": "full"
+  },
+  "expected": [
+    { "label": "Interior paint", "type": "AREA", "unit": "SF", "value": 12400, "discipline": "A", "tolerancePercent": 10 },
+    { "label": "Carpet tile", "type": "AREA", "unit": "SF", "value": 5200, "discipline": "A", "tolerancePercent": 5 },
+    { "label": "ACT 2x4 ceiling", "type": "AREA", "unit": "SF", "value": 5400, "discipline": "A", "tolerancePercent": 5 },
+    { "label": "Solid core door 3'-0\"", "type": "COUNT", "unit": "EA", "value": 18, "discipline": "A", "tolerancePercent": 0 },
+    { "label": "Wall base 4\"", "type": "LINEAR", "unit": "LF", "value": 1180, "discipline": "A", "tolerancePercent": 10 }
+  ],
+  "replay": {
+    "batches": [
+      {
+        "discipline": "A",
+        "measurements": [
+          { "label": "Interior paint", "type": "AREA", "unit": "SF", "value": 12400, "rationale": "A-401 finish plan", "sheetCitations": ["A-401"] },
+          { "label": "Carpet tile", "type": "AREA", "unit": "SF", "value": 5200, "rationale": "A-401 finish schedule", "sheetCitations": ["A-401"] },
+          { "label": "ACT 2x4 ceiling", "type": "AREA", "unit": "SF", "value": 5400, "rationale": "A-501 RCP", "sheetCitations": ["A-501"] },
+          { "label": "Solid core door 3'-0\"", "type": "COUNT", "unit": "EA", "value": 18, "rationale": "A-601 door schedule", "sheetCitations": ["A-601"] },
+          { "label": "Wall base 4\"", "type": "LINEAR", "unit": "LF", "value": 1180, "rationale": "A-401 finish plan perimeter", "sheetCitations": ["A-401"] }
+        ]
+      }
+    ]
+  }
+}

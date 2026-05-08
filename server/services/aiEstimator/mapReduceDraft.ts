@@ -101,8 +101,67 @@ interface PageInfo {
   pageText: string;
 }
 
-function makeKey(m: { label: string; type: string; unit: string }): string {
+export function makeMeasurementKey(m: { label: string; type: string; unit: string }): string {
   return `${m.type}|${m.unit.toUpperCase()}|${m.label.trim().toLowerCase()}`;
+}
+
+// Backwards-compatible internal alias.
+const makeKey = makeMeasurementKey;
+
+/**
+ * Pure reconciliation of per-batch measurement emissions into a deduped,
+ * citation-aware list. Extracted from `mapReduceDraftFromPlans` so the
+ * disjoint/overlap merge rules can be unit-tested directly.
+ *
+ * Rules (matching the inline implementation):
+ *  - Identity key = (type, normalised unit, normalised label).
+ *  - For an existing key:
+ *    - If the new emission shares ANY sheet citation with the existing
+ *      one → duplicate observation of the same scope; keep the larger
+ *      value.
+ *    - If neither side has any citations → can't prove disjointness;
+ *      conservatively take the max.
+ *    - Otherwise (DISJOINT citations) → genuinely separate scopes; sum.
+ *  - Citations and contributing disciplines union together.
+ *  - Rationales concatenate (deduped, capped at 1000 chars).
+ */
+export function reconcileMeasurements(
+  batches: Array<{ discipline: string; measurements: MapReduceMeasurement[] }>,
+): MapReduceMeasurement[] {
+  const byKey = new Map<string, MapReduceMeasurement>();
+  for (const batch of batches) {
+    for (const m of batch.measurements) {
+      const key = makeKey(m);
+      const existing = byKey.get(key);
+      if (existing) {
+        const newCites = m.sheetCitations ?? [];
+        const overlaps = newCites.some((c) => existing.sheetCitations.includes(c));
+        if (overlaps) {
+          existing.value = Math.max(existing.value, m.value);
+        } else if (newCites.length === 0 && existing.sheetCitations.length === 0) {
+          existing.value = Math.max(existing.value, m.value);
+        } else {
+          existing.value += m.value;
+        }
+        for (const cite of newCites) {
+          if (!existing.sheetCitations.includes(cite)) existing.sheetCitations.push(cite);
+        }
+        if (!existing.contributingDisciplines.includes(batch.discipline)) {
+          existing.contributingDisciplines.push(batch.discipline);
+        }
+        if (m.rationale && !existing.rationale.includes(m.rationale)) {
+          existing.rationale = `${existing.rationale}; ${m.rationale}`.slice(0, 1000);
+        }
+      } else {
+        byKey.set(key, {
+          ...m,
+          sheetCitations: [...m.sheetCitations],
+          contributingDisciplines: [batch.discipline],
+        });
+      }
+    }
+  }
+  return Array.from(byKey.values());
 }
 
 /**
@@ -328,7 +387,12 @@ export async function mapReduceDraftFromPlans(opts: {
   }
 
   const disciplineCoverage: Record<string, number> = {};
-  const measurementsByKey = new Map<string, MapReduceMeasurement>();
+  // Per-batch measurement emissions are accumulated here and reconciled
+  // ONCE at the end via the pure `reconcileMeasurements` helper, so the
+  // citation-aware dedupe rules are guarded by the unit tests in
+  // `server/__tests__/ai-takeoff-map-reduce-reconciliation.test.ts`
+  // (Task #2622).
+  const collectedBatches: Array<{ discipline: string; measurements: MapReduceMeasurement[] }> = [];
   const notesParts: string[] = [];
   let confidenceSum = 0;
   let confidenceN = 0;
@@ -386,73 +450,36 @@ export async function mapReduceDraftFromPlans(opts: {
         confidenceSum += Math.max(0, Math.min(100, out.confidence));
         confidenceN += 1;
       }
-      for (const m of out.measurements) {
-        const key = makeKey(m);
-        const existing = measurementsByKey.get(key);
-        if (existing) {
-          // Task #2577 Phase B — citation-aware dedupe. Plan sets
-          // commonly repeat the same scope on multiple sheets (key
-          // plan + enlarged plan + detail) and the LLM emits the same
-          // measurement on each. Naive summing overcounts. Strategy:
-          //  - If the new measurement's citations OVERLAP any
-          //    citation already attributed to this key, the new
-          //    emission is a duplicate observation of the same
-          //    scope → keep the larger of the two values.
-          //  - If the citations are DISJOINT, treat as additive
-          //    (genuinely separate scopes that happen to share label
-          //    + unit + type) and sum.
-          // This matches how an estimator would reconcile by hand:
-          // never double-count the same sheet, but do roll up scope
-          // that appears on different sheets.
-          const newCites = m.sheetCitations ?? [];
-          const overlaps = newCites.some((c) => existing.sheetCitations.includes(c));
-          if (overlaps) {
-            existing.value = Math.max(existing.value, m.value);
-          } else if (newCites.length === 0 && existing.sheetCitations.length === 0) {
-            // No citations on either side — can't prove disjointness;
-            // be conservative and take the max rather than sum.
-            existing.value = Math.max(existing.value, m.value);
-          } else {
-            existing.value += m.value;
-          }
-          for (const cite of newCites) {
-            if (!existing.sheetCitations.includes(cite)) existing.sheetCitations.push(cite);
-          }
-          if (!existing.contributingDisciplines.includes(discipline)) {
-            existing.contributingDisciplines.push(discipline);
-          }
-          if (m.rationale && !existing.rationale.includes(m.rationale)) {
-            existing.rationale = `${existing.rationale}; ${m.rationale}`.slice(0, 1000);
-          }
-        } else {
-          measurementsByKey.set(key, { ...m });
-        }
-      }
+      collectedBatches.push({ discipline, measurements: out.measurements });
     }
   }
 
-  if (measurementsByKey.size === 0 && firstBlockedReason) {
+  // Single, pure reconciliation pass — see `reconcileMeasurements`
+  // doc-comment above for the disjoint/overlap merge rules.
+  const reconciled = reconcileMeasurements(collectedBatches);
+
+  if (reconciled.length === 0 && firstBlockedReason) {
     return { result: null, blocked: true, reason: firstBlockedReason };
   }
 
   logInfo("[mapReduceDraft] complete", {
     bidId: opts.bidId,
     disciplines: disciplines.length,
-    measurements: measurementsByKey.size,
+    measurements: reconciled.length,
     llmCallCount,
     partial,
   });
 
-  // Task #2624 — Run assembly matcher across the deduped measurements.
-  const finalMeasurements = Array.from(measurementsByKey.values());
+  // Task #2624 — Run assembly matcher across the deduped measurements
+  // (output of the Task #2622 `reconcileMeasurements` pass above).
   await applyAssembliesToDraftLines({
     organizationId: opts.organizationId,
-    lines: finalMeasurements,
+    lines: reconciled,
   });
 
   return {
     result: {
-      measurements: finalMeasurements,
+      measurements: reconciled,
       notes: notesParts.join("\n").slice(0, 4000),
       confidence: confidenceN > 0 ? Math.round(confidenceSum / confidenceN) : 60,
       disciplineCoverage,

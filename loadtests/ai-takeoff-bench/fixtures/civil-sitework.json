@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "id": "civil-sitework",
+    "description": "Civil sitework + landscape: earthwork cut/fill, asphalt paving, curb, plantings. Exercises disjoint-sheet additive merge — paving on C-201 and on the parking-lot detail C-501 are different scopes that share label/unit.",
+    "tradesCovered": ["C", "L"],
+    "subset": "full"
+  },
+  "expected": [
+    { "label": "Earthwork cut", "type": "VOLUME", "unit": "CY", "value": 2400, "discipline": "C", "tolerancePercent": 15 },
+    { "label": "Earthwork fill", "type": "VOLUME", "unit": "CY", "value": 1850, "discipline": "C", "tolerancePercent": 15 },
+    { "label": "Asphalt paving", "type": "AREA", "unit": "SF", "value": 18500, "discipline": "C", "tolerancePercent": 10 },
+    { "label": "Concrete curb", "type": "LINEAR", "unit": "LF", "value": 2240, "discipline": "C", "tolerancePercent": 10 },
+    { "label": "Shade tree", "type": "COUNT", "unit": "EA", "value": 14, "discipline": "L", "tolerancePercent": 0 },
+    { "label": "Shrub", "type": "COUNT", "unit": "EA", "value": 86, "discipline": "L", "tolerancePercent": 0 }
+  ],
+  "replay": {
+    "batches": [
+      {
+        "discipline": "C",
+        "measurements": [
+          { "label": "Earthwork cut", "type": "VOLUME", "unit": "CY", "value": 2400, "rationale": "C-101 grading plan", "sheetCitations": ["C-101"] },
+          { "label": "Earthwork fill", "type": "VOLUME", "unit": "CY", "value": 1850, "rationale": "C-101 grading plan", "sheetCitations": ["C-101"] },
+          { "label": "Asphalt paving", "type": "AREA", "unit": "SF", "value": 12000, "rationale": "C-201 site paving (drives)", "sheetCitations": ["C-201"] },
+          { "label": "Asphalt paving", "type": "AREA", "unit": "SF", "value": 6500, "rationale": "C-501 parking lot enlargement (disjoint scope)", "sheetCitations": ["C-501"] },
+          { "label": "Concrete curb", "type": "LINEAR", "unit": "LF", "value": 2240, "rationale": "C-201 curb tags", "sheetCitations": ["C-201"] }
+        ]
+      },
+      {
+        "discipline": "L",
+        "measurements": [
+          { "label": "Shade tree", "type": "COUNT", "unit": "EA", "value": 14, "rationale": "L-101 planting plan", "sheetCitations": ["L-101"] },
+          { "label": "Shrub", "type": "COUNT", "unit": "EA", "value": 86, "rationale": "L-101 planting plan", "sheetCitations": ["L-101"] }
+        ]
+      }
+    ]
+  }
+}

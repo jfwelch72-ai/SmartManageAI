@@ -1,0 +1,29 @@
+{
+  "meta": {
+    "id": "electrical-tenant-fitout",
+    "description": "Single-trade electrical fit-out for a 6,000 SF tenant suite: lighting, receptacles, conduit, panels.",
+    "tradesCovered": ["E"],
+    "subset": "smoke"
+  },
+  "expected": [
+    { "label": "2x4 LED troffer", "type": "COUNT", "unit": "EA", "value": 48, "discipline": "E", "tolerancePercent": 0 },
+    { "label": "Recessed downlight", "type": "COUNT", "unit": "EA", "value": 22, "discipline": "E", "tolerancePercent": 0 },
+    { "label": "Duplex receptacle", "type": "COUNT", "unit": "EA", "value": 64, "discipline": "E", "tolerancePercent": 0 },
+    { "label": "Branch conduit 3/4\"", "type": "LINEAR", "unit": "LF", "value": 1850, "discipline": "E", "tolerancePercent": 10 },
+    { "label": "Panelboard 225A", "type": "COUNT", "unit": "EA", "value": 2, "discipline": "E", "tolerancePercent": 0 }
+  ],
+  "replay": {
+    "batches": [
+      {
+        "discipline": "E",
+        "measurements": [
+          { "label": "2x4 LED troffer", "type": "COUNT", "unit": "EA", "value": 48, "rationale": "E-201 lighting plan", "sheetCitations": ["E-201"] },
+          { "label": "Recessed downlight", "type": "COUNT", "unit": "EA", "value": 22, "rationale": "E-201 lighting plan", "sheetCitations": ["E-201"] },
+          { "label": "Duplex receptacle", "type": "COUNT", "unit": "EA", "value": 64, "rationale": "E-301 power plan", "sheetCitations": ["E-301"] },
+          { "label": "Branch conduit 3/4\"", "type": "LINEAR", "unit": "LF", "value": 1850, "rationale": "E-301 power plan", "sheetCitations": ["E-301"] },
+          { "label": "Panelboard 225A", "type": "COUNT", "unit": "EA", "value": 2, "rationale": "E-401 one-line", "sheetCitations": ["E-401"] }
+        ]
+      }
+    ]
+  }
+}

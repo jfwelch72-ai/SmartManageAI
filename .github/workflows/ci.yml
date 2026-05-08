@@ -1121,3 +1121,70 @@ jobs:
           if [ -f .server.pid ]; then
             kill "$(cat .server.pid)" 2>/dev/null || true
           fi
+
+  ai-takeoff-bench-smoke:
+    # Task #2622 — AI takeoff accuracy regression harness (smoke subset).
+    # Runs the curated benchmark fixtures through the production
+    # reconciliation logic in REPLAY mode (no LLM calls, no DB) and
+    # fails the PR when any fixture's precision/recall drops or MAPE
+    # rises beyond `regressionTolerance` (15%) versus the per-fixture
+    # floors in `loadtests/ai-takeoff-bench/budgets.json`.
+    #
+    # The job runs on every PR but exits early when the diff doesn't
+    # touch the AI estimator surface, the bench fixtures, or the bench
+    # tooling — keeping the gate cheap on unrelated PRs while still
+    # blocking regressions to the highest-blast-radius file
+    # (`server/services/aiEstimator/mapReduceDraft.ts`). Nightly runs
+    # the full set; see `.github/workflows/ai-takeoff-bench-nightly.yml`.
+    name: AI Takeoff Bench (smoke)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect relevant changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only "$BASE" "$HEAD" | grep -E '^(server/services/aiEstimator/|loadtests/ai-takeoff-bench/|scripts/ai-takeoff-bench\.mjs|server/__tests__/ai-takeoff-map-reduce-reconciliation\.test\.ts)' >/dev/null; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.changes.outputs.run == 'true'
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.changes.outputs.run == 'true'
+        run: npm ci
+
+      - name: Run smoke bench
+        if: steps.changes.outputs.run == 'true'
+        run: node scripts/ai-takeoff-bench.mjs --mode=replay --subset=smoke
+
+      - name: Upload bench report
+        if: always() && steps.changes.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-takeoff-bench-smoke-report
+          path: loadtests/ai-takeoff-bench/results/*.json
+          retention-days: 14
+
+      - name: Skipped (no AI estimator changes)
+        if: steps.changes.outputs.run != 'true'
+        run: echo "No changes under server/services/aiEstimator/** or loadtests/ai-takeoff-bench/** — skipping bench."

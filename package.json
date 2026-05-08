@@ -25,7 +25,10 @@
     "test:isolation": "vitest run server/__tests__/org-isolation/",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "bench:ai-takeoff": "node scripts/ai-takeoff-bench.mjs",
+    "bench:ai-takeoff:smoke": "node scripts/ai-takeoff-bench.mjs --subset=smoke",
+    "bench:ai-takeoff:live": "node scripts/ai-takeoff-bench.mjs --mode=live"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.92.0",
