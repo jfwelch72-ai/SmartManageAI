@@ -112,6 +112,17 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   // ("AI_DETECTED" | "USER" | "FILENAME_HEURISTIC").
   disciplineConfidence: text("discipline_confidence"),
   disciplineSource: text("discipline_source"),
+  // Task #2623 — Raw AI confidence (0..1) and free-text rationale for
+  // the sheet-classification review queue. The coarse band above is
+  // kept for legacy UI; the numeric score is what the per-org
+  // `low_confidence_threshold` filter compares against.
+  disciplineConfidenceScore: doublePrecision("discipline_confidence_score"),
+  disciplineRationale: text("discipline_rationale"),
+  // Audit columns set when an estimator confirms or overrides the AI
+  // classification through the review queue. `disciplineSource` flips
+  // to 'USER' at the same time.
+  reviewedById: varchar("reviewed_by_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
   // Task #2577 Phase B — Per-page extracted text. Populated by the
   // document extractor on first read of a plan PDF (text layer or OCR
   // fallback). Shape: { "1": "page 1 text", "2": "page 2 text" } where

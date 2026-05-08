@@ -486,6 +486,10 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
   // Defaults to true so new orgs benefit immediately; existing orgs can
   // opt out from the settings UI.
   excludeCancelledLostJobs: boolean("exclude_cancelled_lost_jobs").notNull().default(true),
+  // Task #2623 — Per-org threshold below which an AI sheet
+  // classification is surfaced in the review queue. Default 0.6 means
+  // anything under 60% confidence needs human confirmation.
+  lowConfidenceThreshold: doublePrecision("low_confidence_threshold").notNull().default(0.6),
   notes: text("notes"),
   updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),

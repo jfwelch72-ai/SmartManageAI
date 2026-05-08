@@ -52,6 +52,8 @@ import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
 import { MapReduceDraftButton } from "@/components/takeoff/MapReduceDraftButton";
 import { ScheduleSymbolsPanel } from "@/components/takeoff/ScheduleSymbolsPanel";
+import { SheetReviewQueuePanel } from "@/components/takeoff/SheetReviewQueuePanel";
+import { LegendSymbolReviewPanel } from "@/components/takeoff/LegendSymbolReviewPanel";
 import { TradeTemplatesPanel } from "@/components/takeoff/TradeTemplatesPanel";
 import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
 
@@ -743,6 +745,8 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
             </Button>
             <DraftFullTakeoffButton bidId={bidId} projectId={projectId} standaloneTakeoffId={standaloneTakeoffId} />
             {bidId && <MapReduceDraftButton bidId={bidId} />}
+            {bidId && <SheetReviewQueuePanel bidId={bidId} />}
+            {bidId && <LegendSymbolReviewPanel bidId={bidId} />}
             {bidId && <ScheduleSymbolsPanel bidId={bidId} />}
             {bidId && <TradeTemplatesPanel bidId={bidId} />}
           </div>

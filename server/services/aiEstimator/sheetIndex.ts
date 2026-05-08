@@ -56,6 +56,10 @@ const SHEET_INDEX_OUTPUT_SCHEMA = z.object({
     discipline: z.string(),
     sheetNumber: z.string().nullable().optional(),
     confidence: z.number().optional(),
+    // Task #2623 — Free-text rationale for the chosen discipline so
+    // reviewers can see *why* the model classified a low-confidence
+    // sheet a particular way before confirming or overriding it.
+    rationale: z.string().nullable().optional(),
   })),
 });
 
@@ -69,6 +73,13 @@ export interface SheetIndexEntry {
   sheetNumber: string | null;
   disciplineConfidence: "HIGH" | "MEDIUM" | "LOW" | null;
   disciplineSource: SheetDisciplineSource | null;
+  // Task #2623 — Numeric confidence (0..1), free-text rationale,
+  // and reviewer audit fields. All nullable for sheets that were
+  // never classified or never reviewed.
+  disciplineConfidenceScore: number | null;
+  disciplineRationale: string | null;
+  reviewedById: string | null;
+  reviewedAt: Date | null;
 }
 
 interface AiSheetClassification {
@@ -76,6 +87,7 @@ interface AiSheetClassification {
   discipline: string;
   sheetNumber: string | null;
   confidence: number; // 0..1
+  rationale: string | null;
 }
 
 /**
@@ -183,7 +195,8 @@ export async function indexPlanSheetsForBid(opts: {
     const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
     const sysPrompt = `You read construction plan sets and classify each page by AIA discipline.
-Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1 }] }
+Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1, "rationale": string }] }
+Include a one-sentence "rationale" explaining the discipline choice (e.g. "title block reads M-101 HVAC Plan").
 Only emit one entry per page in the order shown. If you cannot tell, set discipline to "O" and confidence < 0.5.`;
 
     const gov = await governedAiCall<string | null>({
@@ -248,14 +261,23 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
         discipline: safeCode,
         sheetNumber: entry.sheetNumber ?? null,
         confidence: typeof entry.confidence === "number" ? entry.confidence : 0.5,
+        rationale: typeof entry.rationale === "string" ? entry.rationale : null,
         source: "AI_DETECTED",
       });
     }
   }
 
-  // Merge: AI wins when present, heuristic otherwise.
+  // Merge: AI wins when present, heuristic otherwise. Task #2623 —
+  // sheets a human has already confirmed (`disciplineSource === 'USER'`)
+  // are treated as ground truth and never overwritten by a re-index pass.
   const updates: SheetIndexEntry[] = [];
   for (const s of sheets) {
+    if (s.disciplineSource === "USER") {
+      // Surface the existing human-confirmed row in the response so the
+      // caller can see the full index, but skip the DB write.
+      updates.push(toEntry(s));
+      continue;
+    }
     const ai = aiBySheetId.get(s.id);
     const h = heuristicResults.get(s.id) ?? { discipline: null, sheetNumber: null };
     const discipline = ai?.discipline ?? h.discipline;
@@ -270,6 +292,12 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
       : h.discipline
         ? "MEDIUM"
         : null;
+    const confidenceScore = ai
+      ? ai.confidence
+      : h.discipline
+        ? 0.6
+        : null;
+    const rationale = ai?.rationale ?? (h.discipline ? "Filename / sheet-name heuristic match" : null);
     if (!discipline) continue;
     const disciplineTyped = discipline as SheetDiscipline;
     await db
@@ -279,6 +307,13 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
         sheetNumber,
         disciplineConfidence: confidence,
         disciplineSource: source,
+        disciplineConfidenceScore: confidenceScore,
+        disciplineRationale: rationale,
+        // A re-index of an unreviewed row clears any stale reviewer
+        // pointer (the human-confirmed early-return above already
+        // protects rows that actually were reviewed).
+        reviewedById: null,
+        reviewedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(takeoffSheets.id, s.id));
@@ -290,6 +325,10 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
       sheetNumber,
       disciplineConfidence: confidence,
       disciplineSource: source,
+      disciplineConfidenceScore: confidenceScore,
+      disciplineRationale: rationale,
+      reviewedById: null,
+      reviewedAt: null,
     });
   }
 
@@ -301,6 +340,37 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
   });
 
   return { indexed: updates, aiBlocked, reason: aiReason };
+}
+
+// Map a takeoff_sheets row (with all the discipline columns selected)
+// onto a SheetIndexEntry. Used so we can short-circuit USER-confirmed
+// rows during re-indexing without re-reading the DB.
+function toEntry(s: {
+  id: string;
+  sheetIndex: number;
+  sheetName: string | null;
+  discipline: string | null;
+  sheetNumber: string | null;
+  disciplineConfidence: string | null;
+  disciplineSource: string | null;
+  disciplineConfidenceScore: number | null;
+  disciplineRationale: string | null;
+  reviewedById: string | null;
+  reviewedAt: Date | null;
+}): SheetIndexEntry {
+  return {
+    sheetId: s.id,
+    sheetIndex: s.sheetIndex,
+    sheetName: s.sheetName,
+    discipline: (s.discipline as SheetDiscipline | null) ?? null,
+    sheetNumber: s.sheetNumber,
+    disciplineConfidence: (s.disciplineConfidence as "HIGH" | "MEDIUM" | "LOW" | null) ?? null,
+    disciplineSource: (s.disciplineSource as SheetDisciplineSource | null) ?? null,
+    disciplineConfidenceScore: s.disciplineConfidenceScore,
+    disciplineRationale: s.disciplineRationale,
+    reviewedById: s.reviewedById,
+    reviewedAt: s.reviewedAt,
+  };
 }
 
 /**
@@ -375,7 +445,8 @@ export async function indexPlanSheetsForStandaloneTakeoff(opts: {
     const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
     const sysPrompt = `You read construction plan sets and classify each page by AIA discipline.
-Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1 }] }
+Return strict JSON: { "sheets": [{ "sheetIndex": number (0-based page), "discipline": "G|A|S|M|E|P|C|L|FP|T|Q|I|O", "sheetNumber": string|null, "confidence": number 0..1, "rationale": string }] }
+Include a one-sentence "rationale" explaining the discipline choice (e.g. "title block reads M-101 HVAC Plan").
 Only emit one entry per page in the order shown. If you cannot tell, set discipline to "O" and confidence < 0.5.`;
 
     const gov = await governedAiCall<string | null>({
@@ -436,6 +507,7 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
         discipline: safeCode,
         sheetNumber: entry.sheetNumber ?? null,
         confidence: typeof entry.confidence === "number" ? entry.confidence : 0.5,
+        rationale: typeof entry.rationale === "string" ? entry.rationale : null,
         source: "AI_DETECTED",
       });
     }
@@ -443,6 +515,10 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
 
   const updates: SheetIndexEntry[] = [];
   for (const s of sheets) {
+    if (s.disciplineSource === "USER") {
+      updates.push(toEntry(s));
+      continue;
+    }
     const ai = aiBySheetId.get(s.id);
     const h = heuristicResults.get(s.id) ?? { discipline: null, sheetNumber: null };
     const discipline = ai?.discipline ?? h.discipline;
@@ -457,6 +533,12 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
       : h.discipline
         ? "MEDIUM"
         : null;
+    const confidenceScore = ai
+      ? ai.confidence
+      : h.discipline
+        ? 0.6
+        : null;
+    const rationale = ai?.rationale ?? (h.discipline ? "Filename / sheet-name heuristic match" : null);
     if (!discipline) continue;
     const disciplineTyped = discipline as SheetDiscipline;
     await db
@@ -466,6 +548,10 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
         sheetNumber,
         disciplineConfidence: confidence,
         disciplineSource: source,
+        disciplineConfidenceScore: confidenceScore,
+        disciplineRationale: rationale,
+        reviewedById: null,
+        reviewedAt: null,
         updatedAt: new Date(),
       })
       .where(eq(takeoffSheets.id, s.id));
@@ -477,6 +563,10 @@ Only emit one entry per page in the order shown. If you cannot tell, set discipl
       sheetNumber,
       disciplineConfidence: confidence,
       disciplineSource: source,
+      disciplineConfidenceScore: confidenceScore,
+      disciplineRationale: rationale,
+      reviewedById: null,
+      reviewedAt: null,
     });
   }
 
@@ -523,18 +613,114 @@ export async function getSheetIndexForBid(opts: {
       sheetNumber: takeoffSheets.sheetNumber,
       disciplineConfidence: takeoffSheets.disciplineConfidence,
       disciplineSource: takeoffSheets.disciplineSource,
+      disciplineConfidenceScore: takeoffSheets.disciplineConfidenceScore,
+      disciplineRationale: takeoffSheets.disciplineRationale,
+      reviewedById: takeoffSheets.reviewedById,
+      reviewedAt: takeoffSheets.reviewedAt,
     })
     .from(takeoffSheets)
     .where(eq(takeoffSheets.bidId, opts.bidId));
-  return rows.map((r) => ({
-    sheetId: r.id,
-    sheetIndex: r.sheetIndex,
-    sheetName: r.sheetName,
-    discipline: (r.discipline as SheetDiscipline | null) ?? null,
-    sheetNumber: r.sheetNumber,
-    disciplineConfidence: (r.disciplineConfidence as "HIGH" | "MEDIUM" | "LOW" | null) ?? null,
-    disciplineSource: (r.disciplineSource as SheetDisciplineSource | null) ?? null,
-  }));
+  return rows.map(toEntry);
+}
+
+/**
+ * Task #2623 — "Needs review" queue. Returns sheets where the AI /
+ * heuristic confidence is below the org-configured threshold AND a
+ * human has not yet confirmed the classification. Sheets already
+ * stamped `disciplineSource = 'USER'` are excluded — those are ground
+ * truth.
+ *
+ * Caller is expected to have resolved the org's threshold via
+ * `getOrgFactors(...)`. We accept it as a parameter rather than
+ * importing orgFactors here to keep this module dependency-free of
+ * the factors module.
+ */
+export async function getSheetReviewQueueForBid(opts: {
+  organizationId: string;
+  bidId: string;
+  threshold: number;
+}): Promise<SheetIndexEntry[]> {
+  try {
+    await assertBidInOrg(opts.bidId, opts.organizationId);
+  } catch {
+    return [];
+  }
+  const all = await getSheetIndexForBid({
+    organizationId: opts.organizationId,
+    bidId: opts.bidId,
+  });
+  return all.filter((s) => {
+    if (s.disciplineSource === "USER") return false;
+    // Treat unscored sheets (null score) as needing review when there
+    // *is* a discipline assigned so we don't lose track of heuristic-
+    // only or pre-#2623 rows.
+    if (s.discipline && s.disciplineConfidenceScore === null) return true;
+    return (
+      typeof s.disciplineConfidenceScore === "number" &&
+      s.disciplineConfidenceScore < opts.threshold
+    );
+  });
+}
+
+/**
+ * Task #2623 — Estimator confirms or overrides a sheet's AI-classified
+ * discipline. Stamps `disciplineSource = 'USER'`, the reviewer's id and
+ * a timestamp so later re-index passes leave the row alone.
+ *
+ * Returns the updated entry, or `null` if the sheet does not belong to
+ * the caller's org / bid.
+ */
+export async function setSheetDiscipline(opts: {
+  organizationId: string;
+  bidId: string;
+  sheetId: string;
+  userId: string;
+  discipline: SheetDiscipline;
+  sheetNumber?: string | null;
+}): Promise<SheetIndexEntry | null> {
+  try {
+    await assertBidInOrg(opts.bidId, opts.organizationId);
+  } catch {
+    return null;
+  }
+  if (!ALLOWED_DISCIPLINES.has(opts.discipline)) return null;
+  const now = new Date();
+  const setPatch: Record<string, unknown> = {
+    discipline: opts.discipline,
+    disciplineSource: "USER",
+    disciplineConfidence: "HIGH",
+    disciplineConfidenceScore: 1,
+    reviewedById: opts.userId,
+    reviewedAt: now,
+    updatedAt: now,
+  };
+  if (opts.sheetNumber !== undefined) {
+    setPatch.sheetNumber = opts.sheetNumber;
+  }
+  const [updated] = await db
+    .update(takeoffSheets)
+    .set(setPatch)
+    .where(
+      and(
+        eq(takeoffSheets.id, opts.sheetId),
+        eq(takeoffSheets.bidId, opts.bidId),
+      ),
+    )
+    .returning({
+      id: takeoffSheets.id,
+      sheetIndex: takeoffSheets.sheetIndex,
+      sheetName: takeoffSheets.sheetName,
+      discipline: takeoffSheets.discipline,
+      sheetNumber: takeoffSheets.sheetNumber,
+      disciplineConfidence: takeoffSheets.disciplineConfidence,
+      disciplineSource: takeoffSheets.disciplineSource,
+      disciplineConfidenceScore: takeoffSheets.disciplineConfidenceScore,
+      disciplineRationale: takeoffSheets.disciplineRationale,
+      reviewedById: takeoffSheets.reviewedById,
+      reviewedAt: takeoffSheets.reviewedAt,
+    });
+  if (!updated) return null;
+  return toEntry(updated);
 }
 
 /**

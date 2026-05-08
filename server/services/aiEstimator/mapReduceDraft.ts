@@ -110,6 +110,13 @@ function makeKey(m: { label: string; type: string; unit: string }): string {
  * tag each page with the discipline assigned by `sheetIndex`. Pages
  * with no extracted text are dropped (the indexer/OCR layer is
  * responsible for getting text into the page in the first place).
+ *
+ * Task #2623 — Pipeline guard. We read `takeoffSheets.discipline` as-is,
+ * which means human-confirmed sheets (`disciplineSource = 'USER'`)
+ * naturally win over the AI's classification because the override
+ * route writes the corrected value into that same column before this
+ * map runs. Re-indexing also short-circuits USER rows in
+ * `sheetIndex.ts`, so an override is sticky across re-runs.
  */
 async function mapPagesByDiscipline(opts: {
   organizationId: string;

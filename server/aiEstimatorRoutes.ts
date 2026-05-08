@@ -72,6 +72,8 @@ import {
 import {
   indexPlanSheetsForBid,
   getSheetIndexForBid,
+  getSheetReviewQueueForBid,
+  setSheetDiscipline,
 } from "./services/aiEstimator/sheetIndex";
 import {
   listAssemblies,
@@ -95,6 +97,8 @@ import {
   listLegendSymbolsForBid,
   upsertLegendSymbol,
   deleteLegendSymbol,
+  setLegendSymbolReviewStatus,
+  editLegendSymbol,
 } from "./services/aiEstimator/legendSymbols";
 // Task #2577 Phase B — Trade material templates, map-reduce drafter,
 // and schedule symbol auto-counting.
@@ -121,6 +125,7 @@ import {
   insertAiEstimatorRegionFactorSchema,
   insertAiEstimatorLegendSymbolSchema,
   SHEET_DISCIPLINES,
+  type SheetDiscipline,
 } from "@shared/schema";
 
 const router = Router();
@@ -1089,6 +1094,129 @@ router.get(
       byDiscipline,
       disciplines: SHEET_DISCIPLINES,
     });
+  },
+);
+
+// =====================================================================
+// Task #2623 — Sheet classification confidence + review queue.
+// =====================================================================
+//
+// GET /bids/:bidId/sheet-index/review-queue
+//   Returns the sheets whose AI/heuristic confidence is below the org-
+//   configured `low_confidence_threshold` AND have not yet been
+//   confirmed by a human reviewer.
+//
+// POST /bids/:bidId/sheets/:sheetId/discipline
+//   Estimator confirms or overrides the discipline. Stamps
+//   discipline_source = 'USER' so subsequent re-index passes leave the
+//   row alone.
+//
+// POST /bids/:bidId/legend-symbols/:id/(accept|reject)
+// PATCH /bids/:bidId/legend-symbols/:id
+//   HITL controls for legend / schedule symbols. Rejected symbols are
+//   refused by `acceptScheduleSymbols` and are not surfaced to the
+//   draft generator.
+router.get(
+  `${estimatorBase}/bids/:bidId/sheet-index/review-queue`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const factors = await getOrgFactors(orgId);
+    const threshold =
+      typeof factors?.lowConfidenceThreshold === "number"
+        ? factors.lowConfidenceThreshold
+        : 0.6;
+    const queue = await getSheetReviewQueueForBid({
+      organizationId: orgId,
+      bidId: req.params.bidId,
+      threshold,
+    });
+    res.json({
+      sheets: queue,
+      threshold,
+      disciplines: SHEET_DISCIPLINES,
+    });
+  },
+);
+
+const setDisciplineSchema = z.object({
+  discipline: z.enum(SHEET_DISCIPLINES),
+  sheetNumber: z.string().nullable().optional(),
+});
+router.post(
+  `${estimatorBase}/bids/:bidId/sheets/:sheetId/discipline`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(setDisciplineSchema, req.body, res);
+    if (!data) return;
+    const out = await setSheetDiscipline({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      sheetId: req.params.sheetId,
+      userId: req.user!.id,
+      discipline: data.discipline as SheetDiscipline,
+      sheetNumber: data.sheetNumber,
+    });
+    if (!out) return res.status(404).json({ error: "Sheet not found" });
+    res.json(out);
+  },
+);
+
+router.post(
+  `${estimatorBase}/bids/:bidId/legend-symbols/:id/accept`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const out = await setLegendSymbolReviewStatus({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolId: req.params.id,
+      status: "ACCEPTED",
+    });
+    if (!out) return res.status(404).json({ error: "Legend symbol not found" });
+    res.json(out);
+  },
+);
+
+router.post(
+  `${estimatorBase}/bids/:bidId/legend-symbols/:id/reject`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const out = await setLegendSymbolReviewStatus({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolId: req.params.id,
+      status: "REJECTED",
+    });
+    if (!out) return res.status(404).json({ error: "Legend symbol not found" });
+    res.json(out);
+  },
+);
+
+const editLegendSymbolSchema = z.object({
+  symbolCode: z.string().min(1).max(200).optional(),
+  definition: z.string().min(1).max(2000).optional(),
+  trade: z.string().nullable().optional(),
+  count: z.number().int().min(0).optional(),
+});
+router.patch(
+  `${estimatorBase}/bids/:bidId/legend-symbols/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(editLegendSymbolSchema, req.body, res);
+    if (!data) return;
+    const out = await editLegendSymbol({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      symbolId: req.params.id,
+      updates: data,
+    });
+    if (!out) return res.status(404).json({ error: "Legend symbol not found" });
+    res.json(out);
   },
 );
 
