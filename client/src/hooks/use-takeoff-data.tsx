@@ -843,6 +843,7 @@ export function useTakeoffData({
           pendingEdit: { action: "unlock_and_rescale" },
           serverRow: data.current ?? null,
           currentVersion: data.currentVersion ?? null,
+          lastEditor: null,
         });
         toast({
           title: "Measurement was modified",
@@ -968,6 +969,7 @@ export function useTakeoffData({
           pendingEdit: { action: "bulk_unlock_and_rescale" },
           serverRow: first.current ?? null,
           currentVersion: first.currentVersion ?? null,
+          lastEditor: null,
         });
         toast({
           title: data.conflicts.length === 1 ? "Measurement was modified" : `${data.conflicts.length} measurements were modified`,
@@ -1143,6 +1145,7 @@ export function useTakeoffData({
           pendingEdit: { action: "bulk_update" },
           serverRow: first.current ?? null,
           currentVersion: first.currentVersion ?? null,
+          lastEditor: null,
         });
         toast({
           title: data.conflicts.length === 1 ? "Measurement was modified" : `${data.conflicts.length} measurements were modified`,

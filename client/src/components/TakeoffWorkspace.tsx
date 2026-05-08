@@ -1066,6 +1066,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         pendingEdit: { action: c.replay === "undo" ? "history_undo" : "history_redo" },
         serverRow: c.current ?? null,
         currentVersion: c.currentVersion ?? null,
+        lastEditor: null,
       });
     };
     return () => {
