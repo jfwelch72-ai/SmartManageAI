@@ -7,6 +7,7 @@ import {
   costBookEntries,
   costBookGeoFactors,
   insertCostBookProviderSchema,
+  insertCostBookGeoFactorSchema,
   type CostBookProvider,
 } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -148,6 +149,104 @@ router.get("/api/cost-book/providers/:id/geo-factors", requireAuth, async (req: 
       .where(eq(costBookGeoFactors.providerId, provider.id))
       .orderBy(asc(costBookGeoFactors.regionName));
     res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+const geoFactorBodySchema = insertCostBookGeoFactorSchema
+  .omit({ providerId: true, organizationId: true })
+  .extend({
+    asOfDate: z.union([z.string(), z.date()]).transform((v) =>
+      typeof v === "string" ? v : v.toISOString().slice(0, 10),
+    ),
+    materialFactor: z.coerce.number().positive().transform((n) => n.toString()),
+    laborFactor: z.coerce.number().positive().transform((n) => n.toString()),
+    equipmentFactor: z.coerce.number().positive().transform((n) => n.toString()),
+    totalFactor: z.coerce.number().positive().transform((n) => n.toString()),
+  });
+
+router.post("/api/cost-book/providers/:id/geo-factors", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isManagement(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Organization required" });
+    }
+    const provider = await loadProviderForOrg(req.params.id, orgId);
+    if (!provider) return res.status(404).json({ error: "Provider not found" });
+    const parsed = geoFactorBodySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors });
+    const [created] = await db
+      .insert(costBookGeoFactors)
+      .values({
+        ...parsed.data,
+        providerId: provider.id,
+        organizationId: orgId,
+      })
+      .returning();
+    res.status(201).json(created);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/api/cost-book/providers/:id/geo-factors/:factorId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isManagement(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Organization required" });
+    }
+    const provider = await loadProviderForOrg(req.params.id, orgId);
+    if (!provider) return res.status(404).json({ error: "Provider not found" });
+    const parsed = geoFactorBodySchema.partial().safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.errors });
+    const [updated] = await db
+      .update(costBookGeoFactors)
+      .set({ ...parsed.data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(costBookGeoFactors.id, req.params.factorId),
+          eq(costBookGeoFactors.providerId, provider.id),
+          eq(costBookGeoFactors.organizationId, orgId),
+        ),
+      )
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Geo factor not found" });
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/api/cost-book/providers/:id/geo-factors/:factorId", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    if (!isManagement(req.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Organization required" });
+    }
+    const provider = await loadProviderForOrg(req.params.id, orgId);
+    if (!provider) return res.status(404).json({ error: "Provider not found" });
+    const [deleted] = await db
+      .delete(costBookGeoFactors)
+      .where(
+        and(
+          eq(costBookGeoFactors.id, req.params.factorId),
+          eq(costBookGeoFactors.providerId, provider.id),
+          eq(costBookGeoFactors.organizationId, orgId),
+        ),
+      )
+      .returning();
+    if (!deleted) return res.status(404).json({ error: "Geo factor not found" });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
