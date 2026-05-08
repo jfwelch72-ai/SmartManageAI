@@ -22,8 +22,77 @@ import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
 import { parseOrRespond } from "./utils/validation";
 import { notifyUsers, getApproverUserIds } from "./services/approvalNotificationService";
+import { broadcastTakeoffEvent } from "./takeoffCollaboration";
 
 const router = Router();
+
+// Task #2655 — Server-side broadcast for measurement mutations made via
+// the REST API (mobile, scripts, AI auto-import, conflict tests, etc.).
+// Without this, only the React client that owned the mutation pushed a
+// `MEASUREMENT_*` collab frame; other open browsers stayed on a stale
+// TanStack cache until staleTime / polling kicked in. Resolves the
+// sheet to its takeoff WebSocket room (bidId or projectId — same
+// `roomId` the markup-delete broadcast uses) and emits the same frame
+// the client used to. No-op when the sheet is orphaned or no viewer
+// happens to be connected — `broadcastTakeoffEvent` already handles
+// the empty-room case.
+async function broadcastMeasurementMutation(
+  sheetId: string,
+  type: "MEASUREMENT_CREATED" | "MEASUREMENT_UPDATED" | "MEASUREMENT_DELETED",
+  measurementId: string,
+  extra?: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const [sheet] = await db
+      .select({ projectId: takeoffSheets.projectId, bidId: takeoffSheets.bidId })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, sheetId))
+      .limit(1);
+    const roomId = sheet?.bidId || sheet?.projectId || null;
+    if (!roomId) return;
+    broadcastTakeoffEvent(roomId, type, { sheetId, measurementId, ...(extra || {}) });
+  } catch (e) {
+    logError(
+      "[takeoff] measurement broadcast failed",
+      { sheetId, type, measurementId },
+      e instanceof Error ? e : new Error(String(e)),
+    );
+  }
+}
+
+// Bulk variant — every legitimate caller already constrains the batch
+// to a single sheet (the bulk endpoints reject cross-sheet payloads),
+// so we resolve the room once and emit one frame carrying every
+// affected measurementId. Existing collab-handler clients only key off
+// `sheetId` for cache invalidation, so the extra `measurementIds`
+// payload is purely additive.
+async function broadcastMeasurementBulk(
+  sheetId: string,
+  type: "MEASUREMENT_UPDATED" | "MEASUREMENT_DELETED",
+  measurementIds: string[],
+): Promise<void> {
+  if (measurementIds.length === 0) return;
+  try {
+    const [sheet] = await db
+      .select({ projectId: takeoffSheets.projectId, bidId: takeoffSheets.bidId })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, sheetId))
+      .limit(1);
+    const roomId = sheet?.bidId || sheet?.projectId || null;
+    if (!roomId) return;
+    broadcastTakeoffEvent(roomId, type, {
+      sheetId,
+      measurementId: measurementIds[0],
+      measurementIds,
+    });
+  } catch (e) {
+    logError(
+      "[takeoff] measurement bulk broadcast failed",
+      { sheetId, type, count: measurementIds.length },
+      e instanceof Error ? e : new Error(String(e)),
+    );
+  }
+}
 
 router.get("/api/projects/:projectId/takeoff/all-measurements", requireAuth, async (req: AuthRequest, res, next) => {
   try {
@@ -593,6 +662,8 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
 
     await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId, label: measurement.label }, req);
 
+    await broadcastMeasurementMutation(sheetId, "MEASUREMENT_CREATED", measurement.id);
+
     res.status(201).json(measurement);
   } catch (error) {
     next(error);
@@ -857,6 +928,13 @@ router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequ
       count: batchCount,
       ms: Date.now() - startedAt,
     });
+    if (updated.length > 0) {
+      await broadcastMeasurementBulk(
+        updated[0].sheetId,
+        "MEASUREMENT_UPDATED",
+        updated.map((r) => r.id),
+      );
+    }
     res.json(
       updated.map((r) => ({
         ...r,
@@ -1040,6 +1118,8 @@ router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (
       },
       req,
     );
+
+    await broadcastMeasurementMutation(existing.sheetId, "MEASUREMENT_UPDATED", id);
 
     res.json(updated);
   } catch (error) {
@@ -1327,6 +1407,13 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
       count: batchCount,
       ms: Date.now() - startedAt,
     });
+    // Only broadcast for rows that actually flipped — idempotent
+    // already-unlocked rows didn't change, so a refetch toast on
+    // remote viewers would be noise.
+    const broadcastIds = updated
+      .filter((r) => !alreadyUnlockedIds.includes(r.id))
+      .map((r) => r.id);
+    await broadcastMeasurementBulk(firstSheetId, "MEASUREMENT_UPDATED", broadcastIds);
     res.json({
       measurements: updated.map((r) => ({
         ...r,
@@ -1603,6 +1690,8 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       logError("[takeoff] measurement→rate-sample ingest failed", { measurementId: id }, rateErr instanceof Error ? rateErr : new Error(String(rateErr)));
     }
 
+    await broadcastMeasurementMutation(existingMeasurement.sheetId, "MEASUREMENT_UPDATED", id);
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -1669,6 +1758,8 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
     const [measurement] = await db.insert(takeoffMeasurements).values(finalValues as typeof takeoffMeasurements.$inferInsert).returning();
 
     await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId: validated.sheetId, label: measurement.label }, req);
+
+    await broadcastMeasurementMutation(validated.sheetId, "MEASUREMENT_CREATED", measurement.id);
 
     res.status(201).json(measurement);
   } catch (error) {
@@ -1991,6 +2082,8 @@ router.post("/api/takeoff/measurements/:id/review", requireAuth, async (req: Aut
       req,
     );
 
+    await broadcastMeasurementMutation(existing.sheetId, "MEASUREMENT_UPDATED", id);
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -2032,6 +2125,8 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
     await db.delete(takeoffMeasurements).where(eq(takeoffMeasurements.id, id));
 
     await logDelete(req.user!.id, "takeoff_measurement", id, { type: existing.type, sheetId: existing.sheetId, label: existing.label }, req);
+
+    await broadcastMeasurementMutation(existing.sheetId, "MEASUREMENT_DELETED", id);
 
     res.json({ success: true });
   } catch (error) {
@@ -2907,6 +3002,7 @@ router.post("/api/takeoff/measurements/:id/remediate-drift", requireAuth, async 
         },
         req,
       );
+      await broadcastMeasurementMutation(existing.sheetId, "MEASUREMENT_UPDATED", id);
       res.json(newRow);
       return;
     }
@@ -2928,6 +3024,7 @@ router.post("/api/takeoff/measurements/:id/remediate-drift", requireAuth, async 
       },
       req,
     );
+    await broadcastMeasurementMutation(existing.sheetId, "MEASUREMENT_UPDATED", id);
     res.json(newRow);
   } catch (error) {
     next(error);
@@ -3061,6 +3158,8 @@ router.post("/api/takeoff/sheets/:sheetId/remediate-drift", requireAuth, async (
         );
       }
     }
+
+    await broadcastMeasurementBulk(sheetId, "MEASUREMENT_UPDATED", remediatedIds);
 
     res.json({ action, remediated: remediatedIds.length, ids: remediatedIds });
   } catch (error) {
@@ -3280,6 +3379,7 @@ router.post("/api/takeoff/measurements/:id/request-review", requireAuth, async (
     }
 
     await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    await broadcastMeasurementMutation(updated.sheetId, "MEASUREMENT_UPDATED", updated.id);
     res.json(updated);
   } catch (error) {
     next(error);
@@ -3367,6 +3467,7 @@ router.post(
     }
 
     await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    await broadcastMeasurementMutation(updated.sheetId, "MEASUREMENT_UPDATED", updated.id);
     res.json(updated);
   } catch (error) {
     next(error);
@@ -3433,6 +3534,7 @@ router.post(
     }
 
     await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    await broadcastMeasurementMutation(updated.sheetId, "MEASUREMENT_UPDATED", updated.id);
     res.json(updated);
   } catch (error) {
     next(error);
