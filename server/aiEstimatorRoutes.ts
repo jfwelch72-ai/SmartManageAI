@@ -1463,8 +1463,9 @@ router.post(
     const fallbackSheetId = sheets.slice().sort((a, b) => a.sheetIndex - b.sheetIndex)[0]!.id;
 
     const insertedIds: string[] = [];
-    let skipped = 0;
-    for (const m of data.measurements) {
+    const failed: { index: number; label: string; reason: string }[] = [];
+    for (let mi = 0; mi < data.measurements.length; mi++) {
+      const m = data.measurements[mi]!;
       let sheetId: string | undefined;
       for (const cite of m.sheetCitations) {
         const hit = sheetByCitation.get(cite.trim().toLowerCase());
@@ -1530,19 +1531,42 @@ router.post(
           }, req).catch(() => undefined);
         }
       } catch (err) {
-        skipped++;
+        // Map raw DB/driver errors to a user-safe reason so we don't leak
+        // internals to the client. Full error stays in logs for triage.
+        const rawMessage =
+          err instanceof Error ? err.message : typeof err === "string" ? err : "";
+        let reason = "Could not save this measurement. Check the value, unit, and sheet citation, then retry.";
+        const lower = rawMessage.toLowerCase();
+        if (lower.includes("foreign key") || lower.includes("violates foreign key")) {
+          reason = "Referenced sheet no longer exists. Pick a different sheet citation and retry.";
+        } else if (lower.includes("check constraint") || lower.includes("violates check")) {
+          reason = "Value or unit isn't valid for this measurement type.";
+        } else if (lower.includes("not-null") || lower.includes("null value")) {
+          reason = "A required field was missing. Make sure label, type, value, and unit are set.";
+        } else if (lower.includes("too long") || lower.includes("value too long")) {
+          reason = "Label or note is too long.";
+        } else if (lower.includes("invalid input syntax") || lower.includes("numeric")) {
+          reason = "Numeric value isn't formatted correctly.";
+        }
+        failed.push({ index: mi, label: m.label, reason });
         logWarn("[mapReduceApply] insert failed", {
           bidId: data.bidId,
+          index: mi,
           label: m.label,
           error: String(err),
         });
       }
     }
 
+    // Partial-apply is intentional: estimators have already curated the
+    // selection, so we keep the rows that did insert and surface the
+    // failures so they can fix/retry the bad ones individually instead
+    // of losing the whole batch. See task #2621.
     res.json({
       inserted: insertedIds.length,
-      skipped,
+      skipped: failed.length,
       insertedIds,
+      failed,
     });
   },
 );

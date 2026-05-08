@@ -37,10 +37,17 @@ interface MapReduceDraftResult {
   partial: boolean;
 }
 
+interface ApplyFailure {
+  index: number;
+  label: string;
+  reason: string;
+}
+
 interface ApplyResponse {
   inserted: number;
   skipped: number;
   insertedIds: string[];
+  failed: ApplyFailure[];
 }
 
 interface Props {
@@ -74,6 +81,7 @@ export function MapReduceDraftButton({ bidId }: Props) {
   const [jobId, setJobId] = useState<string | null>(null);
   const [fetchingResult, setFetchingResult] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [lastFailed, setLastFailed] = useState<ApplyFailure[]>([]);
 
   // Default to all selected — the most common workflow is "accept
   // everything the AI found" with the option to uncheck a few.
@@ -161,10 +169,14 @@ export function MapReduceDraftButton({ bidId }: Props) {
   };
 
   const applySelected = useMutation({
-    mutationFn: async (): Promise<ApplyResponse> => {
+    mutationFn: async (): Promise<{ response: ApplyResponse; pickIndexes: number[] }> => {
       if (!draft || !bidId) throw new Error("No draft to apply");
-      const picks = Array.from(selected)
-        .sort((a, b) => a - b)
+      // Build the request in a stable order and remember the
+      // draft-index each picks-index corresponds to so we can map
+      // server-reported failure indexes back to the right draft row
+      // even when two rows share the same label.
+      const pickIndexes = Array.from(selected).sort((a, b) => a - b);
+      const picks = pickIndexes
         .map((i) => draft.measurements[i])
         .filter((m): m is MapReduceMeasurement => !!m);
       if (picks.length === 0) throw new Error("Select at least one measurement");
@@ -172,14 +184,20 @@ export function MapReduceDraftButton({ bidId }: Props) {
         bidId,
         measurements: picks,
       });
-      return (await r.json()) as ApplyResponse;
+      const response = (await r.json()) as ApplyResponse;
+      return { response, pickIndexes };
     },
-    onSuccess: (data) => {
+    onSuccess: ({ response: data, pickIndexes }) => {
+      const failed = data.failed ?? [];
+      setLastFailed(failed);
       toast({
-        title: "Added to takeoff",
+        title: failed.length > 0 ? "Added with errors" : "Added to takeoff",
         description:
           `${data.inserted} measurement${data.inserted === 1 ? "" : "s"} added as DRAFT.` +
-          (data.skipped > 0 ? ` ${data.skipped} skipped.` : ""),
+          (failed.length > 0
+            ? ` ${failed.length} failed — see details below.`
+            : ""),
+        variant: failed.length > 0 ? "destructive" : undefined,
       });
       // Refresh the workspace measurements lists. We don't know the
       // selected sheet from inside this dialog, so invalidate every
@@ -188,9 +206,23 @@ export function MapReduceDraftButton({ bidId }: Props) {
       // same prefix and TanStack v5 partial-match handles both.
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets"] });
       queryClient.invalidateQueries({ queryKey: [`/api/bids/${bidId}/takeoff/all-measurements`] });
-      // Drop the rows that were just applied so the user can't double-add them.
+      // Drop the rows that were inserted successfully so the user can't
+      // double-add them, but keep failed rows in the table so they can
+      // edit/retry. The server's `failed[].index` is the position in
+      // the picks array we sent, so map that back through `pickIndexes`
+      // to the original draft row — this stays correct even when two
+      // selected rows share the same label.
       if (draft) {
-        const remaining = draft.measurements.filter((_, i) => !selected.has(i));
+        const failedDraftIndexes = new Set(
+          failed
+            .map((f) => pickIndexes[f.index])
+            .filter((i): i is number => typeof i === "number"),
+        );
+        const remaining = draft.measurements.filter((_, i) => {
+          if (!selected.has(i)) return true;
+          // Keep rows that failed so the estimator can retry them.
+          return failedDraftIndexes.has(i);
+        });
         setDraft({ ...draft, measurements: remaining });
         setSelected(new Set());
       }
@@ -205,6 +237,7 @@ export function MapReduceDraftButton({ bidId }: Props) {
       setJobId(null);
       setFetchingResult(false);
       setSelected(new Set());
+      setLastFailed([]);
     }
   }, [open]);
 
@@ -368,6 +401,38 @@ export function MapReduceDraftButton({ bidId }: Props) {
                     </tbody>
                   </table>
                 </div>
+                {lastFailed.length > 0 && (
+                  <div
+                    className="border border-destructive/50 rounded-md p-3 bg-destructive/5"
+                    data-testid="section-mapreduce-failed"
+                  >
+                    <div className="text-sm font-medium text-destructive mb-2">
+                      {lastFailed.length} measurement{lastFailed.length === 1 ? "" : "s"} failed to insert
+                    </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      These rows are kept in the table above so you can edit them and try again.
+                    </p>
+                    <ul className="space-y-1 text-xs">
+                      {lastFailed.map((f, i) => (
+                        <li
+                          key={`${f.label}-${i}`}
+                          className="flex flex-col"
+                          data-testid={`row-mapreduce-failed-${i}`}
+                        >
+                          <span className="font-medium" data-testid={`text-mapreduce-failed-label-${i}`}>
+                            {f.label}
+                          </span>
+                          <span
+                            className="text-muted-foreground font-mono"
+                            data-testid={`text-mapreduce-failed-reason-${i}`}
+                          >
+                            {f.reason}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
               </div>
             </ScrollArea>
           )}
