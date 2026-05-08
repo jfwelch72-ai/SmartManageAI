@@ -2561,6 +2561,28 @@ function CanvasStageImpl(props: CanvasStageProps) {
               </Layer>
             </Stage>
 
+            {/* Test-only DOM mirror of collab.visibleCursors. Konva renders
+                the cursor markers to a <canvas>, which Playwright cannot
+                inspect; this hidden list lets the e2e at
+                e2e/takeoff-collab-conflict.spec.ts assert that the React
+                state was actually consumed (Task #2651). */}
+            <div
+              aria-hidden
+              style={{ position: "absolute", width: 0, height: 0, overflow: "hidden", pointerEvents: "none" }}
+              data-testid="collab-cursors-root"
+            >
+              {collab.visibleCursors.map((cursor: { userId: string; userName: string; x: number; y: number }) => (
+                <span
+                  key={`collab-cursor-dom-${cursor.userId}`}
+                  data-testid={`collab-cursor-${cursor.userId}`}
+                  data-cursor-x={String(Math.round(cursor.x))}
+                  data-cursor-y={String(Math.round(cursor.y))}
+                >
+                  {cursor.userName}
+                </span>
+              ))}
+            </div>
+
     </>
   );
 }
