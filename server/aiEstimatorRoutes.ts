@@ -25,6 +25,8 @@ import {
   getAccessStatus,
   listOrgAccess,
   setUserAccess,
+  assertBidInOrg,
+  ResourceOwnershipError,
 } from "./services/aiEstimator/access";
 import {
   listLearnedRatesForOrg,
@@ -1396,6 +1398,152 @@ router.post(
     if (out.blocked) return blockedResponse(res, out.reason);
     if (!out.result) return res.status(400).json({ error: out.reason || "Map-reduce draft produced no result" });
     res.json(out.result);
+  },
+);
+
+// =====================================================================
+// Task #2605 — Apply selected map-reduce draft measurements to the
+// bid's takeoff. The map-reduce drafter (above) is review-only; this
+// endpoint takes a subset of those measurements and inserts them into
+// `takeoff_measurements` as DRAFT/AI rows so estimators can promote
+// the AI draft into their workspace with one click instead of copying
+// each value by hand.
+// =====================================================================
+const mapReduceMeasurementApplySchema = z.object({
+  label: z.string().min(1),
+  type: z.enum(["AREA", "LINEAR", "COUNT", "VOLUME", "ANGULAR", "DIAMETER"]),
+  value: z.number().finite(),
+  unit: z.string().min(1),
+  costCode: z.string().nullable().optional(),
+  rationale: z.string().optional().default(""),
+  sheetCitations: z.array(z.string()).optional().default([]),
+  contributingDisciplines: z.array(z.string()).optional().default([]),
+});
+const mapReduceApplySchema = z.object({
+  bidId: z.string().min(1),
+  measurements: z.array(mapReduceMeasurementApplySchema).min(1).max(500),
+});
+
+router.post(
+  `${estimatorBase}/draft/map-reduce/apply`,
+  sensitiveLimiter,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(mapReduceApplySchema, req.body, res);
+    if (!data) return;
+    const organizationId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    try {
+      await assertBidInOrg(data.bidId, organizationId);
+    } catch (err) {
+      if (err instanceof ResourceOwnershipError) {
+        return res.status(404).json({ error: "Bid not found" });
+      }
+      throw err;
+    }
+
+    const sheets = await db
+      .select({
+        id: takeoffSheets.id,
+        sheetNumber: takeoffSheets.sheetNumber,
+        sheetName: takeoffSheets.sheetName,
+        sheetIndex: takeoffSheets.sheetIndex,
+      })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.bidId, data.bidId));
+    if (sheets.length === 0) {
+      return res.status(400).json({ error: "Bid has no takeoff sheets to attach measurements to" });
+    }
+    const sheetByCitation = new Map<string, string>();
+    for (const s of sheets) {
+      if (s.sheetNumber) sheetByCitation.set(s.sheetNumber.trim().toLowerCase(), s.id);
+      if (s.sheetName) sheetByCitation.set(s.sheetName.trim().toLowerCase(), s.id);
+    }
+    const fallbackSheetId = sheets.slice().sort((a, b) => a.sheetIndex - b.sheetIndex)[0]!.id;
+
+    const insertedIds: string[] = [];
+    let skipped = 0;
+    for (const m of data.measurements) {
+      let sheetId: string | undefined;
+      for (const cite of m.sheetCitations) {
+        const hit = sheetByCitation.get(cite.trim().toLowerCase());
+        if (hit) {
+          sheetId = hit;
+          break;
+        }
+      }
+      if (!sheetId) sheetId = fallbackSheetId;
+
+      const unitUpper = m.unit.toUpperCase();
+      const isLinear = m.type === "LINEAR" && /^(LF|FT|FEET|LINEAR FEET|LINFT)$/i.test(unitUpper);
+      const isArea = m.type === "AREA" && /^(SF|SQFT|SQ FT|SQUARE FEET|FT2|FT\^2)$/i.test(unitUpper);
+      const isVolume = m.type === "VOLUME" && /^(CY|CUYD|CU YD|CUBIC YARDS?|YD3)$/i.test(unitUpper);
+
+      const noteParts: string[] = [
+        `[ai-map-reduce] ${m.value} ${m.unit}`,
+      ];
+      if (m.sheetCitations.length > 0) noteParts.push(`Sheets: ${m.sheetCitations.join(", ")}`);
+      if (m.contributingDisciplines.length > 0) {
+        noteParts.push(`Disciplines: ${m.contributingDisciplines.join(", ")}`);
+      }
+      if (m.rationale) noteParts.push(m.rationale);
+
+      const metadata = JSON.stringify({
+        source: "ai_map_reduce_draft",
+        unit: m.unit,
+        value: m.value,
+        costCode: m.costCode ?? null,
+        sheetCitations: m.sheetCitations,
+        contributingDisciplines: m.contributingDisciplines,
+      });
+
+      try {
+        const [inserted] = await db
+          .insert(takeoffMeasurements)
+          .values({
+            sheetId,
+            type: m.type,
+            label: m.label,
+            points: "[]",
+            count: m.type === "COUNT" ? m.value : null,
+            computedLengthFt: isLinear ? m.value : null,
+            computedAreaFt2: isArea ? m.value : null,
+            computedVolumeCy: isVolume ? m.value : null,
+            source: "AI",
+            status: "DRAFT",
+            note: noteParts.join(" • ").slice(0, 2000),
+            metadata,
+            needsReview: true,
+            calibrationSource: "AI_DETECTED",
+          })
+          .returning({ id: takeoffMeasurements.id });
+        if (inserted) {
+          insertedIds.push(inserted.id);
+          await logCreate(userId, "takeoff_measurement", inserted.id, {
+            source: "ai_map_reduce_draft",
+            bidId: data.bidId,
+            label: m.label,
+            type: m.type,
+            value: m.value,
+            unit: m.unit,
+          }, req).catch(() => undefined);
+        }
+      } catch (err) {
+        skipped++;
+        logWarn("[mapReduceApply] insert failed", {
+          bidId: data.bidId,
+          label: m.label,
+          error: String(err),
+        });
+      }
+    }
+
+    res.json({
+      inserted: insertedIds.length,
+      skipped,
+      insertedIds,
+    });
   },
 );
 
