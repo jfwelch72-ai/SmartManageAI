@@ -159,6 +159,8 @@ const AiEstimatorAdminPage = lazy(() => import("@/pages/ai-estimator-admin"));
 const CrewsPage = lazy(() => import("@/pages/crews"));
 const DispatchBoardPage = lazy(() => import("@/pages/dispatch-board"));
 const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
+const CostBookPage = lazy(() => import("@/pages/cost-book"));
+const CrewTemplatesPage = lazy(() => import("@/pages/crew-templates"));
 const CompanyCommunicationsPage = lazy(() => import("@/pages/company-communications"));
 const TasksPage = lazy(() => import("@/pages/tasks"));
 const DailyReportsPage = lazy(() => import("@/pages/daily-reports"));
@@ -452,6 +454,8 @@ function Router() {
       <Route path="/ai-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=ai-settings" />} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/ai-estimator/admin" component={() => <ProtectedRoute component={AiEstimatorAdminPage} permission={RoutePermissions.AI_ESTIMATOR_ADMIN} featurePerm="canManageAiEstimator" />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canViewFinancials" />} />
+      <Route path="/cost-book" component={() => <ProtectedRoute component={CostBookPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER"} />} />
+      <Route path="/crew-templates" component={() => <ProtectedRoute component={CrewTemplatesPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER"} />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} featurePerm="canManageScheduling" />} />
       <Route path="/dispatch-board" component={() => <ProtectedRoute component={DispatchBoardPage} permission={RoutePermissions.DISPATCH_BOARD} featurePerm="canManageScheduling" />} />
       <Route path="/subcontractor-payables" component={() => <ProtectedRoute component={() => <Redirect to="/subcontracts" />} permission={RoutePermissions.SUBCONTRACTS} featurePerm="canViewFinancials" />} />

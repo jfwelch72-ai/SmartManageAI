@@ -537,6 +537,8 @@ export const NavItems: Record<string, NavItem> = {
   '/tm-billing': { href: '/tm-billing', label: 'T&M Billing', testId: 'nav-tm-billing', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
   '/progress-billing': { href: '/progress-billing', label: 'AIA / Progress Billing', testId: 'nav-progress-billing', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProgressBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
   '/cost-rates': { href: '/cost-rates', label: 'Cost Rates', testId: 'nav-cost-rates', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCostRates : isOrganizationAdmin(role) || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/cost-book': { href: '/cost-book', label: 'Cost Book', testId: 'nav-cost-book', visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/crew-templates': { href: '/crew-templates', label: 'Crew Templates', testId: 'nav-crew-templates', visible: (role?: string) => isOrganizationAdmin(role) || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER" },
   '/production-rates': { href: '/production-rates', label: 'Production Rates', testId: 'nav-production-rates', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessProductionRates : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/subcontractor-payables': { href: '/subcontractor-payables', label: 'Subcontractor Payables', testId: 'nav-subcontractor-payables', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessSubcontracts : isOrganizationAdmin(role) || role === "HUSTLER" },
   '/overhead-costs': { href: '/overhead-costs', label: 'Overhead Costs', testId: 'nav-overhead-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessOverheadCosts : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
@@ -603,7 +605,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/ai-estimator/admin', '/audit-logs', '/reports', '/admin/log-email-failures'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/cost-book', '/crew-templates', '/ai-settings', '/ai-estimator/admin', '/audit-logs', '/reports', '/admin/log-email-failures'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
@@ -622,7 +624,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/cost-book', '/crew-templates', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
@@ -640,7 +642,7 @@ const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
 const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
   { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
-  { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
+  { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/cost-book', '/crew-templates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
