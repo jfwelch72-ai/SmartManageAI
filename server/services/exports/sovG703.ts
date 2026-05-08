@@ -93,15 +93,22 @@ export function generateSovG703Xlsx(input: SovInput): Buffer {
   const aoa: AoaRow[] = [...headerRows, ...data, totalsRowData];
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // Convert formula objects to proper XLSX cell objects.
+  // Convert formula placeholders into proper XLSX formula cells.
+  // `aoa_to_sheet` accepts a cell value of `{f: "..."}` and writes the
+  // formula string onto `cell.f` directly (NOT under `cell.v`), so we
+  // detect either shape. SheetJS' XLSX writer drops formula-only cells
+  // that lack a `v` fallback, so we seed `v: 0` — Excel and Google
+  // Sheets recompute the cell as soon as the workbook is opened.
   for (let r = dataStart - 1; r < totalsRow; r++) {
     for (let c = 0; c < 10; c++) {
       const ref = XLSX.utils.encode_cell({ r, c });
-      const cell: XLSX.CellObject | undefined = ws[ref];
-      if (cell && isFormulaCell(cell.v)) {
-        const formula = cell.v.f;
-        const replacement: XLSX.CellObject = { t: "n", f: formula };
-        ws[ref] = replacement;
+      const cell = ws[ref] as (XLSX.CellObject & { f?: string }) | undefined;
+      if (!cell) continue;
+      let formula: string | undefined;
+      if (typeof cell.f === "string") formula = cell.f;
+      else if (isFormulaCell(cell.v)) formula = cell.v.f;
+      if (formula) {
+        ws[ref] = { t: "n", f: formula, v: 0 } as XLSX.CellObject;
       }
     }
   }

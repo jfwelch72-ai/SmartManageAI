@@ -57,8 +57,23 @@ function fmtMoney(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 }
 
-export function generateProposalPDF(input: ProposalPdfInput): PassThrough {
-  const { branding, context, lineItems, alternateGroups } = input;
+export interface ProposalTotals {
+  baseSubtotal: number;
+  allowanceSubtotal: number;
+  contingencySubtotal: number;
+  includedAltSubtotal: number;
+  proposalTotal: number;
+  includedAlternateIds: string[];
+}
+
+/**
+ * Compute the proposal money totals (base/allowances/contingencies plus the
+ * subset of alternate groups currently flagged as included). Exposed for
+ * test seams so the totals math can be exercised without rendering a PDF —
+ * `generateProposalPDF` calls this internally so the two stay in lock-step.
+ */
+export function computeProposalTotals(input: ProposalPdfInput): ProposalTotals {
+  const { lineItems, alternateGroups } = input;
   const includedAlternates = new Set(
     input.includedAlternateIds ?? alternateGroups.filter((g) => g.defaultIncluded).map((g) => g.id),
   );
@@ -75,6 +90,27 @@ export function generateProposalPDF(input: ProposalPdfInput): PassThrough {
     .filter((li) => li.alternateGroupId && includedAlternates.has(li.alternateGroupId))
     .reduce((s, li) => s + Number(li.totalCost || 0), 0);
   const proposalTotal = baseSubtotal + allowanceSubtotal + contingencySubtotal + includedAltSubtotal;
+  return {
+    baseSubtotal,
+    allowanceSubtotal,
+    contingencySubtotal,
+    includedAltSubtotal,
+    proposalTotal,
+    includedAlternateIds: Array.from(includedAlternates),
+  };
+}
+
+export function generateProposalPDF(input: ProposalPdfInput): PassThrough {
+  const { branding, context, lineItems, alternateGroups } = input;
+  const totals = computeProposalTotals(input);
+  const includedAlternates = new Set(totals.includedAlternateIds);
+
+  const baseLines = lineItems.filter((li) => li.lineType === "BASE");
+  const altLines = lineItems.filter((li) => li.lineType === "ALTERNATE");
+  const allowLines = lineItems.filter((li) => li.lineType === "ALLOWANCE");
+  const contLines = lineItems.filter((li) => li.lineType === "CONTINGENCY");
+
+  const { baseSubtotal, allowanceSubtotal, contingencySubtotal, includedAltSubtotal, proposalTotal } = totals;
 
   const doc = new PDFDocument({ margin: 54, size: "LETTER" });
   const stream = new PassThrough();
