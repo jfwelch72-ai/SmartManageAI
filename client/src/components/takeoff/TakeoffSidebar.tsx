@@ -1686,11 +1686,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         onMouseLeave={() => onMeasurementHover?.(null)}
                         data-testid={`measurement-item-${m.id}`}
                       >
-                        <div className="flex items-center gap-2 mb-1.5">
+                        <div className="flex items-start gap-2 mb-1.5">
                           {bulkSelectMode && (
-                            <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded shrink-0" />
+                            <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded shrink-0 mt-0.5" />
                           )}
-                          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5 font-semibold border shrink-0", typeBadgeStyles[m.type] || "")}>
+                          <Badge variant="outline" className={cn("text-[10px] px-1.5 py-0 h-5 font-semibold border shrink-0 mt-0.5", typeBadgeStyles[m.type] || "")}>
                             {typeLabels[m.type] || m.type}
                           </Badge>
                           {inlineEditId === m.id ? (
@@ -1733,7 +1733,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               </Button>
                             </div>
                           ) : (
-                            <span className="font-medium text-sm truncate flex-1 min-w-0" onDoubleClick={(e) => {
+                            <span className="font-medium text-sm break-words flex-1 min-w-0" onDoubleClick={(e) => {
                               e.stopPropagation();
                               setInlineEditId(m.id);
                               setInlineEditLabel(m.label || "");
