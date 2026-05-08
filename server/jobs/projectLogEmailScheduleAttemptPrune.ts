@@ -32,6 +32,7 @@
 
 import { asc, inArray, lt } from "drizzle-orm";
 import { db } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { projectLogEmailScheduleAttempts } from "@shared/schema";
 import { logError, logInfo } from "../utils/logger";
 
@@ -81,6 +82,11 @@ export async function pruneProjectLogEmailScheduleAttempts(
     return { deleted: 0, batches: 0, cappedAtMaxBatches: false };
   }
 
+  // Task #2673 — cross-tenant retention sweep. `withSystemJobContext`
+  // delegates to `runAsSuperadmin` (audited). Disabled-sweep ticks
+  // short-circuit above so we don't write an audit row when there is
+  // no DB work to do.
+  return withSystemJobContext("projectLogEmailScheduleAttemptPrune", async () => {
   const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const batchSize = PROJECT_LOG_EMAIL_ATTEMPT_PRUNE_BATCH_SIZE;
@@ -143,4 +149,5 @@ export async function pruneProjectLogEmailScheduleAttempts(
     });
     throw err;
   }
+  });
 }

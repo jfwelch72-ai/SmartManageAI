@@ -43,6 +43,7 @@
 
 import { asc, inArray, isNotNull, lt, and } from "drizzle-orm";
 import { db } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { planDocumentMarkups } from "@shared/schema";
 import { logError, logInfo } from "../utils/logger";
 import { recordJobMetrics } from "../utils/jobMetrics";
@@ -114,6 +115,11 @@ export async function purgePlanDocumentMarkupTrash(
     return result;
   }
 
+  // Task #2673 — sweep walks every tenant. `withSystemJobContext`
+  // delegates to `runAsSuperadmin` (audited). Disabled-sweep ticks
+  // short-circuit above so we don't write an audit row when there is
+  // no DB work to do.
+  return withSystemJobContext("planDocumentMarkupSoftDeletePurge", async () => {
   const now = opts.now ?? new Date();
   const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
   const batchSize = PLAN_DOCUMENT_MARKUP_TRASH_PURGE_BATCH_SIZE;
@@ -207,4 +213,5 @@ export async function purgePlanDocumentMarkupTrash(
     });
     throw err;
   }
+  });
 }

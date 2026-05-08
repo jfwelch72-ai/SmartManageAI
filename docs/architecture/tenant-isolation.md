@@ -2,10 +2,13 @@
 
 ## Status
 
-**Defense-in-depth, fail-closed policy + named superadmin default.** Row-level
-security is enabled (with `FORCE`) on every multi-tenant table in production
-and the policies are fail-closed: a session sees a row IFF
-`app.is_superadmin = 'true'` OR `organization_id = app.current_org_id`.
+**Ratchet closed (Task #2673).** Row-level security is enabled (with
+`FORCE`) on every multi-tenant table in production and the policies are
+fail-closed: a session sees a row IFF `app.is_superadmin = 'true'` OR
+`organization_id = app.current_org_id`. Production now boots with
+`STRICT_TENANT_RLS=true` — `server/index.ts` fails fast on boot in
+production when the env var is missing or `false`. Dev/test may opt out
+for local debugging and gets a loud warn in the boot log.
 
 Authenticated HTTP traffic is **always** wrapped in a non-elevated
 `withOrgContext` — even SUPER_ADMIN sessions land in a non-elevated
@@ -16,16 +19,16 @@ must go through `runAsSuperadmin(reason, …)`, which writes a row to
 audit write fails.
 
 Unauthenticated traffic (login, public webhooks, the few open portal
-endpoints) and not-yet-wrapped background jobs run on a fresh pool
-connection whose default is governed by `STRICT_TENANT_RLS`:
+endpoints) and any code path that escapes a context wrapper now hits a
+fresh pool connection whose connect-default is `app.is_superadmin =
+'false'` (under `STRICT_TENANT_RLS=true`). Such queries return zero
+rows instead of silently spanning every tenant — the desired
+fail-closed behaviour.
 
-- `STRICT_TENANT_RLS` unset / `false` (today): connect-default is
-  `app.is_superadmin = 'true'` so legacy job code paths keep working.
-- `STRICT_TENANT_RLS=true` (target state): connect-default is
-  `app.is_superadmin = 'false'` so any unwrapped query returns zero
-  rows.
-
-The flip is the actual ratchet to strict mode.
+| `STRICT_TENANT_RLS` | `app.is_superadmin` connect default | Effect on uncontextualized queries |
+| --- | --- | --- |
+| `true` (production default) | `false` | Fail closed — return zero rows. |
+| unset / `false` (dev/test opt-out) | `true` | Bypass RLS — only acceptable for local debugging. |
 
 ## Why
 
@@ -82,17 +85,30 @@ re-applied at boot by `server/utils/ensureRlsPolicies.ts`.
 
 ### Connection defaults & strict mode
 
-`server/db.ts` registers a `pool.on("connect", …)` handler that sets the
-following on every fresh pool connection:
+`server/db.ts` registers a `pool.on("connect", …)` handler that sets
+`app.is_superadmin` on every fresh pool connection. `withOrgContext`
+overrides this default for the duration of the request/job (downgrades
+to `is_superadmin = 'false'` + the bound org id), then restores the
+connect-default on `client.release()`.
 
-| `STRICT_TENANT_RLS` | `app.is_superadmin` default | Effect on uncontextualized queries |
-| --- | --- | --- |
-| unset / `false` (today) | `true` | Bypass RLS — legacy code keeps working. |
-| `true` (target state)   | `false` | Fail closed — return zero rows. |
+The production fail-fast lives in `server/index.ts` immediately after
+the `isProduction` derivation and runs before any HTTP handler is
+registered. To roll back the ratchet (e.g. an emergency rollback while
+investigating a regression):
 
-`withOrgContext` always overrides this default for the duration of the
-request/job (downgrades to `is_superadmin = 'false'` + the bound org id),
-then restores the connect-default on `client.release()`.
+1. Set `STRICT_TENANT_RLS=false` (or unset it) in the production
+   environment.
+2. Redeploy. The server boots with the legacy connect-default
+   `app.is_superadmin = 'true'` and unwrapped queries again span every
+   tenant.
+3. Re-enable strict mode by setting `STRICT_TENANT_RLS=true` and
+   redeploying once the regression is fixed.
+
+Rollback is intentionally a redeploy rather than a hot toggle — the
+connect-default is read once per pg client at the `pool.on("connect")`
+handler in `server/db.ts`, so a hot env flip would only affect newly
+checked-out connections and leave existing pooled clients on the old
+default.
 
 ### Files
 
@@ -149,8 +165,15 @@ trail is exactly what this task exists to prevent. Schema is owned by
 
 ## Background jobs
 
-Each handler in `server/jobs/jobRunner.ts` that processes a single
-organization should wrap the per-org body with:
+There are three context wrappers, picked by what the job touches:
+
+| Wrapper | Use when… | Audit row? |
+| --- | --- | --- |
+| `withJobOrgContext("<job-name>", orgId, fn)` | The job processes ONE tenant at a time. | No |
+| `withSystemJobContext("<job-name>", fn)` | The job is intrinsically cross-tenant (outbox drain, retention sweep, integration sync, periodic-report fan-out, …). | No |
+| `runAsSuperadmin("<reason>", fn, { actorId? })` | A platform-admin code path needs cross-tenant access AND must leave an audit trail. | Yes — one row per call. |
+
+Per-org loops look like:
 
 ```ts
 import { withJobOrgContext } from "../dbContext";
@@ -163,16 +186,19 @@ for (const org of orgs) {
 ```
 
 Jobs that are intrinsically cross-tenant (e.g. `pruneSuppressionResets`,
-`pruneJobMetricsDb`) can keep running outside any context — the
-default-superadmin connect handler preserves their behaviour today. To
-move them into the strict-mode lane explicitly, wrap each one with
-`runAsSuperadmin("<job-name>", …)` and accept the per-tick audit row.
+`pruneJobMetricsDb`) wrap their main exported function in
+`withSystemJobContext("<job-name>", …)`, which delegates to
+`runAsSuperadmin("system-job:<job-name>", …)` so every cross-tenant
+elevation is recorded in `superadmin_access_log` BEFORE the elevation
+happens and refuses if the audit insert fails.
 
 All `for (const org of orgs)` loops in `server/jobs/jobRunner.ts` are
-wrapped with `withJobOrgContext(...)`, and the lint guard at
-`scripts/check-db-imports.mjs` (wired into `scripts/ci.sh`) fails CI if
-a `db.*` reference inside a per-org loop body is not lexically enclosed
-in a `withJobOrgContext(...)` call. Current wrappers:
+wrapped with `withJobOrgContext(...)`, and the lint guards at
+`scripts/check-db-imports.mjs` and `scripts/check-job-context.mjs`
+(both wired into `scripts/ci.sh`) fail CI if a `db.*` reference inside
+a per-org loop body is not lexically enclosed in a
+`withJobOrgContext(...)` call, or if a background-job file touches the
+DB without a tenant context wrapper. Current wrappers:
 
 - `processCrmContactBirthdayDailyDigest` →
   `withJobOrgContext("crm.contactBirthdayDailyDigest", org.id, …)`
@@ -190,24 +216,77 @@ in a `withJobOrgContext(...)` call. Current wrappers:
 When converting a job, outer-loop `continue` statements inside the
 wrapped block must become `return` because the body now runs as an
 async callback rather than the loop body itself. Inner loops keep
-their own `continue`s. Follow-up #2491 covers the eventual
-`STRICT_TENANT_RLS=true` flip.
+their own `continue`s.
 
-## Ratchet to strict mode
+### Cron sweeps wrap automatically via `withSchedulerLock`
 
-The full ratchet is a single env flip — `STRICT_TENANT_RLS=true` — once
-every authenticated route and every per-org background job is wrapped.
-Until then, run periodic audits:
+`server/utils/schedulerLock.ts::withSchedulerLock(name, fn)` now wraps
+the locked tick in `withSystemJobContext(name, …)`. That means every
+in-process scheduler — `server/jobs/jobRunner.ts`,
+`server/aiNotesScheduler.ts`, `server/crmTaskReminderScheduler.ts`,
+`server/crmBackfillAlertDigestScheduler.ts`,
+`server/statusProbeScheduler.ts`, `server/supportWeeklyReport.ts`,
+`server/ai/scheduler.ts` — gets a working system context for free
+under `STRICT_TENANT_RLS=true`. Per-org work fanned out from inside a
+tick still drops into a child `withJobOrgContext(...)` so the inner
+queries are pinned to a single tenant.
+
+The pg-boss queue (`server/jobQueue/index.ts`) wraps each handler
+invocation in `withOrgContext({ organizationId, source: "job:<name>",
+isSuperadmin: false })` whenever the enqueued job carries an
+`organizationId`. Handlers that need to escape that scope (rare —
+mostly `bulkExport` summary rows that span tenants) must wrap the
+escape in `runAsSuperadmin`.
+
+### Per-org loops in `server/jobs/jobRunner.ts`
+
+All five `for (const org of orgs)` loops are wrapped:
+
+- `processEquipmentPmGeneration` (loop ~1519) →
+  `withJobOrgContext("equipment.pmGeneration", orgId, …)`
+- `processComplianceExpirations` (loop ~2801, Task #2673) →
+  `withJobOrgContext("compliance.expiration", org.organizationId, …)`
+  — proactively wrapped even though the inner body currently only
+  appends to an in-memory array; future maintainers WILL add a per-org
+  DB call here.
+- `processCrmContactBirthdayDigest` (loop ~4117) →
+  `withJobOrgContext("crm.contactBirthdayWeeklyDigest", org.id, …)`
+- `processCrmContactBirthdayDailyDigest` (loop ~4485) →
+  `withJobOrgContext("crm.contactBirthdayDailyDigest", org.id, …)`
+- `processCertifiedPayrollWeeklyDigest` (loop ~4725) →
+  `withJobOrgContext("payroll.certifiedPayrollDigest", org.id, …)`
+
+## Lint guards (CI)
+
+Both run in `scripts/ci.sh` (cheap, <1s each).
+
+- `scripts/check-db-imports.mjs` (Task #2478) — fails when a new
+  `server/` file imports `drizzle-orm/node-postgres`, builds its own
+  `pg` `Pool`, or calls `drizzle({ client: ... })` outside the
+  allowlisted `server/db.ts` / `server/dbContext.ts`. Bypassing the
+  proxy bypasses the ALS-bound RLS client.
+- `scripts/check-job-context.mjs` (Task #2673) — fails when a file
+  under `server/jobs/`, `server/jobQueue/handlers/`, or
+  `server/jobQueue/exports/` imports `db` (or calls `db.<verb>`)
+  without referencing a context wrapper (`withJobOrgContext`,
+  `withOrgContext`, `withSystemJobContext`, or `runAsSuperadmin`).
+  Allowlist: `server/jobs/jobRunner.ts` (wraps at the
+  `withSchedulerLock` layer) and `server/jobQueue/index.ts` (wraps
+  every handler invocation).
+
+## Periodic strict-mode audit
+
+The ratchet is closed in production, but new code can still introduce
+unwrapped paths between releases. Run this audit before each major
+release:
 
 1. Set `STRICT_TENANT_RLS=true` in a staging environment.
-2. Exercise the app + smoke tests; any feature that returns empty
-   results or 5xxs has an unwrapped DB call.
-3. Wrap it with `withOrgContext` (route) or `withJobOrgContext` (job)
-   and re-run.
-
-The lint guard at `scripts/check-db-imports.mjs` (wired into
-`scripts/ci.sh`) blocks new files that bypass the proxy by importing
-drizzle directly or building their own pool.
+2. Exercise the app + `scripts/smoke-test.sh` + the full vitest suite.
+3. Anything that returns empty results, 5xxs, or hits "0 rows
+   affected" has an unwrapped DB call. Wrap it with `withOrgContext`
+   (route), `withJobOrgContext` (per-tenant job), or
+   `withSystemJobContext` (intrinsically cross-tenant job) and
+   re-run.
 
 ## Tests
 

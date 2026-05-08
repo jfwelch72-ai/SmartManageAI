@@ -55,6 +55,12 @@ run_step "tenant-isolation lint (scripts/check-db-imports.mjs)" \
 run_step "legacy-storage freeze (scripts/check-legacy-storage.mjs)" \
   node scripts/check-legacy-storage.mjs
 
+# Task #2673 — block new background-job files from touching the DB
+# without a tenant context wrapper. Required for STRICT_TENANT_RLS=true
+# mode to stay green. Also cheap (<1s).
+run_step "background-job context lint (scripts/check-job-context.mjs)" \
+  node scripts/check-job-context.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else

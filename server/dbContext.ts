@@ -200,6 +200,36 @@ export async function withJobOrgContext<T>(
 }
 
 /**
+ * Task #2673 — System-job context for cross-tenant background sweeps
+ * (outbox drain, retention sweep, integration sync, periodic reports,
+ * etc.). These jobs are intrinsically global: they walk every tenant
+ * to find work, so they need cross-tenant DB access once
+ * `STRICT_TENANT_RLS=true` is the production default.
+ *
+ * IMPORTANT: this is an AUDITED elevation. It delegates to
+ * `runAsSuperadmin("system-job:<name>", …)` which writes a row to
+ * `superadmin_access_log` BEFORE elevating and refuses to elevate if
+ * the audit write fails. `superadmin_access_log` is therefore the only
+ * path for cross-tenant access in the codebase — there is no silent
+ * bypass anywhere.
+ *
+ * Yes, this means every cron tick that runs an inherently cross-tenant
+ * sweep writes one audit row. That is the point: the operator can grep
+ * `superadmin_access_log` for `system-job:*` to see exactly which
+ * background jobs elevated, when, and how often. Per-tenant work that
+ * fans out from inside one of these sweeps MUST still drop into a
+ * tenant-scoped child context via `withJobOrgContext` so RLS pins the
+ * inner queries to a single org and the per-org child does not write
+ * an additional audit row.
+ */
+export async function withSystemJobContext<T>(
+  jobName: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return runAsSuperadmin(`system-job:${jobName}`, fn);
+}
+
+/**
  * Internal — used by the `db` proxy in `./db.ts`. Returns the ALS-bound
  * drizzle instance when a context is active, otherwise `null` so callers
  * fall back to the pool-backed base instance.

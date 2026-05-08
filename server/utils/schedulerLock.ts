@@ -1,4 +1,5 @@
 import { pool } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { logError, logWarn } from "./logger";
 
 /**
@@ -101,7 +102,16 @@ export async function withSchedulerLock<T>(
 
     let value: T;
     try {
-      value = await fn();
+      // Task #2673 — once `STRICT_TENANT_RLS=true` is the production
+      // default, the connect-default `app.is_superadmin` flips to
+      // `'false'`. Cross-tenant cron sweeps (outbox drain, retention,
+      // integration sync, periodic reports, …) would otherwise return
+      // zero rows for every multi-tenant table. Wrapping the locked
+      // tick in a system context restores their cross-tenant view
+      // without writing a superadmin_access_log row per tick. Per-org
+      // child work inside still drops into `withJobOrgContext(...)`
+      // which acquires its own pg client and pins RLS to a single org.
+      value = await withSystemJobContext(name, fn);
     } catch (err) {
       // Roll back so the lock is released, then re-throw to the caller's
       // try/catch so the existing scheduler-level logError still fires.

@@ -1,4 +1,4 @@
-import { logError, logInfo } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { isDevSeedEnabled } from "./utils/devSeedFlag";
 import { initSentry, captureRequestException } from "./sentry";
 import { correlationIdMiddleware } from "./middleware/correlationId";
@@ -96,6 +96,37 @@ app.use(correlationIdMiddleware);
 app.use(compression());
 
 const isProduction = process.env.NODE_ENV === "production";
+
+// Task #2673 — Production fail-fast for the tenant-isolation ratchet.
+// Once the migration to strict mode is complete, production MUST boot
+// with `STRICT_TENANT_RLS=true`. The connect-default `app.is_superadmin`
+// flips to `'false'` so unwrapped DB queries return zero rows instead of
+// silently spanning every tenant. Dev/test may opt out for local
+// debugging; we log a loud warning so the deviation is visible.
+{
+  const strictRls = process.env.STRICT_TENANT_RLS === "true";
+  if (isProduction && !strictRls) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[boot] FATAL: STRICT_TENANT_RLS must be set to 'true' in production. " +
+        "Tenant isolation depends on the connect-default `app.is_superadmin` " +
+        "being 'false' so any DB query that escaped a `withOrgContext` wrapper " +
+        "fails closed. Set STRICT_TENANT_RLS=true and redeploy. See " +
+        "docs/architecture/tenant-isolation.md.",
+    );
+    process.exit(1);
+  }
+  if (!strictRls) {
+    logWarn(
+      "[boot] STRICT_TENANT_RLS is OFF — uncontextualized DB queries will " +
+        "fall back to the legacy superadmin connect-default and silently span " +
+        "every tenant. This is only acceptable in local dev/test. Production " +
+        "fails to boot without it. (Task #2673)",
+    );
+  } else {
+    logInfo("[boot] STRICT_TENANT_RLS is ON — fail-closed tenant isolation active.");
+  }
+}
 
 const livekitDomain = process.env.LIVEKIT_URL
   ? new URL(process.env.LIVEKIT_URL.startsWith("wss://") ? process.env.LIVEKIT_URL.replace("wss://", "https://") : process.env.LIVEKIT_URL).hostname

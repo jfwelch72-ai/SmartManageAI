@@ -1,5 +1,6 @@
 import { and, eq, lte, sql } from "drizzle-orm";
 import { db } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { orgDeletionRequests, organizations } from "@shared/schema";
 import { logError, logInfo } from "../utils/logger";
 import { logAudit } from "../auditLogger";
@@ -71,6 +72,10 @@ async function deleteObjectStoragePrefix(orgId: string, failures: PerOrgFailure[
 }
 
 export async function runOrgHardDeleteSweep(): Promise<{ swept: number; failed: number }> {
+  // Task #2673 — sweep walks every org. `withSystemJobContext`
+  // delegates to `runAsSuperadmin` so each run writes one
+  // `superadmin_access_log` row before the cross-tenant query runs.
+  return withSystemJobContext("orgHardDeleteSweep", async () => {
   const due = await db.select().from(orgDeletionRequests).where(
     and(
       eq(orgDeletionRequests.status, "SCHEDULED_HARD_DELETE"),
@@ -189,4 +194,5 @@ export async function runOrgHardDeleteSweep(): Promise<{ swept: number; failed: 
   }
 
   return { swept, failed };
+  });
 }

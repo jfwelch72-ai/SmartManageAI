@@ -30,6 +30,7 @@ import { sendEmail } from "../services/emailService";
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { recordJobMetrics, type JobCounters } from "../utils/jobMetrics";
 import { db } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { jobMetricSamples } from "@shared/schema";
 import { desc, eq } from "drizzle-orm";
 
@@ -303,6 +304,9 @@ export async function getRecentDotPayItemsRefreshes(
  * Job Metrics surface and alerting engine continue to work.
  */
 export async function processDotPayItemsRefresh(): Promise<DotPayItemsRefreshOutcome> {
+  // Task #2673 — cross-tenant catalog refresh. `withSystemJobContext`
+  // delegates to `runAsSuperadmin` (audited).
+  return withSystemJobContext("dotPayItemsRefresh", async () => {
   logInfo("DOT pay-item refresh starting");
   const startedAt = Date.now();
   const summary = await runFetcher();
@@ -401,4 +405,5 @@ export async function processDotPayItemsRefresh(): Promise<DotPayItemsRefreshOut
     regressions: regressions.length,
     alertsSent,
   };
+  });
 }

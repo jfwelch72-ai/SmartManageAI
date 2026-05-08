@@ -30,6 +30,7 @@
  */
 
 import { db } from "../db";
+import { withSystemJobContext } from "../dbContext";
 import { and, eq, inArray, lte, sql, asc, desc } from "drizzle-orm";
 import { certifiedPayrollReports, organizationPayrollSettings, users, jobMetricSamples } from "@shared/schema";
 import { logAudit } from "../auditLogger";
@@ -125,6 +126,10 @@ export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } 
   storageDeleted: number;
   storageFailures: number;
 }> {
+  // Task #2673 — intrinsically cross-tenant sweep. `withSystemJobContext`
+  // delegates to `runAsSuperadmin` so the elevation is recorded in
+  // `superadmin_access_log` BEFORE any DB work runs.
+  return withSystemJobContext("certifiedPayrollPurge", async () => {
   const now = opts.now ?? new Date();
   const startedAt = Date.now();
   let orgsProcessed = 0;
@@ -301,4 +306,5 @@ export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } 
   });
 
   return { orgsProcessed, rowsPurged, storageDeleted, storageFailures };
+  });
 }
