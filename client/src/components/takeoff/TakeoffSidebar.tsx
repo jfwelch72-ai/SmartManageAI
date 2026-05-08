@@ -492,24 +492,46 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   const handleBulkCategoryAssign = async (categoryId: string) => {
     if (bulkSelectedIds.size === 0) return;
     const ids = Array.from(bulkSelectedIds);
-    const beforeSnaps: { id: string; categoryId: string | null }[] = [];
-    const afterSnaps: { id: string; categoryId: string | null }[] = [];
+    // Task #2653 — Capture each row's pre-mutation `version` so the
+    // batch history entry can replay through the bulk PATCH with
+    // per-row `expectedVersion` / CAS. Stamped onto both sides of
+    // the snapshot up front; the history hook updates the opposite
+    // side from each replay's response so a second undo/redo CAS
+    // engages against the now-current version.
+    const beforeSnaps: { id: string; categoryId: string | null; version?: number }[] = [];
+    const afterSnaps: { id: string; categoryId: string | null; version?: number }[] = [];
     for (const id of ids) {
-      const m = measurements.find(mm => mm.id === id);
+      const m = measurements.find(mm => mm.id === id) as
+        | (typeof measurements[number] & { version?: number })
+        | undefined;
       if (!m) continue;
       if ((m.categoryId ?? null) === categoryId) continue;
-      beforeSnaps.push({ id, categoryId: m.categoryId ?? null });
-      afterSnaps.push({ id, categoryId });
+      const version = typeof m.version === "number" ? m.version : undefined;
+      beforeSnaps.push({ id, categoryId: m.categoryId ?? null, version });
+      afterSnaps.push({ id, categoryId, version });
     }
     if (afterSnaps.length === 0) {
       setBulkSelectedIds(new Set());
       return;
     }
     try {
+      let bulkResponseVersionsById: Map<string, number> | undefined;
       if (bulkUpdateMeasurementsMutation) {
-        await bulkUpdateMeasurementsMutation.mutateAsync({
+        const res = await bulkUpdateMeasurementsMutation.mutateAsync({
           updates: afterSnaps.map(s => ({ id: s.id, categoryId })),
         });
+        const rows: Array<{ id: string; version?: number }> = Array.isArray(res?.measurements)
+          ? res.measurements
+          : Array.isArray(res)
+            ? res
+            : [];
+        if (rows.length > 0) {
+          bulkResponseVersionsById = new Map(
+            rows
+              .filter((r) => typeof r.version === "number")
+              .map((r) => [r.id, r.version as number]),
+          );
+        }
       } else {
         await Promise.all(
           afterSnaps.map(s =>
@@ -518,7 +540,18 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
         );
       }
       if (selectedSheet && pushMeasurementUpdateBatch) {
-        pushMeasurementUpdateBatch(beforeSnaps, afterSnaps, selectedSheet);
+        // Stamp post-commit versions onto both sides of each snap
+        // so undo CAS sees the version currently on the server.
+        const stamp = (snap: { id: string; categoryId: string | null; version?: number }) => {
+          const v = bulkResponseVersionsById?.get(snap.id);
+          if (typeof v === "number") return { ...snap, version: v };
+          return snap;
+        };
+        pushMeasurementUpdateBatch(
+          beforeSnaps.map(stamp),
+          afterSnaps.map(stamp),
+          selectedSheet,
+        );
       }
       setBulkSelectedIds(new Set());
       toast({ title: "Category assigned", description: `Updated ${afterSnaps.length} items` });

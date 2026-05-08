@@ -637,7 +637,7 @@ export function useTakeoffData({
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, body);
       return res.json();
     },
-    onSuccess: (_data: TakeoffMeasurement, variables) => {
+    onSuccess: (_data: TakeoffMeasurement & { version?: number }, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });
@@ -651,8 +651,14 @@ export function useTakeoffData({
       // entry so we must skip here in that case.
       if (selectedSheet && variables.previous && !variables.skipHistory) {
         const previous = variables.previous;
-        const before: MeasurementSnapshot = { id: variables.id };
-        const after: MeasurementSnapshot = { id: variables.id };
+        // Task #2653 — Stamp the post-PATCH version onto both
+        // sides of the snapshot so undo's CAS sends the version
+        // the row currently has on the server. The redo branch
+        // updates `before.version` from its own response after
+        // undo runs (history hook).
+        const postVersion = typeof _data.version === "number" ? _data.version : undefined;
+        const before: MeasurementSnapshot = { id: variables.id, version: postVersion };
+        const after: MeasurementSnapshot = { id: variables.id, version: postVersion };
         let hasChange = false;
         if (variables.label !== undefined && previous.label !== undefined) {
           before.label = previous.label; after.label = variables.label; hasChange = true;
@@ -764,17 +770,36 @@ export function useTakeoffData({
   // helpers so a teammate-deleted row drops out of the cache and the
   // selection set in the same gesture, matching the per-id PATCH.
   const unlockAndRescaleMeasurementMutation = useMutation({
-    mutationFn: async (id: string) => {
+    mutationFn: async (input: string | { id: string; expectedVersion?: number; forceOverwrite?: boolean }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot unlock measurements while viewing a locked version");
       }
-      const res = await apiRequest("POST", `/api/takeoff/measurements/${id}/unlock-rescale`);
+      const id = typeof input === "string" ? input : input.id;
+      const explicitVersion = typeof input === "string" ? undefined : input.expectedVersion;
+      const forceOverwrite = typeof input !== "string" && input.forceOverwrite === true;
+      // Task #2653 — Auto-attach the cached row's `version` as
+      // `expectedVersion` so the unlock-rescale path engages CAS by
+      // default. Mirrors `updateMeasurementMutation` (Task #2629).
+      let resolvedVersion: number | undefined = explicitVersion;
+      if (resolvedVersion === undefined && !forceOverwrite && selectedSheet) {
+        const cached = queryClient.getQueryData<TakeoffMeasurement[]>([
+          "/api/takeoff/sheets",
+          selectedSheet,
+          "measurements",
+        ]);
+        const row = cached?.find((m) => m.id === id) as (TakeoffMeasurement & { version?: number }) | undefined;
+        if (row && typeof row.version === "number") resolvedVersion = row.version;
+      }
+      const body: Record<string, unknown> | undefined =
+        resolvedVersion !== undefined && !forceOverwrite ? { expectedVersion: resolvedVersion } : undefined;
+      const res = await apiRequest("POST", `/api/takeoff/measurements/${id}/unlock-rescale`, body);
       return res.json() as Promise<TakeoffMeasurement & { unlocked?: boolean }>;
     },
     onSuccess: (data, variables) => {
+      const measurementId = typeof variables === "string" ? variables : variables.id;
       queryClient.invalidateQueries({ queryKey: measurementsQueryKey });
       if (selectedSheet) {
-        onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables });
+        onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId });
       }
       // The route returns `unlocked: false` in the idempotent
       // no-op case (the row was already unlocked — usually a stale
@@ -793,9 +818,10 @@ export function useTakeoffData({
       });
     },
     onError: (error: unknown, variables) => {
+      const measurementId = typeof variables === "string" ? variables : variables?.id;
       const notFoundIds = extractMeasurementNotFoundIds(
         error,
-        variables ? [variables] : [],
+        measurementId ? [measurementId] : [],
       );
       if (notFoundIds.length > 0) {
         pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
@@ -807,9 +833,27 @@ export function useTakeoffData({
         });
         return;
       }
+      // Task #2653 — Surface measurement version_conflict 409s
+      // from the unlock-rescale path through the same dialog the
+      // per-id PATCH uses. Mirrors `updateMeasurementMutation`.
+      const data = (error as { data?: { reason?: string; current?: TakeoffMeasurement | null; currentVersion?: number | null } } | undefined)?.data;
+      if (data?.reason === "version_conflict" && measurementId) {
+        setMeasurementConflict({
+          measurementId,
+          pendingEdit: { action: "unlock_and_rescale" },
+          serverRow: data.current ?? null,
+          currentVersion: data.currentVersion ?? null,
+        });
+        toast({
+          title: "Measurement was modified",
+          description:
+            "Another teammate updated this measurement — review their version before unlocking.",
+          variant: "destructive",
+        });
+        return;
+      }
       // 400 sheet_not_calibrated has its own friendly toast so the
       // user is told to calibrate the sheet before retrying.
-      const data = (error as { data?: { reason?: string } } | undefined)?.data;
       if (data?.reason === "sheet_not_calibrated") {
         toast({
           title: "Sheet is not calibrated",
@@ -843,11 +887,36 @@ export function useTakeoffData({
   // / `pruneDeletedMeasurements` helpers prune deleted rows out of
   // the cache + selection in the same gesture.
   const bulkUnlockAndRescaleMeasurementsMutation = useMutation({
-    mutationFn: async (ids: string[]) => {
+    mutationFn: async (input: string[] | { ids: string[]; versions?: Record<string, number>; forceOverwrite?: boolean }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot unlock measurements while viewing a locked version");
       }
-      const res = await apiRequest("POST", `/api/takeoff/measurements/bulk-unlock-rescale`, { ids });
+      const ids = Array.isArray(input) ? input : input.ids;
+      const explicitVersions = Array.isArray(input) ? undefined : input.versions;
+      const forceOverwrite = !Array.isArray(input) && input.forceOverwrite === true;
+      // Task #2653 — Auto-attach a `versions` map (id → cached
+      // `version`) so the bulk path engages CAS by default. Mirrors
+      // `bulkUpdateMeasurementsMutation` and the per-row unlock.
+      let versions: Record<string, number> | undefined = explicitVersions;
+      if (!versions && !forceOverwrite && selectedSheet) {
+        const cached = queryClient.getQueryData<TakeoffMeasurement[]>([
+          "/api/takeoff/sheets",
+          selectedSheet,
+          "measurements",
+        ]);
+        const cachedById = new Map<string, TakeoffMeasurement & { version?: number }>(
+          (cached ?? []).map((m) => [m.id, m as TakeoffMeasurement & { version?: number }]),
+        );
+        const acc: Record<string, number> = {};
+        for (const id of ids) {
+          const row = cachedById.get(id);
+          if (row && typeof row.version === "number") acc[id] = row.version;
+        }
+        if (Object.keys(acc).length > 0) versions = acc;
+      }
+      const body: Record<string, unknown> = { ids };
+      if (versions && !forceOverwrite) body.versions = versions;
+      const res = await apiRequest("POST", `/api/takeoff/measurements/bulk-unlock-rescale`, body);
       return res.json() as Promise<{
         measurements: TakeoffMeasurement[];
         unlockedCount: number;
@@ -875,7 +944,8 @@ export function useTakeoffData({
       });
     },
     onError: (error: unknown, variables) => {
-      const notFoundIds = extractMeasurementNotFoundIds(error, variables ?? []);
+      const ids = Array.isArray(variables) ? variables : variables?.ids ?? [];
+      const notFoundIds = extractMeasurementNotFoundIds(error, ids);
       if (notFoundIds.length > 0) {
         pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
         toast({
@@ -886,7 +956,27 @@ export function useTakeoffData({
         });
         return;
       }
-      const data = (error as { data?: { reason?: string } } | undefined)?.data;
+      const data = (error as { data?: { reason?: string; failedMeasurementIds?: string[]; conflicts?: Array<{ id: string; currentVersion?: number | null; current?: TakeoffMeasurement | null; expectedVersion?: number | null }> } } | undefined)?.data;
+      // Task #2653 — Bulk-unlock 409: surface the first conflict
+      // through the same dialog the per-id PATCH uses + show a
+      // batch-aware toast so the user knows other rows were also
+      // touched. Mirrors the bulk PATCH onError below.
+      if (data?.reason === "version_conflict" && Array.isArray(data.conflicts) && data.conflicts.length > 0) {
+        const first = data.conflicts[0];
+        setMeasurementConflict({
+          measurementId: first.id,
+          pendingEdit: { action: "bulk_unlock_and_rescale" },
+          serverRow: first.current ?? null,
+          currentVersion: first.currentVersion ?? null,
+        });
+        toast({
+          title: data.conflicts.length === 1 ? "Measurement was modified" : `${data.conflicts.length} measurements were modified`,
+          description:
+            "Another teammate updated some of these measurements — refresh and retry.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (data?.reason === "sheet_not_calibrated") {
         toast({
           title: "Sheet is not calibrated",
@@ -945,12 +1035,42 @@ export function useTakeoffData({
         color?: string;
         note?: string | null;
         locationId?: string | null;
+        // Task #2653 — Per-row optimistic concurrency. Mirrors the
+        // per-id PATCH `expectedVersion` (Task #2629). Auto-attached
+        // below from the cached row's `version` when not provided
+        // so callers (sidebar bulk-assign, replay paths) get CAS by
+        // default. `forceOverwrite` opts back into legacy
+        // last-write-wins on the conflict-dialog "overwrite" path.
+        expectedVersion?: number;
       }[];
+      forceOverwrite?: boolean;
     }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot edit measurements while viewing a locked version");
       }
-      const res = await apiRequest("PATCH", "/api/takeoff/measurements/bulk", { updates: data.updates });
+      const cached = selectedSheet
+        ? queryClient.getQueryData<TakeoffMeasurement[]>([
+            "/api/takeoff/sheets",
+            selectedSheet,
+            "measurements",
+          ])
+        : undefined;
+      const cachedById = new Map<string, TakeoffMeasurement & { version?: number }>(
+        (cached ?? []).map((m) => [m.id, m as TakeoffMeasurement & { version?: number }]),
+      );
+      const updates = data.updates.map((u) => {
+        if (data.forceOverwrite) {
+          const { expectedVersion: _ev, ...rest } = u;
+          return rest;
+        }
+        if (u.expectedVersion !== undefined) return u;
+        const row = cachedById.get(u.id);
+        if (row && typeof row.version === "number") {
+          return { ...u, expectedVersion: row.version };
+        }
+        return u;
+      });
+      const res = await apiRequest("PATCH", "/api/takeoff/measurements/bulk", { updates });
       return res.json();
     },
     onMutate: async ({ updates }) => {
@@ -1008,6 +1128,26 @@ export function useTakeoffData({
           title: "Measurement was deleted",
           description:
             "Another teammate removed one or more of these measurements, so your edits could not be saved. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // Task #2653 — Surface bulk PATCH 409 version_conflict
+      // through the same dialog the per-id PATCH uses + a
+      // batch-aware toast.
+      const data = (error as { data?: { reason?: string; conflicts?: Array<{ id: string; currentVersion?: number | null; current?: TakeoffMeasurement | null; expectedVersion?: number | null }> } } | undefined)?.data;
+      if (data?.reason === "version_conflict" && Array.isArray(data.conflicts) && data.conflicts.length > 0) {
+        const first = data.conflicts[0];
+        setMeasurementConflict({
+          measurementId: first.id,
+          pendingEdit: { action: "bulk_update" },
+          serverRow: first.current ?? null,
+          currentVersion: first.currentVersion ?? null,
+        });
+        toast({
+          title: data.conflicts.length === 1 ? "Measurement was modified" : `${data.conflicts.length} measurements were modified`,
+          description:
+            "Another teammate edited some of these measurements — refresh and retry.",
           variant: "destructive",
         });
         return;
@@ -2071,5 +2211,10 @@ export function useTakeoffData({
     // render a "keep theirs / overwrite" resolution dialog.
     measurementConflict,
     dismissMeasurementConflict,
+    // Task #2653 — Allow the history hook (undo/redo) to surface
+    // a 409 version_conflict the same way the per-id PATCH does,
+    // by handing the workspace a setter it can call from its
+    // `onMeasurementConflict` adapter.
+    setMeasurementConflict,
   };
 }

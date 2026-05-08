@@ -24,6 +24,25 @@ export interface MeasurementSnapshot {
   lineWidth?: number | null;
   metadata?: string | null;
   points?: string;
+  // Task #2653 — Optimistic-concurrency token captured at the
+  // moment the action was committed. Sent as `expectedVersion` on
+  // the replay PATCH so undo/redo refuses to overwrite a teammate's
+  // edit landed in between (CAS, mirrors the per-id PATCH path
+  // from Task #2629). Optional so legacy callers / older snapshots
+  // continue to land on last-write-wins.
+  version?: number;
+}
+
+// Task #2653 — Surface a measurement-version conflict that came
+// out of an undo/redo replay (single or batch). Mirrors the 409
+// shape the per-id PATCH already uses so the consumer can re-use
+// the same conflict dialog.
+export interface MeasurementHistoryConflict {
+  measurementId: string;
+  expectedVersion: number | null;
+  currentVersion: number | null;
+  current?: TakeoffMeasurement | null;
+  replay: "undo" | "redo";
 }
 
 interface HistoryEntry {
@@ -89,7 +108,20 @@ function buildMarkupPayload(m: TakeoffMarkup & { points: { x: number; y: number 
   };
 }
 
-export function useTakeoffHistory(selectedSheet: string | null) {
+export interface UseTakeoffHistoryOptions {
+  // Task #2653 — Invoked when an undo/redo replay PATCH against the
+  // measurements API hits a 409 (`reason === "version_conflict"`).
+  // The entry is pushed back onto its origin stack before the
+  // callback fires so the user can re-attempt the gesture after
+  // resolving the conflict (mirrors the per-id PATCH dialog path).
+  onMeasurementConflict?: (conflict: MeasurementHistoryConflict) => void;
+}
+
+export function useTakeoffHistory(
+  selectedSheet: string | null,
+  options: UseTakeoffHistoryOptions = {},
+) {
+  const onMeasurementConflict = options.onMeasurementConflict;
   const undoStack = useRef<HistoryEntry[]>([]);
   const redoStack = useRef<HistoryEntry[]>([]);
   const [canUndo, setCanUndo] = useState(false);
@@ -246,7 +278,9 @@ export function useTakeoffHistory(selectedSheet: string | null) {
   // bulk operations targeting one property (e.g. `categoryId` on the
   // sidebar's Assign Category dropdown) don't accidentally clobber
   // unrelated fields. Mirrors `applyMarkupSnapshot` field-by-field.
-  const applyMeasurementSnapshot = async (snapshot: MeasurementSnapshot) => {
+  const applyMeasurementSnapshot = async (
+    snapshot: MeasurementSnapshot,
+  ): Promise<{ id: string; version?: number } | null> => {
     const payload: Record<string, unknown> = {};
     if (snapshot.color !== undefined) payload.color = snapshot.color;
     if (snapshot.label !== undefined) payload.label = snapshot.label;
@@ -260,11 +294,100 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     if (snapshot.lineWidth !== undefined) payload.lineWidth = snapshot.lineWidth;
     if (snapshot.metadata !== undefined) payload.metadata = snapshot.metadata;
     if (snapshot.points !== undefined) payload.points = snapshot.points;
-    await apiRequest("PATCH", `/api/takeoff/measurements/${snapshot.id}`, payload);
+    // Task #2653 — Replay PATCH carries the version captured at
+    // action-commit time so the server's CAS refuses to clobber a
+    // teammate's interleaving edit.
+    if (snapshot.version !== undefined) payload.expectedVersion = snapshot.version;
+    const res = await apiRequest("PATCH", `/api/takeoff/measurements/${snapshot.id}`, payload);
+    try {
+      const body = await res.json();
+      return { id: body?.id ?? snapshot.id, version: body?.version };
+    } catch {
+      return null;
+    }
   };
 
-  const applyMeasurementBatchSnapshots = async (snaps: MeasurementSnapshot[]) => {
-    await Promise.all(snaps.map(applyMeasurementSnapshot));
+  const applyMeasurementBatchSnapshots = async (
+    snaps: MeasurementSnapshot[],
+  ): Promise<Array<{ id: string; version?: number }>> => {
+    // Task #2653 — Use the bulk PATCH endpoint when every snapshot
+    // carries fields the bulk schema accepts. The bulk endpoint
+    // applies all rows in one transaction and surfaces a single
+    // 409 with per-row conflicts, matching the per-id semantics.
+    // Fields outside the bulk schema (`points`) force the per-id
+    // fallback so existing replay shapes keep working.
+    const bulkSafe = (s: MeasurementSnapshot) => s.points === undefined;
+    if (snaps.length > 0 && snaps.every(bulkSafe)) {
+      const updates = snaps
+        .map((s) => {
+          const u: Record<string, unknown> = { id: s.id };
+          if (s.label !== undefined) u.label = s.label;
+          if (s.categoryId !== undefined) u.categoryId = s.categoryId;
+          if (s.costCodeId !== undefined) u.costCodeId = s.costCodeId;
+          if (s.unitCost !== undefined) {
+            u.unitCost = s.unitCost === null ? null : Number(s.unitCost);
+          }
+          if (s.groupId !== undefined) u.groupId = s.groupId;
+          if (s.lineStyle !== undefined) u.lineStyle = s.lineStyle;
+          if (s.lineWidth !== undefined) u.lineWidth = s.lineWidth;
+          if (s.metadata !== undefined) u.metadata = s.metadata;
+          if (s.color !== undefined && s.color !== null) u.color = s.color;
+          if (s.version !== undefined) u.expectedVersion = s.version;
+          return u;
+        })
+        // Drop entries that reduced to id-only — the bulk schema's
+        // `.refine` rejects rows with no field changes (matches the
+        // commit-side filter in `handleBulkCategoryAssign`).
+        .filter((u) => Object.keys(u).length > 1);
+      if (updates.length === 0) return [];
+      const res = await apiRequest("PATCH", "/api/takeoff/measurements/bulk", { updates });
+      try {
+        const body = await res.json();
+        const rows: any[] = Array.isArray(body) ? body : (body?.measurements ?? []);
+        return rows.map((r) => ({ id: r.id, version: r.version }));
+      } catch {
+        return [];
+      }
+    }
+    const results = await Promise.all(snaps.map(applyMeasurementSnapshot));
+    return results.filter((r): r is { id: string; version?: number } => !!r);
+  };
+
+  // Task #2653 — Inspect a thrown apiRequest error and, if it looks
+  // like a measurement version_conflict (per-id 409 or bulk 409),
+  // surface it through the consumer-supplied callback.
+  const surfaceMeasurementConflict = (
+    err: unknown,
+    replay: "undo" | "redo",
+  ): boolean => {
+    if (!onMeasurementConflict) return false;
+    const e = err as { status?: number; data?: any } | undefined;
+    if (!e || e.status !== 409 || !e.data) return false;
+    const data = e.data;
+    if (data.reason === "version_conflict") {
+      // Per-id PATCH shape: { reason, currentVersion, current, expectedVersion? }
+      if (Array.isArray(data.conflicts)) {
+        for (const c of data.conflicts) {
+          onMeasurementConflict({
+            measurementId: c.id,
+            expectedVersion: c.expectedVersion ?? null,
+            currentVersion: c.currentVersion ?? null,
+            current: c.current ?? null,
+            replay,
+          });
+        }
+      } else {
+        onMeasurementConflict({
+          measurementId: data.id ?? data.current?.id ?? "",
+          expectedVersion: data.expectedVersion ?? null,
+          currentVersion: data.currentVersion ?? null,
+          current: data.current ?? null,
+          replay,
+        });
+      }
+      return true;
+    }
+    return false;
   };
 
   const invalidate = useCallback((sheetId: string, isMarkup = false) => {
@@ -331,9 +454,22 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
         await applyMarkupBatchSnapshots(entry.markupBatchBefore);
       } else if (entry.type === "MEASUREMENT_UPDATE" && entry.measurementBefore) {
-        await applyMeasurementSnapshot(entry.measurementBefore);
+        // Task #2653 — Roll the server's new `version` forward onto
+        // the opposite snapshot so a follow-up Redo (or repeated
+        // Undo→Redo cycle) sends the freshly-bumped expectedVersion
+        // and doesn't false-conflict against itself.
+        const result = await applyMeasurementSnapshot(entry.measurementBefore);
+        if (result?.version !== undefined && entry.measurementAfter) {
+          entry.measurementAfter = { ...entry.measurementAfter, version: result.version };
+        }
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchBefore) {
-        await applyMeasurementBatchSnapshots(entry.measurementBatchBefore);
+        const results = await applyMeasurementBatchSnapshots(entry.measurementBatchBefore);
+        if (results.length > 0 && entry.measurementBatchAfter) {
+          const versionById = new Map(results.map((r) => [r.id, r.version]));
+          entry.measurementBatchAfter = entry.measurementBatchAfter.map((s) =>
+            versionById.has(s.id) ? { ...s, version: versionById.get(s.id) } : s,
+          );
+        }
       } else if (entry.type === "MEASUREMENT_DELETE_BATCH" && entry.measurementBatch) {
         // Task #1901 — Recreate every removed measurement. The
         // measurements API has no bulk-restore counterpart to
@@ -352,8 +488,19 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
-    } catch {
+    } catch (err) {
       undoStack.current.push(entry);
+      // Task #2653 — Surface measurement version_conflict 409s out
+      // of undo replays so the consumer can show the same conflict
+      // dialog it uses for the per-id PATCH path. The entry has
+      // already been pushed back so a retry-after-resolve gesture
+      // works without losing history depth.
+      if (
+        entry.type === "MEASUREMENT_UPDATE" ||
+        entry.type === "MEASUREMENT_UPDATE_BATCH"
+      ) {
+        surfaceMeasurementConflict(err, "undo");
+      }
     } finally {
       setIsPending(false);
       updateFlags();
@@ -405,9 +552,21 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
         await applyMarkupBatchSnapshots(entry.markupBatchAfter);
       } else if (entry.type === "MEASUREMENT_UPDATE" && entry.measurementAfter) {
-        await applyMeasurementSnapshot(entry.measurementAfter);
+        // Task #2653 — Stamp the post-redo `version` onto the
+        // before-snapshot so the next Undo presses the freshly
+        // bumped expectedVersion through the CAS.
+        const result = await applyMeasurementSnapshot(entry.measurementAfter);
+        if (result?.version !== undefined && entry.measurementBefore) {
+          entry.measurementBefore = { ...entry.measurementBefore, version: result.version };
+        }
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchAfter) {
-        await applyMeasurementBatchSnapshots(entry.measurementBatchAfter);
+        const results = await applyMeasurementBatchSnapshots(entry.measurementBatchAfter);
+        if (results.length > 0 && entry.measurementBatchBefore) {
+          const versionById = new Map(results.map((r) => [r.id, r.version]));
+          entry.measurementBatchBefore = entry.measurementBatchBefore.map((s) =>
+            versionById.has(s.id) ? { ...s, version: versionById.get(s.id) } : s,
+          );
+        }
       } else if (entry.type === "MEASUREMENT_DELETE_BATCH" && entry.measurementBatch) {
         // Task #1901 — Re-issue the bulk delete by fanning out per-id
         // DELETEs against the (post-undo) ids stored on the entry.
@@ -419,8 +578,17 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
-    } catch {
+    } catch (err) {
       redoStack.current.push(entry);
+      // Task #2653 — Mirror the undo branch: surface measurement
+      // version_conflict 409s out of redo replays so the consumer
+      // can show the same conflict dialog.
+      if (
+        entry.type === "MEASUREMENT_UPDATE" ||
+        entry.type === "MEASUREMENT_UPDATE_BATCH"
+      ) {
+        surfaceMeasurementConflict(err, "redo");
+      }
     } finally {
       setIsPending(false);
       updateFlags();

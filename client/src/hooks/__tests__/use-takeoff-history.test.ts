@@ -377,13 +377,18 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
 
     await act(async () => { await result.current.undo(); });
 
-    expect(apiRequestMock).toHaveBeenCalledTimes(3);
-    expect(apiRequestMock.mock.calls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/measurements/m1", { categoryId: "cat-old-1" }],
-        ["PATCH", "/api/takeoff/measurements/m2", { categoryId: null }],
-        ["PATCH", "/api/takeoff/measurements/m3", { categoryId: "cat-old-3" }],
-      ]),
+    // Task #2653 — Batches now collapse into one /bulk PATCH.
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/bulk",
+      {
+        updates: [
+          { id: "m1", categoryId: "cat-old-1" },
+          { id: "m2", categoryId: null },
+          { id: "m3", categoryId: "cat-old-3" },
+        ],
+      },
     );
     // Measurements (not markups) — invalidate the measurements cache key.
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
@@ -396,13 +401,18 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     invalidateQueriesMock.mockClear();
     await act(async () => { await result.current.redo(); });
 
-    expect(apiRequestMock).toHaveBeenCalledTimes(3);
-    expect(apiRequestMock.mock.calls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/measurements/m1", { categoryId: "cat-new" }],
-        ["PATCH", "/api/takeoff/measurements/m2", { categoryId: "cat-new" }],
-        ["PATCH", "/api/takeoff/measurements/m3", { categoryId: "cat-new" }],
-      ]),
+    // Task #2653 — Batches now collapse into one /bulk PATCH.
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/bulk",
+      {
+        updates: [
+          { id: "m1", categoryId: "cat-new" },
+          { id: "m2", categoryId: "cat-new" },
+          { id: "m3", categoryId: "cat-new" },
+        ],
+      },
     );
     expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
@@ -431,10 +441,12 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     expect(apiRequestMock).toHaveBeenCalledTimes(1);
     // Strict equality — no `label`, `color`, `unitCost`, etc. leak
     // into the PATCH body.
+    // Task #2653 — Single-row batches still go through /bulk so
+    // the per-row CAS (when version is captured) is honored.
     expect(apiRequestMock).toHaveBeenCalledWith(
       "PATCH",
-      "/api/takeoff/measurements/m1",
-      { categoryId: "cat-old" },
+      "/api/takeoff/measurements/bulk",
+      { updates: [{ id: "m1", categoryId: "cat-old" }] },
     );
   });
 
@@ -459,21 +471,32 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
       );
     });
 
+    // Task #2653 — Batches of bulk-safe fields (no `points`) are
+    // replayed through the `/bulk` endpoint in a single PATCH so the
+    // server can apply the per-row CAS atomically.
     await act(async () => { await result.current.undo(); });
-    expect(apiRequestMock.mock.calls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/measurements/a", { label: "Slab A", color: "#000000" }],
-        ["PATCH", "/api/takeoff/measurements/b", { label: "Slab B", color: "#111111" }],
-      ]),
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/bulk",
+      {
+        updates: [
+          { id: "a", label: "Slab A", color: "#000000" },
+          { id: "b", label: "Slab B", color: "#111111" },
+        ],
+      },
     );
 
     apiRequestMock.mockClear();
     await act(async () => { await result.current.redo(); });
-    expect(apiRequestMock.mock.calls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/measurements/a", { label: "Renamed", color: "#ff0000" }],
-        ["PATCH", "/api/takeoff/measurements/b", { label: "Renamed", color: "#ff0000" }],
-      ]),
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/bulk",
+      {
+        updates: [
+          { id: "a", label: "Renamed", color: "#ff0000" },
+          { id: "b", label: "Renamed", color: "#ff0000" },
+        ],
+      },
     );
   });
 
@@ -508,8 +531,19 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     // Single history entry — one Undo press is enough to revert.
     expect(result.current.canUndo).toBe(true);
 
+    // Task #2653 — Bulk-safe batches now collapse to a single
+    // /bulk PATCH on the server (one round-trip instead of 50).
     await act(async () => { await result.current.undo(); });
-    expect(apiRequestMock).toHaveBeenCalledTimes(50);
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/bulk",
+      expect.objectContaining({
+        updates: expect.arrayContaining([
+          expect.objectContaining({ id: "m0", categoryId: "cat-old-0" }),
+        ]),
+      }),
+    );
     expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
     expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(true);
@@ -596,6 +630,209 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
       result.current.pushMeasurementDeleteBatchAction([], "sheet-1");
     });
     expect(result.current.canUndo).toBe(false);
+  });
+
+  // Task #2653 — undo/redo replays the snapshot's captured `version`
+  // as `expectedVersion`, and a 409 from the per-id PATCH is surfaced
+  // through the `onMeasurementConflict` callback so the workspace can
+  // open the same conflict-resolution dialog the per-id PATCH path uses.
+  describe("MEASUREMENT_UPDATE undo/redo with optimistic concurrency", () => {
+    it("sends `expectedVersion` from the captured snapshot during undo", async () => {
+      const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+      act(() => {
+        result.current.pushMeasurementUpdateAction(
+          { id: "meas-1", label: "old", version: 5 },
+          { id: "meas-1", label: "new", version: 5 },
+          "sheet-1",
+        );
+      });
+      apiRequestMock.mockResolvedValueOnce({ json: async () => ({}) });
+      await act(async () => { await result.current.undo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/meas-1",
+        { label: "old", expectedVersion: 5 },
+      );
+    });
+
+    it("surfaces a 409 version_conflict through onMeasurementConflict and pushes the entry back", async () => {
+      const onConflict = vi.fn();
+      const { result } = renderHook(() =>
+        useTakeoffHistory("sheet-1", { onMeasurementConflict: onConflict }),
+      );
+      act(() => {
+        result.current.pushMeasurementUpdateAction(
+          { id: "meas-1", label: "old", version: 5 },
+          { id: "meas-1", label: "new", version: 5 },
+          "sheet-1",
+        );
+      });
+      const err: Error & { status?: number; data?: unknown } = new Error("409");
+      err.status = 409;
+      err.data = {
+        reason: "version_conflict",
+        currentVersion: 7,
+        current: { id: "meas-1", label: "teammate" },
+      };
+      apiRequestMock.mockRejectedValueOnce(err);
+
+      await act(async () => { await result.current.undo(); });
+
+      expect(onConflict).toHaveBeenCalledTimes(1);
+      expect(onConflict).toHaveBeenCalledWith(
+        expect.objectContaining({
+          measurementId: "meas-1",
+          currentVersion: 7,
+          replay: "undo",
+        }),
+      );
+      // Entry pushed back so the user can retry after resolving.
+      expect(result.current.canUndo).toBe(true);
+    });
+
+    it("uses the bulk endpoint and surfaces per-row conflicts on a batch undo", async () => {
+      const onConflict = vi.fn();
+      const { result } = renderHook(() =>
+        useTakeoffHistory("sheet-1", { onMeasurementConflict: onConflict }),
+      );
+      act(() => {
+        result.current.pushMeasurementUpdateBatchAction(
+          [
+            { id: "a", categoryId: "old-cat", version: 3 },
+            { id: "b", categoryId: "old-cat", version: 4 },
+          ],
+          [
+            { id: "a", categoryId: "new-cat", version: 3 },
+            { id: "b", categoryId: "new-cat", version: 4 },
+          ],
+          "sheet-1",
+        );
+      });
+      const err: Error & { status?: number; data?: unknown } = new Error("409");
+      err.status = 409;
+      err.data = {
+        reason: "version_conflict",
+        failedMeasurementIds: ["a"],
+        conflicts: [
+          { id: "a", expectedVersion: 3, currentVersion: 9, current: { id: "a" } },
+        ],
+      };
+      apiRequestMock.mockRejectedValueOnce(err);
+
+      await act(async () => { await result.current.undo(); });
+
+      // Replay went through the bulk endpoint with per-row expectedVersion.
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/bulk",
+        {
+          updates: [
+            { id: "a", categoryId: "old-cat", expectedVersion: 3 },
+            { id: "b", categoryId: "old-cat", expectedVersion: 4 },
+          ],
+        },
+      );
+      expect(onConflict).toHaveBeenCalledWith(
+        expect.objectContaining({ measurementId: "a", currentVersion: 9, replay: "undo" }),
+      );
+      expect(result.current.canUndo).toBe(true);
+    });
+
+    // Task #2653 — Repeated Undo→Redo→Undo cycles must roll the
+    // server's bumped `version` forward onto the opposite snapshot.
+    // Otherwise the second same-direction replay sends the original
+    // (now stale) expectedVersion and false-conflicts against itself.
+    it("rolls bumped version forward across undo→redo→undo cycles (per-id)", async () => {
+      const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+      act(() => {
+        result.current.pushMeasurementUpdateAction(
+          { id: "meas-1", label: "old", version: 5 },
+          { id: "meas-1", label: "new", version: 5 },
+          "sheet-1",
+        );
+      });
+      // Cycle 1: undo bumps server to v6.
+      apiRequestMock.mockResolvedValueOnce({ json: async () => ({ id: "meas-1", version: 6 }) });
+      await act(async () => { await result.current.undo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/meas-1",
+        { label: "old", expectedVersion: 5 },
+      );
+
+      // Cycle 2: redo must send expectedVersion=6 (post-undo), not the
+      // original 5. Server bumps to v7.
+      apiRequestMock.mockResolvedValueOnce({ json: async () => ({ id: "meas-1", version: 7 }) });
+      await act(async () => { await result.current.redo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/meas-1",
+        { label: "new", expectedVersion: 6 },
+      );
+
+      // Cycle 3: undo again must send expectedVersion=7 (post-redo).
+      apiRequestMock.mockResolvedValueOnce({ json: async () => ({ id: "meas-1", version: 8 }) });
+      await act(async () => { await result.current.undo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/meas-1",
+        { label: "old", expectedVersion: 7 },
+      );
+    });
+
+    it("rolls bumped per-row versions forward across undo→redo cycles (bulk)", async () => {
+      const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+      act(() => {
+        result.current.pushMeasurementUpdateBatchAction(
+          [
+            { id: "a", categoryId: "old-cat", version: 3 },
+            { id: "b", categoryId: "old-cat", version: 4 },
+          ],
+          [
+            { id: "a", categoryId: "new-cat", version: 3 },
+            { id: "b", categoryId: "new-cat", version: 4 },
+          ],
+          "sheet-1",
+        );
+      });
+      // Undo: server returns the bumped versions.
+      apiRequestMock.mockResolvedValueOnce({
+        json: async () => [
+          { id: "a", version: 4 },
+          { id: "b", version: 5 },
+        ],
+      });
+      await act(async () => { await result.current.undo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/bulk",
+        {
+          updates: [
+            { id: "a", categoryId: "old-cat", expectedVersion: 3 },
+            { id: "b", categoryId: "old-cat", expectedVersion: 4 },
+          ],
+        },
+      );
+      // Redo: must send the post-undo versions per row, not the
+      // original 3/4.
+      apiRequestMock.mockResolvedValueOnce({
+        json: async () => [
+          { id: "a", version: 5 },
+          { id: "b", version: 6 },
+        ],
+      });
+      await act(async () => { await result.current.redo(); });
+      expect(apiRequestMock).toHaveBeenLastCalledWith(
+        "PATCH",
+        "/api/takeoff/measurements/bulk",
+        {
+          updates: [
+            { id: "a", categoryId: "new-cat", expectedVersion: 4 },
+            { id: "b", categoryId: "new-cat", expectedVersion: 5 },
+          ],
+        },
+      );
+    });
   });
 
   it("clears the redo stack when a new edit is pushed", async () => {

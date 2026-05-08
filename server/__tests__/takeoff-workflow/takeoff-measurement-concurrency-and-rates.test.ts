@@ -268,6 +268,120 @@ describe("PATCH /api/takeoff/measurements/:id — optimistic concurrency (Task #
   });
 });
 
+describe("PATCH /api/takeoff/measurements/bulk — per-row optimistic concurrency (Task #2653)", () => {
+  it("bumps each row's `version` on a successful bulk update", async () => {
+    const a = await createMeasurement(qualitySheetId);
+    const b = await createMeasurement(qualitySheetId);
+    expect(a.version).toBe(1);
+    expect(b.version).toBe(1);
+
+    const res = await apiPatch(`/api/takeoff/measurements/bulk`, {
+      updates: [
+        { id: a.id, label: "A1" },
+        { id: b.id, label: "B1" },
+      ],
+    });
+    expect(res.status).toBe(200);
+    const rows = res.body as Array<{ id: string; version: number; label: string }>;
+    expect(rows.length).toBe(2);
+    const byId = new Map(rows.map((r) => [r.id, r] as const));
+    expect(byId.get(a.id)?.version).toBe(2);
+    expect(byId.get(b.id)?.version).toBe(2);
+  });
+
+  it("returns 409 with per-row conflicts when any expectedVersion is stale", async () => {
+    const a = await createMeasurement(qualitySheetId);
+    const b = await createMeasurement(qualitySheetId);
+
+    // Bump `a` out of band so its version is no longer 1.
+    const bump = await apiPatch(`/api/takeoff/measurements/${a.id}`, { label: "Teammate" });
+    expect(bump.status).toBe(200);
+    expect((bump.body as { version: number }).version).toBe(2);
+
+    const res = await apiPatch(`/api/takeoff/measurements/bulk`, {
+      updates: [
+        { id: a.id, label: "Replay", expectedVersion: 1 },
+        { id: b.id, label: "Replay", expectedVersion: 1 },
+      ],
+    });
+    expect(res.status).toBe(409);
+    const body = res.body as {
+      reason: string;
+      failedMeasurementIds: string[];
+      conflicts: Array<{ id: string; expectedVersion: number; currentVersion: number; current: { label: string } }>;
+    };
+    expect(body.reason).toBe("version_conflict");
+    expect(body.failedMeasurementIds).toEqual([a.id]);
+    expect(body.conflicts.length).toBe(1);
+    expect(body.conflicts[0].id).toBe(a.id);
+    expect(body.conflicts[0].expectedVersion).toBe(1);
+    expect(body.conflicts[0].currentVersion).toBe(2);
+    expect(body.conflicts[0].current.label).toBe("Teammate");
+
+    // The whole tx must roll back — `b` should NOT have advanced.
+    const after = await db.execute(
+      sql`SELECT version, label FROM takeoff_measurements WHERE id = ${b.id}`,
+    );
+    const bRow = (after as unknown as { rows: Array<{ version: number; label: string }> }).rows[0];
+    expect(bRow.version).toBe(1);
+    expect(bRow.label).not.toBe("Replay");
+  });
+
+  it("falls back to last-write-wins when no expectedVersion is supplied (legacy contract)", async () => {
+    const a = await createMeasurement(qualitySheetId);
+    // Two back-to-back bulks with no version — both succeed.
+    const r1 = await apiPatch(`/api/takeoff/measurements/bulk`, {
+      updates: [{ id: a.id, label: "Bulk1" }],
+    });
+    expect(r1.status).toBe(200);
+    const r2 = await apiPatch(`/api/takeoff/measurements/bulk`, {
+      updates: [{ id: a.id, label: "Bulk2" }],
+    });
+    expect(r2.status).toBe(200);
+    expect((r2.body as Array<{ version: number }>)[0].version).toBe(3);
+  });
+});
+
+describe("POST /api/takeoff/measurements/bulk-unlock-rescale — per-row optimistic concurrency (Task #2653)", () => {
+  it("returns 409 when any row's version map entry is stale", async () => {
+    // Lock both rows by re-calibrating with `lockExisting: true`
+    // through the regular calibration route. We do this by directly
+    // setting `lockedScalePxPerFoot` on each row so the test stays
+    // hermetic regardless of any future calibration-route changes.
+    const a = await createMeasurement(qualitySheetId);
+    const b = await createMeasurement(qualitySheetId);
+    await db.execute(
+      sql`UPDATE takeoff_measurements SET locked_scale_px_per_foot = 5 WHERE id IN (${a.id}, ${b.id})`,
+    );
+
+    // Bump `a` out of band so `versions[a.id] = 1` is now stale.
+    const bump = await apiPatch(`/api/takeoff/measurements/${a.id}`, { label: "Teammate" });
+    expect(bump.status).toBe(200);
+
+    const res = await apiPost(`/api/takeoff/measurements/bulk-unlock-rescale`, {
+      ids: [a.id, b.id],
+      versions: { [a.id]: 1, [b.id]: 1 },
+    });
+    expect(res.status).toBe(409);
+    const body = res.body as {
+      reason: string;
+      failedMeasurementIds: string[];
+      conflicts: Array<{ id: string; expectedVersion: number; currentVersion: number }>;
+    };
+    expect(body.reason).toBe("version_conflict");
+    expect(body.failedMeasurementIds).toEqual([a.id]);
+    expect(body.conflicts[0].id).toBe(a.id);
+    expect(body.conflicts[0].currentVersion).toBe(2);
+
+    // `b` must remain locked because the whole tx rolled back.
+    const after = await db.execute(
+      sql`SELECT locked_scale_px_per_foot AS l FROM takeoff_measurements WHERE id = ${b.id}`,
+    );
+    const bRow = (after as unknown as { rows: Array<{ l: number | null }> }).rows[0];
+    expect(bRow.l).not.toBeNull();
+  });
+});
+
 describe("recordMeasurementRateSample — quality-filter ingest (Task #2629)", () => {
   it("inserts a sample row when the bid is not excluded", async () => {
     // Pick any measurement on the quality sheet for the sourceRowId

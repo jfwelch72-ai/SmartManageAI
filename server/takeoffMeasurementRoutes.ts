@@ -728,6 +728,13 @@ router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequ
               color: z.string().optional(),
               note: z.string().nullable().optional(),
               locationId: z.string().nullable().optional(),
+              // Task #2653 — Per-row optimistic concurrency. Mirrors
+              // the per-id PATCH's `expectedVersion`/`If-Match` CAS
+              // (Task #2629) so a bulk category re-assign refuses to
+              // overwrite a teammate's edit. Optional so legacy
+              // callers / older test mounts that haven't migrated
+              // continue to land on last-write-wins.
+              expectedVersion: z.number().int().positive().optional(),
             })
             .refine(
               (u) =>
@@ -887,41 +894,173 @@ router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequ
       return;
     }
 
+    // Task #2653 — Per-row optimistic concurrency. Build a quick
+    // lookup map from id → expectedVersion. Pre-check against the
+    // already-fetched `rows` to fail fast without opening a tx, then
+    // re-check via CAS in the UPDATE itself for race protection.
+    const expectedByIdEntries = validated.updates
+      .filter((u) => u.expectedVersion != null)
+      .map((u) => [u.id, u.expectedVersion as number] as const);
+    const expectedById = new Map<string, number>(expectedByIdEntries);
+
+    if (expectedById.size > 0) {
+      const preConflicts: Array<{
+        id: string;
+        expectedVersion: number;
+        currentVersion: number;
+        current: typeof rows[number];
+      }> = [];
+      for (const r of rows) {
+        const ev = expectedById.get(r.id);
+        if (ev != null && r.version !== ev) {
+          preConflicts.push({
+            id: r.id,
+            expectedVersion: ev,
+            currentVersion: r.version,
+            current: r,
+          });
+        }
+      }
+      if (preConflicts.length > 0) {
+        const failedIds = preConflicts.map((c) => c.id);
+        recordJobMetrics("takeoff_measurements_bulk_update", {
+          error: 1,
+          count: batchCount,
+          ms: Date.now() - startedAt,
+        });
+        res.status(409).json({
+          error:
+            "Some measurements were modified by another user — refresh and retry",
+          reason: "version_conflict",
+          failedMeasurementIds: failedIds,
+          conflicts: preConflicts.map((c) => ({
+            ...c,
+            current: { ...c.current, points: safeParsePoints(c.current.points) || [] },
+          })),
+          failuresByReason: [
+            {
+              reason: "version_conflict",
+              failedMeasurementIds: failedIds,
+              message:
+                "Some measurements were modified by another user — refresh and retry",
+              conflicts: preConflicts.map((c) => ({
+                id: c.id,
+                expectedVersion: c.expectedVersion,
+                currentVersion: c.currentVersion,
+              })),
+            },
+          ],
+        });
+        return;
+      }
+    }
+
+    // Sentinel for tx-time CAS races (the SELECT above is consistent
+    // but a teammate could land an UPDATE between SELECT and our
+    // UPDATE). When that happens we abort the whole tx, then re-fetch
+    // and surface the same 409 shape the per-id PATCH uses.
+    class BulkVersionConflict extends Error {
+      constructor(public conflictIds: string[]) { super("version_conflict"); }
+    }
+
     // Apply all updates inside a single transaction so a mid-batch
     // failure rolls back atomically — no half-applied category
     // re-assign that the user can't see and can't undo.
-    const updated = await db.transaction(async (tx) => {
-      const out: typeof rows = [];
-      for (const u of validated.updates) {
-        const setPayload: Record<string, unknown> = { updatedAt: new Date() };
-        if (u.label !== undefined) {
-          // sanitizeShortText returns undefined for empty input — match
-          // the per-id PATCH behavior of leaving the existing label
-          // untouched in that case (the validator already rejected the
-          // empty payload at the schema level if no other field was set).
-          const sanitized = sanitizeShortText(u.label);
-          if (sanitized !== undefined) setPayload.label = sanitized;
-        }
-        if (u.categoryId !== undefined) setPayload.categoryId = u.categoryId;
-        if (u.costCodeId !== undefined) setPayload.costCodeId = u.costCodeId;
-        if (u.unitCost !== undefined) setPayload.unitCost = u.unitCost;
-        if (u.groupId !== undefined) setPayload.groupId = u.groupId;
-        if (u.lineStyle !== undefined) setPayload.lineStyle = u.lineStyle;
-        if (u.lineWidth !== undefined) setPayload.lineWidth = u.lineWidth;
-        if (u.metadata !== undefined) setPayload.metadata = u.metadata;
-        if (u.color !== undefined) setPayload.color = u.color;
-        if (u.note !== undefined) setPayload.note = u.note;
-        if (u.locationId !== undefined) setPayload.locationId = u.locationId;
+    let updated: typeof rows;
+    try {
+      updated = await db.transaction(async (tx) => {
+        const out: typeof rows = [];
+        const txConflicts: string[] = [];
+        for (const u of validated.updates) {
+          const setPayload: Record<string, unknown> = {
+            updatedAt: new Date(),
+            // Task #2653 — Bump the optimistic-concurrency version on
+            // every row the bulk path touches so subsequent CAS
+            // PATCHes (per-id or bulk) see a fresh value, mirroring
+            // the per-id PATCH's behaviour (Task #2629).
+            version: sql`${takeoffMeasurements.version} + 1`,
+          };
+          if (u.label !== undefined) {
+            // sanitizeShortText returns undefined for empty input — match
+            // the per-id PATCH behavior of leaving the existing label
+            // untouched in that case (the validator already rejected the
+            // empty payload at the schema level if no other field was set).
+            const sanitized = sanitizeShortText(u.label);
+            if (sanitized !== undefined) setPayload.label = sanitized;
+          }
+          if (u.categoryId !== undefined) setPayload.categoryId = u.categoryId;
+          if (u.costCodeId !== undefined) setPayload.costCodeId = u.costCodeId;
+          if (u.unitCost !== undefined) setPayload.unitCost = u.unitCost;
+          if (u.groupId !== undefined) setPayload.groupId = u.groupId;
+          if (u.lineStyle !== undefined) setPayload.lineStyle = u.lineStyle;
+          if (u.lineWidth !== undefined) setPayload.lineWidth = u.lineWidth;
+          if (u.metadata !== undefined) setPayload.metadata = u.metadata;
+          if (u.color !== undefined) setPayload.color = u.color;
+          if (u.note !== undefined) setPayload.note = u.note;
+          if (u.locationId !== undefined) setPayload.locationId = u.locationId;
 
-        const [row] = await tx
-          .update(takeoffMeasurements)
-          .set(setPayload)
-          .where(eq(takeoffMeasurements.id, u.id))
-          .returning();
-        if (row) out.push(row);
+          const where =
+            u.expectedVersion != null
+              ? and(
+                  eq(takeoffMeasurements.id, u.id),
+                  eq(takeoffMeasurements.version, u.expectedVersion),
+                )
+              : eq(takeoffMeasurements.id, u.id);
+          const [row] = await tx
+            .update(takeoffMeasurements)
+            .set(setPayload)
+            .where(where)
+            .returning();
+          if (row) {
+            out.push(row);
+          } else if (u.expectedVersion != null) {
+            txConflicts.push(u.id);
+          }
+        }
+        if (txConflicts.length > 0) throw new BulkVersionConflict(txConflicts);
+        return out;
+      });
+    } catch (txErr) {
+      if (txErr instanceof BulkVersionConflict) {
+        const currentRows = await db
+          .select()
+          .from(takeoffMeasurements)
+          .where(inArray(takeoffMeasurements.id, txErr.conflictIds));
+        const conflicts = currentRows.map((r) => ({
+          id: r.id,
+          expectedVersion: expectedById.get(r.id) ?? null,
+          currentVersion: r.version,
+          current: { ...r, points: safeParsePoints(r.points) || [] },
+        }));
+        recordJobMetrics("takeoff_measurements_bulk_update", {
+          error: 1,
+          count: batchCount,
+          ms: Date.now() - startedAt,
+        });
+        res.status(409).json({
+          error:
+            "Some measurements were modified by another user — refresh and retry",
+          reason: "version_conflict",
+          failedMeasurementIds: txErr.conflictIds,
+          conflicts,
+          failuresByReason: [
+            {
+              reason: "version_conflict",
+              failedMeasurementIds: txErr.conflictIds,
+              message:
+                "Some measurements were modified by another user — refresh and retry",
+              conflicts: conflicts.map((c) => ({
+                id: c.id,
+                expectedVersion: c.expectedVersion,
+                currentVersion: c.currentVersion,
+              })),
+            },
+          ],
+        });
+        return;
       }
-      return out;
-    });
+      throw txErr;
+    }
 
     recordJobMetrics("takeoff_measurements_bulk_update", {
       ok: 1,
@@ -1081,16 +1220,68 @@ router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (
     const setPayload: Record<string, unknown> = {
       lockedScalePxPerFoot: null,
       updatedAt: new Date(),
+      // Task #2653 — Bump the optimistic-concurrency version on
+      // every successful unlock so subsequent CAS PATCHes see a
+      // fresh value (parity with the per-id PATCH).
+      version: sql`${takeoffMeasurements.version} + 1`,
     };
     if (recompute) {
       Object.assign(setPayload, recompute);
     }
 
+    // Task #2653 — Optional CAS via `expectedVersion` (body) or
+    // `If-Match` header so an undo/redo replay can refuse to
+    // overwrite a teammate's edit between the action capture and
+    // the replay PATCH.
+    const headerMatchUR = req.headers["if-match"];
+    const expectedVersionRawUR =
+      (req.body && (req.body as Record<string, unknown>).expectedVersion) ??
+      (Array.isArray(headerMatchUR) ? headerMatchUR[0] : headerMatchUR);
+    let expectedVersionUR: number | null = null;
+    if (
+      expectedVersionRawUR !== undefined &&
+      expectedVersionRawUR !== null &&
+      expectedVersionRawUR !== ""
+    ) {
+      const parsed = Number(expectedVersionRawUR);
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        res.status(400).json({ error: "expectedVersion must be a positive integer" });
+        return;
+      }
+      expectedVersionUR = parsed;
+    }
+
+    const where =
+      expectedVersionUR != null
+        ? and(
+            eq(takeoffMeasurements.id, id),
+            eq(takeoffMeasurements.version, expectedVersionUR),
+          )
+        : eq(takeoffMeasurements.id, id);
+
     const [updated] = await db
       .update(takeoffMeasurements)
       .set(setPayload)
-      .where(eq(takeoffMeasurements.id, id))
+      .where(where)
       .returning();
+
+    if (!updated) {
+      const [current] = await db
+        .select()
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.id, id))
+        .limit(1);
+      res.status(409).json({
+        error: "Measurement was modified by another user",
+        reason: "version_conflict",
+        expectedVersion: expectedVersionUR,
+        currentVersion: current?.version ?? null,
+        current: current
+          ? { ...current, points: safeParsePoints(current.points) || [] }
+          : null,
+      });
+      return;
+    }
 
     // Task #2356 — Capture the live sheet scale used for the rescale
     // in the audit payload so the takeoff history panel can show a
@@ -1174,6 +1365,12 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
 
     const bulkSchema = z.object({
       ids: z.array(z.string().min(1)).min(1).max(500),
+      // Task #2653 — Optional per-row optimistic concurrency. Map of
+      // id → expectedVersion so an undo/redo replay can refuse to
+      // overwrite a teammate's edit between the action capture and
+      // the bulk unlock. Mirrors the bulk PATCH `expectedVersion`
+      // surface and the per-id PATCH's CAS path (Task #2629).
+      versions: z.record(z.string(), z.number().int().positive()).optional(),
     });
 
     const validated = parseOrRespond(bulkSchema, req.body, res);
@@ -1181,6 +1378,9 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
     // De-dupe input so a caller passing the same id twice can't
     // double-log or trip the cross_sheet check on a phantom dup.
     const ids = Array.from(new Set(validated.ids));
+    const expectedById = new Map<string, number>(
+      Object.entries(validated.versions ?? {}),
+    );
     batchCount = ids.length;
 
     const rows = await db
@@ -1337,14 +1537,76 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
       return;
     }
 
+    // Task #2653 — Pre-check expected versions against the rows we
+    // already SELECTed. Race protection re-checks via CAS in the
+    // UPDATE itself below (and aborts the tx).
+    if (expectedById.size > 0) {
+      const preConflicts: Array<{
+        id: string;
+        expectedVersion: number;
+        currentVersion: number;
+        current: typeof rows[number];
+      }> = [];
+      for (const r of rows) {
+        const ev = expectedById.get(r.id);
+        if (ev != null && r.version !== ev) {
+          preConflicts.push({
+            id: r.id,
+            expectedVersion: ev,
+            currentVersion: r.version,
+            current: r,
+          });
+        }
+      }
+      if (preConflicts.length > 0) {
+        const failedIds = preConflicts.map((c) => c.id);
+        recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+          error: 1,
+          count: batchCount,
+          ms: Date.now() - startedAt,
+        });
+        res.status(409).json({
+          error:
+            "Some measurements were modified by another user — refresh and retry",
+          reason: "version_conflict",
+          failedMeasurementIds: failedIds,
+          conflicts: preConflicts.map((c) => ({
+            ...c,
+            current: { ...c.current, points: safeParsePoints(c.current.points) || [] },
+          })),
+          failuresByReason: [
+            {
+              reason: "version_conflict",
+              failedMeasurementIds: failedIds,
+              message:
+                "Some measurements were modified by another user — refresh and retry",
+              conflicts: preConflicts.map((c) => ({
+                id: c.id,
+                expectedVersion: c.expectedVersion,
+                currentVersion: c.currentVersion,
+              })),
+            },
+          ],
+        });
+        return;
+      }
+    }
+
+    class BulkUnlockVersionConflict extends Error {
+      constructor(public conflictIds: string[]) { super("version_conflict"); }
+    }
+
     // Apply the unlocks inside a single transaction so a mid-batch
     // failure rolls back cleanly. Rows that aren't currently locked
     // (`lockedScalePxPerFoot IS NULL`) are returned unchanged and
     // counted in `alreadyUnlockedIds` — same idempotent contract as
     // the per-row route.
     const alreadyUnlockedIds: string[] = [];
-    const updated = await db.transaction(async (tx) => {
+    let updated: typeof rows;
+    try {
+      updated = await db.transaction(async (tx) => {
       const out: typeof rows = [];
+      const txConflicts: string[] = [];
       for (const existing of rows) {
         if (existing.lockedScalePxPerFoot == null) {
           alreadyUnlockedIds.push(existing.id);
@@ -1356,16 +1618,35 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
         const setPayload: Record<string, unknown> = {
           lockedScalePxPerFoot: null,
           updatedAt: new Date(),
+          // Task #2653 — Bump version on every actual flip so
+          // subsequent CAS PATCHes see a fresh value. The
+          // already-unlocked branch above is a no-op and skips
+          // the bump (parity with the per-row route's idempotent
+          // 200 unlocked:false response).
+          version: sql`${takeoffMeasurements.version} + 1`,
         };
         if (recompute) {
           Object.assign(setPayload, recompute);
         }
 
+        const ev = expectedById.get(existing.id);
+        const where =
+          ev != null
+            ? and(
+                eq(takeoffMeasurements.id, existing.id),
+                eq(takeoffMeasurements.version, ev),
+              )
+            : eq(takeoffMeasurements.id, existing.id);
+
         const [row] = await tx
           .update(takeoffMeasurements)
           .set(setPayload)
-          .where(eq(takeoffMeasurements.id, existing.id))
+          .where(where)
           .returning();
+        if (!row && ev != null) {
+          txConflicts.push(existing.id);
+          continue;
+        }
 
         if (row) {
           out.push(row);
@@ -1398,8 +1679,50 @@ router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async 
           );
         }
       }
+      if (txConflicts.length > 0) throw new BulkUnlockVersionConflict(txConflicts);
       return out;
     });
+    } catch (txErr) {
+      if (txErr instanceof BulkUnlockVersionConflict) {
+        const currentRows = await db
+          .select()
+          .from(takeoffMeasurements)
+          .where(inArray(takeoffMeasurements.id, txErr.conflictIds));
+        const conflicts = currentRows.map((r) => ({
+          id: r.id,
+          expectedVersion: expectedById.get(r.id) ?? null,
+          currentVersion: r.version,
+          current: { ...r, points: safeParsePoints(r.points) || [] },
+        }));
+        recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+          error: 1,
+          count: batchCount,
+          ms: Date.now() - startedAt,
+        });
+        res.status(409).json({
+          error:
+            "Some measurements were modified by another user — refresh and retry",
+          reason: "version_conflict",
+          failedMeasurementIds: txErr.conflictIds,
+          conflicts,
+          failuresByReason: [
+            {
+              reason: "version_conflict",
+              failedMeasurementIds: txErr.conflictIds,
+              message:
+                "Some measurements were modified by another user — refresh and retry",
+              conflicts: conflicts.map((c) => ({
+                id: c.id,
+                expectedVersion: c.expectedVersion,
+                currentVersion: c.currentVersion,
+              })),
+            },
+          ],
+        });
+        return;
+      }
+      throw txErr;
+    }
 
     const unlockedCount = updated.length - alreadyUnlockedIds.length;
     recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {

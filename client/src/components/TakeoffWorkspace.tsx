@@ -311,7 +311,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     });
   }, [selectedSheet, setSelectedSheet]);
   const [localRotation, setLocalRotation] = useState<number | null>(null);
-  const takeoffHistory = useTakeoffHistory(selectedSheet);
+  // Task #2653 — Bridge ref so the history hook (created before the
+  // data hook) can hand a 409 version_conflict from an undo/redo
+  // measurement replay into the same conflict-resolution dialog the
+  // per-id PATCH path opens. The ref is populated in an effect once
+  // `data.setMeasurementConflict` is available.
+  const measurementConflictHandlerRef = useRef<
+    ((c: import("@/hooks/use-takeoff-history").MeasurementHistoryConflict) => void) | null
+  >(null);
+  const takeoffHistory = useTakeoffHistory(selectedSheet, {
+    onMeasurementConflict: (c) => measurementConflictHandlerRef.current?.(c),
+  });
   const prevSheetRef = useRef<string | null>(null);
   useEffect(() => {
     if (prevSheetRef.current !== null && prevSheetRef.current !== selectedSheet) {
@@ -1044,6 +1054,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // points the user at exactly which siblings to fix.
     failedMarkupIds,
   } = data;
+
+  // Task #2653 — Once `data` is realized, point the bridge ref at
+  // its `setMeasurementConflict` so undo/redo measurement replays
+  // that 409 hand off into the same conflict-resolution dialog the
+  // per-id PATCH path opens.
+  useEffect(() => {
+    measurementConflictHandlerRef.current = (c) => {
+      data.setMeasurementConflict({
+        measurementId: c.measurementId,
+        pendingEdit: { action: c.replay === "undo" ? "history_undo" : "history_redo" },
+        serverRow: c.current ?? null,
+        currentVersion: c.currentVersion ?? null,
+      });
+    };
+    return () => {
+      measurementConflictHandlerRef.current = null;
+    };
+  }, [data]);
 
   // Task #2344 — Pre-compute every sheet's calibration confidence
   // exactly once so both the sheet-selector dropdown rows and the
