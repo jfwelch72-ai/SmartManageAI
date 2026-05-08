@@ -72,6 +72,12 @@ run_step "SLA doc parity (scripts/check-sla-doc.mjs)" \
 run_step "prompt-injection guard lint (scripts/check-prompt-injection-guard.mjs)" \
   node scripts/check-prompt-injection-guard.mjs
 
+# Task #2685 — block new duplicate 4-digit prefixes in migrations/ from
+# slipping into main. Historical duplicates (Task #2435) are allowlisted
+# inside the script. Cheap (<1s).
+run_step "migration collision guard (scripts/check-migration-collisions.mjs)" \
+  node scripts/check-migration-collisions.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else
