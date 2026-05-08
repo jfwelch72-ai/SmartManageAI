@@ -305,7 +305,7 @@ export default function AssemblyPanel({ selectedMeasurementId }: AssemblyPanelPr
           </p>
         ) : (
           <ScrollArea className="max-h-[200px]">
-            <div className="space-y-1 pr-2">
+            <div className="space-y-1 pr-3">
               {assemblies.map((a) => (
                 <div
                   key={a.id}

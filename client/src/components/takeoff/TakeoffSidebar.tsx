@@ -786,7 +786,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
       {sidebarTab === "conditions" && (
         <ScrollArea className="flex-1">
-          <div className="p-4 space-y-4">
+          <div className="p-4 pr-5 space-y-4 overflow-x-hidden">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Takeoff Conditions</h3>
               <Button size="sm" onClick={() => { setEditingCondition(null); setCondForm({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid", formula: "", assemblyComponents: [] }); setConditionDialogOpen(true); }} data-testid="button-add-condition">
@@ -1070,7 +1070,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
       {sidebarTab === "tools" && (
       <ScrollArea className="flex-1">
-        <div className="p-4 space-y-4">
+        <div className="p-4 pr-5 space-y-4 overflow-x-hidden">
           {calibrationMode !== "idle" && (
             <Card>
               <CardContent className="pt-6 space-y-4">
@@ -2566,7 +2566,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
           {selectedSheet && (
             <Card>
-              <CardContent className="pt-6 space-y-3 overflow-hidden">
+              <CardContent className="pt-6 space-y-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <Layers className="w-4 h-4 text-primary shrink-0" />
                   <h3 className="font-semibold text-sm truncate">Addenda Overlays</h3>
@@ -2632,7 +2632,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
           {selectedSheet && currentSheet?.scalePxPerFoot && (
             <Card>
-              <CardContent className="pt-6 space-y-3 overflow-hidden">
+              <CardContent className="pt-6 space-y-3">
                 <div className="flex items-center gap-2 min-w-0">
                   <Info className="w-4 h-4 text-primary shrink-0" />
                   <h3 className="font-semibold text-sm truncate">Calibration Info</h3>
