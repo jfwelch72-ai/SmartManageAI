@@ -17,7 +17,7 @@ import { and, eq, inArray } from "drizzle-orm";
 
 import { db } from "../db";
 import { crmTranscriptBackfillAlertResendCooldowns } from "@shared/schema";
-import { pruneBackfillAlertResendCooldownsBefore } from "../storage";
+import { pruneBackfillAlertResendCooldownsBefore } from "../crm/transcriptBackfillStorage";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "../utils/ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 
 const SUFFIX = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

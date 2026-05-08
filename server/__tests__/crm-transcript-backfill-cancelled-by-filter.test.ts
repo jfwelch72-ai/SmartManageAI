@@ -29,7 +29,7 @@ import {
 import {
   listCrmTranscriptBackfillJobs,
   locateCrmTranscriptBackfillJobPage,
-} from "../storage";
+} from "../crm/transcriptBackfillStorage";
 import type { AuthRequest } from "../auth";
 
 // crmCallsRoutes pulls in the transcription service transitively. Stub it

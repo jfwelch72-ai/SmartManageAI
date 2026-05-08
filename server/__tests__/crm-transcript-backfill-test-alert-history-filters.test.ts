@@ -33,7 +33,7 @@ import {
   crmTranscriptBackfillTestAlerts,
 } from "@shared/schema";
 import { generateToken } from "../auth";
-import { listCrmTranscriptBackfillTestAlerts } from "../storage";
+import { listCrmTranscriptBackfillTestAlerts } from "../crm/transcriptBackfillStorage";
 
 const SUFFIX = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const TEST_EMAIL_DOMAIN = `test-alert-history-${SUFFIX}.test.invalid`;

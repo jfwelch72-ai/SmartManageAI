@@ -1,6 +1,13 @@
-import { db } from "./db";
+// CRM transcript-backfill storage — extracted from server/storage.ts during
+// the Task #2672 retirement of the legacy storage monolith. Houses every
+// helper for the transcript-backfill admin tool: jobs + history, test alerts,
+// notification settings, alert deliveries, fallback fan-out + per-admin
+// alert-failure mode, persisted dedupe ledger, resend cooldowns, and the
+// org-display lookup used to render those rows in the cross-org digest.
+// Behavior parity with the prior monolith; SQL and signatures unchanged.
+
+import { db } from "../db";
 import {
-  executiveDigests,
   crmTranscriptBackfillJobs,
   crmTranscriptBackfillNotificationSettings,
   crmTranscriptBackfillNotifications,
@@ -11,7 +18,6 @@ import {
   notificationChannelPrefs,
   organizations,
   users,
-  dotPayItemPickerFacets,
   type CrmTranscriptBackfillJob,
   type CrmTranscriptBackfillNotificationSettings,
   type CrmTranscriptBackfillNotification,
@@ -19,39 +25,21 @@ import {
   type InsertCrmTranscriptBackfillJob,
   type CrmTranscriptBackfillTestAlert,
   type InsertCrmTranscriptBackfillTestAlert,
-  type DotPayItemPickerFacets,
 } from "@shared/schema";
-import { eq, and, desc, sql, ilike, or, gte, lt, lte, inArray, type SQL } from "drizzle-orm";
+import {
+  eq,
+  and,
+  desc,
+  sql,
+  ilike,
+  or,
+  gte,
+  lt,
+  lte,
+  inArray,
+  type SQL,
+} from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-
-export interface ExecutiveDigestInsert {
-  organizationId: string;
-  period: string;
-  executiveSummary: string;
-  keyHighlights: string[];
-  sections: { title: string; icon: string; summary: string; bullets: string[]; sentiment: string }[];
-  actionItems: { priority: string; description: string; dueBy?: string }[];
-  kpiSnapshot: { name: string; current: number; previous: number; unit: string; trend: string }[];
-  generatedBy: string;
-}
-
-export async function createExecutiveDigest(data: ExecutiveDigestInsert) {
-  const [saved] = await db
-    .insert(executiveDigests)
-    .values(data)
-    .returning();
-  return saved;
-}
-
-export async function getLatestExecutiveDigest(organizationId: string, period: string) {
-  const [digest] = await db
-    .select()
-    .from(executiveDigests)
-    .where(and(eq(executiveDigests.organizationId, organizationId), eq(executiveDigests.period, period)))
-    .orderBy(desc(executiveDigests.generatedAt))
-    .limit(1);
-  return digest || null;
-}
 
 // ---------------------------------------------------------------------------
 // CRM transcript backfill jobs (Task #969). Persists progress so admins can
@@ -2175,66 +2163,3 @@ export async function pruneBackfillAlertResendCooldownsBefore(
       lte(crmTranscriptBackfillAlertResendCooldowns.lastResendAt, cutoff),
     );
 }
-
-// ---------------------------------------------------------------------------
-// Task #1743 — DOT pay-item picker facet memory (per user × per spec book).
-// Read/write helpers for the device-syncing replacement of the legacy
-// `dot-pay-item-picker:facets:<uid>:<specBookId>` localStorage key.
-// ---------------------------------------------------------------------------
-
-export async function getDotPayItemPickerFacets(
-  userId: string,
-  specBookId: string,
-): Promise<DotPayItemPickerFacets | null> {
-  const [row] = await db
-    .select()
-    .from(dotPayItemPickerFacets)
-    .where(and(
-      eq(dotPayItemPickerFacets.userId, userId),
-      eq(dotPayItemPickerFacets.specBookId, specBookId),
-    ))
-    .limit(1);
-  return row ?? null;
-}
-
-export async function upsertDotPayItemPickerFacets(
-  userId: string,
-  specBookId: string,
-  categories: string[],
-  specSections: string[],
-): Promise<DotPayItemPickerFacets | null> {
-  // When both lists are empty we treat the row as "no preference" and delete
-  // it so the table stays small and the next read returns null (matching the
-  // "no localStorage entry yet" baseline the picker already handles). Return
-  // null in that case to signal "no row" rather than fabricating a synthetic
-  // one, so callers can't accidentally reuse a placeholder id.
-  if (categories.length === 0 && specSections.length === 0) {
-    await db
-      .delete(dotPayItemPickerFacets)
-      .where(and(
-        eq(dotPayItemPickerFacets.userId, userId),
-        eq(dotPayItemPickerFacets.specBookId, specBookId),
-      ));
-    return null;
-  }
-  const [row] = await db
-    .insert(dotPayItemPickerFacets)
-    .values({
-      userId,
-      specBookId,
-      categories,
-      specSections,
-    })
-    .onConflictDoUpdate({
-      target: [dotPayItemPickerFacets.userId, dotPayItemPickerFacets.specBookId],
-      set: {
-        categories,
-        specSections,
-        updatedAt: new Date(),
-      },
-    })
-    .returning();
-  return row;
-}
-
-export const storage = {};

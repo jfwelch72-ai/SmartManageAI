@@ -31,7 +31,7 @@ import {
   users,
   crmTranscriptBackfillJobs,
 } from "@shared/schema";
-import { getCrmTranscriptBackfillLineages } from "../storage";
+import { getCrmTranscriptBackfillLineages } from "../crm/transcriptBackfillStorage";
 
 const TEST_PREFIX = "__crm_backfill_lineage_test__";
 

@@ -21,7 +21,7 @@ import { organizations } from "@shared/schema";
 import {
   aggregateRecentCrmTranscriptBackfillAlertFailures,
   findQuietCrmTranscriptBackfillOrgsSince,
-} from "../storage";
+} from "../crm/transcriptBackfillStorage";
 
 export type AlertFailuresDigestDataset = "summary" | "samples" | "quiet";
 

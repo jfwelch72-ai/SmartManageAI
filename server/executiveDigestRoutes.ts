@@ -8,7 +8,7 @@ import { logError } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { isFeatureEnabled } from "./services/featureFlagService";
-import { createExecutiveDigest, getLatestExecutiveDigest } from "./storage";
+import { createExecutiveDigest, getLatestExecutiveDigest } from "./executiveDigest/storage";
 
 const digestOutputSchema = z.object({
   executiveSummary: z.string().min(1),

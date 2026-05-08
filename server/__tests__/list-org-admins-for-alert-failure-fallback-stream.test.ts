@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { sql } from "drizzle-orm";
 import { db } from "../db";
 import { organizations, users } from "@shared/schema";
-import { listOrgAdminsForAlertFailureFallback } from "../storage";
+import { listOrgAdminsForAlertFailureFallback } from "../crm/transcriptBackfillStorage";
 
 const TEST_PREFIX = "__alert_fallback_stream_test__";
 

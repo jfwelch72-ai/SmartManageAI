@@ -45,7 +45,7 @@ import {
   type CrmTranscriptBackfillOperatorContact,
   type CrmTranscriptBackfillQuietOrgEntry,
   type OrgAdminFailureFallbackRecipient,
-} from "../storage";
+} from "../crm/transcriptBackfillStorage";
 
 export type BackfillNotificationJob = {
   id: string;

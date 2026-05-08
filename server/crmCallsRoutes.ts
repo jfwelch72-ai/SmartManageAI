@@ -69,7 +69,7 @@ import {
   recordCrmTranscriptBackfillNotification,
   updateCrmTranscriptBackfillJob,
   upsertCrmTranscriptBackfillNotificationSettings,
-} from "./storage";
+} from "./crm/transcriptBackfillStorage";
 import {
   notifyBackfillCompletion,
   notifyOrgAdminsOfFallbackCoverageGap,

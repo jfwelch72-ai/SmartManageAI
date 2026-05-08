@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { sql, eq } from "drizzle-orm";
 import { db } from "../db";
 import { organizations, users } from "@shared/schema";
-import { updateOrgAdminAlertFailureMode } from "../storage";
+import { updateOrgAdminAlertFailureMode } from "../crm/transcriptBackfillStorage";
 
 const TEST_PREFIX = "__update_alert_failure_mode_test__";
 

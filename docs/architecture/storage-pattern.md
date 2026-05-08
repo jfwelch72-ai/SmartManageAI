@@ -2,9 +2,28 @@
 
 ## Status
 
-**Pilot — Bids domain only.** The legacy monolith `server/storage.ts` is intact
-and remains the source of truth for every other domain. Do not delete it. Other
-domains will adopt this pattern incrementally.
+**Monolith retired (Task #2672).** The legacy `server/storage.ts` (~2,240 LOC,
+~75 exports) has been deleted. Its remaining exports were moved verbatim into
+three per-domain seams alongside the original Bids pilot:
+
+| Seam | Owners |
+| ---- | ------ |
+| `server/bids/storage.ts` + `server/bids/storage.drizzle.ts` | Bids domain (original pilot, see below). |
+| `server/crm/transcriptBackfillStorage.ts` | CRM transcript backfill jobs, notification settings, alert-delivery pipeline, alert-failure fallback, org-admin alert helpers. |
+| `server/executiveDigest/storage.ts` | Executive digest snapshot read/write helpers. |
+| `server/dot/payItemPickerFacetsStorage.ts` | DOT pay-item picker facet aggregation. |
+
+A CI freeze guard at `scripts/check-legacy-storage.mjs` (wired into
+`scripts/ci.sh`) fails the build if `server/storage.ts` is recreated or if any
+`server/*.ts` file imports a bare `./storage` / `../storage` (the
+`server/bids/` directory is allowlisted because its `../storage` resolves to
+the bids seam, not the deleted monolith).
+
+The Bids pilot below remains the canonical pattern for new domain extractions
+(typed `IStorage` interface + Drizzle implementation + tenancy at the seam).
+The three seams added in Task #2672 are pure code-moves and currently expose
+the same free-function shape the monolith did; future work can refactor each
+into the full interface + Drizzle-class pattern as adoption needs warrant.
 
 ## Why
 

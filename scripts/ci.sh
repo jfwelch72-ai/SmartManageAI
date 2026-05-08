@@ -51,6 +51,10 @@ fi
 run_step "tenant-isolation lint (scripts/check-db-imports.mjs)" \
   node scripts/check-db-imports.mjs
 
+# Task #2672 — block resurrection of the retired legacy storage monolith.
+run_step "legacy-storage freeze (scripts/check-legacy-storage.mjs)" \
+  node scripts/check-legacy-storage.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else

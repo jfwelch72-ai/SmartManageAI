@@ -32,7 +32,7 @@ import {
 import {
   summarizeOrgAdminAlertFailureFallbackMutes,
   listOrgAdminsForAlertFailureFallback,
-} from "../storage";
+} from "../crm/transcriptBackfillStorage";
 
 const TEST_PREFIX = "__alert_fallback_mute_summary_test__";
 

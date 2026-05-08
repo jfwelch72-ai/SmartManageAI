@@ -5,7 +5,7 @@ import { parseOrRespond } from "./utils/validation";
 import {
   getDotPayItemPickerFacets,
   upsertDotPayItemPickerFacets,
-} from "./storage";
+} from "./dot/payItemPickerFacetsStorage";
 
 /**
  * Task #1743 — REST surface for the device-syncing DOT pay-item picker
