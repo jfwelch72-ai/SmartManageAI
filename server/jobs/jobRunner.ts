@@ -161,6 +161,10 @@ let equipmentPmGenerationTask: ReturnType<typeof cron.schedule> | null = null;
 // `processAiTakeoff` to make the cross-process / killed-pod case also
 // recover, so the AI Auto-Takeoff panel never spins forever.
 let aiTakeoffStallWatchdogTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2690 — periodic audit job that scans equipment_repairs for any
+// duplicate active rows that would have collided with the partial unique
+// index. Should always log zero in steady state — non-zero is a bug.
+let pmDuplicateAuditTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -1328,6 +1332,29 @@ export function startJobRunner() {
     }
   });
 
+  // Task #2690 — hourly audit job that scans equipment_repairs for
+  // duplicate active rows per (schedule_id, pm_cycle_key). The partial
+  // unique index makes this impossible to insert via the engine, so a
+  // non-zero count signals either (a) a manual SQL write that bypassed
+  // the engine, or (b) an index that was dropped/disabled. Logged at
+  // WARN so it shows up on the observability dashboard.
+  pmDuplicateAuditTask = cron.schedule("17 * * * *", async () => {
+    try {
+      await withSchedulerLock("job:pmDuplicateAudit", async () => {
+        const summary = await auditPmWorkOrderDuplicates();
+        recordJobOutcome("pm_duplicate_audit", true);
+        if (summary.duplicateGroups > 0) {
+          logWarn("PM duplicate audit found duplicates", summary);
+        } else {
+          logInfo("PM duplicate audit clean", summary);
+        }
+      });
+    } catch (err) {
+      recordJobOutcome("pm_duplicate_audit", false);
+      logJobErrorWithKind("pm_duplicate_audit", "PM duplicate audit failed", err);
+    }
+  });
+
   // Task #2668 — every minute, sweep ai_takeoff_analyses for rows
   // whose last persisted progress tick is older than the configured
   // stall window. Flip them to FAILED and broadcast a terminal SSE so
@@ -1555,6 +1582,46 @@ async function processEquipmentPmGeneration(): Promise<EquipmentPmSweepSummary> 
   return summary;
 }
 
+// Task #2690 — periodic duplicate-audit summary used by both the
+// hourly cron and any ad-hoc operator invocation.
+export interface PmDuplicateAuditSummary {
+  /** Number of (schedule_id, pm_cycle_key) groups with >1 active row. */
+  duplicateGroups: number;
+  /** Total active rows that landed in a duplicate group. */
+  duplicateRows: number;
+  /** Active PM-engine-tagged rows whose schedule_id is NULL but whose
+   *  description still carries a `[PM:<id>]` prefix — surfaces the
+   *  population that the one-shot backfill could not resolve. */
+  orphanedPmRows: number;
+}
+
+export async function auditPmWorkOrderDuplicates(): Promise<PmDuplicateAuditSummary> {
+  const dupRows = await db.execute(sql`
+    SELECT schedule_id, pm_cycle_key, COUNT(*)::int AS cnt
+      FROM equipment_repairs
+     WHERE schedule_id IS NOT NULL
+       AND pm_cycle_key IS NOT NULL
+       AND status NOT IN ('COMPLETED', 'CANCELLED')
+     GROUP BY schedule_id, pm_cycle_key
+    HAVING COUNT(*) > 1
+  `);
+  const orphanRows = await db.execute(sql`
+    SELECT COUNT(*)::int AS cnt
+      FROM equipment_repairs
+     WHERE schedule_id IS NULL
+       AND status NOT IN ('COMPLETED', 'CANCELLED')
+       AND description ~ '\\[PM:[0-9a-fA-F-]+\\]'
+  `);
+  const groups = dupRows.rows as Array<{ schedule_id: string; pm_cycle_key: string; cnt: number }>;
+  const duplicateRows = groups.reduce((acc, g) => acc + Number(g.cnt ?? 0), 0);
+  const orphanedPmRows = Number((orphanRows.rows[0] as { cnt?: number } | undefined)?.cnt ?? 0);
+  return {
+    duplicateGroups: groups.length,
+    duplicateRows,
+    orphanedPmRows,
+  };
+}
+
 export function stopJobRunner() {
   if (outboxTask) {
     outboxTask.stop();
@@ -1587,6 +1654,10 @@ export function stopJobRunner() {
   if (aiTakeoffStallWatchdogTask) {
     aiTakeoffStallWatchdogTask.stop();
     aiTakeoffStallWatchdogTask = null;
+  }
+  if (pmDuplicateAuditTask) {
+    pmDuplicateAuditTask.stop();
+    pmDuplicateAuditTask = null;
   }
   if (coiReminderTask) {
     coiReminderTask.stop();

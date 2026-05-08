@@ -175,7 +175,15 @@ export const equipmentAssignments = pgTable("equipment_assignments", {
 export const equipmentRepairs = pgTable("equipment_repairs", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   equipmentId: varchar("equipment_id").notNull().references(() => equipment.id, { onDelete: "cascade" }),
-  
+
+  // Task #2690 — real FK back to the maintenance schedule that produced
+  // this WO (NULL for non-PM rows and for historical rows whose tag no
+  // longer resolves). Paired with `pmCycleKey` + a partial unique index
+  // so the engine's "one active WO per cycle" guarantee is enforced at
+  // the DB layer regardless of pod / race / tag mutation.
+  scheduleId: varchar("schedule_id").references(() => equipmentMaintenanceSchedules.id, { onDelete: "set null" }),
+  pmCycleKey: text("pm_cycle_key"),
+
   // Repair Details
   repairNumber: text("repair_number").notNull(), // e.g., "REP-001"
   description: text("description").notNull(),

@@ -426,4 +426,16 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0106_closeout_packages_atomic_columns.sql": {
     helper: "ensureCloseoutPackagesAtomicColumns",
   },
+  // Task #2690 — replaces the description-tag idempotency guard in the
+  // equipment PM engine with a real FK from equipment_repairs.schedule_id
+  // to equipment_maintenance_schedules(id) plus a partial unique index on
+  // (schedule_id, pm_cycle_key) WHERE status NOT IN ('COMPLETED','CANCELLED').
+  // Backfills both columns from existing `[PM:<uuid>]` description prefixes.
+  // Renumbered 0106 -> 0107 during rebase to avoid filename collision with
+  // Task #2689's 0106_closeout_packages_atomic_columns.sql, which landed
+  // concurrently.
+  "0107_equipment_repairs_pm_idempotency.sql": {
+    helper: "ensureEquipmentRepairsPmIdempotency",
+    note: "Task #2690 — FK + partial unique index for PM-cycle idempotency, plus a one-shot backfill of historical [PM:<id>] tagged rows.",
+  },
 };

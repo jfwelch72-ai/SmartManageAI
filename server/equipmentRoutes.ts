@@ -1225,7 +1225,16 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         organizationId: orgId ?? undefined,
         systemUserId: req.user!.id,
       });
-      res.json(result);
+      // Task #2690 — surface the richer summary so an unexpectedly
+      // empty run is observable. Existing fields (`generated`,
+      // `skipped`, `scheduleIds`) keep their original shape.
+      res.json({
+        checked: result.checked,
+        generated: result.generated,
+        skipped: result.skipped,
+        skippedReasons: result.skippedReasons,
+        scheduleIds: result.scheduleIds,
+      });
     } catch (err) { next(err); }
   });
 

@@ -153,6 +153,7 @@ import { runScaleCalibrationBackfillOnce } from "./runScaleCalibrationBackfillOn
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
 import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
+import { ensureEquipmentRepairsPmIdempotency } from "./ensureEquipmentRepairsPmIdempotency";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -237,6 +238,11 @@ const migrations: MigrationStep[] = [
   // Required to fix passkey login on dev URLs that change and on the
   // deployed *.replit.app domain.
   { name: "passkey_credentials_rp_id", category: "ADD_COLUMN", fn: ensurePasskeyRpIdColumn },
+  // Task #2690 — replaces the application-level `[PM:<id>]` description
+  // tag guard in equipmentPmEngine with a real FK + partial unique index
+  // on (schedule_id, pm_cycle_key). Also backfills both columns from
+  // historical PM-tagged rows.
+  { name: "equipment_repairs_pm_idempotency", category: "ALTER_TABLE", fn: ensureEquipmentRepairsPmIdempotency },
   { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
   // Task #2068 — three-tier trade catalog (Trade > Category > Item).
   { name: "library_category_tier", category: "CREATE_TABLE", fn: ensureLibraryCategoryTier },
