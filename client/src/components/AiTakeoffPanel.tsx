@@ -50,6 +50,8 @@ import { useJobProgress } from "@/hooks/use-job-progress";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
+import { MapReduceDraftButton } from "@/components/takeoff/MapReduceDraftButton";
+import { ScheduleSymbolsPanel } from "@/components/takeoff/ScheduleSymbolsPanel";
 import { TradeTemplatesPanel } from "@/components/takeoff/TradeTemplatesPanel";
 import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
 
@@ -740,6 +742,8 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
               )}
             </Button>
             <DraftFullTakeoffButton bidId={bidId} projectId={projectId} standaloneTakeoffId={standaloneTakeoffId} />
+            {bidId && <MapReduceDraftButton bidId={bidId} />}
+            {bidId && <ScheduleSymbolsPanel bidId={bidId} />}
             {bidId && <TradeTemplatesPanel bidId={bidId} />}
           </div>
         )}
