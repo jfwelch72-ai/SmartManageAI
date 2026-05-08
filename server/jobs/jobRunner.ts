@@ -2785,69 +2785,87 @@ async function processComplianceExpirations() {
     managersByOrg.set(m.organizationId, list);
   }
 
-  const notificationValues: Array<{
-    userId: string;
-    organizationId: string | null;
-    type: "GENERAL";
-    title: string;
-    message: string;
-    relatedEntityId: string;
-    relatedEntityType: string;
-  }> = [];
+  let totalCreated = 0;
+  let totalSkippedExisting = 0;
 
   for (const org of orgs) {
-    const recipients = managersByOrg.get(org.organizationId) || [];
-    if (recipients.length === 0) continue;
+    // Task #2674 — wrap the per-org body in a tenant-scoped DB context so
+    // RLS pins every query inside to org.organizationId. The pre-loop bulk
+    // reads above intentionally span multiple tenants; only the per-tenant
+    // dedupe + insert needs to be scoped. Outer-loop `continue` statements
+    // become `return` because we are now inside an async callback.
+    await withJobOrgContext("compliance.expirationCheck", org.organizationId, async () => {
+      const recipients = managersByOrg.get(org.organizationId) || [];
+      if (recipients.length === 0) return;
 
-    const fields = [
-      { type: "General Liability Insurance", date: org.insuranceExpiration },
-      { type: "Workers Comp Insurance", date: org.wcInsuranceExpiration },
-      { type: "License", date: org.licenseExpiration },
-      { type: "Contract", date: org.contractExpiration },
-    ];
+      const fields = [
+        { type: "General Liability Insurance", date: org.insuranceExpiration },
+        { type: "Workers Comp Insurance", date: org.wcInsuranceExpiration },
+        { type: "License", date: org.licenseExpiration },
+        { type: "Contract", date: org.contractExpiration },
+      ];
 
-    for (const field of fields) {
-      if (!field.date) continue;
-      const expDate = new Date(field.date);
-      if (expDate > fourteenDaysFromNow) continue;
+      const orgNotifications: Array<{
+        userId: string;
+        organizationId: string | null;
+        type: "GENERAL";
+        title: string;
+        message: string;
+        relatedEntityId: string;
+        relatedEntityType: string;
+      }> = [];
 
-      const daysUntil = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-      const statusLabel = daysUntil <= 0 ? "EXPIRED" : `expires in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`;
+      for (const field of fields) {
+        if (!field.date) continue;
+        const expDate = new Date(field.date);
+        if (expDate > fourteenDaysFromNow) continue;
 
-      for (const userId of recipients) {
-        notificationValues.push({
-          userId,
-          organizationId: org.organizationId,
-          type: "GENERAL",
-          title: `Compliance Alert: ${field.type} ${statusLabel}`,
-          message: `${org.name} — ${field.type} ${statusLabel}. Please update compliance records.`,
-          relatedEntityId: org.id,
-          relatedEntityType: "CRM_COMPLIANCE",
-        });
+        const daysUntil = Math.ceil((expDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+        const statusLabel = daysUntil <= 0 ? "EXPIRED" : `expires in ${daysUntil} day${daysUntil !== 1 ? "s" : ""}`;
+
+        for (const userId of recipients) {
+          orgNotifications.push({
+            userId,
+            organizationId: org.organizationId,
+            type: "GENERAL",
+            title: `Compliance Alert: ${field.type} ${statusLabel}`,
+            message: `${org.name} — ${field.type} ${statusLabel}. Please update compliance records.`,
+            relatedEntityId: org.id,
+            relatedEntityType: "CRM_COMPLIANCE",
+          });
+        }
       }
-    }
+
+      if (orgNotifications.length === 0) return;
+
+      // Per-org dedupe — RLS pins this read to the current tenant so the
+      // index scan only walks this org's unread CRM_COMPLIANCE rows.
+      const existing = await db
+        .select({ relatedEntityId: notifications.relatedEntityId, userId: notifications.userId, title: notifications.title })
+        .from(notifications)
+        .where(
+          and(
+            eq(notifications.relatedEntityType, "CRM_COMPLIANCE"),
+            eq(notifications.isRead, false)
+          )
+        );
+
+      const existingKeys = new Set(existing.map(e => `${e.userId}:${e.relatedEntityId}:${e.title}`));
+      const deduped = orgNotifications.filter(n => !existingKeys.has(`${n.userId}:${n.relatedEntityId}:${n.title}`));
+
+      if (deduped.length > 0) {
+        await insertNotifications(deduped);
+        totalCreated += deduped.length;
+      } else {
+        totalSkippedExisting += orgNotifications.length;
+      }
+    });
   }
 
-  if (notificationValues.length > 0) {
-    const existing = await db
-      .select({ relatedEntityId: notifications.relatedEntityId, userId: notifications.userId, title: notifications.title })
-      .from(notifications)
-      .where(
-        and(
-          eq(notifications.relatedEntityType, "CRM_COMPLIANCE"),
-          eq(notifications.isRead, false)
-        )
-      );
-
-    const existingKeys = new Set(existing.map(e => `${e.userId}:${e.relatedEntityId}:${e.title}`));
-    const deduped = notificationValues.filter(n => !existingKeys.has(`${n.userId}:${n.relatedEntityId}:${n.title}`));
-
-    if (deduped.length > 0) {
-      await insertNotifications(deduped);
-      logInfo("Compliance notifications created", { count: deduped.length });
-    } else {
-      logInfo("Compliance check: all notifications already exist (unread)");
-    }
+  if (totalCreated > 0) {
+    logInfo("Compliance notifications created", { count: totalCreated });
+  } else if (totalSkippedExisting > 0) {
+    logInfo("Compliance check: all notifications already exist (unread)");
   }
 }
 

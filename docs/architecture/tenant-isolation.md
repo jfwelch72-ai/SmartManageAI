@@ -168,25 +168,30 @@ default-superadmin connect handler preserves their behaviour today. To
 move them into the strict-mode lane explicitly, wrap each one with
 `runAsSuperadmin("<job-name>", …)` and accept the per-tick audit row.
 
-All four `for (const org of orgs)` loops in `server/jobs/jobRunner.ts`
-are now accounted for:
+All `for (const org of orgs)` loops in `server/jobs/jobRunner.ts` are
+wrapped with `withJobOrgContext(...)`, and the lint guard at
+`scripts/check-db-imports.mjs` (wired into `scripts/ci.sh`) fails CI if
+a `db.*` reference inside a per-org loop body is not lexically enclosed
+in a `withJobOrgContext(...)` call. Current wrappers:
 
-- `processCrmContactBirthdayDailyDigest` (loop ~4138) →
+- `processCrmContactBirthdayDailyDigest` →
   `withJobOrgContext("crm.contactBirthdayDailyDigest", org.id, …)`
-- `processCrmContactBirthdayWeeklyDigest` (loop ~3769) →
+- `processCrmContactBirthdayWeeklyDigest` →
   `withJobOrgContext("crm.contactBirthdayWeeklyDigest", org.id, …)`
-- `processCertifiedPayrollDigest` (loop ~4377) →
+- `processCertifiedPayrollWeeklyDigest` →
   `withJobOrgContext("payroll.certifiedPayrollDigest", org.id, …)`
-- Compliance-expiration notification builder (loop ~2456) — N/A: the
-  loop body issues NO DB queries; it only appends to an in-memory
-  `notificationValues` array. The single bulk read/write happens after
-  the loop and intentionally spans all orgs.
+- `processComplianceExpirations` →
+  `withJobOrgContext("compliance.expirationCheck", org.organizationId, …)`
+  (Task #2674; per-org dedupe + insert moved inside the wrapper so RLS
+  pins them to the current tenant.)
+- `processEquipmentPmGeneration` →
+  `withJobOrgContext("equipment.pmGeneration", orgId, …)`
 
 When converting a job, outer-loop `continue` statements inside the
 wrapped block must become `return` because the body now runs as an
 async callback rather than the loop body itself. Inner loops keep
-their own `continue`s. Follow-up #2491 covers any new per-org loops
-added after this task and the eventual `STRICT_TENANT_RLS=true` flip.
+their own `continue`s. Follow-up #2491 covers the eventual
+`STRICT_TENANT_RLS=true` flip.
 
 ## Ratchet to strict mode
 
