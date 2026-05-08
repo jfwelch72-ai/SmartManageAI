@@ -112,6 +112,15 @@ import {
   cachePageTextOnSheets,
 } from "./services/aiEstimator/mapReduceDraft";
 import {
+  recordTakeoffRevision,
+  listRevisionsForBid,
+  getRevisionById,
+} from "./services/aiEstimator/revisionStore";
+import {
+  diffRevisions,
+  type DiffEntry,
+} from "./services/aiEstimator/revisionDiff";
+import {
   extractScheduleSymbolsForBid,
   listScheduleSymbolsForBid,
   acceptScheduleSymbols,
@@ -1848,7 +1857,314 @@ router.post(
     });
     if (out.blocked) return blockedResponse(res, out.reason);
     if (!out.result) return res.status(400).json({ error: out.reason || "Map-reduce draft produced no result" });
-    res.json(out.result);
+    // Task #2625 — Persist as an immutable revision so estimators can
+    // diff this run against another later. Best-effort; the result is
+    // always returned even if revision recording fails.
+    let revisionId: string | null = null;
+    try {
+      const rev = await recordTakeoffRevision({
+        organizationId,
+        bidId: data.bidId,
+        userId,
+        result: out.result,
+        disciplines: data.disciplines ?? null,
+        mode: "map_reduce",
+        modelId: out.result.modelId ?? null,
+        provider: out.result.provider ?? null,
+      });
+      revisionId = rev?.id ?? null;
+    } catch {
+      /* swallow — revision is non-critical */
+    }
+    res.json({ ...out.result, revisionId });
+  },
+);
+
+// =====================================================================
+// Task #2625 — Auto-takeoff revision history & diff view.
+//
+// Each successful map-reduce drafter run is persisted as an immutable
+// revision (see `services/aiEstimator/revisionStore.ts`). The endpoints
+// below let estimators list past runs for a bid, fetch a single
+// revision, diff two revisions, and promote selected diff entries into
+// the live takeoff (accept new / keep old / merge).
+// =====================================================================
+
+router.get(
+  `${estimatorBase}/bids/:bidId/revisions`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      await assertBidInOrg(req.params.bidId, req.user!.organizationId!);
+    } catch (err) {
+      if (err instanceof ResourceOwnershipError) return res.status(404).json({ error: "Bid not found" });
+      throw err;
+    }
+    const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+    const revisions = await listRevisionsForBid({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+      limit,
+    });
+    res.json({ revisions });
+  },
+);
+
+router.get(
+  `${estimatorBase}/revisions/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const row = await getRevisionById({
+      organizationId: req.user!.organizationId!,
+      revisionId: req.params.id,
+    });
+    if (!row) return res.status(404).json({ error: "Revision not found" });
+    res.json({ revision: row });
+  },
+);
+
+const revisionDiffSchema = z.object({
+  fromRevisionId: z.string().min(1),
+  toRevisionId: z.string().min(1),
+});
+
+router.get(
+  `${estimatorBase}/revisions/diff/compare`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const fromId = String(req.query.from || req.query.fromRevisionId || "");
+    const toId = String(req.query.to || req.query.toRevisionId || "");
+    const parsed = revisionDiffSchema.safeParse({ fromRevisionId: fromId, toRevisionId: toId });
+    if (!parsed.success) return res.status(400).json({ error: "from and to revision ids are required" });
+    const orgId = req.user!.organizationId!;
+    const [fromRev, toRev] = await Promise.all([
+      getRevisionById({ organizationId: orgId, revisionId: parsed.data.fromRevisionId }),
+      getRevisionById({ organizationId: orgId, revisionId: parsed.data.toRevisionId }),
+    ]);
+    if (!fromRev || !toRev) return res.status(404).json({ error: "Revision not found" });
+    if (fromRev.bidId !== toRev.bidId) {
+      return res.status(400).json({ error: "Revisions must belong to the same bid" });
+    }
+    const diff = diffRevisions(
+      {
+        measurements: Array.isArray(fromRev.measurements) ? (fromRev.measurements as Parameters<typeof diffRevisions>[0]["measurements"]) : [],
+        planSetVersion: (fromRev.planSetVersion ?? null) as Parameters<typeof diffRevisions>[0]["planSetVersion"],
+      },
+      {
+        measurements: Array.isArray(toRev.measurements) ? (toRev.measurements as Parameters<typeof diffRevisions>[0]["measurements"]) : [],
+        planSetVersion: (toRev.planSetVersion ?? null) as Parameters<typeof diffRevisions>[0]["planSetVersion"],
+      },
+    );
+    res.json({
+      bidId: fromRev.bidId,
+      from: { id: fromRev.id, createdAt: fromRev.createdAt, modelId: fromRev.modelId, promptVersion: fromRev.promptVersion },
+      to: { id: toRev.id, createdAt: toRev.createdAt, modelId: toRev.modelId, promptVersion: toRev.promptVersion },
+      diff,
+    });
+  },
+);
+
+const promoteEntrySchema = z.object({
+  key: z.string().min(1),
+  action: z.enum(["accept", "keep", "merge"]),
+});
+const revisionPromoteSchema = z.object({
+  fromRevisionId: z.string().min(1),
+  toRevisionId: z.string().min(1),
+  decisions: z.array(promoteEntrySchema).min(1).max(1000),
+});
+
+router.post(
+  `${estimatorBase}/revisions/diff/promote`,
+  sensitiveLimiter,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(revisionPromoteSchema, req.body, res);
+    if (!data) return;
+    const organizationId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    const [fromRev, toRev] = await Promise.all([
+      getRevisionById({ organizationId, revisionId: data.fromRevisionId }),
+      getRevisionById({ organizationId, revisionId: data.toRevisionId }),
+    ]);
+    if (!fromRev || !toRev) return res.status(404).json({ error: "Revision not found" });
+    if (fromRev.bidId !== toRev.bidId) {
+      return res.status(400).json({ error: "Revisions must belong to the same bid" });
+    }
+    const diff = diffRevisions(
+      {
+        measurements: Array.isArray(fromRev.measurements) ? (fromRev.measurements as Parameters<typeof diffRevisions>[0]["measurements"]) : [],
+        planSetVersion: (fromRev.planSetVersion ?? null) as Parameters<typeof diffRevisions>[0]["planSetVersion"],
+      },
+      {
+        measurements: Array.isArray(toRev.measurements) ? (toRev.measurements as Parameters<typeof diffRevisions>[0]["measurements"]) : [],
+        planSetVersion: (toRev.planSetVersion ?? null) as Parameters<typeof diffRevisions>[0]["planSetVersion"],
+      },
+    );
+    const entryByKey = new Map<string, DiffEntry>();
+    for (const e of diff.entries) entryByKey.set(e.key, e);
+
+    const sheets = await db
+      .select({
+        id: takeoffSheets.id,
+        sheetNumber: takeoffSheets.sheetNumber,
+        sheetName: takeoffSheets.sheetName,
+        sheetIndex: takeoffSheets.sheetIndex,
+      })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.bidId, fromRev.bidId));
+    if (sheets.length === 0) {
+      return res.status(400).json({ error: "Bid has no takeoff sheets to attach measurements to" });
+    }
+    const sheetByCitation = new Map<string, string>();
+    for (const s of sheets) {
+      if (s.sheetNumber) sheetByCitation.set(s.sheetNumber.trim().toLowerCase(), s.id);
+      if (s.sheetName) sheetByCitation.set(s.sheetName.trim().toLowerCase(), s.id);
+    }
+    const fallbackSheetId = sheets.slice().sort((a, b) => a.sheetIndex - b.sheetIndex)[0]!.id;
+
+    const accepted: string[] = [];
+    const kept: string[] = [];
+    const merged: string[] = [];
+    const skipped: Array<{ key: string; reason: string }> = [];
+    const insertedMeasurementIds: string[] = [];
+
+    for (const decision of data.decisions) {
+      const entry = entryByKey.get(decision.key);
+      if (!entry) {
+        skipped.push({ key: decision.key, reason: "entry_not_in_diff" });
+        continue;
+      }
+      if (decision.action === "keep") {
+        kept.push(decision.key);
+        continue;
+      }
+      let value: number | null = null;
+      let citations: string[] = [];
+      let contributing: string[] = [];
+      if (decision.action === "accept") {
+        if (entry.toValue == null) {
+          skipped.push({ key: decision.key, reason: "no_to_value" });
+          continue;
+        }
+        value = entry.toValue;
+        citations = entry.toCitations;
+        contributing = entry.contributingDisciplines;
+      } else {
+        // merge: average when both sides have a value, otherwise sum.
+        const fv = entry.fromValue;
+        const tv = entry.toValue;
+        if (fv == null && tv == null) {
+          skipped.push({ key: decision.key, reason: "no_values" });
+          continue;
+        }
+        if (fv != null && tv != null) value = (fv + tv) / 2;
+        else value = (fv ?? 0) + (tv ?? 0);
+        citations = Array.from(new Set([...entry.fromCitations, ...entry.toCitations]));
+        contributing = entry.contributingDisciplines;
+      }
+      if (value == null || !Number.isFinite(value)) {
+        skipped.push({ key: decision.key, reason: "invalid_value" });
+        continue;
+      }
+      let sheetId: string | undefined;
+      for (const cite of citations) {
+        const hit = sheetByCitation.get(cite.trim().toLowerCase());
+        if (hit) { sheetId = hit; break; }
+      }
+      if (!sheetId) sheetId = fallbackSheetId;
+
+      // Narrow to the takeoff_measurements enum. ANGULAR / DIAMETER are
+      // map-reduce-only categories that don't have a place in the live
+      // takeoff schema, so we coerce them to COUNT to keep the value.
+      type MeasurementType = "AREA" | "LINEAR" | "COUNT" | "VOLUME";
+      const measurementType: MeasurementType =
+        entry.type === "AREA" || entry.type === "LINEAR" || entry.type === "VOLUME"
+          ? entry.type
+          : "COUNT";
+      const unitUpper = (entry.unit || "").toUpperCase();
+      const isLinear = measurementType === "LINEAR" && /^(LF|FT|FEET|LINEAR FEET|LINFT)$/i.test(unitUpper);
+      const isArea = measurementType === "AREA" && /^(SF|SQFT|SQ FT|SQUARE FEET|FT2|FT\^2)$/i.test(unitUpper);
+      const isVolume = measurementType === "VOLUME" && /^(CY|CUYD|CU YD|CUBIC YARDS?|YD3)$/i.test(unitUpper);
+
+      const noteParts: string[] = [
+        `[ai-revision-promote:${decision.action}] ${value} ${entry.unit}`,
+        `from rev ${fromRev.id.slice(0, 8)} → to rev ${toRev.id.slice(0, 8)}`,
+      ];
+      if (citations.length > 0) noteParts.push(`Sheets: ${citations.join(", ")}`);
+      if (contributing.length > 0) noteParts.push(`Disciplines: ${contributing.join(", ")}`);
+
+      const metadata = JSON.stringify({
+        source: "ai_revision_promote",
+        action: decision.action,
+        diffKey: entry.key,
+        fromRevisionId: fromRev.id,
+        toRevisionId: toRev.id,
+        unit: entry.unit,
+        value,
+        costCode: entry.costCode ?? null,
+        sheetCitations: citations,
+        contributingDisciplines: contributing,
+        affectedBySheetChange: entry.affectedBySheetChange,
+      });
+
+      try {
+        const [inserted] = await db
+          .insert(takeoffMeasurements)
+          .values({
+            sheetId,
+            type: measurementType,
+            label: entry.label,
+            points: "[]",
+            count: measurementType === "COUNT" ? value : null,
+            computedLengthFt: isLinear ? value : null,
+            computedAreaFt2: isArea ? value : null,
+            computedVolumeCy: isVolume ? value : null,
+            source: "AI",
+            status: "DRAFT",
+            note: noteParts.join(" • ").slice(0, 2000),
+            metadata,
+            needsReview: true,
+            calibrationSource: "AI_DETECTED",
+          })
+          .returning({ id: takeoffMeasurements.id });
+        if (inserted) {
+          insertedMeasurementIds.push(inserted.id);
+          if (decision.action === "accept") accepted.push(decision.key);
+          else merged.push(decision.key);
+          await logCreate(userId, "takeoff_measurement", inserted.id, {
+            source: "ai_revision_promote",
+            action: decision.action,
+            bidId: fromRev.bidId,
+            fromRevisionId: fromRev.id,
+            toRevisionId: toRev.id,
+            label: entry.label,
+            type: entry.type,
+            value,
+            unit: entry.unit,
+          }, req).catch(() => undefined);
+        }
+      } catch (err) {
+        skipped.push({ key: decision.key, reason: err instanceof Error ? err.message : "insert_failed" });
+        logWarn("[revisionPromote] insert failed", {
+          bidId: fromRev.bidId,
+          key: decision.key,
+          error: String(err),
+        });
+      }
+    }
+
+    res.json({
+      accepted,
+      kept,
+      merged,
+      skipped,
+      insertedMeasurementIds,
+    });
   },
 );
 

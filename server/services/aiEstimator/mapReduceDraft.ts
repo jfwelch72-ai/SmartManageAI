@@ -130,6 +130,10 @@ export interface MapReduceDraftResult {
   appliedMaxDisciplineBatches: number;
   /** Task #2626 — aggregated AI spend for this draft run. */
   cost: MapReduceCostSummary;
+  /** Task #2625 — provider model id observed on the first successful LLM response (e.g. "claude-sonnet-4-5"). */
+  modelId?: string | null;
+  /** Task #2625 — provider name observed on the first successful LLM response ("anthropic" | "openai"). */
+  provider?: string | null;
 }
 
 interface PageInfo {
@@ -322,6 +326,8 @@ async function reduceDisciplineBatch(opts: {
     model: string;
     provider: string | null;
   };
+  modelId?: string | null;
+  provider?: string | null;
 }> {
   const concatenated = opts.pages
     .map((p) => `<<<SHEET ${p.sheetNumber || p.sheetName || `idx ${p.sheetIndex}`}>>>\n${p.pageText}`)
@@ -340,6 +346,8 @@ async function reduceDisciplineBatch(opts: {
   const sysPrompt = `You are a senior estimator drafting takeoff measurements for the ${opts.discipline} discipline only. The user message contains the text contents of multiple plan sheets, separated by lines like "<<<SHEET A-101>>>". For every quantifiable item visible in those sheets, emit one measurement and include the sheet identifier(s) it came from in "sheetCitations". Be conservative — never invent measurements not visible. Do not emit items that belong to other disciplines.
 Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[] }], "notes": string, "confidence": number }`;
 
+  let observedModelId: string | null = null;
+  let observedProvider: string | null = null;
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
@@ -371,6 +379,11 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
           response_format: { type: "json_object" },
         },
       });
+      // Task #2625 — surface the actual provider model id used so it can
+      // be persisted on the resulting `ai_takeoff_revisions` row for
+      // run-level traceability.
+      observedModelId = completion.model ?? null;
+      observedProvider = (completion as { provider?: string | null }).provider ?? null;
       return { result: completion.choices[0]?.message?.content ?? null, completion };
     },
   });
@@ -409,6 +422,8 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
     confidence:
       typeof validated.data.confidence === "number" ? validated.data.confidence : undefined,
     usage,
+    modelId: observedModelId,
+    provider: observedProvider,
   };
 }
 
@@ -541,6 +556,8 @@ export async function mapReduceDraftFromPlans(opts: {
   // the input set so the UI can suggest a target cap that would clear the
   // skipped-sheet warning on the next run.
   let maxBatchesNeededAcrossDisciplines = 0;
+  let observedModelId: string | null = null;
+  let observedProvider: string | null = null;
 
   const disciplines = Array.from(byDiscipline.keys()).sort();
   let processed = 0;
@@ -604,6 +621,8 @@ export async function mapReduceDraftFromPlans(opts: {
         // Skip remaining batches for this discipline
         break;
       }
+      if (!observedModelId && out.modelId) observedModelId = out.modelId;
+      if (!observedProvider && out.provider) observedProvider = out.provider;
       // Task #2577 Phase B — accumulate per-batch notes + confidence so
       // the final result reflects model-reported quality instead of
       // returning empty notes / a hard-coded default.
@@ -671,6 +690,8 @@ export async function mapReduceDraftFromPlans(opts: {
       recommendedMaxDisciplineBatches,
       appliedMaxDisciplineBatches: maxDisciplineBatches,
       cost,
+      modelId: observedModelId,
+      provider: observedProvider,
     },
   };
 }

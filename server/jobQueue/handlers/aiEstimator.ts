@@ -69,6 +69,33 @@ export function registerAiEstimatorJob(): void {
             disciplines: opts.disciplines,
             onProgress,
           });
+          // Task #2625 — Persist successful map-reduce drafts as an
+          // immutable revision so estimators can later diff this run
+          // against another and promote the deltas. Failures are
+          // swallowed inside `recordTakeoffRevision` so revision
+          // bookkeeping never breaks a successful draft.
+          if (svc.result && typeof svc.result === "object" && Array.isArray((svc.result as { measurements?: unknown }).measurements)) {
+            const { recordTakeoffRevision } = await import(
+              "../../services/aiEstimator/revisionStore"
+            );
+            const r = svc.result as Parameters<typeof recordTakeoffRevision>[0]["result"] & {
+              modelId?: string | null;
+              provider?: string | null;
+            };
+            const revision = await recordTakeoffRevision({
+              organizationId: opts.organizationId,
+              bidId: opts.bidId,
+              userId: opts.userId,
+              result: r,
+              disciplines: opts.disciplines ?? null,
+              mode: "map_reduce",
+              modelId: r.modelId ?? null,
+              provider: r.provider ?? null,
+            });
+            if (revision) {
+              (svc.result as Record<string, unknown>).revisionId = revision.id;
+            }
+          }
         } else {
           const { draftTakeoffFromPlans } = await import(
             "../../services/aiEstimator/takeoffDraft"

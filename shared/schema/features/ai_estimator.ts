@@ -559,3 +559,50 @@ export const SHEET_DISCIPLINE_SOURCES = [
   "USER",
 ] as const;
 export type SheetDisciplineSource = (typeof SHEET_DISCIPLINE_SOURCES)[number];
+
+// =====================================================================
+// Task #2625 — Auto-takeoff revision history & diff view.
+//
+// Each successful auto-takeoff run is captured as an immutable revision
+// snapshot so estimators can pick two runs and compare line-item /
+// quantity drift before promoting the new numbers into the live
+// takeoff. Revisions are append-only (no UPDATE/DELETE routes) so the
+// audit trail stays intact.
+// =====================================================================
+export const aiTakeoffRevisions = pgTable("ai_takeoff_revisions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").notNull().references(() => bids.id, { onDelete: "cascade" }),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  // 'map_reduce' (current default) or 'single' (legacy single-shot drafter).
+  mode: text("mode").notNull().default("map_reduce"),
+  // Snapshot of the plan-set at draft time. Shape:
+  //   { planDocuments: Array<{ id, fileName, updatedAt? }>,
+  //     sheets: Array<{ id, planId, sheetIndex, sheetNumber, sheetName,
+  //                     discipline, revisionLabel }>,
+  //     hash: string  // stable hash of the above for fast equality
+  //   }
+  planSetVersion: jsonb("plan_set_version"),
+  // Provider model id (e.g. "claude-sonnet-4-5") and prompt version
+  // ("mr-v1") so a revision can be traced back to the exact run.
+  modelId: text("model_id"),
+  promptVersion: text("prompt_version"),
+  provider: text("provider"),
+  // Restricted disciplines for this run (e.g. ["A","S"]); null = all.
+  disciplines: jsonb("disciplines"),
+  // Full measurement snapshot — array of MapReduceMeasurement rows.
+  measurements: jsonb("measurements").notNull().default(sql`'[]'::jsonb`),
+  notes: text("notes"),
+  confidence: integer("confidence"),
+  disciplineCoverage: jsonb("discipline_coverage"),
+  llmCallCount: integer("llm_call_count"),
+  partial: boolean("partial").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_takeoff_revisions_org_idx").on(table.organizationId),
+  bidIdx: index("ai_takeoff_revisions_bid_idx").on(table.bidId),
+  createdAtIdx: index("ai_takeoff_revisions_created_at_idx").on(table.createdAt),
+}));
+export const insertAiTakeoffRevisionSchema = createInsertSchema(aiTakeoffRevisions).omit({ id: true, createdAt: true });
+export type InsertAiTakeoffRevision = z.infer<typeof insertAiTakeoffRevisionSchema>;
+export type AiTakeoffRevision = typeof aiTakeoffRevisions.$inferSelect;
