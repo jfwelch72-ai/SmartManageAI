@@ -243,6 +243,19 @@ test.describe("Takeoff live collaboration & conflict — two browsers", () => {
       ),
     ).toBeVisible({ timeout: 5_000 });
 
+    // Task #2654 — Side-by-side resolution dialog mounts. The dialog
+    // (built in Task #2652) shows the teammate's saved value and the
+    // loser's pending edit for each changed field, with explicit
+    // "Keep theirs" (dismiss) / "Apply merge" actions.
+    const conflictDialog = pageB.getByTestId("dialog-measurement-conflict");
+    await expect(conflictDialog).toBeVisible({ timeout: 10_000 });
+    await expect(
+      conflictDialog.getByTestId("text-conflict-theirs-label"),
+    ).toHaveText("Race Wall (A wins)");
+    await expect(
+      conflictDialog.getByTestId("text-conflict-mine-label"),
+    ).toHaveText("Race Wall (B tries)");
+
     // The canvas refreshes to the server's truth: the measurements
     // query was invalidated by the 409 onError handler, so a re-read
     // from the same authenticated context returns User A's label and
@@ -266,6 +279,11 @@ test.describe("Takeoff live collaboration & conflict — two browsers", () => {
       )
       .toEqual({ label: "Race Wall (A wins)", version: 2 });
 
+    // User B picks "Keep theirs" — the dialog dismisses and the
+    // teammate's edit stands.
+    await pageB.getByTestId("button-conflict-keep-theirs").click();
+    await expect(conflictDialog).toBeHidden({ timeout: 5_000 });
+
     // The sidebar text node also re-renders to the server's truth as
     // React Query refills the cache after invalidation.
     await expect
@@ -274,6 +292,53 @@ test.describe("Takeoff live collaboration & conflict — two browsers", () => {
         { message: "sidebar label re-renders to server's truth", timeout: 10_000 },
       )
       .toBe("Race Wall (A wins)");
+
+    // Task #2654 — "Loser overwrites" path. Race the row again: User
+    // A silently bumps server-side to v3 (legacy last-write-wins via
+    // REST → no socket fan-out). User B's React Query cache is still
+    // at v2 (just refilled), so a fresh inline edit triggers a second
+    // 409 and the resolution dialog re-mounts. This time User B
+    // leaves the per-field default ("mine") and clicks "Apply merge",
+    // which the dialog re-PATCHes with `forceOverwrite: true`. After
+    // that succeeds, the row's label MUST reflect User B's edit and
+    // the version MUST advance to v4 — proving the loser-overwrites
+    // branch is wired end-to-end.
+    const aPatch2 = await pageA.request.patch(
+      `${BASE_URL}/api/takeoff/measurements/${measurement.id}`,
+      { data: { label: "Race Wall (A wins again)" } },
+    );
+    expect(aPatch2.status()).toBe(200);
+    expect(((await aPatch2.json()) as MeasurementResponse).version).toBe(3);
+
+    await measurementItem.scrollIntoViewIfNeeded();
+    await measurementItem.locator("span.font-medium.truncate").first().dblclick();
+    const labelInput2 = pageB.getByTestId(`input-inline-edit-label-${measurement.id}`);
+    await labelInput2.waitFor({ state: "visible", timeout: 10_000 });
+    await labelInput2.fill("Race Wall (B overwrites)");
+    await pageB.getByTestId(`button-inline-save-${measurement.id}`).click();
+
+    await expect(conflictDialog).toBeVisible({ timeout: 15_000 });
+    await pageB.getByTestId("button-conflict-apply").click();
+    await expect(conflictDialog).toBeHidden({ timeout: 10_000 });
+
+    await expect
+      .poll(
+        async () => {
+          const r = await pageB.request.get(
+            `${BASE_URL}/api/takeoff/sheets/${sheetId}/measurements`,
+          );
+          if (r.status() !== 200) return null;
+          const list = (await r.json()) as MeasurementResponse[];
+          const row = list.find((m) => m.id === measurement.id);
+          return row ? { label: row.label, version: row.version } : null;
+        },
+        {
+          message:
+            "User B's overwrite must replace User A's edit (label + version bumped past v3)",
+          timeout: 10_000,
+        },
+      )
+      .toEqual({ label: "Race Wall (B overwrites)", version: 4 });
 
     await ctxA.close();
     await ctxB.close();
