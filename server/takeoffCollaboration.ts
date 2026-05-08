@@ -52,6 +52,16 @@ type MessageType =
   | "SHEET_CHANGED"
   | "SHEET_LOCK"
   | "SHEET_UNLOCK"
+  // Task #2579 Phase D — per-region soft locks. A region is a
+  // bbox in sheet-pixel space; the holder edits within it without
+  // collision while another estimator can hold a different region
+  // on the same sheet. Soft because we don't enforce on the
+  // server's measurement endpoints — the lock just blocks UI
+  // operations on remote clients. Locks auto-expire if the holder
+  // disconnects (handled in the close handler).
+  | "REGION_LOCK"
+  | "REGION_UNLOCK"
+  | "REGION_LOCKS_SYNC"
   | "PING"
   | "PONG";
 
@@ -74,6 +84,48 @@ const HEARTBEAT_INTERVAL_MS = 15000;
 
 const rooms = new Map<string, Map<string, CollabClient>>();
 const sheetLocks = new Map<string, { userId: string; userName: string }>();
+
+// Task #2579 Phase D — per-region soft locks keyed by
+// `${roomId}:${sheetId}:${regionId}`. The holder is identified by
+// connectionId so reconnects don't accidentally inherit a stale lock,
+// and we record userId/userName so other clients can render "X is
+// editing this region" without an extra round-trip.
+interface RegionLock {
+  regionId: string;
+  sheetId: string;
+  bbox: { minX: number; minY: number; maxX: number; maxY: number };
+  userId: string;
+  userName: string;
+  userColor: string;
+  connectionId: string;
+  acquiredAt: number;
+}
+const regionLocks = new Map<string, RegionLock>();
+
+function regionLockKey(roomId: string, sheetId: string, regionId: string): string {
+  return `${roomId}:${sheetId}:${regionId}`;
+}
+
+function getRegionLocksForRoom(roomId: string): RegionLock[] {
+  const prefix = `${roomId}:`;
+  const out: RegionLock[] = [];
+  regionLocks.forEach((lock, key) => {
+    if (key.startsWith(prefix)) out.push(lock);
+  });
+  return out;
+}
+
+function releaseRegionLocksForConnection(roomId: string, connectionId: string): RegionLock[] {
+  const released: RegionLock[] = [];
+  const prefix = `${roomId}:`;
+  regionLocks.forEach((lock, key) => {
+    if (key.startsWith(prefix) && lock.connectionId === connectionId) {
+      released.push(lock);
+      regionLocks.delete(key);
+    }
+  });
+  return released;
+}
 
 function getRoom(roomId: string): Map<string, CollabClient> {
   if (!rooms.has(roomId)) {
@@ -265,6 +317,7 @@ export function setupTakeoffCollaboration(server: HttpServer) {
             .filter(([key]) => key.startsWith(`${roomId}:`))
             .map(([key, val]) => [key.split(":")[1], val])
         ),
+        regionLocks: getRegionLocksForRoom(roomId),
       },
       senderId: userId,
       senderName: userName,
@@ -378,6 +431,90 @@ export function setupTakeoffCollaboration(server: HttpServer) {
           break;
         }
 
+        case "REGION_LOCK": {
+          const { sheetId, regionId, bbox } = msg.payload || {};
+          if (!sheetId || !regionId || !bbox) break;
+          if (
+            typeof bbox.minX !== "number" ||
+            typeof bbox.minY !== "number" ||
+            typeof bbox.maxX !== "number" ||
+            typeof bbox.maxY !== "number"
+          ) break;
+          const key = regionLockKey(roomId, sheetId, regionId);
+          const existing = regionLocks.get(key);
+          if (existing && existing.connectionId !== connectionId) {
+            // Refuse the lock and tell only the requester it failed.
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({
+                type: "REGION_LOCK",
+                payload: {
+                  ok: false,
+                  reason: "held",
+                  regionId,
+                  sheetId,
+                  holder: { userId: existing.userId, userName: existing.userName },
+                },
+                timestamp: Date.now(),
+              }));
+            }
+            break;
+          }
+          const lock: RegionLock = {
+            regionId,
+            sheetId,
+            bbox,
+            userId,
+            userName,
+            userColor,
+            connectionId,
+            acquiredAt: Date.now(),
+          };
+          regionLocks.set(key, lock);
+          broadcastToRoom(roomId, {
+            type: "REGION_LOCK",
+            payload: { ok: true, lock },
+            senderId: userId,
+            senderName: userName,
+            senderColor: userColor,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+
+        case "REGION_UNLOCK": {
+          const { sheetId, regionId } = msg.payload || {};
+          if (!sheetId || !regionId) break;
+          const key = regionLockKey(roomId, sheetId, regionId);
+          const existing = regionLocks.get(key);
+          if (!existing) break;
+          if (existing.connectionId !== connectionId && existing.userId !== userId) {
+            // Only the holder (or another connection of the same
+            // user, e.g. tab swap) may release.
+            break;
+          }
+          regionLocks.delete(key);
+          broadcastToRoom(roomId, {
+            type: "REGION_UNLOCK",
+            payload: { regionId, sheetId, userId },
+            senderId: userId,
+            senderName: userName,
+            senderColor: userColor,
+            timestamp: Date.now(),
+          });
+          break;
+        }
+
+        case "REGION_LOCKS_SYNC": {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "REGION_LOCKS_SYNC",
+              payload: { regionLocks: getRegionLocksForRoom(roomId) },
+              timestamp: Date.now(),
+            }));
+          }
+          break;
+        }
+
         case "PING":
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: "PONG", payload: {}, timestamp: Date.now() }));
@@ -390,6 +527,19 @@ export function setupTakeoffCollaboration(server: HttpServer) {
       room.delete(connectionId);
       if (client.sheetLock) {
         sheetLocks.delete(`${roomId}:${client.sheetLock}`);
+      }
+      // Task #2579 — release any region locks this connection held
+      // and notify peers so their UI clears the highlight.
+      const released = releaseRegionLocksForConnection(roomId, connectionId);
+      for (const r of released) {
+        broadcastToRoom(roomId, {
+          type: "REGION_UNLOCK",
+          payload: { regionId: r.regionId, sheetId: r.sheetId, userId: r.userId },
+          senderId: r.userId,
+          senderName: r.userName,
+          senderColor: r.userColor,
+          timestamp: Date.now(),
+        });
       }
       broadcastToRoom(roomId, {
         type: "PRESENCE_LEAVE",

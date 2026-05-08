@@ -170,6 +170,10 @@ import bidRoutes2 from "./bidRoutes";
 import takeoffSheetRoutes from "./takeoffSheetRoutes";
 import takeoffIssueRoutes from "./takeoffIssueRoutes";
 import takeoffMeasurementRoutes from "./takeoffMeasurementRoutes";
+// Task #2579 — Phase D: scale, collaboration & insights.
+import takeoffPaginationRoutes from "./takeoffPaginationRoutes";
+import takeoffFieldSyncRoutes from "./takeoffFieldSyncRoutes";
+import bidAnalyticsRoutes from "./bidAnalyticsRoutes";
 import takeoffCategoryRoutes from "./takeoffCategoryRoutes";
 import takeoffCrossModuleRoutes from "./takeoffCrossModuleRoutes";
 import takeoffToolChestRoutes from "./takeoffToolChestRoutes";
@@ -660,6 +664,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(takeoffSendToEstimateRoutes);
   app.use(takeoffIssueRoutes);
   app.use(takeoffMeasurementRoutes);
+  app.use(takeoffPaginationRoutes);
+  app.use(takeoffFieldSyncRoutes);
+  app.use(bidAnalyticsRoutes);
   app.use(takeoffCategoryRoutes);
   app.use(takeoffCrossModuleRoutes);
   app.use(takeoffToolChestRoutes);

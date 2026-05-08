@@ -130,6 +130,8 @@ const AcceptHustlerInvitePage = lazy(() => import("@/pages/accept-hustler-invite
 const DashboardPage = lazy(() => import("@/pages/dashboard"));
 const ProfilePage = lazy(() => import("@/pages/profile"));
 const BidsPage = lazy(() => import("@/pages/bids"));
+// Task #2579 — Phase D bid hit-rate & estimated-vs-actual dashboard.
+const BidHitRatePage = lazy(() => import("@/pages/bid-hit-rate"));
 const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
 const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
 // Task #2067 — Standalone full-page Takeoff workspace + index landing page.
@@ -481,6 +483,7 @@ function Router() {
       
       {/* Management routes (blocked for hourly employees) */}
       <Route path="/bids/new" component={() => <ProtectedRoute component={BidWizardPage} permission={RoutePermissions.BIDS} />} />
+      <Route path="/bids/hit-rate" component={() => <ProtectedRoute component={BidHitRatePage} permission={RoutePermissions.BIDS} />} />
       <Route path="/bids" component={() => <ProtectedRoute component={BidsPage} permission={RoutePermissions.BIDS} />} />
       <Route path="/historical-costs" component={() => <ProtectedRoute component={HistoricalCostsPage} permission={RoutePermissions.HISTORICAL_COSTS} />} />
       <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
