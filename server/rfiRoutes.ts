@@ -302,6 +302,7 @@ import { validateBody, parseOrRespond } from "./utils/validation";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { eventBus } from "./events";
 import { generateRfiLogPdf } from "./services/logPdfService";
 import { fetchProjectBranding, fetchProjectRfiLogRows } from "./services/projectLogService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
@@ -840,6 +841,26 @@ router.post("/rfi/:id/answer", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", 
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, "RFI Answered", answer);
 
     notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, [rfi.submittedById], `RFI Answered: ${rfi.subject}`, rfi.rfiNumber);
+
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: rfi.organizationId,
+        actorId: user.id,
+        timestamp: new Date(),
+        type: "rfi.answered" as const,
+        payload: {
+          rfiId: rfi.id,
+          projectId: rfi.projectId || "",
+          subject: rfi.subject,
+          rfiNumber: rfi.rfiNumber || null,
+          answeredByName: `${user.firstName} ${user.lastName}`,
+          subcontractorCrmOrgId: rfi.subcontractorId || null,
+        },
+      });
+    } catch (emitErr) {
+      logError("rfiRoutes: failed to emit rfi.answered event", { error: String(emitErr) });
+    }
 
     res.json(updated);
   } catch (error) {

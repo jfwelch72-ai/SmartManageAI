@@ -446,4 +446,15 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureMobileSyncEventsTable",
     note: "Task #2693 — mobile_sync_events table + logical_clock on offline_sync_queue.",
   },
+  // Task #2694 — Portal Notification Inbox for external users (clients,
+  // subcontractors, vendors). Two new tables: portal_notifications and
+  // portal_notification_prefs with per-recipient partial unique indexes.
+  // Tables auto-synthesized from Drizzle schema by reconcileSchemaDrift on
+  // first boot. Partial unique indexes applied by the SQL file on subsequent
+  // deployments via runStartupMigrations raw-SQL execution (category: ALTER).
+  // Renumbered 0108 → 0109 during rebase to avoid filename collision with
+  // Task #2693's 0108_mobile_sync_events.sql, which landed concurrently.
+  "0109_portal_notifications.sql": {
+    skip: "(A) CREATE TABLE auto-applied by reconcileSchemaDrift (Task #2694); partial unique indexes are advisory and idempotent",
+  },
 };

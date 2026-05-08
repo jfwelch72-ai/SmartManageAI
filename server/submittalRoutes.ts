@@ -431,6 +431,7 @@ import { z } from "zod";
 import { requireAuth, requireOrgUser, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { eventBus } from "./events";
 import { generateSubmittalLogPdf } from "./services/logPdfService";
 import { fetchProjectBranding, fetchProjectSubmittalLogRows } from "./services/projectLogService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
@@ -2262,6 +2263,25 @@ router.post("/submittals/:id/approve", requireAuth, requireRoleOrFeature(["SUPER
       }, userOrgId);
     }
 
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: existing.submittal.organizationId,
+        actorId: user.id,
+        timestamp: new Date(),
+        type: "submittal.approved" as const,
+        payload: {
+          submittalId: id,
+          projectId: existing.submittal.projectId || "",
+          subject: existing.submittal.subject,
+          submittalNumber: existing.submittal.submittalNumber || null,
+          subcontractorCrmOrgId: existing.submittal.subcontractorId || null,
+        },
+      });
+    } catch (emitErr) {
+      logError("submittalRoutes: failed to emit submittal.approved event", { error: String(emitErr) });
+    }
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -2432,6 +2452,26 @@ router.post("/submittals/:id/reject", requireAuth, requireRoleOrFeature(["SUPER_
         relatedEntityId: id,
         relatedEntityType: "submittal",
       }, userOrgId);
+    }
+
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: existing.submittal.organizationId,
+        actorId: user.id,
+        timestamp: new Date(),
+        type: "submittal.rejected" as const,
+        payload: {
+          submittalId: id,
+          projectId: existing.submittal.projectId || "",
+          subject: existing.submittal.subject,
+          submittalNumber: existing.submittal.submittalNumber || null,
+          reviewComments: req.body.reviewComments || null,
+          subcontractorCrmOrgId: existing.submittal.subcontractorId || null,
+        },
+      });
+    } catch (emitErr) {
+      logError("submittalRoutes: failed to emit submittal.rejected event", { error: String(emitErr) });
     }
 
     res.json(updated);

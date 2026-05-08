@@ -223,6 +223,7 @@ export type DomainEvent =
   | BidConvertedToProjectEvent
   | ChangeOrderApprovedEvent
   | ChangeOrderRejectedEvent
+  | ChangeOrderSubmittedEvent
   | TimeclockCheckedInEvent
   | TimeclockCheckedOutEvent
   | PayrollRunCompletedEvent
@@ -272,7 +273,20 @@ export type DomainEvent =
   | InspectorReportRejectedEvent
   | SuretyBondActivatedEvent
   | SuretyBondCanceledEvent
-  | CrmCallLoggedEvent;
+  | CrmCallLoggedEvent
+  | RfiAnsweredEvent
+  | SubmittalApprovedEvent
+  | SubmittalRejectedEvent
+  | AiaPayApplicationSubmittedEvent
+  | PurchaseOrderIssuedEvent
+  | CloseoutPackageReadyEvent
+  | PunchListItemAssignedEvent
+  | PaymentReceivedEvent
+  | InvoiceGeneratedEvent
+  | ProjectMilestoneCompletedEvent
+  | PurchaseOrderRevisedEvent
+  | DeliveryConfirmationRequestedEvent
+  | ScheduleChangedEvent;
 
 export interface PoReceiptRecordedEvent extends EventEnvelope {
   type: "po.receipt_recorded";
@@ -422,6 +436,7 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "bid.due_date_approaching",
   "change_order.approved",
   "change_order.rejected",
+  "change_order.submitted",
   "timeclock.checked_in",
   "timeclock.checked_out",
   "payroll.run.completed",
@@ -463,6 +478,19 @@ export const ALL_DOMAIN_EVENT_TYPES: DomainEventType[] = [
   "dbe_goal.changed",
   "crm_certification.created",
   "crm_certification.deleted",
+  "rfi.answered",
+  "submittal.approved",
+  "submittal.rejected",
+  "aia_pay_application.submitted",
+  "purchase_order.issued",
+  "closeout.package_ready",
+  "punch_list_item.assigned",
+  "payment.received",
+  "invoice.generated",
+  "project.milestone_completed",
+  "purchase_order.revised",
+  "delivery_confirmation.requested",
+  "schedule.changed",
 ];
 
 export interface HaulTicketCreatedEvent extends EventEnvelope {
@@ -693,5 +721,161 @@ export interface CrmCallLoggedEvent extends EventEnvelope {
     contactId: string | null;
     direction: string;
     outcome: string | null;
+  };
+}
+
+export interface ChangeOrderSubmittedEvent extends EventEnvelope {
+  type: "change_order.submitted";
+  payload: {
+    changeOrderId: string;
+    projectId: string;
+    changeOrderNumber: string | null;
+    amount: number | null;
+  };
+}
+
+export interface RfiAnsweredEvent extends EventEnvelope {
+  type: "rfi.answered";
+  payload: {
+    rfiId: string;
+    projectId: string;
+    subject: string;
+    rfiNumber: string | null;
+    answeredByName: string;
+    subcontractorCrmOrgId: string | null;
+  };
+}
+
+export interface SubmittalApprovedEvent extends EventEnvelope {
+  type: "submittal.approved";
+  payload: {
+    submittalId: string;
+    projectId: string;
+    subject: string;
+    submittalNumber: string | null;
+    subcontractorCrmOrgId: string | null;
+  };
+}
+
+export interface SubmittalRejectedEvent extends EventEnvelope {
+  type: "submittal.rejected";
+  payload: {
+    submittalId: string;
+    projectId: string;
+    subject: string;
+    submittalNumber: string | null;
+    reviewComments: string | null;
+    subcontractorCrmOrgId: string | null;
+  };
+}
+
+export interface AiaPayApplicationSubmittedEvent extends EventEnvelope {
+  type: "aia_pay_application.submitted";
+  payload: {
+    payApplicationId: string;
+    projectId: string;
+    applicationNumber: number | null;
+    organizationId: string;
+  };
+}
+
+export interface PurchaseOrderIssuedEvent extends EventEnvelope {
+  type: "purchase_order.issued";
+  payload: {
+    poId: string;
+    poNumber: string;
+    projectId: string;
+    vendorId: string | null;
+    totalCost: string | null;
+  };
+}
+
+export interface CloseoutPackageReadyEvent extends EventEnvelope {
+  type: "closeout.package_ready";
+  payload: {
+    packageId: string;
+    projectId: string;
+    filename: string;
+    fileSize: number;
+    downloadUrl: string | null;
+  };
+}
+
+export interface PunchListItemAssignedEvent extends EventEnvelope {
+  type: "punch_list_item.assigned";
+  payload: {
+    itemId: string;
+    projectId: string;
+    title: string;
+    assignedToUserId: string | null;
+    assignedToName: string | null;
+    assignedToEmail: string | null;
+  };
+}
+
+export interface PaymentReceivedEvent extends EventEnvelope {
+  type: "payment.received";
+  payload: {
+    paymentId: string;
+    projectId: string | null;
+    /** AIA_PAY_APP → client portal; TM_INVOICE → sub portal; VENDOR_INVOICE → vendor portal */
+    invoiceType: "TM_INVOICE" | "AIA_PAY_APP" | "VENDOR_INVOICE";
+    invoiceId: string;
+    amount: string;
+    /** CRM org ID of the vendor — required when invoiceType is VENDOR_INVOICE */
+    vendorCrmOrgId?: string | null;
+  };
+}
+
+export interface InvoiceGeneratedEvent extends EventEnvelope {
+  type: "invoice.generated";
+  payload: {
+    invoiceId: string;
+    projectId: string | null;
+    invoiceNumber: string;
+    invoiceType: "TM_INVOICE";
+    total: string | null;
+  };
+}
+
+export interface ProjectMilestoneCompletedEvent extends EventEnvelope {
+  type: "project.milestone_completed";
+  payload: {
+    projectId: string;
+    milestoneId: string;
+    milestoneName: string;
+    percentComplete: number;
+  };
+}
+
+export interface PurchaseOrderRevisedEvent extends EventEnvelope {
+  type: "purchase_order.revised";
+  payload: {
+    poId: string;
+    poNumber: string;
+    projectId: string;
+    vendorId: string | null;
+    revisionNote: string | null;
+  };
+}
+
+export interface DeliveryConfirmationRequestedEvent extends EventEnvelope {
+  type: "delivery_confirmation.requested";
+  payload: {
+    poId: string;
+    poNumber: string;
+    projectId: string;
+    vendorId: string | null;
+    expectedDeliveryDate: string | null;
+  };
+}
+
+export interface ScheduleChangedEvent extends EventEnvelope {
+  type: "schedule.changed";
+  payload: {
+    projectId: string;
+    scheduleId: string;
+    changeType: "task_added" | "task_updated" | "task_deleted" | "baseline_updated";
+    affectedTaskCount: number;
   };
 }

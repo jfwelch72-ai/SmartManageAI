@@ -137,6 +137,7 @@ import portalRoutes from "./portalRoutes";
 import unifiedPortalRoutes from "./unifiedPortalRoutes";
 import subChatRoutes from "./subChatRoutes";
 import clientChatRoutes from "./clientChatRoutes";
+import portalNotificationRoutes from "./portalNotificationRoutes";
 import integrationRoutes from "./integrationRoutes";
 import publicApiRoutes from "./publicApi/routes";
 import devPortalRoutes from "./publicApi/devPortalRoutes";
@@ -448,6 +449,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", unifiedPortalRoutes);
   app.use("/api", subChatRoutes);
   app.use("/api", clientChatRoutes);
+  app.use("/api", portalNotificationRoutes);
 
   app.use("/api/billing", billingRoutes);
   // Task #2482: Stripe webhook endpoint. CSRF-exempt via server/csrf.ts.

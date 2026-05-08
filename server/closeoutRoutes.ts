@@ -18,6 +18,7 @@ import {
   planDocuments,
 } from "@shared/schema";
 import { eq, desc, sql, inArray } from "drizzle-orm";
+import { eventBus } from "./events";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { exportLimiter } from "./rateLimiter";
@@ -820,6 +821,26 @@ router.post(
           downloadUrl = await svc.getSignedDownloadUrl(finalFile, 300);
         } catch (signErr) {
           logError("closeout: failed to mint signed URL (package still READY)", { pkgId: pkg.id }, signErr instanceof Error ? signErr : new Error(String(signErr)));
+        }
+
+        // Emit portal event so clients receive in-app notification
+        try {
+          await eventBus.emit({
+            version: 1,
+            orgId: req.user!.organizationId ?? "",
+            actorId: req.user!.id,
+            timestamp: new Date(),
+            type: "closeout.package_ready" as const,
+            payload: {
+              packageId: pkg.id,
+              projectId: project.id,
+              filename,
+              fileSize,
+              downloadUrl,
+            },
+          });
+        } catch (emitErr) {
+          logError("closeout: failed to emit closeout.package_ready", { pkgId: pkg.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
         }
 
         return res.json({

@@ -873,6 +873,25 @@ router.post("/api/procurement-module/requests/:id/convert-to-po", requireAuth, r
       return newPo;
     });
 
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "purchase_order.issued" as const,
+        payload: {
+          poId: po.id,
+          poNumber: po.poNumber,
+          projectId: po.projectId || "",
+          vendorId: po.vendorId || null,
+          totalCost: po.totalCost?.toString() || null,
+        },
+      });
+    } catch (emitErr) {
+      logError("Failed to emit purchase_order.issued event", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+    }
+
     res.status(201).json(po);
   } catch (error) {
     next(error);
@@ -1172,6 +1191,25 @@ router.patch("/api/procurement-module/orders/:id", requireAuth, requireRole(...R
       return updatedPo;
     });
 
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "purchase_order.revised" as const,
+        payload: {
+          poId: updated.id,
+          poNumber: updated.poNumber,
+          projectId: updated.projectId ?? null,
+          vendorId: updated.vendorId ?? null,
+          revisionNote: (parsed.data as { notes?: string | null }).notes ?? null,
+        },
+      });
+    } catch (emitErr) {
+      logError("[procurement] failed to emit purchase_order.revised", { poId: updated.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+    }
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -1345,6 +1383,27 @@ router.post("/api/procurement-module/orders/:id/send", requireAuth, requireRole(
     const [updated] = await db.update(purchaseOrders)
       .set({ status: "SENT", updatedAt: new Date() })
       .where(eq(purchaseOrders.id, req.params.id)).returning();
+
+    // Notify vendor to confirm delivery when PO is sent to them
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "delivery_confirmation.requested" as const,
+        payload: {
+          poId: updated.id,
+          poNumber: updated.poNumber,
+          projectId: updated.projectId ?? null,
+          vendorId: updated.vendorId ?? null,
+          expectedDeliveryDate: null,
+        },
+      });
+    } catch (emitErr) {
+      logError("[procurement] failed to emit delivery_confirmation.requested", { poId: updated.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+    }
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -2324,6 +2383,29 @@ router.post("/api/procurement-module/invoices/:id/payments", requireAuth, requir
     } else if (invoice.status === "MATCHED") {
       await db.update(vendorInvoices).set({ status: "APPROVED", updatedAt: new Date() })
         .where(eq(vendorInvoices.id, invoice.id));
+    }
+
+    // Notify the vendor that their invoice payment has been processed
+    if (invoice.vendorId) {
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "payment.received" as const,
+          payload: {
+            paymentId: payment.id,
+            projectId: null,
+            invoiceType: "VENDOR_INVOICE" as const,
+            invoiceId: invoice.id,
+            amount: payment.amount,
+            vendorCrmOrgId: invoice.vendorId,
+          },
+        });
+      } catch (emitErr) {
+        logError("[procurement] failed to emit payment.received (vendor)", { invoiceId: invoice.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+      }
     }
 
     res.status(201).json({ payment, totalPaid: String(totalPaid) });

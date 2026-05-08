@@ -4,7 +4,7 @@ import type { Response } from "express";
 interface PortalSseClient {
   id: string;
   identifier: string;
-  type: "client" | "sub";
+  type: "client" | "sub" | "vendor";
   res: Response;
 }
 
@@ -12,12 +12,12 @@ let clientIdCounter = 0;
 
 const clientsByIdentifier = new Map<string, PortalSseClient[]>();
 
-function makeKey(type: "client" | "sub", identifier: string): string {
+function makeKey(type: "client" | "sub" | "vendor", identifier: string): string {
   return `${type}:${identifier}`;
 }
 
 export function registerPortalSseClient(
-  type: "client" | "sub",
+  type: "client" | "sub" | "vendor",
   identifier: string,
   res: Response
 ): () => void {
@@ -66,8 +66,29 @@ function sendPortalEvent(
   }
 }
 
+export function isPortalClientConnected(
+  type: "client" | "sub" | "vendor",
+  identifier: string,
+): boolean {
+  const key = makeKey(type, identifier);
+  const clients = clientsByIdentifier.get(key);
+  return !!clients && clients.length > 0;
+}
+
+export function emitPortalNotification(
+  type: "client" | "sub" | "vendor",
+  identifier: string,
+  notification: unknown
+): void {
+  const key = makeKey(type, identifier);
+  const clients = clientsByIdentifier.get(key) || [];
+  for (const client of clients) {
+    sendPortalEvent(client, "notification:new", notification);
+  }
+}
+
 export function emitPortalChatMessage(
-  type: "client" | "sub",
+  type: "client" | "sub" | "vendor",
   identifier: string,
   threadId: string,
   message: unknown
@@ -80,7 +101,7 @@ export function emitPortalChatMessage(
 }
 
 export function emitPortalChatThreadUpdate(
-  type: "client" | "sub",
+  type: "client" | "sub" | "vendor",
   identifier: string,
   threadId: string
 ): void {

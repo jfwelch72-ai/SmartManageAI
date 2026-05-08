@@ -34,6 +34,9 @@ import { logError } from "../utils/logger";
 const SSE_BYPASS_PATHS: ReadonlyArray<string> = [
   "/api/messaging/events",
   "/api/admin/dev/email-outbox/stream",
+  "/api/vendor/notifications/stream",
+  "/api/client/notifications/stream",
+  "/api/subcontractor/notifications/stream",
   "/client-portal/chat/events",
   "/portal/chat/events",
 ];

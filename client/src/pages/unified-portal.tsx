@@ -38,6 +38,7 @@ import { PortalChangeOrdersTab } from "@/components/client-portal/PortalChangeOr
 import { PortalPaymentsTab } from "@/components/client-portal/PortalPaymentsTab";
 import { PortalProjectInfo } from "@/components/client-portal/PortalProjectInfo";
 import { PortalChatTab, hasChatUnread, getChatUnreadCount } from "@/components/client-portal/PortalChatTab";
+import { PortalNotificationBell } from "@/components/portal/PortalNotificationBell";
 import { SubPortalRfiTab } from "@/components/sub-portal/SubPortalRfiTab";
 import { SubPortalSubmittalTab } from "@/components/sub-portal/SubPortalSubmittalTab";
 import { SubPortalTransmittalTab } from "@/components/sub-portal/SubPortalTransmittalTab";
@@ -57,6 +58,8 @@ interface PortalSession {
 }
 
 const VALID_VENDOR_TABS = ["dashboard", "pricing", "clients", "messages", "documents"] as const;
+const VALID_CLIENT_TABS = ["progress", "photos", "schedule", "documents", "change-orders", "payments", "chat"] as const;
+const VALID_SUB_TABS = ["rfis", "submittals", "transmittals", "chat"] as const;
 const ACCESS_TYPE_LABELS: Record<string, string> = {
   OWNER_REP: "Owner Representative",
   GC_REP: "GC Representative",
@@ -192,7 +195,19 @@ export default function UnifiedPortal() {
   );
 }
 
-function PortalHeader({ session, onLogout }: { session: PortalSession; onLogout?: () => void }) {
+function PortalHeader({
+  session,
+  onLogout,
+  token,
+  email,
+  projectId,
+}: {
+  session: PortalSession;
+  onLogout?: () => void;
+  token?: string | null;
+  email?: string;
+  projectId?: string | null;
+}) {
   const roleLabels: Record<PortalRole, string> = {
     client: "Client",
     subcontractor: "Subcontractor",
@@ -274,6 +289,12 @@ function PortalHeader({ session, onLogout }: { session: PortalSession; onLogout?
               Secure Access
             </Badge>
           )}
+          <PortalNotificationBell
+            role={session.role}
+            token={token}
+            email={email}
+            projectId={projectId}
+          />
           {onLogout && (
             <Button variant="ghost" size="sm" onClick={onLogout} data-testid="button-logout">
               <LogOut className="h-4 w-4" />
@@ -303,6 +324,9 @@ function PortalShell({
       <PortalHeader
         session={session}
         onLogout={session.role === "vendor" ? () => logout() : undefined}
+        token={token}
+        email={email}
+        projectId={projectId}
       />
 
       <main className="max-w-6xl mx-auto px-4 py-6">
@@ -331,6 +355,10 @@ function ClientPortalContent({
   projectId: string;
   email: string;
 }) {
+  const clientSearchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const clientTabParam = clientSearchParams.get("tab") || "";
+  const [activeClientTab, setActiveClientTab] = useState(clientTabParam);
+
   const clientHeaders: Record<string, string> = {
     "x-client-email": email,
     "x-client-project-id": projectId,
@@ -398,7 +426,15 @@ function ClientPortalContent({
     <div className="space-y-6">
       {project && <PortalProjectInfo project={project} />}
 
-      <Tabs defaultValue={availableTabs[0]?.value} className="space-y-4">
+      <Tabs
+        value={
+          availableTabs.some((t) => t.value === activeClientTab)
+            ? activeClientTab
+            : (availableTabs[0]?.value ?? "")
+        }
+        onValueChange={setActiveClientTab}
+        className="space-y-4"
+      >
         <TabsList className="flex-wrap h-auto gap-1" data-testid="tabs-client-nav">
           {availableTabs.map((tab) => {
             const Icon = tab.icon;
@@ -460,6 +496,12 @@ function ClientPortalContent({
 }
 
 function SubPortalContent({ session, token }: { session: PortalSession; token: string }) {
+  const subSearchParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const rawSubTab = subSearchParams.get("tab") || "rfis";
+  const [activeSubTab, setActiveSubTab] = useState(
+    (VALID_SUB_TABS as readonly string[]).includes(rawSubTab) ? rawSubTab : "rfis",
+  );
+
   const { data: rfis = [], isLoading: rfisLoading } = useQuery({
     queryKey: ["/api/portal/rfis", { token }],
     queryFn: async () => {
@@ -500,7 +542,7 @@ function SubPortalContent({ session, token }: { session: PortalSession; token: s
   });
 
   return (
-    <Tabs defaultValue="rfis" data-testid="tabs-portal">
+    <Tabs value={activeSubTab} onValueChange={setActiveSubTab} data-testid="tabs-portal">
       <TabsList className="flex-wrap h-auto gap-1" data-testid="tabs-sub-nav">
         <TabsTrigger value="rfis" data-testid="tab-rfis">
           <FileText className="h-4 w-4 mr-1.5" />

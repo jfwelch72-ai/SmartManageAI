@@ -170,3 +170,55 @@ export type PortalChatThread = typeof portalChatThreads.$inferSelect;
 export const insertPortalChatMessageSchema = createInsertSchema(portalChatMessages).omit({ id: true, createdAt: true });
 export type InsertPortalChatMessage = z.infer<typeof insertPortalChatMessageSchema>;
 export type PortalChatMessage = typeof portalChatMessages.$inferSelect;
+
+// ============================================================
+// PORTAL NOTIFICATIONS
+// Notification inbox for external portal users (clients, subs, vendors)
+// Separate from the internal `notifications` table which requires a users FK.
+// ============================================================
+
+export const portalNotifications = pgTable("portal_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  recipientType: text("recipient_type").notNull(),
+  clientPortalAccessId: varchar("client_portal_access_id").references(() => clientPortalAccess.id, { onDelete: "cascade" }),
+  portalTokenId: varchar("portal_token_id").references(() => subcontractorPortalTokens.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  type: text("type").notNull(),
+  title: text("title").notNull(),
+  message: text("message").notNull(),
+  actionUrl: text("action_url"),
+  isRead: boolean("is_read").notNull().default(false),
+  metadata: jsonb("metadata").$type<Record<string, unknown> | null>(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  clientAccessIdx: index("portal_notif_client_access_idx").on(table.clientPortalAccessId),
+  portalTokenIdx: index("portal_notif_portal_token_idx").on(table.portalTokenId),
+  userIdIdx: index("portal_notif_user_id_idx").on(table.userId),
+  orgCreatedIdx: index("portal_notif_org_created_idx").on(table.organizationId, table.createdAt),
+  isReadIdx: index("portal_notif_is_read_idx").on(table.isRead),
+}));
+
+export const insertPortalNotificationSchema = createInsertSchema(portalNotifications).omit({ id: true, createdAt: true });
+export type InsertPortalNotification = z.infer<typeof insertPortalNotificationSchema>;
+export type PortalNotification = typeof portalNotifications.$inferSelect;
+
+export const portalNotificationPrefs = pgTable("portal_notification_prefs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  recipientType: text("recipient_type").notNull(),
+  clientPortalAccessId: varchar("client_portal_access_id").references(() => clientPortalAccess.id, { onDelete: "cascade" }),
+  portalTokenId: varchar("portal_token_id").references(() => subcontractorPortalTokens.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }),
+  emailEnabled: boolean("email_enabled").notNull().default(true),
+  inAppEnabled: boolean("in_app_enabled").notNull().default(true),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  clientAccessIdx: index("portal_notif_prefs_client_access_idx").on(table.clientPortalAccessId),
+  portalTokenIdx: index("portal_notif_prefs_portal_token_idx").on(table.portalTokenId),
+  userIdIdx: index("portal_notif_prefs_user_id_idx").on(table.userId),
+}));
+
+export const insertPortalNotificationPrefsSchema = createInsertSchema(portalNotificationPrefs).omit({ id: true });
+export type InsertPortalNotificationPrefs = z.infer<typeof insertPortalNotificationPrefsSchema>;
+export type PortalNotificationPrefs = typeof portalNotificationPrefs.$inferSelect;

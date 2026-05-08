@@ -17,6 +17,7 @@ import { registerHealthScoreListener } from "./listeners/healthScoreListener";
 import { registerCostEngineListener } from "./listeners/costEngineListener";
 import { registerRiskEventListener } from "./listeners/riskEventListener";
 import { registerTakeoffDeltaListener } from "./listeners/takeoffDeltaListener";
+import { registerPortalNotificationListener } from "./listeners/portalNotificationListener";
 import { logError, logInfo } from "../utils/logger";
 
 let initialized = false;
@@ -34,6 +35,7 @@ export function initializeEventBus(): void {
   registerCostEngineListener();
   registerRiskEventListener();
   registerTakeoffDeltaListener();
+  registerPortalNotificationListener();
 
   // Startup health check: error if any event type has no listeners registered.
   for (const type of ALL_DOMAIN_EVENT_TYPES) {

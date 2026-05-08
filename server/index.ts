@@ -22,6 +22,7 @@ import { crmBackfillAlertDigestScheduler } from "./crmBackfillAlertDigestSchedul
 import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
 import { startMessagingBus } from "./messagingBus";
+import { initPortalNotificationBus } from "./portalNotificationBus";
 import { startJobQueue } from "./jobQueue";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
@@ -375,6 +376,8 @@ app.use((req, res, next) => {
       err instanceof Error ? err : new Error(String(err)),
     );
   });
+
+  initPortalNotificationBus();
 
   // Task #2481 — Background job queue (pg-boss).
   // Task #2519 — The HTTP/web pod only enqueues. Handlers run in a

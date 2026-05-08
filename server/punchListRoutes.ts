@@ -11,6 +11,7 @@ import { requireAuth, requireRole, type AuthRequest, type UserRole } from "./aut
 import { logAudit } from "./auditLogger";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { getOrgIdForFilter } from "./orgFilter";
+import { eventBus } from "./events";
 
 function escHtml(str: string | null | undefined): string {
   if (!str) return "";
@@ -399,6 +400,34 @@ router.patch("/projects/:code/punch-list/:id", requireAuth, async (req: AuthRequ
       entityId: updated.id,
       newValue: JSON.stringify({ changes: Object.keys(update), projectCode: req.params.code }),
     }, req);
+
+    // Emit assignment event when assignedToUserId/Name/Email changes
+    const assignmentChanged =
+      req.body.assignedToUserId !== undefined ||
+      req.body.assignedToName !== undefined ||
+      req.body.assignedToEmail !== undefined;
+    if (assignmentChanged && (updated.assignedToUserId || updated.assignedToEmail || updated.assignedToName)) {
+      const { orgId } = getOrgIdForFilter(req);
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId: orgId ?? req.user!.organizationId ?? "",
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "punch_list_item.assigned" as const,
+          payload: {
+            itemId: updated.id,
+            projectId: updated.projectId,
+            title: updated.title,
+            assignedToUserId: updated.assignedToUserId ?? null,
+            assignedToName: updated.assignedToName ?? null,
+            assignedToEmail: updated.assignedToEmail ?? null,
+          },
+        });
+      } catch (emitErr) {
+        logError("punchList: failed to emit punch_list_item.assigned", { itemId: updated.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+      }
+    }
 
     res.json(enrichItem(updated));
   } catch (err) {

@@ -190,6 +190,7 @@ import { generateAIAG702PDF, generateAIAG703PDF } from "./aia-pdf-service";
 import { insertNotifications } from "./services/notificationService";
 import { sendEmail } from "./email";
 import { logCreate, logUpdate, logApprove } from "./auditLogger";
+import { eventBus } from "./events";
 
 const router = Router();
 
@@ -509,6 +510,26 @@ router.patch("/pay-applications/:id/status", requireRoleOrFeature(["SUPER_ADMIN"
       } catch (e) { logError("[aiaBilling] client notification failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
+    if (status === "SUBMITTED") {
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId: app.organizationId || req.user?.organizationId || "",
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "aia_pay_application.submitted" as const,
+          payload: {
+            payApplicationId: id,
+            projectId: app.projectId,
+            applicationNumber: app.applicationNumber ?? null,
+            organizationId: app.organizationId || req.user?.organizationId || "",
+          },
+        });
+      } catch (emitErr) {
+        logError("[aiaBilling] failed to emit aia_pay_application.submitted event", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+      }
+    }
+
     res.json(updated);
   } catch (error) {
     next(error);
@@ -619,6 +640,25 @@ router.post("/pay-applications/:id/record-payment", requireRoleOrFeature(["SUPER
         newPaidAmount: newTotalPaid.toFixed(2),
         newStatus,
       }, req).catch(() => {});
+    }
+
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: app.organizationId,
+        actorId: req.user?.id ?? "",
+        timestamp: new Date(),
+        type: "payment.received" as const,
+        payload: {
+          paymentId: id,
+          projectId: app.projectId ?? null,
+          invoiceType: "AIA_PAY_APP",
+          invoiceId: id,
+          amount: amountStr,
+        },
+      });
+    } catch (emitErr) {
+      logError("[aiaBilling] failed to emit payment.received", { appId: id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
     }
 
     res.json(updated);

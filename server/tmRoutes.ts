@@ -754,6 +754,25 @@ function registerTMInvoiceRoutes(app: Express) {
         ipAddress: req.ip || "unknown",
       });
 
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId: invoice.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "invoice.generated" as const,
+          payload: {
+            invoiceId: invoice.id,
+            projectId: invoice.projectId ?? null,
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceType: "TM_INVOICE",
+            total: invoice.total ?? null,
+          },
+        });
+      } catch (emitErr) {
+        logError("[tmRoutes] failed to emit invoice.generated", { invoiceId: invoice.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+      }
+
       res.json({ ...invoice, tickets });
     } catch (error) {
       next(error);
@@ -1055,6 +1074,25 @@ function registerTMInvoiceRoutes(app: Express) {
         entityId: payment.id,
         newValue: JSON.stringify({ invoiceType: "TM_INVOICE", invoiceId, amount, paymentMethod, fullyPaid }),
       });
+
+      try {
+        await eventBus.emit({
+          version: 1,
+          orgId: invoice.organizationId,
+          actorId: req.user!.id,
+          timestamp: new Date(),
+          type: "payment.received" as const,
+          payload: {
+            paymentId: payment.id,
+            projectId: invoice.projectId ?? null,
+            invoiceType: "TM_INVOICE",
+            invoiceId: invoice.id,
+            amount: payment.amount,
+          },
+        });
+      } catch (emitErr) {
+        logError("[tmRoutes] failed to emit payment.received", { paymentId: payment.id }, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+      }
 
       res.json({ payment, fullyPaid, totalPaid });
     } catch (error) {

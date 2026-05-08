@@ -239,6 +239,24 @@ router.post("/:id/request-approval", requireAuth, requireRoleOrFeature(["ADMIN",
       } catch (e) { logError("[changeOrder] approval request failed:", {}, e instanceof Error ? e : new Error(String(e))); }
     }
 
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: project?.gcOrganizationId || req.user!.organizationId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "change_order.submitted" as const,
+        payload: {
+          changeOrderId: updatedOrder.id,
+          projectId: updatedOrder.projectId,
+          changeOrderNumber: updatedOrder.changeOrderNumber || null,
+          amount: updatedOrder.amount != null ? Number(updatedOrder.amount) : null,
+        },
+      });
+    } catch (emitErr) {
+      logError("[changeOrder] failed to emit change_order.submitted event", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
+    }
+
     res.json(updatedOrder);
   } catch (error) {
   next(error);
@@ -354,6 +372,24 @@ router.post("/:id/submit", requireAuth, requireRoleOrFeature(["ADMIN", "MANAGER"
           req.user!.id
         );
       } catch (e) { logError("[changeOrder] workflow start failed:", {}, e instanceof Error ? e : new Error(String(e))); }
+    }
+
+    try {
+      await eventBus.emit({
+        version: 1,
+        orgId: project?.gcOrganizationId || req.user!.organizationId || "",
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        type: "change_order.submitted" as const,
+        payload: {
+          changeOrderId: updatedOrder.id,
+          projectId: updatedOrder.projectId,
+          changeOrderNumber: updatedOrder.changeOrderNumber || null,
+          amount: updatedOrder.amount != null ? Number(updatedOrder.amount) : null,
+        },
+      });
+    } catch (emitErr) {
+      logError("[changeOrder] failed to emit change_order.submitted event", {}, emitErr instanceof Error ? emitErr : new Error(String(emitErr)));
     }
 
     res.json(updatedOrder);
