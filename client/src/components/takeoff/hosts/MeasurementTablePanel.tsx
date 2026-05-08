@@ -56,6 +56,15 @@ export interface MeasurementTablePanelProps {
     payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
   ) => void | Promise<void>;
   isMovingScope?: boolean;
+  /**
+   * Task #2617 — Measurement-group filter + AI review-batch delete
+   * pass-throughs. Forwarded to the MeasurementTable so the toolbar
+   * can scope the panel to a single group and bulk-delete the AI
+   * map-reduce review batch in one click.
+   */
+  groups?: Array<{ id: string; name: string; color?: string | null }>;
+  onDeleteGroup?: (groupId: string) => void | Promise<void>;
+  isDeletingGroup?: boolean;
 }
 
 function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
@@ -91,6 +100,9 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           onMoveScope={props.onMoveScope}
           onBulkMoveScope={props.onBulkMoveScope}
           isMovingScope={props.isMovingScope}
+          groups={props.groups}
+          onDeleteGroup={props.onDeleteGroup}
+          isDeletingGroup={props.isDeletingGroup}
         />
       </div>
     </div>

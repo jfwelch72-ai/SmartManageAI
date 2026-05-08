@@ -1979,19 +1979,34 @@ router.patch("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, re
   }
 });
 
-// Delete a group (measurements get groupId set to null via FK constraint)
+// Delete a group. By default, measurements get `groupId` set to null
+// via FK ON DELETE SET NULL. Pass `?deleteMeasurements=true` (Task
+// #2617) to also delete every measurement in the group — used by the
+// AI map-reduce review batch's "Delete batch" action so an estimator
+// can wipe the whole AI-applied set in one click instead of selecting
+// rows by hand.
 router.delete("/api/takeoff/groups/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
     const groupAccess = await verifyGroupAccess(id, req.user!);
     if (!groupAccess.allowed) { res.status(groupAccess.group ? 403 : 404).json({ error: groupAccess.reason || "Access denied" }); return; }
 
-    const { takeoffMeasurementGroups } = await import("@shared/schema");
+    const { takeoffMeasurementGroups, takeoffMeasurements } = await import("@shared/schema");
+
+    const deleteMeasurements = String(req.query.deleteMeasurements ?? "").toLowerCase() === "true";
+    let deletedMeasurementCount = 0;
+    if (deleteMeasurements) {
+      const removed = await db
+        .delete(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.groupId, id))
+        .returning({ id: takeoffMeasurements.id });
+      deletedMeasurementCount = removed.length;
+    }
 
     const [deleted] = await db.delete(takeoffMeasurementGroups).where(eq(takeoffMeasurementGroups.id, id)).returning();
     if (!deleted) { res.status(404).json({ error: "Group not found" }); return; }
 
-    res.json({ success: true });
+    res.json({ success: true, deletedMeasurementCount });
   } catch (error) {
   next(error);
   }

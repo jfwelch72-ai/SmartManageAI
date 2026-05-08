@@ -1021,7 +1021,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     renameSheetMutation, duplicateSheetMutation,
     deleteSheetMutation, handleMoveSheet,
     measurementGroups, createGroupMutation, updateGroupMutation,
-    deleteGroupMutation, toggleGroupVisibilityMutation,
+    deleteGroupMutation, deleteGroupWithMeasurementsMutation, toggleGroupVisibilityMutation,
     conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
     measurementCountsPerSheet,
     // Task #2344 — Per-sheet projection of just the calibration-snapshot
@@ -5116,6 +5116,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         await bulkUnlockAndRescaleMeasurementsMutation.mutateAsync(ids);
       },
       isBulkUnlocking: bulkUnlockAndRescaleMeasurementsMutation.isPending,
+      // Task #2617 — Forward the per-sheet measurement groups to the
+      // panel so the toolbar can render the group filter (and the
+      // "Delete batch" affordance for AI map-reduce review batches).
+      groups: measurementGroups,
+      onDeleteGroup: async (groupId: string) => {
+        await deleteGroupWithMeasurementsMutation.mutateAsync(groupId);
+      },
+      isDeletingGroup: deleteGroupWithMeasurementsMutation.isPending,
     },
     issueDetail: selectedIssue ? {
       issue: selectedIssue,

@@ -131,6 +131,20 @@ interface MeasurementTableProps {
     payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
   ) => void | Promise<void>;
   isMovingScope?: boolean;
+  /**
+   * Task #2617 — Measurement-group filter + batch delete. When wired
+   * the toolbar exposes a group dropdown so an estimator can scope
+   * the table to "the rows I just applied from the AI map-reduce
+   * draft" (or any other named group). When `onDeleteGroup` is also
+   * wired AND a non-"all" group is selected, a "Delete batch" button
+   * appears that removes the entire group's measurements in one
+   * round-trip — purpose-built for the AI review-batch flow but
+   * useful for any named group. Optional so legacy embedders that
+   * don't load groups stay backwards-compatible.
+   */
+  groups?: Array<{ id: string; name: string; color?: string | null }>;
+  onDeleteGroup?: (groupId: string) => void | Promise<void>;
+  isDeletingGroup?: boolean;
 }
 
 type SortField = "label" | "type" | "category" | "length" | "area" | "volume" | "count" | "cost";
@@ -155,11 +169,19 @@ export function MeasurementTable({
   onMoveScope,
   onBulkMoveScope,
   isMovingScope,
+  groups,
+  onDeleteGroup,
+  isDeletingGroup,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("label");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [filterType, setFilterType] = useState<string>("all");
+  // Task #2617 — Group filter ("all" or a specific group id). Drives
+  // the "review batch" affordance for AI-applied measurements.
+  const [filterGroup, setFilterGroup] = useState<string>("all");
+  // Task #2617 — Confirmation dialog before nuking a whole batch.
+  const [deleteGroupConfirmOpen, setDeleteGroupConfirmOpen] = useState(false);
   // Task #2581 — Scope filter (BASE / CO / ALL).
   const [scopeFilter, setScopeFilter] = useState<"ALL" | "BASE" | "CO">("ALL");
   // Task #2581 — Holds the measurement the user is moving to a CO.
@@ -241,6 +263,10 @@ export function MeasurementTable({
       list = list.filter(m => (m.scopeTag ?? "BASE") === scopeFilter);
     }
 
+    if (filterGroup !== "all") {
+      list = list.filter(m => m.groupId === filterGroup);
+    }
+
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(m =>
@@ -271,7 +297,7 @@ export function MeasurementTable({
     });
 
     return list;
-  }, [measurements, search, filterType, scopeFilter, sortField, sortDir]);
+  }, [measurements, search, filterType, scopeFilter, filterGroup, sortField, sortDir]);
 
   // Task #2581 — Counts for the scope filter pills so the user can see
   // the BASE/CO split without flipping the filter to find out.
@@ -284,6 +310,23 @@ export function MeasurementTable({
     }
     return { base, co, all: measurements.length };
   }, [measurements]);
+
+  // Task #2617 — Per-group counts so the dropdown can show the size
+  // of each batch (e.g. "AI map-reduce draft — 2026-05-08 (12)").
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const m of measurements) {
+      if (m.groupId) counts.set(m.groupId, (counts.get(m.groupId) ?? 0) + 1);
+    }
+    return counts;
+  }, [measurements]);
+  const groupById = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; color?: string | null }>();
+    for (const g of groups ?? []) map.set(g.id, g);
+    return map;
+  }, [groups]);
+  const selectedGroup = filterGroup !== "all" ? groupById.get(filterGroup) ?? null : null;
+  const isAiBatchGroup = !!selectedGroup?.name?.startsWith("AI map-reduce draft");
 
   const changeOrderById = useMemo(() => {
     const map = new Map<string, { id: string; changeOrderNumber: string; description?: string | null }>();
@@ -479,6 +522,48 @@ export function MeasurementTable({
               <SelectItem value="CO" data-testid="scope-filter-option-co">Change order ({scopeCounts.co})</SelectItem>
             </SelectContent>
           </Select>
+        )}
+        {/*
+          Task #2617 — Group filter. Renders only when the embedder
+          loads measurement groups. Lets an estimator scope the table
+          to a single group — purpose-built for the AI map-reduce
+          "review batch" flow but useful for any named group. When the
+          selected group looks like an AI batch we surface a "Delete
+          batch" button that nukes the whole group with one
+          confirmation.
+        */}
+        {groups && groups.length > 0 && (
+          <Select value={filterGroup} onValueChange={setFilterGroup}>
+            <SelectTrigger className="w-[200px] h-7 text-xs" data-testid="measurement-table-group-filter">
+              <SelectValue placeholder="All groups" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all" data-testid="group-filter-option-all">
+                All groups
+              </SelectItem>
+              {groups.map((g) => {
+                const n = groupCounts.get(g.id) ?? 0;
+                return (
+                  <SelectItem key={g.id} value={g.id} data-testid={`group-filter-option-${g.id}`}>
+                    {g.name} ({n})
+                  </SelectItem>
+                );
+              })}
+            </SelectContent>
+          </Select>
+        )}
+        {selectedGroup && onDeleteGroup && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 px-2 text-[10px] gap-1 border-red-500/60 bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-300"
+            disabled={isDeletingGroup}
+            onClick={() => setDeleteGroupConfirmOpen(true)}
+            data-testid="button-delete-group-batch"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete {isAiBatchGroup ? "AI batch" : "group"} ({groupCounts.get(selectedGroup.id) ?? 0})
+          </Button>
         )}
         <Badge variant="secondary" className="text-[10px] shrink-0">
           {sortedFiltered.length}/{measurements.length}
@@ -1110,6 +1195,64 @@ export function MeasurementTable({
               }}
             >
               Unlock {selectedLockedCount} selected
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/*
+        Task #2617 — Confirm before deleting an entire group's
+        measurements. The action runs a single round-trip
+        (`DELETE /api/takeoff/groups/:id?deleteMeasurements=true`)
+        which permanently removes every row in the batch — important
+        enough to confirm rather than fire on click.
+      */}
+      <AlertDialog
+        open={deleteGroupConfirmOpen}
+        onOpenChange={(open) => { if (!open) setDeleteGroupConfirmOpen(false); }}
+      >
+        <AlertDialogContent data-testid="dialog-delete-group-batch">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete the {isAiBatchGroup ? "AI review batch" : "group"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {selectedGroup ? (
+                <>
+                  This permanently deletes the{" "}
+                  <span className="font-medium">{selectedGroup.name}</span> group and all{" "}
+                  {groupCounts.get(selectedGroup.id) ?? 0} measurement
+                  {(groupCounts.get(selectedGroup.id) ?? 0) === 1 ? "" : "s"} in it. This
+                  cannot be undone.
+                </>
+              ) : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-group-batch">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-delete-group-batch"
+              onClick={() => {
+                if (!selectedGroup || !onDeleteGroup) {
+                  setDeleteGroupConfirmOpen(false);
+                  return;
+                }
+                const idToDelete = selectedGroup.id;
+                setDeleteGroupConfirmOpen(false);
+                Promise.resolve(onDeleteGroup(idToDelete))
+                  .then(() => {
+                    // Reset the filter so the table doesn't stay
+                    // scoped to a now-deleted group id.
+                    setFilterGroup("all");
+                  })
+                  .catch(() => {
+                    // Mutation surfaces its own toast.
+                  });
+              }}
+            >
+              Delete batch
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

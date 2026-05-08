@@ -1886,6 +1886,40 @@ export function useTakeoffData({
     },
   });
 
+  // Task #2617 — Cascading delete used by the AI map-reduce review-batch
+  // workflow: removes the group AND every measurement carrying that
+  // groupId in a single round-trip. The plain `deleteGroupMutation`
+  // above keeps its non-cascading semantics for non-batch group flows
+  // (where the FK's onDelete: set null is the desired behaviour).
+  const deleteGroupWithMeasurementsMutation = useMutation({
+    mutationFn: async (groupId: string) => {
+      const res = await apiRequest(
+        "DELETE",
+        `/api/takeoff/groups/${groupId}?deleteMeasurements=true`,
+      );
+      const body = (await res.json().catch(() => ({}))) as { deletedMeasurementCount?: number };
+      return { groupId, deletedMeasurementCount: body.deletedMeasurementCount ?? 0 };
+    },
+    onSuccess: ({ deletedMeasurementCount }) => {
+      queryClient.invalidateQueries({ queryKey: groupsQueryKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+      if (isBid && context?.type === "bid") {
+        queryClient.invalidateQueries({ queryKey: [`/api/bids/${context.bidId}/takeoff/all-measurements`] });
+      }
+      toast({
+        title: "Batch deleted",
+        description: `Removed the group and ${deletedMeasurementCount} measurement${deletedMeasurementCount === 1 ? "" : "s"}.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to delete batch",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
+
   const toggleGroupVisibilityMutation = useMutation({
     mutationFn: async ({ groupId, visible }: { groupId: string; visible: boolean }) => {
       const res = await apiRequest("PATCH", `/api/takeoff/groups/${groupId}/visibility`, { visible });
@@ -1948,6 +1982,7 @@ export function useTakeoffData({
     createGroupMutation,
     updateGroupMutation,
     deleteGroupMutation,
+    deleteGroupWithMeasurementsMutation,
     toggleGroupVisibilityMutation,
     measurementCountsPerSheet,
     // Task #2344 — Per-sheet calibration-snapshot projection consumed

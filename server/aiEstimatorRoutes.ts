@@ -8,6 +8,7 @@ import {
   projects,
   aiEstimatorRateSamples,
   takeoffMeasurements,
+  takeoffMeasurementGroups,
   takeoffSheets,
   standaloneTakeoffs,
 } from "@shared/schema";
@@ -1449,6 +1450,7 @@ router.post(
         sheetNumber: takeoffSheets.sheetNumber,
         sheetName: takeoffSheets.sheetName,
         sheetIndex: takeoffSheets.sheetIndex,
+        projectId: takeoffSheets.projectId,
       })
       .from(takeoffSheets)
       .where(eq(takeoffSheets.bidId, data.bidId));
@@ -1461,6 +1463,62 @@ router.post(
       if (s.sheetName) sheetByCitation.set(s.sheetName.trim().toLowerCase(), s.id);
     }
     const fallbackSheetId = sheets.slice().sort((a, b) => a.sheetIndex - b.sheetIndex)[0]!.id;
+
+    // Task #2617 — Group every measurement we apply under a clearly
+    // labelled "AI map-reduce draft — <date>" group so the workspace
+    // measurements panel can filter, review, and bulk-delete the
+    // batch in one shot. Groups live per-sheet (the panel loads
+    // groups for the currently selected sheet); we therefore create
+    // one group per sheet that this apply call writes to, with the
+    // same name+date so an estimator browsing across sheets sees
+    // the same review batch label everywhere. Reuse an existing
+    // same-name group from earlier in the day so a second apply
+    // call doesn't fragment the batch.
+    const sheetMeta = new Map(sheets.map((s) => [s.id, s] as const));
+    const groupName = `AI map-reduce draft — ${new Date().toISOString().slice(0, 10)}`;
+    const groupIdBySheet = new Map<string, string>();
+    const ensureGroupForSheet = async (sheetId: string): Promise<string | null> => {
+      const existing = groupIdBySheet.get(sheetId);
+      if (existing) return existing;
+      const sheet = sheetMeta.get(sheetId);
+      try {
+        const [reuse] = await db
+          .select({ id: takeoffMeasurementGroups.id })
+          .from(takeoffMeasurementGroups)
+          .where(
+            and(
+              eq(takeoffMeasurementGroups.sheetId, sheetId),
+              eq(takeoffMeasurementGroups.name, groupName),
+            ),
+          )
+          .limit(1);
+        if (reuse) {
+          groupIdBySheet.set(sheetId, reuse.id);
+          return reuse.id;
+        }
+        const [created] = await db
+          .insert(takeoffMeasurementGroups)
+          .values({
+            name: groupName,
+            sheetId,
+            bidId: data.bidId,
+            projectId: sheet?.projectId ?? null,
+            color: "#a855f7",
+          })
+          .returning({ id: takeoffMeasurementGroups.id });
+        if (created) {
+          groupIdBySheet.set(sheetId, created.id);
+          return created.id;
+        }
+      } catch (err) {
+        logWarn("[mapReduceApply] group create/reuse failed", {
+          bidId: data.bidId,
+          sheetId,
+          error: String(err),
+        });
+      }
+      return null;
+    };
 
     const insertedIds: string[] = [];
     const failed: { index: number; label: string; reason: string }[] = [];
@@ -1475,6 +1533,7 @@ router.post(
         }
       }
       if (!sheetId) sheetId = fallbackSheetId;
+      const groupId = await ensureGroupForSheet(sheetId);
 
       const unitUpper = m.unit.toUpperCase();
       const isLinear = m.type === "LINEAR" && /^(LF|FT|FEET|LINEAR FEET|LINFT)$/i.test(unitUpper);
@@ -1504,6 +1563,7 @@ router.post(
           .insert(takeoffMeasurements)
           .values({
             sheetId,
+            groupId: groupId ?? undefined,
             type: m.type,
             label: m.label,
             points: "[]",
@@ -1567,6 +1627,12 @@ router.post(
       skipped: failed.length,
       insertedIds,
       failed,
+      // Task #2617 — Surface the review-batch identity so the UI can
+      // immediately filter the workspace measurements panel to the
+      // group it just created (and show a "Delete batch" affordance
+      // wired to the bulk-delete endpoint).
+      groupName,
+      groupIds: Array.from(groupIdBySheet.values()),
     });
   },
 );
