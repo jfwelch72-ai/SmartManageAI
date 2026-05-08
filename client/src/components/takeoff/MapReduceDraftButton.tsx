@@ -4,6 +4,10 @@ import { Loader2, Layers, Check, PlusCircle, ChevronDown, ChevronRight, Unlink, 
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { ScrollArea as SkippedScrollArea } from "@/components/ui/scroll-area";
+import { useAuth } from "@/hooks/use-auth";
+import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
+import { isOrganizationAdmin } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -51,6 +55,22 @@ interface MapReduceMeasurement {
   assembly?: AssemblyExpansion | null;
 }
 
+interface SkippedSheetInfo {
+  sheetId: string | null;
+  sheetIndex: number;
+  sheetNumber: string | null;
+  sheetName: string | null;
+  discipline: string;
+}
+
+interface CostSummary {
+  callCount: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
+}
+
 interface MapReduceDraftResult {
   measurements: MapReduceMeasurement[];
   notes: string;
@@ -58,6 +78,13 @@ interface MapReduceDraftResult {
   disciplineCoverage: Record<string, number>;
   llmCallCount: number;
   partial: boolean;
+  // Task #2626 — surfaced from the server so the dialog can render
+  // a transparent cost header + actionable "increase cap and re-run"
+  // banner instead of a silent partial badge.
+  skippedSheets?: SkippedSheetInfo[];
+  recommendedMaxDisciplineBatches?: number;
+  appliedMaxDisciplineBatches?: number;
+  cost?: CostSummary;
 }
 
 interface ApplyFailure {
@@ -121,6 +148,14 @@ interface Props {
 export function MapReduceDraftButton({ bidId, onReviewBatch }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  // Task #2626 (rev 2) — only admins with the AI Estimator manage
+  // permission can persist a new cap. Non-admins see the recommendation
+  // and skipped sheets but the action button is disabled with a hint.
+  const { user, permissionRole } = useAuth();
+  const { permissions } = useDashboardCustomization();
+  const canRaiseCap = permissions
+    ? !!permissions.canManageAiEstimator
+    : isOrganizationAdmin(permissionRole ?? user?.role);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<MapReduceDraftResult | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -174,6 +209,38 @@ export function MapReduceDraftButton({ bidId, onReviewBatch }: Props) {
     },
     onError: (err: Error) =>
       toast({ title: "Map-reduce draft failed", description: err.message, variant: "destructive" }),
+  });
+
+  // Task #2626 — actionable "increase cap and re-run" path. Persists the
+  // recommended cap on `aiEstimatorOrgFactors` then immediately enqueues
+  // a fresh map-reduce job so the user sees the larger plan-set covered
+  // without leaving the dialog.
+  const raiseCapAndRerun = useMutation({
+    mutationFn: async (newCap: number): Promise<{ jobId?: string }> => {
+      await apiRequest("PUT", "/api/ai-estimator/org-factors", {
+        maxDisciplineBatches: newCap,
+      });
+      const r = await apiRequest("POST", "/api/ai-estimator/draft/map-reduce", {
+        bidId,
+        async: true,
+      });
+      return (await r.json()) as { jobId?: string };
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        setDraft(null);
+        setSelected(new Set());
+        setJobId(data.jobId);
+      } else {
+        toast({
+          title: "Map-reduce draft failed",
+          description: "No job id returned",
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to raise cap", description: err.message, variant: "destructive" }),
   });
 
   const handleJobComplete = async (id: string) => {
@@ -406,6 +473,11 @@ export function MapReduceDraftButton({ bidId, onReviewBatch }: Props) {
                   <Badge variant="secondary" data-testid="badge-mapreduce-llm-calls">
                     LLM calls: {draft.llmCallCount}
                   </Badge>
+                  {draft.cost && draft.cost.callCount > 0 && (
+                    <Badge variant="secondary" data-testid="badge-mapreduce-cost">
+                      AI spend: ${draft.cost.costUsd.toFixed(4)} · {draft.cost.tokensIn.toLocaleString()} in / {draft.cost.tokensOut.toLocaleString()} out
+                    </Badge>
+                  )}
                   {draft.partial && (
                     <Badge variant="destructive" data-testid="badge-mapreduce-partial">
                       Partial
@@ -420,6 +492,71 @@ export function MapReduceDraftButton({ bidId, onReviewBatch }: Props) {
                     </Badge>
                   ))}
                 </div>
+                {draft.skippedSheets && draft.skippedSheets.length > 0 && draft.recommendedMaxDisciplineBatches && draft.appliedMaxDisciplineBatches && (
+                  <div
+                    className="rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-3 text-sm"
+                    data-testid="banner-mapreduce-skipped-sheets"
+                  >
+                    <div className="font-medium text-amber-900 dark:text-amber-200">
+                      {draft.skippedSheets.length} sheet{draft.skippedSheets.length === 1 ? "" : "s"} skipped because the per-discipline batch cap was reached.
+                    </div>
+                    <div className="mt-1 text-amber-800 dark:text-amber-300">
+                      Current cap: <span className="font-mono">{draft.appliedMaxDisciplineBatches}</span>.
+                      Increase to <span className="font-mono">{draft.recommendedMaxDisciplineBatches}</span> to cover every sheet on this bid.
+                    </div>
+                    {/* Task #2626 (rev 2) — explicit list of skipped sheets so the
+                        estimator can verify which drawings were left out instead
+                        of trusting an opaque count. */}
+                    <SkippedScrollArea className="mt-2 max-h-40 rounded border border-amber-200 dark:border-amber-800 bg-white dark:bg-amber-950/20">
+                      <table className="w-full text-xs" data-testid="table-mapreduce-skipped-sheets">
+                        <thead className="bg-amber-100 dark:bg-amber-900/40 sticky top-0">
+                          <tr>
+                            <th className="text-left px-2 py-1 font-medium text-amber-900 dark:text-amber-200">Sheet #</th>
+                            <th className="text-left px-2 py-1 font-medium text-amber-900 dark:text-amber-200">Name</th>
+                            <th className="text-left px-2 py-1 font-medium text-amber-900 dark:text-amber-200">Discipline</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {draft.skippedSheets.map((s, i) => (
+                            <tr
+                              key={`${s.sheetId ?? "noid"}-${s.sheetIndex}-${i}`}
+                              className="border-t border-amber-100 dark:border-amber-900/60"
+                              data-testid={`row-mapreduce-skipped-${s.sheetId ?? `idx-${s.sheetIndex}`}`}
+                            >
+                              <td className="px-2 py-1 font-mono text-amber-900 dark:text-amber-200">
+                                {s.sheetNumber ?? `#${s.sheetIndex + 1}`}
+                              </td>
+                              <td className="px-2 py-1 text-amber-900 dark:text-amber-200">
+                                {s.sheetName ?? <span className="text-amber-700 dark:text-amber-400 italic">(unnamed)</span>}
+                              </td>
+                              <td className="px-2 py-1 font-mono text-amber-800 dark:text-amber-300">
+                                {s.discipline}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </SkippedScrollArea>
+                    <div className="mt-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={raiseCapAndRerun.isPending || isWorking || !canRaiseCap}
+                        onClick={() => raiseCapAndRerun.mutate(draft.recommendedMaxDisciplineBatches!)}
+                        data-testid="button-mapreduce-raise-cap-and-rerun"
+                        title={canRaiseCap ? undefined : "Only admins with the AI Estimator management permission can change the per-discipline batch cap."}
+                      >
+                        {raiseCapAndRerun.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                        Increase cap to {draft.recommendedMaxDisciplineBatches} and re-run
+                      </Button>
+                      {!canRaiseCap && (
+                        <p className="mt-1 text-xs text-amber-800 dark:text-amber-300" data-testid="text-mapreduce-raise-cap-blocked">
+                          Ask an admin with the AI Estimator management permission to raise the cap.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {draft.notes && (
                   <p className="text-sm text-muted-foreground" data-testid="text-mapreduce-notes">
                     {draft.notes}

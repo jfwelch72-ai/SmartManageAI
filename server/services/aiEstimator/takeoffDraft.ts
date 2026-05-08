@@ -1,7 +1,9 @@
+import { randomUUID } from "crypto";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
 import {
+  bids,
   planDocuments,
   projects,
   takeoffSheets,
@@ -68,10 +70,26 @@ export interface DraftTakeoffMeasurement {
   assembly?: AssemblyExpansion | null;
 }
 
+/**
+ * Task #2626 — Aggregated AI spend recorded for a single legacy
+ * `draftTakeoffFromPlans` run. Mirrors the shape returned by the
+ * map-reduce drafter so the review UI can render the same cost
+ * header regardless of which path produced the draft.
+ */
+export interface TakeoffDraftCostSummary {
+  callCount: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
+}
+
 export interface TakeoffDraftResult {
   measurements: DraftTakeoffMeasurement[];
   notes: string;
   confidence: number;
+  /** Task #2626 — aggregated AI spend for this draft run. */
+  cost: TakeoffDraftCostSummary;
 }
 
 async function resolveOrgPlanDocuments(
@@ -270,6 +288,24 @@ export async function draftTakeoffFromPlans(opts: {
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
   await reportProgress(70, "Calling AI estimator");
+  // Task #2626 — per-draft + per-project rollup keys. `draftId` is
+  // unique per `draftTakeoffFromPlans` invocation. `projectId` is
+  // either the explicit opts.projectId, or the bid's converted project
+  // (resolved best-effort below).
+  const draftId = randomUUID();
+  let resolvedProjectId: string | null = opts.projectId ?? null;
+  if (!resolvedProjectId && opts.bidId) {
+    try {
+      const [bidRow] = await db
+        .select({ convertedToProjectId: bids.convertedToProjectId })
+        .from(bids)
+        .where(eq(bids.id, opts.bidId))
+        .limit(1);
+      resolvedProjectId = bidRow?.convertedToProjectId ?? null;
+    } catch {
+      resolvedProjectId = null;
+    }
+  }
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
@@ -280,6 +316,8 @@ export async function draftTakeoffFromPlans(opts: {
       bidId: opts.bidId ?? null,
       disciplines: opts.disciplines ?? null,
       tradeFilter: opts.tradeFilter ?? null,
+      draftId,
+      projectId: resolvedProjectId,
     },
     fn: async () => {
       const completion = await routedChatCompletion({
@@ -312,6 +350,23 @@ export async function draftTakeoffFromPlans(opts: {
   });
   if (gov.blocked) return { result: null, blocked: true, reason: gov.reason };
 
+  // Task #2626 — fold per-call usage into a draft-level cost summary so
+  // the UI can render `$X over N calls` on the draft header without a
+  // round-trip to `ai_action_audit`.
+  const cost: TakeoffDraftCostSummary = { callCount: 0, tokensIn: 0, tokensOut: 0, costUsd: 0, byModel: {} };
+  if (gov.usage) {
+    cost.callCount = 1;
+    cost.tokensIn = gov.usage.tokensIn;
+    cost.tokensOut = gov.usage.tokensOut;
+    cost.costUsd = Math.round(gov.usage.cost * 1_000_000) / 1_000_000;
+    cost.byModel[gov.usage.model] = {
+      calls: 1,
+      tokensIn: gov.usage.tokensIn,
+      tokensOut: gov.usage.tokensOut,
+      costUsd: cost.costUsd,
+    };
+  }
+
   await reportProgress(90, "Validating draft");
   const validated = validateAiJsonOutput(TAKEOFF_DRAFT_OUTPUT_SCHEMA, gov.result);
   if (!validated.ok) {
@@ -335,6 +390,7 @@ export async function draftTakeoffFromPlans(opts: {
       measurements,
       notes: parsed.notes ?? "",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
+      cost,
     },
   };
 }

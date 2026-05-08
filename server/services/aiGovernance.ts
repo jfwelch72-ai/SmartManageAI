@@ -193,7 +193,24 @@ export async function governedAiCall<T>(opts: {
       latencyMs?: number;
     };
   }>;
-}): Promise<{ result: T; blocked?: boolean; reason?: string }> {
+}): Promise<{
+  result: T;
+  blocked?: boolean;
+  reason?: string;
+  // Task #2626 — Surface per-call usage to callers so map-reduce / multi-
+  // call pipelines can aggregate AI spend (tokens + $) on the draft
+  // record without re-querying `ai_action_audit`. Optional on the type
+  // for back-compat; populated whenever the fn ran (i.e. not blocked).
+  usage?: {
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    model: string;
+    provider: string | null;
+    fallbackUsed: boolean;
+    durationMs: number;
+  };
+}> {
   const tier = await getOrgPlanTier(opts.orgId);
   const limitCheck = await checkOrgLimits(opts.orgId, tier);
   if (!limitCheck.allowed) {
@@ -247,7 +264,10 @@ export async function governedAiCall<T>(opts: {
     });
   }
 
-  return { result };
+  return {
+    result,
+    usage: { tokensIn, tokensOut, cost, model, provider, fallbackUsed, durationMs },
+  };
 }
 
 export async function getAiAuditLog(orgId: string, limit: number = 50, offset: number = 0, dateFrom?: Date, dateTo?: Date) {

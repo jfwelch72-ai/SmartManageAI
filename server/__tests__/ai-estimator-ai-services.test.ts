@@ -81,10 +81,26 @@ vi.mock("../ai/openaiClient", () => ({
   },
 }));
 
+// Task #2626 — overridable per-test usage payload so cost-aggregation
+// tests can assert that `governedAiCall.usage` flows through to the
+// draft result.
+let governedAiUsageOverride:
+  | {
+      tokensIn: number;
+      tokensOut: number;
+      cost: number;
+      model: string;
+      provider: string | null;
+      fallbackUsed: boolean;
+      durationMs: number;
+    }
+  | null = null;
 vi.mock("../services/aiGovernance", () => ({
   governedAiCall: vi.fn(async (opts: { fn: () => Promise<{ result: unknown }> }) => {
     const { result } = await opts.fn();
-    return { result };
+    return governedAiUsageOverride
+      ? { result, usage: governedAiUsageOverride }
+      : { result };
   }),
 }));
 
@@ -118,6 +134,7 @@ import {
   bids,
   projects,
   planDocuments,
+  projectPlans,
   takeoffSheets,
   takeoffMeasurements,
   aiEstimatorUserAccess,
@@ -539,6 +556,78 @@ describe("draftTakeoffFromPlans — org scoping + JSON parsing", () => {
     expect(openaiCreate).not.toHaveBeenCalled();
   });
 
+  // Task #2626 — verify per-draft AI spend roll-up. Single-shot drafter
+  // makes exactly one governed AI call, so the draft `cost` summary
+  // should reflect the usage payload returned by the governance layer.
+  it("aggregates token usage + $ from governedAiCall onto the draft cost summary", async () => {
+    openaiCreate.mockReset();
+    openaiCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ measurements: [], notes: "", confidence: 50 }),
+          },
+        },
+      ],
+    });
+    governedAiUsageOverride = {
+      tokensIn: 1234,
+      tokensOut: 567,
+      cost: 0.0421,
+      model: "gpt-5",
+      provider: "openai",
+      fallbackUsed: false,
+      durationMs: 800,
+    };
+    try {
+      const out = await draftTakeoffFromPlans({
+        organizationId: ctx.orgA,
+        userId: ctx.userA,
+        planDocumentIds: [ctx.planDocA],
+      });
+      expect(out.result).not.toBeNull();
+      expect(out.result!.cost.callCount).toBe(1);
+      expect(out.result!.cost.tokensIn).toBe(1234);
+      expect(out.result!.cost.tokensOut).toBe(567);
+      expect(out.result!.cost.costUsd).toBeCloseTo(0.0421, 6);
+      expect(out.result!.cost.byModel["gpt-5"]).toEqual({
+        calls: 1,
+        tokensIn: 1234,
+        tokensOut: 567,
+        costUsd: 0.0421,
+      });
+    } finally {
+      governedAiUsageOverride = null;
+    }
+  });
+
+  it("returns an empty cost summary when governedAiCall reports no usage", async () => {
+    openaiCreate.mockReset();
+    openaiCreate.mockResolvedValueOnce({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ measurements: [], notes: "", confidence: 50 }),
+          },
+        },
+      ],
+    });
+    governedAiUsageOverride = null;
+    const out = await draftTakeoffFromPlans({
+      organizationId: ctx.orgA,
+      userId: ctx.userA,
+      planDocumentIds: [ctx.planDocA],
+    });
+    expect(out.result).not.toBeNull();
+    expect(out.result!.cost).toEqual({
+      callCount: 0,
+      tokensIn: 0,
+      tokensOut: 0,
+      costUsd: 0,
+      byModel: {},
+    });
+  });
+
   it("wraps untrusted plan-document text in the quarantine envelope before sending to the LLM", async () => {
     openaiCreate.mockReset();
     extractDocumentContentMock.mockResolvedValueOnce([
@@ -570,6 +659,38 @@ describe("draftTakeoffFromPlans — org scoping + JSON parsing", () => {
 
 // Task #2494 — sheetIndex AI classifier must apply the same
 // refusal + quarantine guard as the takeoff draft path.
+// Task #2626 — verify the per-org cap resolver applies the live value
+// from `aiEstimatorOrgFactors` and clamps obviously bad values to the
+// safe absolute floor / ceiling.
+describe("resolveMaxDisciplineBatches — per-org configurable cap", () => {
+  it("returns the value persisted on aiEstimatorOrgFactors when present", async () => {
+    const { upsertOrgFactors } = await import("../services/aiEstimator/orgFactors");
+    const { resolveMaxDisciplineBatches, DEFAULT_MAX_DISCIPLINE_BATCHES, ABS_MAX_DISCIPLINE_BATCHES } =
+      await import("../services/aiEstimator/mapReduceDraft");
+    await upsertOrgFactors(ctx.orgA, { maxDisciplineBatches: 73 }, ctx.userA);
+    expect(await resolveMaxDisciplineBatches(ctx.orgA)).toBe(73);
+
+    // Above the absolute ceiling → clamped down.
+    await upsertOrgFactors(ctx.orgA, { maxDisciplineBatches: ABS_MAX_DISCIPLINE_BATCHES + 999 }, ctx.userA);
+    expect(await resolveMaxDisciplineBatches(ctx.orgA)).toBe(ABS_MAX_DISCIPLINE_BATCHES);
+
+    // Below the absolute floor → clamped up to 1.
+    await upsertOrgFactors(ctx.orgA, { maxDisciplineBatches: 0 }, ctx.userA);
+    expect(await resolveMaxDisciplineBatches(ctx.orgA)).toBe(1);
+
+    // Reset to default for downstream tests.
+    await upsertOrgFactors(ctx.orgA, { maxDisciplineBatches: DEFAULT_MAX_DISCIPLINE_BATCHES }, ctx.userA);
+  });
+
+  it("falls back to the default when no org factors row exists yet", async () => {
+    const { resolveMaxDisciplineBatches, DEFAULT_MAX_DISCIPLINE_BATCHES } = await import(
+      "../services/aiEstimator/mapReduceDraft"
+    );
+    // orgB has no factors row in the test fixtures.
+    expect(await resolveMaxDisciplineBatches(ctx.orgB)).toBe(DEFAULT_MAX_DISCIPLINE_BATCHES);
+  });
+});
+
 describe("indexPlanSheetsForBid — prompt-injection guard", () => {
   it("skips the AI classifier (does not call OpenAI) when extracted plan text contains a high-signal injection payload", async () => {
     openaiCreate.mockReset();
@@ -857,5 +978,204 @@ describe("POST /ai-estimator/draft/map-reduce/apply — sheet routing + tenant i
       });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/no takeoff sheets/i);
+  });
+});
+
+// Task #2626 (rev 2) — directly exercise mapReduceDraftFromPlans on
+// fresh fixtures to verify (a) the explicit per-sheet skipped-list is
+// populated when the per-org cap forces a partial run, and (b) the
+// `cost` summary aggregates token + $ usage across MULTIPLE governed
+// AI calls (one per discipline batch), not just a single call.
+describe("mapReduceDraftFromPlans — skipped-sheet detection + multi-call cost aggregation", () => {
+  const stamp2 = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  let mrOrg: string;
+  let mrUser: string;
+  let mrBid: string;
+  let mrProject: string;
+  let mrPlan: string;
+
+  beforeAll(async () => {
+    const passwordHash = await bcrypt.hash("TestPass123!", 10);
+    const [org] = await db
+      .insert(organizations)
+      .values({
+        name: "MR Org",
+        slug: `${PREFIX}mr-${stamp2}`,
+        tradeType: "GENERAL_CONTRACTOR",
+        onboardingStatus: "COMPLETED",
+        isActive: true,
+      })
+      .returning();
+    mrOrg = org.id;
+    const [user] = await db
+      .insert(users)
+      .values({
+        email: `${PREFIX}mr-${stamp2}@test.local`,
+        passwordHash,
+        firstName: "MR",
+        lastName: "User",
+        role: "ESTIMATOR",
+        organizationId: org.id,
+        isActive: true,
+      })
+      .returning();
+    mrUser = user.id;
+    const [bid] = await db
+      .insert(bids)
+      .values({
+        name: "MR Bid",
+        code: `${PREFIX}MR-${stamp2}`,
+        clientName: "Client",
+        gcOrganizationId: org.id,
+      })
+      .returning();
+    mrBid = bid.id;
+    const [project] = await db
+      .insert(projects)
+      .values({
+        name: "MR Project",
+        code: `${PREFIX}MRP-${stamp2}`,
+        clientName: "Client",
+        gcOrganizationId: org.id,
+        status: "ACTIVE",
+      })
+      .returning();
+    mrProject = project.id;
+    const [plan] = await db
+      .insert(projectPlans)
+      .values({
+        projectId: project.id,
+        originalPdfUrl: "https://example.com/mr-plan.pdf",
+        fileName: `${PREFIX}MR-plan.pdf`,
+      })
+      .returning();
+    mrPlan = plan.id;
+
+    // Insert 30 architectural sheets all with cached page text and the
+    // SAME plan id. With PAGES_PER_DISCIPLINE_BATCH=20 and the per-org
+    // cap forced to 1, batch 1 covers sheets 0-19 and sheets 20-29
+    // become the explicit skipped list.
+    const sheetRows = Array.from({ length: 30 }, (_, i) => ({
+      bidId: mrBid,
+      projectId: mrProject,
+      planId: mrPlan,
+      imageUrl: `https://example.com/${PREFIX}mr-sheet-${i}.png`,
+      sheetIndex: i,
+      sheetNumber: `A-${String(100 + i).padStart(3, "0")}`,
+      sheetName: `${PREFIX}MR sheet ${i}`,
+      discipline: "A",
+      // Per-sheet cached page text keyed by 1-based pdf page number,
+      // matching mapPagesByDiscipline's lookup.
+      extractedTextByPage: { [String(i + 1)]: `Sheet ${i + 1} contents — wall plan with finishes schedule.` },
+    }));
+    await db.insert(takeoffSheets).values(sheetRows);
+  });
+
+  afterAll(async () => {
+    await db.execute(sql`DELETE FROM takeoff_sheets WHERE bid_id = ${mrBid}`).catch(() => {});
+    await db.execute(sql`DELETE FROM project_plans WHERE id = ${mrPlan}`).catch(() => {});
+    await db.execute(sql`DELETE FROM bids WHERE id = ${mrBid}`).catch(() => {});
+    await db.execute(sql`DELETE FROM projects WHERE id = ${mrProject}`).catch(() => {});
+    await db.execute(sql`DELETE FROM users WHERE id = ${mrUser}`).catch(() => {});
+    await db.execute(sql`DELETE FROM organizations WHERE id = ${mrOrg}`).catch(() => {});
+  });
+
+  it("populates the explicit skippedSheets list with sheet number/name/discipline when the per-org cap forces a partial run", async () => {
+    const { mapReduceDraftFromPlans } = await import("../services/aiEstimator/mapReduceDraft");
+    const { upsertOrgFactors } = await import("../services/aiEstimator/orgFactors");
+    await upsertOrgFactors(mrOrg, { maxDisciplineBatches: 1 }, mrUser);
+
+    openaiCreate.mockReset();
+    openaiCreate.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ measurements: [], notes: "batch-ok", confidence: 75 }),
+          },
+        },
+      ],
+    });
+
+    const out = await mapReduceDraftFromPlans({
+      organizationId: mrOrg,
+      userId: mrUser,
+      bidId: mrBid,
+    });
+    expect(out.result).not.toBeNull();
+    const r = out.result!;
+    // 30 sheets, batch size 20, cap 1 batch → 10 sheets get skipped.
+    expect(r.partial).toBe(true);
+    expect(r.skippedSheets.length).toBe(10);
+    expect(r.appliedMaxDisciplineBatches).toBe(1);
+    // 30 sheets / 20 per batch = ceil(1.5) = 2 batches needed.
+    expect(r.recommendedMaxDisciplineBatches).toBeGreaterThanOrEqual(2);
+
+    // Every skipped row carries the human-readable identifiers the
+    // banner relies on — number, name, discipline — not just an
+    // opaque count.
+    for (const s of r.skippedSheets) {
+      expect(typeof s.sheetIndex).toBe("number");
+      expect(s.sheetNumber).toMatch(/^A-\d{3}$/);
+      expect(s.sheetName).toMatch(/^__ai_est_ai__MR sheet /);
+      expect(s.discipline).toBe("A");
+    }
+    // The 10 highest-index sheets (20..29) are the ones dropped.
+    const skippedIdx = r.skippedSheets.map((s) => s.sheetIndex).sort((a, b) => a - b);
+    expect(skippedIdx[0]).toBe(20);
+    expect(skippedIdx[skippedIdx.length - 1]).toBe(29);
+  });
+
+  it("aggregates token usage + cost across multiple governed AI calls into a single cost summary", async () => {
+    const { mapReduceDraftFromPlans } = await import("../services/aiEstimator/mapReduceDraft");
+    const { upsertOrgFactors } = await import("../services/aiEstimator/orgFactors");
+    // Cap = 2 → both batches (20 + 10) execute, two governed calls.
+    await upsertOrgFactors(mrOrg, { maxDisciplineBatches: 2 }, mrUser);
+
+    openaiCreate.mockReset();
+    openaiCreate.mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({ measurements: [], notes: "ok", confidence: 80 }),
+          },
+        },
+      ],
+    });
+    governedAiUsageOverride = {
+      tokensIn: 100,
+      tokensOut: 50,
+      cost: 0.0125,
+      model: "gpt-5",
+      provider: "openai",
+      fallbackUsed: false,
+      durationMs: 200,
+    };
+    try {
+      const out = await mapReduceDraftFromPlans({
+        organizationId: mrOrg,
+        userId: mrUser,
+        bidId: mrBid,
+      });
+      expect(out.result).not.toBeNull();
+      const r = out.result!;
+      // Two batches → two governed calls → cost summary rolls up
+      // tokens AND cost across BOTH calls (not just the last one).
+      expect(r.llmCallCount).toBe(2);
+      expect(r.cost.callCount).toBe(2);
+      expect(r.cost.tokensIn).toBe(200);
+      expect(r.cost.tokensOut).toBe(100);
+      expect(r.cost.costUsd).toBeCloseTo(0.025, 6);
+      expect(r.cost.byModel["gpt-5"]).toEqual({
+        calls: 2,
+        tokensIn: 200,
+        tokensOut: 100,
+        costUsd: 0.025,
+      });
+      // No skipped sheets at this cap.
+      expect(r.skippedSheets.length).toBe(0);
+      expect(r.partial).toBe(false);
+    } finally {
+      governedAiUsageOverride = null;
+    }
   });
 });

@@ -1246,11 +1246,9 @@ export default function AiEstimatorAdminPage() {
           <TabsTrigger value="ingest" data-testid="tab-ingest">Training runs</TabsTrigger>
           <TabsTrigger value="rates" data-testid="tab-rates">Learned rates</TabsTrigger>
           <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
-
           <TabsTrigger value="assemblies" data-testid="tab-assemblies">Assemblies</TabsTrigger>
-
           <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
-
+          <TabsTrigger value="spend" data-testid="tab-spend">AI spend</TabsTrigger>
         </TabsList>
 
         <TabsContent value="access" className="space-y-4">
@@ -1836,13 +1834,17 @@ export default function AiEstimatorAdminPage() {
           </Card>
         </TabsContent>
 
-
         <TabsContent value="assemblies" className="space-y-4">
           <AssembliesTab />
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-4">
           <SettingsTab />
+          <OrgFactorsCapCard />
+        </TabsContent>
+
+        <TabsContent value="spend" className="space-y-4">
+          <AiSpendCard />
         </TabsContent>
       </Tabs>
 
@@ -1863,6 +1865,365 @@ export default function AiEstimatorAdminPage() {
           onExclude={confirmExclude}
         />
       )}
+    </div>
+  );
+}
+
+// Task #2626 — Per-org configurable cap on the number of AI Estimator
+// map-reduce batches per discipline. Replaces the historical hardcoded
+// MAX_DISCIPLINE_BATCHES constant. Persisted on aiEstimatorOrgFactors.
+interface OrgFactorsRow {
+  maxDisciplineBatches?: number | null;
+}
+
+function OrgFactorsCapCard() {
+  const { toast } = useToast();
+  const factorsQuery = useQuery<OrgFactorsRow>({
+    queryKey: ["/api/ai-estimator/org-factors"],
+  });
+  const [draftCap, setDraftCap] = useState<string>("");
+
+  useEffect(() => {
+    if (factorsQuery.data?.maxDisciplineBatches != null) {
+      setDraftCap(String(factorsQuery.data.maxDisciplineBatches));
+    }
+  }, [factorsQuery.data?.maxDisciplineBatches]);
+
+  const updateCap = useMutation({
+    mutationFn: async (newCap: number) => {
+      await apiRequest("PUT", "/api/ai-estimator/org-factors", {
+        maxDisciplineBatches: newCap,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Saved", description: "Per-discipline batch cap updated." });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/org-factors"] });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" }),
+  });
+
+  const parsed = Number(draftCap);
+  const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 200;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5" /> AI Estimator drafter cap
+        </CardTitle>
+        <CardDescription>
+          Maximum number of map-reduce batches per discipline. Each batch is one LLM call covering up
+          to a few sheets. Lower = cheaper but more sheets get skipped on large plan sets. Default 25,
+          allowed range 1–200.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {factorsQuery.isLoading ? (
+          <Loader2 className="animate-spin h-5 w-5" />
+        ) : (
+          <div className="flex items-end gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="cap-input">Max discipline batches</Label>
+              <Input
+                id="cap-input"
+                type="number"
+                min={1}
+                max={200}
+                value={draftCap}
+                onChange={(e) => setDraftCap(e.target.value)}
+                className="w-32"
+                data-testid="input-max-discipline-batches"
+              />
+            </div>
+            <Button
+              onClick={() => updateCap.mutate(parsed)}
+              disabled={!valid || updateCap.isPending || parsed === factorsQuery.data?.maxDisciplineBatches}
+              data-testid="button-save-max-discipline-batches"
+            >
+              {updateCap.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SpendByModelRow {
+  model: string | null;
+  actionType: string;
+  provider: string | null;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+}
+interface SpendByBidRow {
+  bidId: string | null;
+  bid: { id: string; name: string | null; code: string | null } | null;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  lastRunAt: string;
+}
+interface SpendByProjectRow {
+  projectId: string | null;
+  project: { id: string; name: string | null; code: string | null } | null;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  lastRunAt: string;
+}
+interface SpendByDraftRow {
+  draftId: string | null;
+  bidId: string | null;
+  bid: { id: string; name: string | null; code: string | null } | null;
+  projectId: string | null;
+  project: { id: string; name: string | null; code: string | null } | null;
+  actionType: string;
+  calls: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  startedAt: string;
+  finishedAt: string;
+}
+interface SpendResponse {
+  windowDays: number;
+  since: string;
+  totalsByModel: SpendByModelRow[];
+  byBid: SpendByBidRow[];
+  byProject: SpendByProjectRow[];
+  byDraft: SpendByDraftRow[];
+}
+
+function AiSpendCard() {
+  const [days, setDays] = useState<number>(30);
+  const spendQuery = useQuery<SpendResponse>({
+    queryKey: ["/api/ai-estimator/admin/spend", days],
+    queryFn: async () => {
+      const r = await apiRequest("GET", `/api/ai-estimator/admin/spend?days=${days}`);
+      return (await r.json()) as SpendResponse;
+    },
+  });
+
+  const totalCost =
+    spendQuery.data?.totalsByModel.reduce((acc, r) => acc + Number(r.costUsd ?? 0), 0) ?? 0;
+  const totalCalls =
+    spendQuery.data?.totalsByModel.reduce((acc, r) => acc + Number(r.calls ?? 0), 0) ?? 0;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" /> AI Estimator drafter spend
+          </CardTitle>
+          <CardDescription>
+            Live spend rollup from governed AI calls on the takeoff drafter (single-shot + map-reduce).
+            Sourced from the `ai_action_audit` ledger.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-end gap-3 mb-4">
+            <div className="space-y-1">
+              <Label>Window</Label>
+              <Select value={String(days)} onValueChange={(v) => setDays(Number(v))}>
+                <SelectTrigger className="w-40" data-testid="select-spend-window">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="7">Last 7 days</SelectItem>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                  <SelectItem value="365">Last 365 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-md border p-3 ml-auto">
+              <div className="text-xs text-muted-foreground">Total spend</div>
+              <div className="text-2xl font-bold tabular-nums" data-testid="text-spend-total-cost">
+                ${totalCost.toFixed(4)}
+              </div>
+            </div>
+            <div className="rounded-md border p-3">
+              <div className="text-xs text-muted-foreground">Total calls</div>
+              <div className="text-2xl font-bold tabular-nums" data-testid="text-spend-total-calls">
+                {totalCalls.toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {spendQuery.isLoading ? (
+            <Loader2 className="animate-spin h-5 w-5" />
+          ) : (
+            <>
+              <h3 className="text-sm font-semibold mt-2 mb-2">By model + provider</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Model</TableHead>
+                    <TableHead>Provider</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="text-right">Cost (USD)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(spendQuery.data?.totalsByModel ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="text-center text-muted-foreground" data-testid="text-spend-empty">
+                        No drafter spend in this window.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    spendQuery.data!.totalsByModel.map((r, i) => (
+                      <TableRow key={`${r.model}-${r.provider}-${r.actionType}-${i}`} data-testid={`row-spend-model-${i}`}>
+                        <TableCell className="font-mono text-xs">{r.model ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.provider ?? "—"}</TableCell>
+                        <TableCell className="font-mono text-xs">{r.actionType}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.calls).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensIn).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensOut).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">${Number(r.costUsd).toFixed(4)}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+
+              <h3 className="text-sm font-semibold mt-6 mb-2">Top bids by spend</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Bid</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="text-right">Cost (USD)</TableHead>
+                    <TableHead>Last run</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(spendQuery.data?.byBid ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground" data-testid="text-spend-by-bid-empty">
+                        No bid-attributed drafter spend in this window.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    spendQuery.data!.byBid.map((r) => (
+                      <TableRow key={r.bidId ?? "unknown"} data-testid={`row-spend-bid-${r.bidId ?? "unknown"}`}>
+                        <TableCell>
+                          <div className="font-medium">{r.bid?.name ?? "(unknown)"}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{r.bid?.code ?? r.bidId ?? "—"}</div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.calls).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensIn).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensOut).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">${Number(r.costUsd).toFixed(4)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{new Date(r.lastRunAt).toLocaleString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+
+              {/* Task #2626 (rev 2) — per-project rollup. The drafter resolves
+                  `projectId` from `bids.convertedToProjectId` so awarded bids
+                  group under the project; un-awarded bids appear under
+                  "(unattributed)". */}
+              <h3 className="text-sm font-semibold mt-6 mb-2">Top projects by spend</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Project</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="text-right">Cost (USD)</TableHead>
+                    <TableHead>Last run</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(spendQuery.data?.byProject ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="text-center text-muted-foreground" data-testid="text-spend-by-project-empty">
+                        No project-attributed drafter spend in this window.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    spendQuery.data!.byProject.map((r) => (
+                      <TableRow key={r.projectId ?? "unattributed"} data-testid={`row-spend-project-${r.projectId ?? "unattributed"}`}>
+                        <TableCell>
+                          <div className="font-medium">{r.project?.name ?? (r.projectId ? "(unknown)" : "(unattributed)")}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{r.project?.code ?? r.projectId ?? "—"}</div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.calls).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensIn).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensOut).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">${Number(r.costUsd).toFixed(4)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{r.lastRunAt ? new Date(r.lastRunAt).toLocaleString() : "—"}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+
+              {/* Per-draft rollup — one row per `draftId` (a single
+                  `draftTakeoffFromPlans` / `mapReduceDraftFromPlans`
+                  invocation). Lets admins isolate the cost of an
+                  individual run instead of summing across the bid. */}
+              <h3 className="text-sm font-semibold mt-6 mb-2">Recent drafts by spend</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Draft</TableHead>
+                    <TableHead>Bid / Project</TableHead>
+                    <TableHead>Action</TableHead>
+                    <TableHead className="text-right">Calls</TableHead>
+                    <TableHead className="text-right">Tokens in</TableHead>
+                    <TableHead className="text-right">Tokens out</TableHead>
+                    <TableHead className="text-right">Cost (USD)</TableHead>
+                    <TableHead>Finished</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(spendQuery.data?.byDraft ?? []).length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground" data-testid="text-spend-by-draft-empty">
+                        No draft-attributed drafter spend in this window.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    spendQuery.data!.byDraft.map((r) => (
+                      <TableRow key={r.draftId ?? "unknown"} data-testid={`row-spend-draft-${r.draftId ?? "unknown"}`}>
+                        <TableCell className="font-mono text-xs">{r.draftId ? r.draftId.slice(0, 8) : "—"}</TableCell>
+                        <TableCell>
+                          <div className="text-xs">{r.bid?.name ?? r.bidId ?? "—"}</div>
+                          <div className="text-xs text-muted-foreground">{r.project?.name ?? (r.projectId ? "(project)" : "")}</div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">{r.actionType.replace("ai_estimator.", "")}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.calls).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensIn).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">{Number(r.tokensOut).toLocaleString()}</TableCell>
+                        <TableCell className="text-right tabular-nums">${Number(r.costUsd).toFixed(4)}</TableCell>
+                        <TableCell className="whitespace-nowrap text-xs">{r.finishedAt ? new Date(r.finishedAt).toLocaleString() : "—"}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

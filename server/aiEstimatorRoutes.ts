@@ -1315,6 +1315,201 @@ router.delete(
 );
 
 // =====================================================================
+// Task #2626 — AI spend rollup. Surfaces per-bid / per-model spend on
+// the AI Estimator drafter from the existing `ai_action_audit` rows.
+// Admin-only (canManageAiEstimator) so estimators can't poke at spend.
+// =====================================================================
+router.get(
+  `${estimatorBase}/admin/spend`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const days = Math.max(1, Math.min(365, Number(req.query.days ?? 30)));
+    const sinceDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    const { aiActionAudit } = await import("@shared/schema");
+
+    // Total spend for the AI Estimator drafter family.
+    const totalsByModel = await db
+      .select({
+        model: aiActionAudit.model,
+        actionType: aiActionAudit.actionType,
+        provider: aiActionAudit.provider,
+        calls: sql<number>`count(*)`.as("calls"),
+        tokensIn: sql<number>`coalesce(sum(${aiActionAudit.tokensIn}), 0)`.as("tokensIn"),
+        tokensOut: sql<number>`coalesce(sum(${aiActionAudit.tokensOut}), 0)`.as("tokensOut"),
+        costUsd: sql<number>`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0)`.as("costUsd"),
+      })
+      .from(aiActionAudit)
+      .where(
+        and(
+          eq(aiActionAudit.organizationId, orgId),
+          sql`${aiActionAudit.actionType} IN ('ai_estimator.takeoff_draft','ai_estimator.takeoff_draft.map_reduce')`,
+          sql`${aiActionAudit.createdAt} >= ${sinceDate}`,
+        ),
+      )
+      .groupBy(aiActionAudit.model, aiActionAudit.actionType, aiActionAudit.provider);
+
+    // Spend grouped by bid (extracted from `inputRefs->>bidId`).
+    const byBid = await db
+      .select({
+        bidId: sql<string | null>`(${aiActionAudit.inputRefs}->>'bidId')`.as("bidId"),
+        calls: sql<number>`count(*)`.as("calls"),
+        tokensIn: sql<number>`coalesce(sum(${aiActionAudit.tokensIn}), 0)`.as("tokensIn"),
+        tokensOut: sql<number>`coalesce(sum(${aiActionAudit.tokensOut}), 0)`.as("tokensOut"),
+        costUsd: sql<number>`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0)`.as("costUsd"),
+        lastRunAt: sql<string>`max(${aiActionAudit.createdAt})`.as("lastRunAt"),
+      })
+      .from(aiActionAudit)
+      .where(
+        and(
+          eq(aiActionAudit.organizationId, orgId),
+          sql`${aiActionAudit.actionType} IN ('ai_estimator.takeoff_draft','ai_estimator.takeoff_draft.map_reduce')`,
+          sql`${aiActionAudit.createdAt} >= ${sinceDate}`,
+          sql`${aiActionAudit.inputRefs}->>'bidId' IS NOT NULL`,
+        ),
+      )
+      .groupBy(sql`(${aiActionAudit.inputRefs}->>'bidId')`)
+      .orderBy(sql`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0) DESC`)
+      .limit(50);
+
+    // Task #2626 — per-project rollup. `inputRefs->>projectId` is
+    // populated by both drafters (resolved from `bids.convertedToProjectId`
+    // when a bid hasn't been awarded yet). Rows with NULL project are
+    // surfaced under a synthetic "(unattributed)" key so admins can see
+    // unconverted-bid spend.
+    const byProject = await db
+      .select({
+        projectId: sql<string | null>`(${aiActionAudit.inputRefs}->>'projectId')`.as("projectId"),
+        calls: sql<number>`count(*)`.as("calls"),
+        tokensIn: sql<number>`coalesce(sum(${aiActionAudit.tokensIn}), 0)`.as("tokensIn"),
+        tokensOut: sql<number>`coalesce(sum(${aiActionAudit.tokensOut}), 0)`.as("tokensOut"),
+        costUsd: sql<number>`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0)`.as("costUsd"),
+        lastRunAt: sql<string>`max(${aiActionAudit.createdAt})`.as("lastRunAt"),
+      })
+      .from(aiActionAudit)
+      .where(
+        and(
+          eq(aiActionAudit.organizationId, orgId),
+          sql`${aiActionAudit.actionType} IN ('ai_estimator.takeoff_draft','ai_estimator.takeoff_draft.map_reduce')`,
+          sql`${aiActionAudit.createdAt} >= ${sinceDate}`,
+        ),
+      )
+      .groupBy(sql`(${aiActionAudit.inputRefs}->>'projectId')`)
+      .orderBy(sql`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0) DESC`)
+      .limit(50);
+
+    // Task #2626 — per-draft rollup. `inputRefs->>draftId` is stamped
+    // once per `mapReduceDraftFromPlans` / `draftTakeoffFromPlans` run
+    // so the admin can see the cost of an individual draft attempt
+    // (a single map-reduce run can contain dozens of governed calls).
+    const byDraft = await db
+      .select({
+        draftId: sql<string | null>`(${aiActionAudit.inputRefs}->>'draftId')`.as("draftId"),
+        bidId: sql<string | null>`max(${aiActionAudit.inputRefs}->>'bidId')`.as("bidId"),
+        projectId: sql<string | null>`max(${aiActionAudit.inputRefs}->>'projectId')`.as("projectId"),
+        actionType: sql<string>`max(${aiActionAudit.actionType})`.as("actionType"),
+        calls: sql<number>`count(*)`.as("calls"),
+        tokensIn: sql<number>`coalesce(sum(${aiActionAudit.tokensIn}), 0)`.as("tokensIn"),
+        tokensOut: sql<number>`coalesce(sum(${aiActionAudit.tokensOut}), 0)`.as("tokensOut"),
+        costUsd: sql<number>`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0)`.as("costUsd"),
+        startedAt: sql<string>`min(${aiActionAudit.createdAt})`.as("startedAt"),
+        finishedAt: sql<string>`max(${aiActionAudit.createdAt})`.as("finishedAt"),
+      })
+      .from(aiActionAudit)
+      .where(
+        and(
+          eq(aiActionAudit.organizationId, orgId),
+          sql`${aiActionAudit.actionType} IN ('ai_estimator.takeoff_draft','ai_estimator.takeoff_draft.map_reduce')`,
+          sql`${aiActionAudit.createdAt} >= ${sinceDate}`,
+          sql`${aiActionAudit.inputRefs}->>'draftId' IS NOT NULL`,
+        ),
+      )
+      .groupBy(sql`(${aiActionAudit.inputRefs}->>'draftId')`)
+      .orderBy(sql`max(${aiActionAudit.createdAt}) DESC`)
+      .limit(100);
+
+    // Hydrate bid display names so the admin UI can render readable rows
+    // without N+1 round trips.
+    const bidIds = Array.from(
+      new Set([
+        ...byBid.map((r) => r.bidId).filter((b): b is string => !!b),
+        ...byDraft.map((r) => r.bidId).filter((b): b is string => !!b),
+      ]),
+    );
+    let bidLookup: Record<string, { id: string; name: string | null; code: string | null }> = {};
+    if (bidIds.length > 0) {
+      const bidRows = await db
+        .select({ id: bids.id, name: bids.name, code: bids.code })
+        .from(bids)
+        .where(sql`${bids.id} = ANY(${bidIds})`);
+      bidLookup = Object.fromEntries(bidRows.map((b) => [b.id, b]));
+    }
+
+    // Hydrate project display names too.
+    const projectIds = Array.from(
+      new Set([
+        ...byProject.map((r) => r.projectId).filter((p): p is string => !!p),
+        ...byDraft.map((r) => r.projectId).filter((p): p is string => !!p),
+      ]),
+    );
+    let projectLookup: Record<string, { id: string; name: string | null; code: string | null }> = {};
+    if (projectIds.length > 0) {
+      const { projects } = await import("@shared/schema");
+      const projectRows = await db
+        .select({ id: projects.id, name: projects.name, code: projects.code })
+        .from(projects)
+        .where(sql`${projects.id} = ANY(${projectIds})`);
+      projectLookup = Object.fromEntries(projectRows.map((p) => [p.id, p]));
+    }
+
+    res.json({
+      windowDays: days,
+      since: sinceDate.toISOString(),
+      totalsByModel: totalsByModel.map((r) => ({
+        ...r,
+        calls: Number(r.calls),
+        tokensIn: Number(r.tokensIn),
+        tokensOut: Number(r.tokensOut),
+        costUsd: Number(r.costUsd),
+      })),
+      byBid: byBid.map((r) => ({
+        bidId: r.bidId,
+        bid: r.bidId ? bidLookup[r.bidId] ?? null : null,
+        calls: Number(r.calls),
+        tokensIn: Number(r.tokensIn),
+        tokensOut: Number(r.tokensOut),
+        costUsd: Number(r.costUsd),
+        lastRunAt: r.lastRunAt,
+      })),
+      byProject: byProject.map((r) => ({
+        projectId: r.projectId,
+        project: r.projectId ? projectLookup[r.projectId] ?? null : null,
+        calls: Number(r.calls),
+        tokensIn: Number(r.tokensIn),
+        tokensOut: Number(r.tokensOut),
+        costUsd: Number(r.costUsd),
+        lastRunAt: r.lastRunAt,
+      })),
+      byDraft: byDraft.map((r) => ({
+        draftId: r.draftId,
+        bidId: r.bidId,
+        bid: r.bidId ? bidLookup[r.bidId] ?? null : null,
+        projectId: r.projectId,
+        project: r.projectId ? projectLookup[r.projectId] ?? null : null,
+        actionType: r.actionType,
+        calls: Number(r.calls),
+        tokensIn: Number(r.tokensIn),
+        tokensOut: Number(r.tokensOut),
+        costUsd: Number(r.costUsd),
+        startedAt: r.startedAt,
+        finishedAt: r.finishedAt,
+      })),
+    });
+  },
+);
+
+// =====================================================================
 // Task #2466 Phase 2 (groundwork) — Org-level estimating factors.
 // =====================================================================
 router.get(
@@ -1338,9 +1533,48 @@ router.put(
       res,
     );
     if (!patch) return;
+    // Task #2626 — `maxDisciplineBatches` is a spend-governance lever
+    // (it directly bounds AI cost per draft) and must therefore be
+    // admin-only. Reject the field unless the caller has the AI
+    // Estimator manage permission. Other org-factor fields stay
+    // estimator-editable.
+    if (Object.prototype.hasOwnProperty.call(patch, "maxDisciplineBatches")) {
+      const effectiveRole = req.user!.effectiveRole || req.user!.role;
+      const effective = await getEffectivePermissions(
+        req.user!.id,
+        req.user!.organizationId ?? null,
+        effectiveRole,
+      );
+      if (!effective.canManageAiEstimator) {
+        return res.status(403).json({
+          error: "Only admins with the AI Estimator management permission can change the per-discipline batch cap.",
+        });
+      }
+    }
     const row = await upsertOrgFactors(
       req.user!.organizationId!,
       patch,
+      req.user!.id,
+    );
+    res.json(row);
+  },
+);
+
+// Task #2626 — Dedicated admin-only route to change just the
+// per-discipline batch cap. The admin Settings tab in the UI uses
+// this so the gating is explicit (in addition to the field-level
+// guard on the broader org-factors PUT above).
+router.put(
+  `${estimatorBase}/admin/max-discipline-batches`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const schema = z.object({ maxDisciplineBatches: z.number().int().min(1).max(200) });
+    const data = validateBody(schema, req.body, res);
+    if (!data) return;
+    const row = await upsertOrgFactors(
+      req.user!.organizationId!,
+      { maxDisciplineBatches: data.maxDisciplineBatches },
       req.user!.id,
     );
     res.json(row);

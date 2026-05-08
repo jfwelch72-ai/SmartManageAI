@@ -50,10 +50,20 @@ interface Props {
   standaloneTakeoffId?: string;
 }
 
+interface CostSummary {
+  callCount: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
+}
+
 interface DraftResult {
   measurements: DraftMeasurement[];
   notes: string;
   confidence: number;
+  // Task #2626 — aggregated AI spend rendered on the draft header.
+  cost?: CostSummary;
 }
 
 /**
@@ -244,7 +254,14 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
           {draft && (
             <ScrollArea className="flex-1 pr-2">
               <div className="space-y-2">
-                <Badge variant="outline">Confidence: {draft.confidence}%</Badge>
+                <div className="flex flex-wrap gap-2 items-center">
+                  <Badge variant="outline" data-testid="badge-draft-confidence">Confidence: {draft.confidence}%</Badge>
+                  {draft.cost && draft.cost.callCount > 0 && (
+                    <Badge variant="secondary" data-testid="badge-draft-cost">
+                      AI spend: ${draft.cost.costUsd.toFixed(4)} · {draft.cost.tokensIn.toLocaleString()} in / {draft.cost.tokensOut.toLocaleString()} out · {draft.cost.callCount} call{draft.cost.callCount === 1 ? "" : "s"}
+                    </Badge>
+                  )}
+                </div>
                 {draft.notes && <p className="text-sm text-muted-foreground">{draft.notes}</p>}
                 <div className="border rounded-md overflow-hidden">
                   <table className="w-full text-xs">

@@ -21,16 +21,18 @@
  * blows up is logged and skipped; the caller still gets the rest.
  */
 
+import { randomUUID } from "crypto";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../../db";
-import { projectPlans, takeoffSheets } from "@shared/schema";
+import { bids, projectPlans, takeoffSheets } from "@shared/schema";
 import { extractPageTextsFromUrl } from "../../ai/documentExtractor";
 import { routedChatCompletion } from "../../ai/providers";
 import type { AiContentPart } from "../../ai/providers/types";
 import { governedAiCall } from "../aiGovernance";
 import { assertBidInOrg, ResourceOwnershipError } from "./access";
-import { logError, logInfo, logWarn } from "../../utils/logger";
+import { getOrgFactors } from "./orgFactors";
+import { logInfo, logWarn } from "../../utils/logger";
 import {
   detectPromptInjection,
   quarantineDocumentBlocks,
@@ -43,13 +45,16 @@ import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
 import type { AssemblyExpansion } from "./explodeAssembly";
 
 const PAGES_PER_DISCIPLINE_BATCH = 20;
-// Hard ceiling on the number of LLM calls executed per discipline. Beyond
-// this we stop and signal `partial: true` so callers can re-run with a
-// narrower discipline filter rather than silently dropping pages. Set to
-// a large number so a 200+ sheet plan set with one heavy discipline (50+
-// pages) still goes end-to-end, while runaway 1000-page disciplines are
-// capped instead of bankrupting the AI budget.
-const MAX_DISCIPLINE_BATCHES = 25;
+// Default ceiling on the number of LLM calls executed per discipline.
+// Task #2626 — this default is now overridable per-org via
+// `ai_estimator_org_factors.max_discipline_batches`. The live value is
+// looked up at the start of each `mapReduceDraftFromPlans` run so an
+// admin can raise the cap on a heavy plan set or lower it to throttle
+// AI spend without a code change. The hard floor / ceiling below
+// guards against pathological values from a misconfigured row.
+export const DEFAULT_MAX_DISCIPLINE_BATCHES = 25;
+export const ABS_MAX_DISCIPLINE_BATCHES = 200;
+export const ABS_MIN_DISCIPLINE_BATCHES = 1;
 const MAX_PAGES_PER_DOCUMENT = 1000;
 
 const MAP_REDUCE_OUTPUT_SCHEMA = z.object({
@@ -79,6 +84,34 @@ export interface MapReduceMeasurement {
   assembly?: AssemblyExpansion | null;
 }
 
+/**
+ * Task #2626 — Aggregated AI spend recorded over the lifetime of a single
+ * map-reduce draft run. Sourced from the per-call `usage` tuple returned
+ * by `governedAiCall` so callers (UI, audit) don't need to re-query
+ * `ai_action_audit`.
+ */
+export interface MapReduceCostSummary {
+  callCount: number;
+  tokensIn: number;
+  tokensOut: number;
+  costUsd: number;
+  byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
+}
+
+/**
+ * Task #2626 — A sheet whose batch was dropped because the discipline
+ * exceeded the configured `maxDisciplineBatches` cap. Surfaced on the
+ * draft so the review UI can show "X sheets skipped — increase cap to N
+ * and re-run".
+ */
+export interface SkippedSheetInfo {
+  sheetId: string | null;
+  sheetIndex: number;
+  sheetNumber: string | null;
+  sheetName: string | null;
+  discipline: string;
+}
+
 export interface MapReduceDraftResult {
   measurements: MapReduceMeasurement[];
   notes: string;
@@ -89,6 +122,14 @@ export interface MapReduceDraftResult {
   llmCallCount: number;
   /** True when at least one discipline was skipped because of governance / blocking. */
   partial: boolean;
+  /** Task #2626 — sheets dropped due to per-discipline batch cap. */
+  skippedSheets: SkippedSheetInfo[];
+  /** Task #2626 — recommended cap that would clear `skippedSheets` (or current cap when none skipped). */
+  recommendedMaxDisciplineBatches: number;
+  /** Task #2626 — cap that was actually applied for this run. */
+  appliedMaxDisciplineBatches: number;
+  /** Task #2626 — aggregated AI spend for this draft run. */
+  cost: MapReduceCostSummary;
 }
 
 interface PageInfo {
@@ -262,12 +303,25 @@ async function reduceDisciplineBatch(opts: {
   discipline: string;
   pages: PageInfo[];
   bidId: string;
+  // Task #2626 — stable id correlating every governedAiCall row from
+  // the same draft attempt so the admin spend tab can roll up per-draft.
+  draftId: string;
+  projectId: string | null;
 }): Promise<{
   measurements: MapReduceMeasurement[];
   notes?: string;
   confidence?: number;
   blocked?: boolean;
   reason?: string;
+  // Task #2626 — surface the per-call usage tuple from `governedAiCall`
+  // so the orchestrator can roll spend up onto the draft result.
+  usage?: {
+    tokensIn: number;
+    tokensOut: number;
+    cost: number;
+    model: string;
+    provider: string | null;
+  };
 }> {
   const concatenated = opts.pages
     .map((p) => `<<<SHEET ${p.sheetNumber || p.sheetName || `idx ${p.sheetIndex}`}>>>\n${p.pageText}`)
@@ -290,7 +344,17 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
     orgId: opts.organizationId,
     userId: opts.userId,
     actionType: "ai_estimator.takeoff_draft.map_reduce",
-    inputRefs: { discipline: opts.discipline, pageCount: opts.pages.length, bidId: opts.bidId },
+    inputRefs: {
+      discipline: opts.discipline,
+      pageCount: opts.pages.length,
+      bidId: opts.bidId,
+      // Task #2626 — per-draft + per-project rollup keys for the admin
+      // spend tab. `draftId` is generated once per `mapReduceDraftFromPlans`
+      // invocation; `projectId` is the bid's `convertedToProjectId` (null
+      // if the bid hasn't been awarded yet).
+      draftId: opts.draftId,
+      projectId: opts.projectId,
+    },
     fn: async () => {
       const completion = await routedChatCompletion({
         orgId: opts.organizationId,
@@ -311,6 +375,15 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
     },
   });
   if (gov.blocked) return { measurements: [], blocked: true, reason: gov.reason };
+  const usage = gov.usage
+    ? {
+        tokensIn: gov.usage.tokensIn,
+        tokensOut: gov.usage.tokensOut,
+        cost: gov.usage.cost,
+        model: gov.usage.model,
+        provider: gov.usage.provider,
+      }
+    : undefined;
 
   const validated = validateAiJsonOutput(MAP_REDUCE_OUTPUT_SCHEMA, gov.result);
   if (!validated.ok) {
@@ -335,7 +408,48 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
     notes: typeof validated.data.notes === "string" ? validated.data.notes : undefined,
     confidence:
       typeof validated.data.confidence === "number" ? validated.data.confidence : undefined,
+    usage,
   };
+}
+
+function emptyCostSummary(): MapReduceCostSummary {
+  return { callCount: 0, tokensIn: 0, tokensOut: 0, costUsd: 0, byModel: {} };
+}
+
+function accumulateCost(
+  summary: MapReduceCostSummary,
+  usage: { tokensIn: number; tokensOut: number; cost: number; model: string },
+): void {
+  summary.callCount += 1;
+  summary.tokensIn += usage.tokensIn;
+  summary.tokensOut += usage.tokensOut;
+  summary.costUsd += usage.cost;
+  const m = summary.byModel[usage.model] ?? { calls: 0, tokensIn: 0, tokensOut: 0, costUsd: 0 };
+  m.calls += 1;
+  m.tokensIn += usage.tokensIn;
+  m.tokensOut += usage.tokensOut;
+  m.costUsd += usage.cost;
+  summary.byModel[usage.model] = m;
+}
+
+/**
+ * Task #2626 — Resolve the live per-org cap on the number of map-reduce
+ * batches per discipline. Falls back to DEFAULT_MAX_DISCIPLINE_BATCHES
+ * if the org factors row is missing or the column has not yet been
+ * populated. Clamped to the absolute floor / ceiling so a misconfigured
+ * row can't crash the run or bankrupt the AI budget.
+ */
+export async function resolveMaxDisciplineBatches(organizationId: string): Promise<number> {
+  try {
+    const factors = await getOrgFactors(organizationId);
+    const raw = (factors as { maxDisciplineBatches?: number | null }).maxDisciplineBatches;
+    const n = typeof raw === "number" && Number.isFinite(raw) ? Math.floor(raw) : DEFAULT_MAX_DISCIPLINE_BATCHES;
+    if (n < ABS_MIN_DISCIPLINE_BATCHES) return ABS_MIN_DISCIPLINE_BATCHES;
+    if (n > ABS_MAX_DISCIPLINE_BATCHES) return ABS_MAX_DISCIPLINE_BATCHES;
+    return n;
+  } catch {
+    return DEFAULT_MAX_DISCIPLINE_BATCHES;
+  }
 }
 
 export async function mapReduceDraftFromPlans(opts: {
@@ -362,6 +476,28 @@ export async function mapReduceDraftFromPlans(opts: {
       return { result: null, reason: "Bid not in org" };
     }
     throw err;
+  }
+
+  // Task #2626 — read the live cap before any LLM work so the run uses
+  // the value an admin has just set. Falls back to the default if the
+  // factors row / column is missing.
+  const maxDisciplineBatches = await resolveMaxDisciplineBatches(opts.organizationId);
+
+  // Task #2626 — generate a stable per-draft id and resolve the bid's
+  // current `convertedToProjectId` (null when the bid hasn't been
+  // awarded yet) so every governedAiCall row from this attempt can be
+  // grouped per-draft / per-project in the admin spend tab.
+  const draftId = randomUUID();
+  let projectId: string | null = null;
+  try {
+    const [bidRow] = await db
+      .select({ convertedToProjectId: bids.convertedToProjectId })
+      .from(bids)
+      .where(eq(bids.id, opts.bidId))
+      .limit(1);
+    projectId = bidRow?.convertedToProjectId ?? null;
+  } catch {
+    projectId = null;
   }
 
   await reportProgress(5, "Reading plan sheets");
@@ -399,6 +535,12 @@ export async function mapReduceDraftFromPlans(opts: {
   let llmCallCount = 0;
   let partial = false;
   let firstBlockedReason: string | undefined;
+  const skippedSheets: SkippedSheetInfo[] = [];
+  const cost = emptyCostSummary();
+  // Task #2626 — track the highest per-discipline batch count required by
+  // the input set so the UI can suggest a target cap that would clear the
+  // skipped-sheet warning on the next run.
+  let maxBatchesNeededAcrossDisciplines = 0;
 
   const disciplines = Array.from(byDiscipline.keys()).sort();
   let processed = 0;
@@ -407,17 +549,36 @@ export async function mapReduceDraftFromPlans(opts: {
     disciplineCoverage[discipline] = disciplinePages.length;
     // Batch
     const batches: PageInfo[][] = [];
-    for (let i = 0; i < disciplinePages.length && batches.length < MAX_DISCIPLINE_BATCHES; i += PAGES_PER_DISCIPLINE_BATCH) {
+    for (let i = 0; i < disciplinePages.length && batches.length < maxDisciplineBatches; i += PAGES_PER_DISCIPLINE_BATCH) {
       batches.push(disciplinePages.slice(i, i + PAGES_PER_DISCIPLINE_BATCH));
     }
     const totalBatchesNeeded = Math.ceil(disciplinePages.length / PAGES_PER_DISCIPLINE_BATCH);
+    if (totalBatchesNeeded > maxBatchesNeededAcrossDisciplines) {
+      maxBatchesNeededAcrossDisciplines = totalBatchesNeeded;
+    }
     if (batches.length < totalBatchesNeeded) {
       partial = true;
+      // Task #2626 — record every sheet whose batch was dropped so the
+      // review UI can render an actionable banner ("3 sheets skipped —
+      // increase cap to N and re-run") instead of the previous silent
+      // log line.
+      const droppedPages = disciplinePages.slice(batches.length * PAGES_PER_DISCIPLINE_BATCH);
+      for (const p of droppedPages) {
+        skippedSheets.push({
+          sheetId: p.sheetId,
+          sheetIndex: p.sheetIndex,
+          sheetNumber: p.sheetNumber,
+          sheetName: p.sheetName,
+          discipline,
+        });
+      }
       logWarn("[mapReduceDraft] discipline truncated", {
         discipline,
         totalPages: disciplinePages.length,
         processedBatches: batches.length,
         skippedBatches: totalBatchesNeeded - batches.length,
+        skippedSheetCount: droppedPages.length,
+        maxDisciplineBatches,
       });
     }
     for (const batch of batches) {
@@ -432,8 +593,11 @@ export async function mapReduceDraftFromPlans(opts: {
         discipline,
         pages: batch,
         bidId: opts.bidId,
+        draftId,
+        projectId,
       });
       llmCallCount++;
+      if (out.usage) accumulateCost(cost, out.usage);
       if (out.blocked) {
         partial = true;
         if (!firstBlockedReason) firstBlockedReason = out.reason;
@@ -462,12 +626,30 @@ export async function mapReduceDraftFromPlans(opts: {
     return { result: null, blocked: true, reason: firstBlockedReason };
   }
 
+  // Round costs to a reasonable precision once at the boundary so we
+  // don't ship 17-digit floats to the UI / audit log.
+  cost.costUsd = Math.round(cost.costUsd * 1_000_000) / 1_000_000;
+  for (const k of Object.keys(cost.byModel)) {
+    cost.byModel[k].costUsd = Math.round(cost.byModel[k].costUsd * 1_000_000) / 1_000_000;
+  }
+
+  const recommendedMaxDisciplineBatches = Math.min(
+    ABS_MAX_DISCIPLINE_BATCHES,
+    Math.max(maxDisciplineBatches, maxBatchesNeededAcrossDisciplines),
+  );
+
   logInfo("[mapReduceDraft] complete", {
     bidId: opts.bidId,
     disciplines: disciplines.length,
     measurements: reconciled.length,
     llmCallCount,
     partial,
+    skippedSheetCount: skippedSheets.length,
+    appliedMaxDisciplineBatches: maxDisciplineBatches,
+    recommendedMaxDisciplineBatches,
+    costUsd: cost.costUsd,
+    tokensIn: cost.tokensIn,
+    tokensOut: cost.tokensOut,
   });
 
   // Task #2624 — Run assembly matcher across the deduped measurements
@@ -485,6 +667,10 @@ export async function mapReduceDraftFromPlans(opts: {
       disciplineCoverage,
       llmCallCount,
       partial,
+      skippedSheets,
+      recommendedMaxDisciplineBatches,
+      appliedMaxDisciplineBatches: maxDisciplineBatches,
+      cost,
     },
   };
 }

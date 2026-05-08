@@ -490,6 +490,12 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
   // classification is surfaced in the review queue. Default 0.6 means
   // anything under 60% confidence needs human confirmation.
   lowConfidenceThreshold: doublePrecision("low_confidence_threshold").notNull().default(0.6),
+  // Task #2626 — Per-org cap on the number of map-reduce LLM batches the
+  // AI Estimator may run for any single discipline on one draft. Replaces
+  // the hardcoded MAX_DISCIPLINE_BATCHES=25 in mapReduceDraft.ts so admins
+  // can raise the cap on a heavy plan set or lower it to throttle spend
+  // without a code change. 1..200; 25 keeps existing behaviour.
+  maxDisciplineBatches: integer("max_discipline_batches").notNull().default(25),
   notes: text("notes"),
   updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
