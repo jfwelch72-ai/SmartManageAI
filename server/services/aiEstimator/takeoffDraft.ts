@@ -26,6 +26,11 @@ import {
   shouldRefusePromptInjection,
   validateAiJsonOutput,
 } from "../../ai/promptInjectionGuard";
+// Task #2624 — Wire org assembly catalog into the auto-takeoff draft so
+// each AI-emitted measurement gets exploded into parent + component
+// lines with org waste factors when a matching assembly exists.
+import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
+import type { AssemblyExpansion } from "./explodeAssembly";
 
 const TAKEOFF_DRAFT_OUTPUT_SCHEMA = z.object({
   measurements: z.array(z.object({
@@ -56,6 +61,11 @@ export interface DraftTakeoffMeasurement {
   unit: string;
   costCode: string | null;
   rationale: string;
+  // Task #2624 — Optional assembly explosion. Present when the
+  // measurement matched an active org assembly via fuzzy
+  // (trade + keyword + unit) lookup. The review UI renders parent +
+  // expandable component rows; absent → flat-line fallback.
+  assembly?: AssemblyExpansion | null;
 }
 
 export interface TakeoffDraftResult {
@@ -309,9 +319,20 @@ export async function draftTakeoffFromPlans(opts: {
     return { result: null, reason: `AI did not return parseable JSON (${validated.reason})` };
   }
   const parsed = validated.data;
+  const measurements: DraftTakeoffMeasurement[] = Array.isArray(parsed.measurements)
+    ? (parsed.measurements as DraftTakeoffMeasurement[])
+    : [];
+  // Task #2624 — Annotate measurements with assembly explosions where a
+  // matching org assembly exists. Best-effort: failures are logged and
+  // the flat-line fallback is preserved.
+  await applyAssembliesToDraftLines({
+    organizationId: opts.organizationId,
+    lines: measurements,
+    tradeType: opts.tradeFilter ?? null,
+  });
   return {
     result: {
-      measurements: Array.isArray(parsed.measurements) ? (parsed.measurements as DraftTakeoffMeasurement[]) : [],
+      measurements,
       notes: parsed.notes ?? "",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
     },

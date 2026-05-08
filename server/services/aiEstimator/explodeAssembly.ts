@@ -93,6 +93,82 @@ function categoryForComponent(
   }
 }
 
+/**
+ * Task #2624 — Build exploded component lines from a raw driving qty
+ * (used by the auto-takeoff drafters which work over AI-emitted JSON
+ * lines that have no persisted measurement row yet). Each component
+ * carries both `baseQuantity` (driving × qtyPerDrivingUnit, no waste)
+ * and the waste-adjusted `quantity` so the review UI can render
+ * "264 SF (10% waste)" without recomputing.
+ */
+export interface ExplodedComponentFromValue {
+  componentId: string;
+  description: string;
+  componentType: "MATERIAL" | "LABOR" | "EQUIPMENT" | "SUB";
+  unit: string;
+  baseQuantity: number;
+  quantity: number;
+  componentWasteFactor: number;
+  unitCost: number;
+  totalCost: number;
+}
+
+export interface AssemblyExpansion {
+  assemblyId: string;
+  assemblyName: string;
+  drivingQty: number;
+  drivingUnit: string;
+  drivingMeasurementType: string;
+  assemblyWasteFactor: number;
+  components: ExplodedComponentFromValue[];
+}
+
+export function buildExpansionFromValue(opts: {
+  assembly: Pick<
+    AiEstimatorAssembly,
+    "id" | "name" | "drivingUnit" | "drivingMeasurementType" | "wasteFactor"
+  >;
+  components: AiEstimatorAssemblyComponent[];
+  drivingQty: number;
+}): AssemblyExpansion {
+  const assemblyWaste = Number(opts.assembly.wasteFactor ?? 0);
+  const driving = Number(opts.drivingQty || 0);
+  const components: ExplodedComponentFromValue[] = opts.components.map((c) => {
+    const compWaste = Number(c.wasteFactor ?? 0);
+    const baseQty = driving * Number(c.qtyPerDrivingUnit ?? 0);
+    const wastedQty = baseQty * (1 + assemblyWaste) * (1 + compWaste);
+    const unitCost = c.defaultUnitCost ? Number(c.defaultUnitCost) : 0;
+    const componentType = (() => {
+      switch (String(c.componentType).toUpperCase()) {
+        case "LABOR": return "LABOR" as const;
+        case "EQUIPMENT": return "EQUIPMENT" as const;
+        case "SUB": return "SUB" as const;
+        default: return "MATERIAL" as const;
+      }
+    })();
+    return {
+      componentId: c.id,
+      description: c.description,
+      componentType,
+      unit: c.unit,
+      baseQuantity: Number(baseQty.toFixed(4)),
+      quantity: Number(wastedQty.toFixed(4)),
+      componentWasteFactor: compWaste,
+      unitCost: Number(unitCost.toFixed(4)),
+      totalCost: Number((wastedQty * unitCost).toFixed(2)),
+    };
+  });
+  return {
+    assemblyId: opts.assembly.id,
+    assemblyName: opts.assembly.name,
+    drivingQty: Number(driving.toFixed(4)),
+    drivingUnit: opts.assembly.drivingUnit,
+    drivingMeasurementType: opts.assembly.drivingMeasurementType,
+    assemblyWasteFactor: assemblyWaste,
+    components,
+  };
+}
+
 export function buildExplodedLines(opts: {
   assembly: AiEstimatorAssembly;
   components: AiEstimatorAssemblyComponent[];

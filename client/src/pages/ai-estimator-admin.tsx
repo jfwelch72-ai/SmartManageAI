@@ -4,7 +4,7 @@ import {
   Loader2, RefreshCcw, Database, Sparkles, AlertTriangle,
   ChevronDown, ChevronRight, Download, X, Ban, RotateCcw,
   Info, AlertCircle, CheckCircle2, TrendingUp, Settings, Plus, Trash2,
-  HelpCircle
+  HelpCircle, Layers, Pencil
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -119,7 +119,6 @@ interface RegionFactor {
   createdAt: string;
   updatedAt: string;
 }
-
 interface FeedbackStats {
   totalEvents: number;
   acceptanceRate: number | null;
@@ -336,6 +335,311 @@ function SamplesDrawer({
   );
 }
 
+
+// ======
+// Task #2624 — Assemblies catalog management. CRUD over the
+// `/api/ai-estimator/assemblies` endpoints. Each assembly has a header
+// (name, costCode, tradeType, drivingMeasurementType, drivingUnit,
+// wasteFactor) and an ordered list of components (description,
+// componentType, qtyPerDrivingUnit, unit, defaultUnitCost, wasteFactor).
+// ======
+interface AssemblyComponentRow {
+  id?: string;
+  componentType: "MATERIAL" | "LABOR" | "EQUIPMENT" | "SUB";
+  description: string;
+  costCode?: string | null;
+  qtyPerDrivingUnit: number;
+  unit: string;
+  defaultUnitCost?: string | null;
+  wasteFactor: number;
+  sortOrder: number;
+}
+interface AssemblyRow {
+  id: string;
+  name: string;
+  description: string | null;
+  costCode: string | null;
+  tradeType: string | null;
+  drivingMeasurementType: string;
+  drivingUnit: string;
+  wasteFactor: number;
+  isActive: boolean;
+  components: AssemblyComponentRow[];
+}
+
+const EMPTY_ASSEMBLY = {
+  name: "",
+  description: "",
+  costCode: "",
+  tradeType: "",
+  drivingMeasurementType: "AREA",
+  drivingUnit: "SF",
+  wasteFactor: 0,
+  isActive: true,
+};
+
+function AssembliesTab() {
+  const { toast } = useToast();
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<AssemblyRow | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+
+  const assembliesQuery = useQuery<{ assemblies: AssemblyRow[] }>({
+    queryKey: ["/api/ai-estimator/assemblies", { search }],
+    queryFn: async () => {
+      const url = search.trim()
+        ? `/api/ai-estimator/assemblies?search=${encodeURIComponent(search.trim())}`
+        : "/api/ai-estimator/assemblies";
+      const r = await apiRequest("GET", url);
+      return (await r.json()) as { assemblies: AssemblyRow[] };
+    },
+  });
+
+  const createOrUpdate = useMutation({
+    mutationFn: async (vars: {
+      id?: string;
+      assembly: Record<string, unknown>;
+      components: AssemblyComponentRow[];
+    }) => {
+      if (vars.id) {
+        await apiRequest("PUT", `/api/ai-estimator/assemblies/${vars.id}`, vars.assembly);
+        return { id: vars.id };
+      }
+      const r = await apiRequest("POST", "/api/ai-estimator/assemblies", {
+        assembly: vars.assembly,
+        components: vars.components.map((c) => ({
+          componentType: c.componentType,
+          description: c.description,
+          costCode: c.costCode || null,
+          qtyPerDrivingUnit: c.qtyPerDrivingUnit,
+          unit: c.unit,
+          defaultUnitCost: c.defaultUnitCost || null,
+          wasteFactor: c.wasteFactor,
+          sortOrder: c.sortOrder,
+        })),
+      });
+      return (await r.json()) as { id: string };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/assemblies"] });
+      toast({ title: "Assembly saved" });
+      setEditorOpen(false);
+      setEditing(null);
+    },
+    onError: (err: Error) =>
+      toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest("DELETE", `/api/ai-estimator/assemblies/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/assemblies"] });
+      toast({ title: "Assembly deleted" });
+    },
+    onError: (err: Error) =>
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const assemblies = assembliesQuery.data?.assemblies ?? [];
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Layers className="h-5 w-5" /> Assemblies catalog
+            </CardTitle>
+            <CardDescription>
+              Define reusable bundles of materials, labor and equipment driven by a single
+              takeoff measurement. The auto-takeoff drafter explodes matching AI-emitted
+              lines into parent + component rows with org waste applied.
+            </CardDescription>
+          </div>
+          <Button
+            onClick={() => {
+              setEditing({
+                id: "",
+                name: "",
+                description: "",
+                costCode: "",
+                tradeType: "",
+                drivingMeasurementType: "AREA",
+                drivingUnit: "SF",
+                wasteFactor: 0,
+                isActive: true,
+                components: [],
+              });
+              setEditorOpen(true);
+            }}
+            data-testid="button-new-assembly"
+          >
+            <Plus className="h-4 w-4 mr-2" /> New assembly
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2 mb-4">
+          <Input
+            placeholder="Search by name, description, or cost code"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="max-w-sm"
+            data-testid="input-assembly-search"
+          />
+        </div>
+        {assembliesQuery.isLoading ? (
+          <div className="flex items-center justify-center py-12">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : assemblies.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-12" data-testid="text-no-assemblies">
+            No assemblies yet. Create one to enable auto-explode in the takeoff drafter.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Trade</TableHead>
+                <TableHead>Cost code</TableHead>
+                <TableHead>Driver</TableHead>
+                <TableHead className="text-right">Waste</TableHead>
+                <TableHead className="text-right">Components</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {assemblies.map((a) => (
+                <TableRow key={a.id} data-testid={`row-assembly-${a.id}`}>
+                  <TableCell className="font-medium">{a.name}</TableCell>
+                  <TableCell>{a.tradeType ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-xs">{a.costCode ?? "—"}</TableCell>
+                  <TableCell className="text-xs">
+                    {a.drivingMeasurementType} / {a.drivingUnit}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {Math.round((Number(a.wasteFactor) || 0) * 100)}%
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{a.components.length}</TableCell>
+                  <TableCell>
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          setEditing(a);
+                          setEditorOpen(true);
+                        }}
+                        data-testid={`button-edit-assembly-${a.id}`}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => {
+                          if (confirm(`Delete assembly "${a.name}"?`)) deleteMut.mutate(a.id);
+                        }}
+                        data-testid={`button-delete-assembly-${a.id}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+
+      {editing && (
+        <AssemblyEditorDialog
+          open={editorOpen}
+          onClose={() => {
+            setEditorOpen(false);
+            setEditing(null);
+          }}
+          initial={editing}
+          onSave={(assembly, components) =>
+            createOrUpdate.mutate({
+              id: editing.id || undefined,
+              assembly,
+              components,
+            })
+          }
+          saving={createOrUpdate.isPending}
+        />
+      )}
+    </Card>
+  );
+}
+
+function AssemblyEditorDialog(props: {
+  open: boolean;
+  onClose: () => void;
+  initial: AssemblyRow;
+  onSave: (assembly: Record<string, unknown>, components: AssemblyComponentRow[]) => void;
+  saving: boolean;
+}) {
+  const { initial } = props;
+  const [name, setName] = useState(initial.name);
+  const [description, setDescription] = useState(initial.description ?? "");
+  const [costCode, setCostCode] = useState(initial.costCode ?? "");
+  const [tradeType, setTradeType] = useState(initial.tradeType ?? "");
+  const [drivingMeasurementType, setDrivingMeasurementType] = useState(initial.drivingMeasurementType);
+  const [drivingUnit, setDrivingUnit] = useState(initial.drivingUnit);
+  const [wasteFactor, setWasteFactor] = useState(Number(initial.wasteFactor) || 0);
+  const [isActive, setIsActive] = useState(initial.isActive);
+  const [components, setComponents] = useState<AssemblyComponentRow[]>(
+    initial.components.map((c) => ({ ...c })),
+  );
+  const isEdit = !!initial.id;
+
+  const updateComponent = (idx: number, patch: Partial<AssemblyComponentRow>) =>
+    setComponents((prev) => prev.map((c, i) => (i === idx ? { ...c, ...patch } : c)));
+
+  return (
+    <Dialog open={props.open} onOpenChange={(o) => !o && props.onClose()}>
+      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>{isEdit ? "Edit assembly" : "New assembly"}</DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="flex-1 pr-2">
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="col-span-2">
+              <Label>Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} data-testid="input-assembly-name" />
+            </div>
+            <div className="col-span-2">
+              <Label>Description</Label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={2}
+                data-testid="input-assembly-description"
+              />
+            </div>
+            <div>
+              <Label>Cost code</Label>
+              <Input value={costCode} onChange={(e) => setCostCode(e.target.value)} data-testid="input-assembly-costcode" />
+            </div>
+            <div>
+              <Label>Trade type</Label>
+              <Input value={tradeType} onChange={(e) => setTradeType(e.target.value)} data-testid="input-assembly-trade" />
+            </div>
+            <div>
+              <Label>Driving measurement type</Label>
+              <Select value={drivingMeasurementType} onValueChange={setDrivingMeasurementType}>
+                <SelectTrigger data-testid="select-assembly-drivingtype"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AREA">AREA</SelectItem>
+                  <SelectItem value="LINEAR">LINEAR</SelectItem>
+                  <SelectItem value="COUNT">COUNT</SelectItem>
+                  <SelectItem value="VOLUME">VOLUME</SelectItem>
+
 function SettingsTab() {
   const { toast } = useToast();
   const orgFactorsQuery = useQuery<OrgFactors | null>({ queryKey: ["/api/ai-estimator/org-factors"] });
@@ -478,10 +782,221 @@ function SettingsTab() {
                   <SelectItem value="METRO">Metro</SelectItem>
                   <SelectItem value="STATE">State</SelectItem>
                   <SelectItem value="CUSTOM">Custom</SelectItem>
+
                 </SelectContent>
               </Select>
             </div>
             <div>
+
+              <Label>Driving unit</Label>
+              <Input value={drivingUnit} onChange={(e) => setDrivingUnit(e.target.value)} data-testid="input-assembly-drivingunit" />
+            </div>
+            <div>
+              <Label>Org waste factor (0-1)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                max={1}
+                value={wasteFactor}
+                onChange={(e) => setWasteFactor(Number(e.target.value) || 0)}
+                data-testid="input-assembly-wastefactor"
+              />
+            </div>
+            <div className="flex items-end gap-2">
+              <Switch checked={isActive} onCheckedChange={setIsActive} data-testid="switch-assembly-active" />
+              <span className="text-sm">Active</span>
+            </div>
+
+            <div className="col-span-2 mt-4">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-base">Components</Label>
+                {!isEdit && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      setComponents((prev) => [
+                        ...prev,
+                        {
+                          componentType: "MATERIAL",
+                          description: "",
+                          costCode: "",
+                          qtyPerDrivingUnit: 1,
+                          unit: "EA",
+                          defaultUnitCost: "",
+                          wasteFactor: 0,
+                          sortOrder: prev.length,
+                        },
+                      ])
+                    }
+                    data-testid="button-add-component"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add component
+                  </Button>
+                )}
+              </div>
+              {isEdit && (
+                <p className="text-xs text-muted-foreground mb-2">
+                  Component edits aren't supported here yet — recreate the assembly to change its components.
+                </p>
+              )}
+              {components.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">
+                  No components yet.
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Description</TableHead>
+                      <TableHead className="text-right">Qty/unit</TableHead>
+                      <TableHead>Unit</TableHead>
+                      <TableHead className="text-right">Unit cost</TableHead>
+                      <TableHead className="text-right">Waste</TableHead>
+                      <TableHead></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {components.map((c, idx) => (
+                      <TableRow key={idx} data-testid={`row-component-${idx}`}>
+                        <TableCell>
+                          <Select
+                            value={c.componentType}
+                            onValueChange={(v) =>
+                              updateComponent(idx, {
+                                componentType: v as AssemblyComponentRow["componentType"],
+                              })
+                            }
+                            disabled={isEdit}
+                          >
+                            <SelectTrigger className="h-8" data-testid={`select-component-type-${idx}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="MATERIAL">MATERIAL</SelectItem>
+                              <SelectItem value="LABOR">LABOR</SelectItem>
+                              <SelectItem value="EQUIPMENT">EQUIPMENT</SelectItem>
+                              <SelectItem value="SUB">SUB</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={c.description}
+                            onChange={(e) => updateComponent(idx, { description: e.target.value })}
+                            disabled={isEdit}
+                            data-testid={`input-component-desc-${idx}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={c.qtyPerDrivingUnit}
+                            onChange={(e) =>
+                              updateComponent(idx, {
+                                qtyPerDrivingUnit: Number(e.target.value) || 0,
+                              })
+                            }
+                            className="text-right"
+                            disabled={isEdit}
+                            data-testid={`input-component-qty-${idx}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={c.unit}
+                            onChange={(e) => updateComponent(idx, { unit: e.target.value })}
+                            disabled={isEdit}
+                            data-testid={`input-component-unit-${idx}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            value={c.defaultUnitCost ?? ""}
+                            onChange={(e) =>
+                              updateComponent(idx, { defaultUnitCost: e.target.value })
+                            }
+                            className="text-right"
+                            disabled={isEdit}
+                            data-testid={`input-component-unitcost-${idx}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            max={1}
+                            value={c.wasteFactor}
+                            onChange={(e) =>
+                              updateComponent(idx, { wasteFactor: Number(e.target.value) || 0 })
+                            }
+                            className="text-right"
+                            disabled={isEdit}
+                            data-testid={`input-component-waste-${idx}`}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          {!isEdit && (
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              onClick={() =>
+                                setComponents((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              data-testid={`button-remove-component-${idx}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </div>
+          </div>
+        </ScrollArea>
+        <DialogFooter>
+          <Button variant="ghost" onClick={props.onClose} data-testid="button-cancel-assembly">
+            Cancel
+          </Button>
+          <Button
+            disabled={!name.trim() || !drivingUnit.trim() || props.saving}
+            onClick={() =>
+              props.onSave(
+                {
+                  name: name.trim(),
+                  description: description.trim() || null,
+                  costCode: costCode.trim() || null,
+                  tradeType: tradeType.trim() || null,
+                  drivingMeasurementType,
+                  drivingUnit: drivingUnit.trim(),
+                  wasteFactor,
+                  isActive,
+                },
+                components,
+              )
+            }
+            data-testid="button-save-assembly"
+          >
+            {props.saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            {isEdit ? "Save" : "Create"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+void EMPTY_ASSEMBLY;
+
+
               <Label>Code</Label>
               <Input
                 value={draft.code}
@@ -586,6 +1101,7 @@ function SettingsTab() {
   );
 }
 
+
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState("access");
@@ -606,6 +1122,8 @@ export default function AiEstimatorAdminPage() {
   const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
   const [pendingExclude, setPendingExclude] = useState<{ projectId: string; projectName: string } | null>(null);
   const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(new Set());
+
+
   const [expandedRateIds, setExpandedRateIds] = useState<Set<string>>(new Set());
   const toggleRateExpanded = (id: string) => {
     setExpandedRateIds((prev) => {
@@ -615,6 +1133,7 @@ export default function AiEstimatorAdminPage() {
       return next;
     });
   };
+
   const toggleRunExpanded = (id: string) => {
     setExpandedRunIds((prev) => {
       const next = new Set(prev);
@@ -727,7 +1246,11 @@ export default function AiEstimatorAdminPage() {
           <TabsTrigger value="ingest" data-testid="tab-ingest">Training runs</TabsTrigger>
           <TabsTrigger value="rates" data-testid="tab-rates">Learned rates</TabsTrigger>
           <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
+
+          <TabsTrigger value="assemblies" data-testid="tab-assemblies">Assemblies</TabsTrigger>
+
           <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
+
         </TabsList>
 
         <TabsContent value="access" className="space-y-4">
@@ -1134,6 +1657,34 @@ export default function AiEstimatorAdminPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
+
+                      {filteredRates.map((r) => (
+                        <TableRow
+                          key={r.id}
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => openDrawer(r)}
+                          data-testid={`row-rate-${r.id}`}
+                        >
+                          <TableCell className="font-mono text-xs">
+                            {r.costCode}
+                            {r.excludedSampleCount > 0 && (
+                              <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">
+                                -{r.excludedSampleCount} excl.
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs">{r.metric.replace(/_/g, " ")}</TableCell>
+                          <TableCell>{r.unit}</TableCell>
+                          <TableCell>{r.sampleSize}</TableCell>
+                          <TableCell>{r.median ?? r.mean ?? "—"}</TableCell>
+                          <TableCell>{r.p25 && r.p75 ? `${r.p25} – ${r.p75}` : "—"}</TableCell>
+                          <TableCell>
+                            <ConfidenceChip confidence={r.confidence} sampleSize={r.sampleSize} />
+                          </TableCell>
+                          <TableCell className="whitespace-nowrap text-xs">{new Date(r.lastUpdatedAt).toLocaleDateString()}</TableCell>
+                        </TableRow>
+                      ))}
+
                       {filteredRates.flatMap((r) => {
                         const isExpanded = expandedRateIds.has(r.id);
                         const point = r.median ?? r.mean ?? null;
@@ -1212,6 +1763,7 @@ export default function AiEstimatorAdminPage() {
                         }
                         return rows;
                       })}
+
                       {filteredRates.length === 0 && allRates.length > 0 && (
                         <TableRow>
                           <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
@@ -1282,6 +1834,11 @@ export default function AiEstimatorAdminPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+
+        <TabsContent value="assemblies" className="space-y-4">
+          <AssembliesTab />
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-4">

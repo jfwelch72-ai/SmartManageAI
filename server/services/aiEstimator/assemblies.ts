@@ -10,7 +10,7 @@
  * tracked as a follow-up task.
  */
 
-import { and, asc, eq, ilike, or } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, or } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorAssemblies,
@@ -48,20 +48,13 @@ export async function listAssemblies(
     .where(and(...conds))
     .orderBy(asc(aiEstimatorAssemblies.name));
   if (assemblies.length === 0) return [];
-  const components = await db
-    .select()
-    .from(aiEstimatorAssemblyComponents)
-    .where(
-      // any component whose assembly is in this org's set
-      // (component table does not carry orgId; rely on FK)
-      // Drizzle has no `inArray` import here on purpose — we filter in JS.
-      eq(aiEstimatorAssemblyComponents.assemblyId, assemblies[0].id),
-    );
-  // Above only fetched components for the first assembly — we want all.
-  // Replace with a single broad fetch for correctness:
+  // Task #2624 — Org-scoped fetch via inArray on the assembly id set
+  // we already filtered by orgId above. Avoids the prior broad
+  // unscoped select.
   const allComponents = await db
     .select()
-    .from(aiEstimatorAssemblyComponents);
+    .from(aiEstimatorAssemblyComponents)
+    .where(inArray(aiEstimatorAssemblyComponents.assemblyId, assemblies.map((a) => a.id)));
   const byAssemblyId = new Map<string, AiEstimatorAssemblyComponent[]>();
   for (const c of allComponents) {
     if (!byAssemblyId.has(c.assemblyId)) byAssemblyId.set(c.assemblyId, []);
@@ -175,4 +168,123 @@ export async function findAssemblyForMeasurement(opts: {
     .where(eq(aiEstimatorAssemblyComponents.assemblyId, a.id))
     .orderBy(asc(aiEstimatorAssemblyComponents.sortOrder));
   return { ...a, components };
+}
+
+// =====================================================================
+// Task #2624 — Fuzzy matcher used by the auto-takeoff drafters.
+//
+// AI-emitted measurements rarely include a clean cost code, so the
+// strict (org, costCode, drivingMeasurementType) lookup used by the
+// estimate drafter doesn't fire often enough. This matcher scores
+// every active org assembly against an AI line by:
+//   - drivingMeasurementType matches the line type           (required)
+//   - drivingUnit matches the line unit (case-insensitive)   (required)
+//   - tradeType matches when both sides supply one           (+3)
+//   - costCode equals when both sides supply one             (+5)
+//   - name / description token overlap with the line label   (+1 per token)
+//
+// Returns the best assembly above the score threshold or null.
+// Pure-data version (`scoreAssemblyAgainstLine`) is exported for unit
+// tests so the matcher can be exercised without a DB.
+// =====================================================================
+
+const STOPWORDS = new Set([
+  "the","a","an","and","or","of","to","for","with","in","on","at","by",
+  "is","are","be","this","that","these","those","from","into","per",
+]);
+
+function tokenize(s: string | null | undefined): string[] {
+  if (!s) return [];
+  return String(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
+}
+
+export interface AssemblyMatchLine {
+  label: string;
+  type: "AREA" | "LINEAR" | "COUNT" | "VOLUME" | string;
+  unit: string;
+  costCode?: string | null;
+  tradeType?: string | null;
+}
+
+export interface AssemblyMatchScore {
+  assemblyId: string;
+  score: number;
+  reasons: string[];
+}
+
+const MATCH_SCORE_THRESHOLD = 2;
+
+export function scoreAssemblyAgainstLine(
+  assembly: Pick<
+    AiEstimatorAssembly,
+    "id" | "name" | "description" | "costCode" | "tradeType" | "drivingMeasurementType" | "drivingUnit"
+  >,
+  line: AssemblyMatchLine,
+): AssemblyMatchScore | null {
+  if (
+    String(assembly.drivingMeasurementType ?? "").toUpperCase() !==
+    String(line.type ?? "").toUpperCase()
+  ) {
+    return null;
+  }
+  if (
+    String(assembly.drivingUnit ?? "").trim().toUpperCase() !==
+    String(line.unit ?? "").trim().toUpperCase()
+  ) {
+    return null;
+  }
+  let score = 0;
+  const reasons: string[] = ["unit+type"];
+  if (
+    assembly.costCode &&
+    line.costCode &&
+    assembly.costCode.trim().toLowerCase() === line.costCode.trim().toLowerCase()
+  ) {
+    score += 5;
+    reasons.push("costCode");
+  }
+  if (
+    assembly.tradeType &&
+    line.tradeType &&
+    assembly.tradeType.trim().toUpperCase() === line.tradeType.trim().toUpperCase()
+  ) {
+    score += 3;
+    reasons.push("tradeType");
+  }
+  const lineTokens = new Set(tokenize(line.label));
+  const haystack = new Set([
+    ...tokenize(assembly.name),
+    ...tokenize(assembly.description),
+  ]);
+  let overlap = 0;
+  for (const t of haystack) {
+    if (lineTokens.has(t)) overlap += 1;
+  }
+  if (overlap > 0) {
+    score += overlap;
+    reasons.push(`tokens:${overlap}`);
+  }
+  if (score < MATCH_SCORE_THRESHOLD) return null;
+  return { assemblyId: assembly.id, score, reasons };
+}
+
+export async function matchAssemblyForLine(opts: {
+  organizationId: string;
+  line: AssemblyMatchLine;
+}): Promise<AssemblyWithComponents | null> {
+  const candidates = await listAssemblies(opts.organizationId, { activeOnly: true });
+  if (candidates.length === 0) return null;
+  let best: { score: AssemblyMatchScore; assembly: AssemblyWithComponents } | null = null;
+  for (const a of candidates) {
+    const sc = scoreAssemblyAgainstLine(a, opts.line);
+    if (!sc) continue;
+    if (!best || sc.score > best.score.score) {
+      best = { score: sc, assembly: a };
+    }
+  }
+  return best?.assembly ?? null;
 }

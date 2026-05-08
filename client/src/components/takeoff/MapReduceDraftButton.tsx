@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Layers, Check, PlusCircle } from "lucide-react";
+import { Loader2, Layers, Check, PlusCircle, ChevronDown, ChevronRight, Unlink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,27 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { JobProgressBar } from "@/components/JobProgressBar";
 
+// Task #2624 — assembly explosion shape (mirrors DraftFullTakeoffButton).
+interface AssemblyComponent {
+  componentId: string;
+  description: string;
+  componentType: "MATERIAL" | "LABOR" | "EQUIPMENT" | "SUB";
+  unit: string;
+  baseQuantity: number;
+  quantity: number;
+  componentWasteFactor: number;
+  unitCost: number;
+  totalCost: number;
+}
+interface AssemblyExpansion {
+  assemblyId: string;
+  assemblyName: string;
+  drivingQty: number;
+  drivingUnit: string;
+  drivingMeasurementType: string;
+  assemblyWasteFactor: number;
+  components: AssemblyComponent[];
+}
 interface MapReduceMeasurement {
   label: string;
   type: string;
@@ -26,6 +47,7 @@ interface MapReduceMeasurement {
   rationale: string;
   sheetCitations: string[];
   contributingDisciplines: string[];
+  assembly?: AssemblyExpansion | null;
 }
 
 interface MapReduceDraftResult {
@@ -82,6 +104,17 @@ export function MapReduceDraftButton({ bidId }: Props) {
   const [fetchingResult, setFetchingResult] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [lastFailed, setLastFailed] = useState<ApplyFailure[]>([]);
+  // Task #2624 — Per-row UI state for assembly review (see DraftFullTakeoffButton).
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [detached, setDetached] = useState<Set<string>>(new Set());
+  const [flatten, setFlatten] = useState<Set<number>>(new Set());
+  const toggleExpanded = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   // Default to all selected — the most common workflow is "accept
   // everything the AI found" with the option to uncheck a few.
@@ -238,6 +271,9 @@ export function MapReduceDraftButton({ bidId }: Props) {
       setFetchingResult(false);
       setSelected(new Set());
       setLastFailed([]);
+      setExpanded(new Set());
+      setDetached(new Set());
+      setFlatten(new Set());
     }
   }, [open]);
 
@@ -367,37 +403,146 @@ export function MapReduceDraftButton({ bidId }: Props) {
                           </td>
                         </tr>
                       )}
-                      {draft.measurements.map((m, i) => (
-                        <tr key={i} className="border-t align-top" data-testid={`row-mapreduce-measurement-${i}`}>
-                          <td className="p-2">
-                            <Checkbox
-                              checked={selected.has(i)}
-                              onCheckedChange={(c) => toggleOne(i, c === true)}
-                              disabled={isApplying}
-                              aria-label={`Select measurement ${m.label}`}
-                              data-testid={`checkbox-mapreduce-measurement-${i}`}
-                            />
-                          </td>
-                          <td className="p-2">{m.label}</td>
-                          <td className="p-2">{m.type}</td>
-                          <td className="p-2 text-right tabular-nums">{m.value}</td>
-                          <td className="p-2">{m.unit}</td>
-                          <td className="p-2 font-mono">{m.costCode ?? "—"}</td>
-                          <td className="p-2">
-                            <div className="flex flex-wrap gap-1" data-testid={`citations-mapreduce-measurement-${i}`}>
-                              {m.sheetCitations.length === 0 ? (
-                                <span className="text-muted-foreground">—</span>
-                              ) : (
-                                m.sheetCitations.map((c) => (
-                                  <Badge key={c} variant="outline" className="font-mono text-[10px]">
-                                    {c}
-                                  </Badge>
-                                ))
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
+                      {draft.measurements.map((m, i) => {
+                        const hasAssembly = !!m.assembly && !flatten.has(i);
+                        const isOpen = expanded.has(i);
+                        return (
+                          <Fragment key={i}>
+                            <tr className="border-t align-top" data-testid={`row-mapreduce-measurement-${i}`}>
+                              <td className="p-2">
+                                <Checkbox
+                                  checked={selected.has(i)}
+                                  onCheckedChange={(c) => toggleOne(i, c === true)}
+                                  disabled={isApplying}
+                                  aria-label={`Select measurement ${m.label}`}
+                                  data-testid={`checkbox-mapreduce-measurement-${i}`}
+                                />
+                              </td>
+                              <td className="p-2">
+                                <div className="flex items-center gap-1">
+                                  {hasAssembly ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpanded(i)}
+                                      className="hover:bg-muted rounded p-0.5"
+                                      aria-label={isOpen ? "Collapse assembly" : "Expand assembly"}
+                                      data-testid={`button-expand-mapreduce-assembly-${i}`}
+                                    >
+                                      {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                                    </button>
+                                  ) : (
+                                    <span className="w-4 inline-block" />
+                                  )}
+                                  <span>{m.label}</span>
+                                  {hasAssembly && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="ml-1 gap-1 text-[10px]"
+                                      data-testid={`badge-mapreduce-assembly-${i}`}
+                                    >
+                                      <Layers className="h-3 w-3" />
+                                      {m.assembly!.assemblyName}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2">{m.type}</td>
+                              <td className="p-2 text-right tabular-nums">{m.value}</td>
+                              <td className="p-2">{m.unit}</td>
+                              <td className="p-2 font-mono">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{m.costCode ?? "—"}</span>
+                                  {hasAssembly && (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-5 w-5"
+                                      onClick={() => setFlatten((prev) => new Set(prev).add(i))}
+                                      title="Reject assembly — keep flat line"
+                                      data-testid={`button-detach-mapreduce-assembly-${i}`}
+                                    >
+                                      <Unlink className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2">
+                                <div className="flex flex-wrap gap-1" data-testid={`citations-mapreduce-measurement-${i}`}>
+                                  {m.sheetCitations.length === 0 ? (
+                                    <span className="text-muted-foreground">—</span>
+                                  ) : (
+                                    m.sheetCitations.map((c) => (
+                                      <Badge key={c} variant="outline" className="font-mono text-[10px]">
+                                        {c}
+                                      </Badge>
+                                    ))
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {hasAssembly && isOpen &&
+                              m.assembly!.components.map((c) => {
+                                const key = `${i}:${c.componentId}`;
+                                const isDetached = detached.has(key);
+                                const wastePct = Math.round(
+                                  (m.assembly!.assemblyWasteFactor + c.componentWasteFactor) * 100,
+                                );
+                                return (
+                                  <tr
+                                    key={`comp-${c.componentId}`}
+                                    className="border-t bg-muted/40"
+                                    data-testid={`row-mapreduce-assembly-component-${i}-${c.componentId}`}
+                                  >
+                                    <td className="p-2"></td>
+                                    <td className="p-2 pl-8">
+                                      <span className={isDetached ? "line-through text-muted-foreground" : ""}>
+                                        {c.description}
+                                      </span>
+                                      <span className="ml-2 text-[10px] text-muted-foreground uppercase">
+                                        {c.componentType}
+                                      </span>
+                                    </td>
+                                    <td className="p-2 text-muted-foreground">—</td>
+                                    <td className={`p-2 text-right tabular-nums ${isDetached ? "line-through text-muted-foreground" : ""}`}>
+                                      {c.quantity}
+                                      {wastePct > 0 && (
+                                        <span className="ml-1 text-[10px] text-muted-foreground">
+                                          ({wastePct}% waste)
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-2">{c.unit}</td>
+                                    <td className="p-2 font-mono">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-muted-foreground">
+                                          ${c.totalCost.toFixed(2)}
+                                        </span>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-5 w-5"
+                                          onClick={() =>
+                                            setDetached((prev) => {
+                                              const next = new Set(prev);
+                                              if (next.has(key)) next.delete(key);
+                                              else next.add(key);
+                                              return next;
+                                            })
+                                          }
+                                          title={isDetached ? "Restore component" : "Detach component"}
+                                          data-testid={`button-detach-mapreduce-component-${i}-${c.componentId}`}
+                                        >
+                                          <Unlink className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                    <td className="p-2"></td>
+                                  </tr>
+                                );
+                              })}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

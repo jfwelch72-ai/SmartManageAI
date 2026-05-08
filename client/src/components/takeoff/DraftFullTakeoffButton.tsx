@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Check } from "lucide-react";
+import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, Layers, Unlink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,29 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { JobProgressBar } from "@/components/JobProgressBar";
 
+// Task #2624 — assembly explosion shape returned by the auto-takeoff
+// drafter when an AI line matched an org assembly. Optional — if absent
+// the row renders as a flat line (legacy behavior).
+interface AssemblyComponent {
+  componentId: string;
+  description: string;
+  componentType: "MATERIAL" | "LABOR" | "EQUIPMENT" | "SUB";
+  unit: string;
+  baseQuantity: number;
+  quantity: number;
+  componentWasteFactor: number;
+  unitCost: number;
+  totalCost: number;
+}
+interface AssemblyExpansion {
+  assemblyId: string;
+  assemblyName: string;
+  drivingQty: number;
+  drivingUnit: string;
+  drivingMeasurementType: string;
+  assemblyWasteFactor: number;
+  components: AssemblyComponent[];
+}
 interface DraftMeasurement {
   label: string;
   type: string;
@@ -17,6 +40,7 @@ interface DraftMeasurement {
   unit: string;
   costCode: string | null;
   rationale: string;
+  assembly?: AssemblyExpansion | null;
 }
 
 interface Props {
@@ -45,6 +69,22 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [fetchingResult, setFetchingResult] = useState(false);
+  // Task #2624 — Per-row local UI state for the assembly review UX.
+  // `expanded` tracks which assembly parents are open. `detached` is a
+  // set of `${rowIdx}:${componentId}` keys that the estimator has
+  // removed from the draft (rendered struck-through). `flatten` is the
+  // set of row indexes where the estimator rejected the assembly back
+  // to the original flat line.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [detached, setDetached] = useState<Set<string>>(new Set());
+  const [flatten, setFlatten] = useState<Set<number>>(new Set());
+  const toggleExpanded = (i: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
 
   // Task #2517 / #2530 — POST enqueues an `ai_estimator_draft` job and
   // returns `{ jobId }`. The dialog then drives a live progress bar via
@@ -140,6 +180,9 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
       setDraft(null);
       setJobId(null);
       setFetchingResult(false);
+      setExpanded(new Set());
+      setDetached(new Set());
+      setFlatten(new Set());
     }
   }, [open]);
 
@@ -215,15 +258,149 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
                       </tr>
                     </thead>
                     <tbody>
-                      {draft.measurements.map((m, i) => (
-                        <tr key={i} className="border-t" data-testid={`row-draft-measurement-${i}`}>
-                          <td className="p-2">{m.label}</td>
-                          <td className="p-2">{m.type}</td>
-                          <td className="p-2 text-right">{m.value}</td>
-                          <td className="p-2">{m.unit}</td>
-                          <td className="p-2 font-mono">{m.costCode ?? "—"}</td>
-                        </tr>
-                      ))}
+                      {draft.measurements.map((m, i) => {
+                        const hasAssembly = !!m.assembly && !flatten.has(i);
+                        const isOpen = expanded.has(i);
+                        return (
+                          <Fragment key={i}>
+                            <tr
+                              className="border-t"
+                              data-testid={`row-draft-measurement-${i}`}
+                            >
+                              <td className="p-2">
+                                <div className="flex items-center gap-1">
+                                  {hasAssembly ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleExpanded(i)}
+                                      className="hover:bg-muted rounded p-0.5"
+                                      aria-label={isOpen ? "Collapse assembly" : "Expand assembly"}
+                                      data-testid={`button-expand-assembly-${i}`}
+                                    >
+                                      {isOpen ? (
+                                        <ChevronDown className="h-3 w-3" />
+                                      ) : (
+                                        <ChevronRight className="h-3 w-3" />
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <span className="w-4 inline-block" />
+                                  )}
+                                  <span>{m.label}</span>
+                                  {hasAssembly && (
+                                    <Badge
+                                      variant="secondary"
+                                      className="ml-1 gap-1 text-[10px]"
+                                      data-testid={`badge-assembly-${i}`}
+                                    >
+                                      <Layers className="h-3 w-3" />
+                                      {m.assembly!.assemblyName}
+                                    </Badge>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2">{m.type}</td>
+                              <td className="p-2 text-right">{m.value}</td>
+                              <td className="p-2">{m.unit}</td>
+                              <td className="p-2 font-mono">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span>{m.costCode ?? "—"}</span>
+                                  {hasAssembly && (
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="h-5 w-5"
+                                      onClick={() =>
+                                        setFlatten((prev) => new Set(prev).add(i))
+                                      }
+                                      title="Reject assembly — keep flat line"
+                                      data-testid={`button-detach-assembly-${i}`}
+                                    >
+                                      <Unlink className="h-3 w-3" />
+                                    </Button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                            {hasAssembly && isOpen &&
+                              m.assembly!.components.map((c) => {
+                                const key = `${i}:${c.componentId}`;
+                                const isDetached = detached.has(key);
+                                const wastePct = Math.round(
+                                  (m.assembly!.assemblyWasteFactor +
+                                    c.componentWasteFactor) *
+                                    100,
+                                );
+                                return (
+                                  <tr
+                                    key={`comp-${i}-${c.componentId}`}
+                                    className="border-t bg-muted/40"
+                                    data-testid={`row-assembly-component-${i}-${c.componentId}`}
+                                  >
+                                    <td className="p-2 pl-8">
+                                      <span
+                                        className={
+                                          isDetached
+                                            ? "line-through text-muted-foreground"
+                                            : ""
+                                        }
+                                      >
+                                        {c.description}
+                                      </span>
+                                      <span className="ml-2 text-[10px] text-muted-foreground uppercase">
+                                        {c.componentType}
+                                      </span>
+                                    </td>
+                                    <td className="p-2 text-muted-foreground">—</td>
+                                    <td
+                                      className={`p-2 text-right tabular-nums ${
+                                        isDetached
+                                          ? "line-through text-muted-foreground"
+                                          : ""
+                                      }`}
+                                    >
+                                      {c.quantity}
+                                      {wastePct > 0 && (
+                                        <span className="ml-1 text-[10px] text-muted-foreground">
+                                          ({wastePct}% waste)
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-2">{c.unit}</td>
+                                    <td className="p-2 font-mono">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="text-muted-foreground">
+                                          ${c.totalCost.toFixed(2)}
+                                        </span>
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-5 w-5"
+                                          onClick={() =>
+                                            setDetached((prev) => {
+                                              const next = new Set(prev);
+                                              if (next.has(key)) next.delete(key);
+                                              else next.add(key);
+                                              return next;
+                                            })
+                                          }
+                                          title={
+                                            isDetached
+                                              ? "Restore component"
+                                              : "Detach component"
+                                          }
+                                          data-testid={`button-detach-component-${i}-${c.componentId}`}
+                                        >
+                                          <Unlink className="h-3 w-3" />
+                                        </Button>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                          </Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>

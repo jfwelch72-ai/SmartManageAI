@@ -37,6 +37,10 @@ import {
   shouldRefusePromptInjection,
   validateAiJsonOutput,
 } from "../../ai/promptInjectionGuard";
+// Task #2624 — Wire org assembly catalog into the map-reduce auto-takeoff
+// pipeline (mirrors `takeoffDraft.ts`).
+import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
+import type { AssemblyExpansion } from "./explodeAssembly";
 
 const PAGES_PER_DISCIPLINE_BATCH = 20;
 // Hard ceiling on the number of LLM calls executed per discipline. Beyond
@@ -71,6 +75,8 @@ export interface MapReduceMeasurement {
   rationale: string;
   sheetCitations: string[];
   contributingDisciplines: string[];
+  // Task #2624 — Optional assembly explosion (see takeoffDraft.ts).
+  assembly?: AssemblyExpansion | null;
 }
 
 export interface MapReduceDraftResult {
@@ -430,9 +436,16 @@ export async function mapReduceDraftFromPlans(opts: {
     partial,
   });
 
+  // Task #2624 — Run assembly matcher across the deduped measurements.
+  const finalMeasurements = Array.from(measurementsByKey.values());
+  await applyAssembliesToDraftLines({
+    organizationId: opts.organizationId,
+    lines: finalMeasurements,
+  });
+
   return {
     result: {
-      measurements: Array.from(measurementsByKey.values()),
+      measurements: finalMeasurements,
       notes: notesParts.join("\n").slice(0, 4000),
       confidence: confidenceN > 0 ? Math.round(confidenceSum / confidenceN) : 60,
       disciplineCoverage,
