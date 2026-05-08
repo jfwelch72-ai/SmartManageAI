@@ -486,6 +486,12 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
   // Defaults to true so new orgs benefit immediately; existing orgs can
   // opt out from the settings UI.
   excludeCancelledLostJobs: boolean("exclude_cancelled_lost_jobs").notNull().default(true),
+  // Task #2628 — Per-trade calibration factors written when an admin
+  // accepts a `ai_estimator_calibration_nudges` row. Keyed by trade enum
+  // value, e.g. `{ "ELECTRICAL": { "quantity_bias": 1.08 } }`. Surfaced
+  // back into the takeoff-draft prompt so the next draft inherits the
+  // bias correction.
+  tradeCalibrationFactors: jsonb("trade_calibration_factors").notNull().default(sql`'{}'::jsonb`),
   // Task #2623 — Per-org threshold below which an AI sheet
   // classification is surfaced in the review queue. Default 0.6 means
   // anything under 60% confidence needs human confirmation.
@@ -533,6 +539,79 @@ export const aiEstimatorRegionFactors = pgTable("ai_estimator_region_factors", {
 export const insertAiEstimatorRegionFactorSchema = createInsertSchema(aiEstimatorRegionFactors).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAiEstimatorRegionFactor = z.infer<typeof insertAiEstimatorRegionFactorSchema>;
 export type AiEstimatorRegionFactor = typeof aiEstimatorRegionFactors.$inferSelect;
+
+// =====================================================================
+// Task #2628 — AI takeoff calibration feedback loop.
+//
+// Three tables that close the loop between user reviews on
+// `ai_takeoff_suggestions` and the next draft:
+//
+//   * `ai_estimator_calibration_exemplars` — curated few-shot set
+//     (recent ACCEPTED / EDITED / REJECTED rows) per (org, trade),
+//     refreshed nightly and injected into the takeoff-draft prompt.
+//   * `ai_estimator_calibration_nudges` — admin-reviewable per-trade
+//     bias suggestions. Accepting writes the factor into
+//     `ai_estimator_org_factors.trade_calibration_factors`.
+//   * `ai_estimator_accuracy_snapshots` — daily accuracy / acceptance
+//     / MAPE roll-ups powering the per-org trend dashboard.
+// =====================================================================
+export const aiEstimatorCalibrationExemplars = pgTable("ai_estimator_calibration_exemplars", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: text("trade_type"),
+  kind: text("kind").notNull(), // 'ACCEPTED' | 'EDITED' | 'REJECTED'
+  label: text("label").notNull(),
+  itemType: text("item_type"),
+  unit: text("unit"),
+  originalQuantity: doublePrecision("original_quantity"),
+  finalQuantity: doublePrecision("final_quantity"),
+  rejectReason: text("reject_reason"),
+  comment: text("comment"),
+  sourceSuggestionId: varchar("source_suggestion_id"),
+  generatedAt: timestamp("generated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgTradeIdx: index("ai_estimator_calib_exemplar_org_trade_idx").on(table.organizationId, table.tradeType),
+}));
+export type AiEstimatorCalibrationExemplar = typeof aiEstimatorCalibrationExemplars.$inferSelect;
+export type InsertAiEstimatorCalibrationExemplar = typeof aiEstimatorCalibrationExemplars.$inferInsert;
+
+export const aiEstimatorCalibrationNudges = pgTable("ai_estimator_calibration_nudges", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: text("trade_type"),
+  metric: text("metric").notNull(), // 'quantity_bias' | 'unit_cost_bias' | 'labor_bias'
+  unit: text("unit"),
+  suggestedFactor: doublePrecision("suggested_factor").notNull(),
+  basis: text("basis").notNull(),
+  sampleSize: integer("sample_size").notNull(),
+  status: text("status").notNull().default("PENDING"), // 'PENDING' | 'ACCEPTED' | 'REJECTED'
+  reviewedById: varchar("reviewed_by_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgStatusIdx: index("ai_estimator_calib_nudge_org_status_idx").on(table.organizationId, table.status),
+}));
+export type AiEstimatorCalibrationNudge = typeof aiEstimatorCalibrationNudges.$inferSelect;
+export type InsertAiEstimatorCalibrationNudge = typeof aiEstimatorCalibrationNudges.$inferInsert;
+
+export const aiEstimatorAccuracySnapshots = pgTable("ai_estimator_accuracy_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: text("trade_type"),
+  windowStart: timestamp("window_start").notNull(),
+  windowEnd: timestamp("window_end").notNull(),
+  totalSuggestions: integer("total_suggestions").notNull().default(0),
+  acceptedCount: integer("accepted_count").notNull().default(0),
+  editedCount: integer("edited_count").notNull().default(0),
+  rejectedCount: integer("rejected_count").notNull().default(0),
+  acceptanceRate: doublePrecision("acceptance_rate"),
+  mape: doublePrecision("mape"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgWindowIdx: index("ai_estimator_accuracy_org_window_idx").on(table.organizationId, table.windowEnd),
+}));
+export type AiEstimatorAccuracySnapshot = typeof aiEstimatorAccuracySnapshots.$inferSelect;
+export type InsertAiEstimatorAccuracySnapshot = typeof aiEstimatorAccuracySnapshots.$inferInsert;
 
 // Sheet-discipline whitelist for prompt validation. Anything else is
 // stored as 'O' (other). Matches the AIA convention.

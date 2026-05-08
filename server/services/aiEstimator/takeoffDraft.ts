@@ -287,6 +287,27 @@ export async function draftTakeoffFromPlans(opts: {
   }
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
+  // Task #2628 — calibration feedback loop. Best-effort retrieval of the
+  // curated few-shot exemplars + per-trade calibration factors so the
+  // next draft inherits whatever the team learned from past reviews.
+  let calibrationBlock = "";
+  try {
+    const { loadCalibrationExemplars, formatExemplarsForPrompt, loadTradeCalibrationFactors, formatTradeCalibrationFactorsForPrompt } =
+      await import("./calibrationLoop");
+    const tradeKey = opts.tradeFilter ? opts.tradeFilter.trim().toUpperCase().replace(/\s+/g, "_") : null;
+    const [exemplars, factors] = await Promise.all([
+      loadCalibrationExemplars({ organizationId: opts.organizationId, tradeType: tradeKey, limit: 15 }),
+      loadTradeCalibrationFactors(opts.organizationId),
+    ]);
+    const parts = [
+      formatExemplarsForPrompt(exemplars),
+      formatTradeCalibrationFactorsForPrompt(factors, tradeKey),
+    ].filter((s) => s.length > 0);
+    calibrationBlock = parts.join("\n\n");
+  } catch {
+    calibrationBlock = "";
+  }
+
   await reportProgress(70, "Calling AI estimator");
   // Task #2626 — per-draft + per-project rollup keys. `draftId` is
   // unique per `draftTakeoffFromPlans` invocation. `projectId` is
@@ -328,6 +349,9 @@ export async function draftTakeoffFromPlans(opts: {
             { role: "system", content: sysPrompt },
             ...(lessonsBlock
               ? ([{ role: "system", content: lessonsBlock }] as const)
+              : []),
+            ...(calibrationBlock
+              ? ([{ role: "system", content: calibrationBlock }] as const)
               : []),
             {
               role: "user",

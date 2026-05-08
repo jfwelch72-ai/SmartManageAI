@@ -1515,6 +1515,103 @@ router.get(
         finishedAt: r.finishedAt,
       })),
     });
+// Task #2628 — AI takeoff calibration feedback loop admin surface.
+//   * GET    /calibration-nudges          — pending nudges for review
+//   * POST   /calibration-nudges/:id/accept — write factor + close nudge
+//   * POST   /calibration-nudges/:id/reject — close nudge without write
+//   * GET    /accuracy-trend              — daily snapshots for the chart
+//   * POST   /calibration-aggregator/run  — manual trigger (admin only)
+// =====================================================================
+router.get(
+  `${estimatorBase}/calibration-nudges`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const { listPendingNudges } = await import("./services/aiEstimator/calibrationLoop");
+    const rows = await listPendingNudges(req.user!.organizationId!);
+    res.json({ nudges: rows });
+  },
+);
+
+router.post(
+  `${estimatorBase}/calibration-nudges/:id/accept`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const { acceptCalibrationNudge } = await import("./services/aiEstimator/calibrationLoop");
+    const out = await acceptCalibrationNudge(
+      req.user!.organizationId!,
+      req.params.id,
+      req.user!.id,
+    );
+    if (!out) return res.status(404).json({ error: "Nudge not found" });
+    if (out.status !== "ACCEPTED") {
+      return res.status(409).json({ error: "Nudge already reviewed", nudge: out });
+    }
+    await logUpdate(
+      req.user!.id,
+      "ai_estimator_calibration_nudge",
+      out.id,
+      { status: "PENDING" },
+      { status: "ACCEPTED", suggestedFactor: out.suggestedFactor, tradeType: out.tradeType, metric: out.metric },
+      req,
+    );
+    res.json({ nudge: out });
+  },
+);
+
+router.post(
+  `${estimatorBase}/calibration-nudges/:id/reject`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const { rejectCalibrationNudge } = await import("./services/aiEstimator/calibrationLoop");
+    const out = await rejectCalibrationNudge(
+      req.user!.organizationId!,
+      req.params.id,
+      req.user!.id,
+    );
+    if (!out) return res.status(404).json({ error: "Nudge not found or already reviewed" });
+    await logUpdate(
+      req.user!.id,
+      "ai_estimator_calibration_nudge",
+      out.id,
+      { status: "PENDING" },
+      { status: "REJECTED" },
+      req,
+    );
+    res.json({ nudge: out });
+  },
+);
+
+router.get(
+  `${estimatorBase}/accuracy-trend`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const { listAccuracyTrend } = await import("./services/aiEstimator/calibrationLoop");
+    const tradeRaw = typeof req.query.trade === "string" ? req.query.trade : undefined;
+    const limit = req.query.limit ? Math.min(Number(req.query.limit) || 90, 365) : 90;
+    const tradeType = tradeRaw === "__overall__" || tradeRaw === undefined
+      ? null
+      : tradeRaw;
+    const rows = await listAccuracyTrend({
+      organizationId: req.user!.organizationId!,
+      tradeType,
+      limit,
+    });
+    res.json({ snapshots: rows });
+  },
+);
+
+router.post(
+  `${estimatorBase}/calibration-aggregator/run`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const { runCalibrationAggregatorForOrg } = await import("./services/aiEstimator/calibrationLoop");
+    const out = await runCalibrationAggregatorForOrg(req.user!.organizationId!);
+    res.json(out);
   },
 );
 

@@ -753,6 +753,8 @@ function SettingsTab() {
         </CardContent>
       </Card>
 
+      <CalibrationFeedbackLoopCard />
+
       <Card>
         <CardHeader>
           <CardTitle>Region factors</CardTitle>
@@ -1101,6 +1103,191 @@ void EMPTY_ASSEMBLY;
   );
 }
 
+
+interface CalibrationNudge {
+  id: string;
+  tradeType: string | null;
+  metric: string;
+  unit: string | null;
+  suggestedFactor: number;
+  basis: string;
+  sampleSize: number;
+  status: string;
+  createdAt: string;
+}
+
+interface AccuracySnapshot {
+  id: string;
+  tradeType: string | null;
+  windowStart: string;
+  windowEnd: string;
+  totalSuggestions: number;
+  acceptedCount: number;
+  editedCount: number;
+  rejectedCount: number;
+  acceptanceRate: number | null;
+  mape: number | null;
+}
+
+function CalibrationFeedbackLoopCard() {
+  const { toast } = useToast();
+  const nudgesQuery = useQuery<{ nudges: CalibrationNudge[] }>({
+    queryKey: ["/api/ai-estimator/calibration-nudges"],
+  });
+  const trendQuery = useQuery<{ snapshots: AccuracySnapshot[] }>({
+    queryKey: ["/api/ai-estimator/accuracy-trend"],
+  });
+  const accept = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/ai-estimator/calibration-nudges/${id}/accept`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/calibration-nudges"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/org-factors"] });
+      toast({ title: "Nudge accepted", description: "Calibration factor saved." });
+    },
+    onError: (e: unknown) => toast({ title: "Accept failed", description: String(e), variant: "destructive" }),
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/ai-estimator/calibration-nudges/${id}/reject`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/calibration-nudges"] });
+      toast({ title: "Nudge rejected" });
+    },
+  });
+  const runAggregator = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/ai-estimator/calibration-aggregator/run", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/calibration-nudges"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/accuracy-trend"] });
+      toast({ title: "Aggregator triggered" });
+    },
+  });
+
+  const nudges = nudgesQuery.data?.nudges ?? [];
+  const snapshots = trendQuery.data?.snapshots ?? [];
+  const overall = snapshots.filter((s) => s.tradeType === null).slice(0, 14);
+
+  return (
+    <Card data-testid="card-calibration-feedback-loop">
+      <CardHeader>
+        <CardTitle>AI takeoff calibration feedback loop</CardTitle>
+        <CardDescription>
+          Pending bias nudges learned from your team's recent suggestion reviews, plus a 14-day accuracy trend.
+          Accepting a nudge writes a per-trade calibration factor that the next AI draft will respect.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            Aggregator runs nightly at 04:00 UTC. Trigger manually if you just reviewed a batch.
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => runAggregator.mutate()}
+            disabled={runAggregator.isPending}
+            data-testid="button-run-calibration-aggregator"
+          >
+            {runAggregator.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <RefreshCcw className="h-4 w-4 mr-1" />}
+            Run now
+          </Button>
+        </div>
+
+        <div>
+          <div className="text-sm font-medium mb-2">Pending nudges ({nudges.length})</div>
+          {nudgesQuery.isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : nudges.length === 0 ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-no-pending-nudges">
+              No pending nudges. The aggregator only proposes a nudge when ≥10 EDITED reviews show a consistent ±5%+ bias.
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Trade</TableHead>
+                  <TableHead>Metric</TableHead>
+                  <TableHead>Factor</TableHead>
+                  <TableHead>Sample</TableHead>
+                  <TableHead>Basis</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {nudges.map((n) => (
+                  <TableRow key={n.id} data-testid={`row-nudge-${n.id}`}>
+                    <TableCell>{n.tradeType ?? "—"}</TableCell>
+                    <TableCell>{n.metric}</TableCell>
+                    <TableCell data-testid={`text-nudge-factor-${n.id}`}>{n.suggestedFactor.toFixed(3)}x</TableCell>
+                    <TableCell>{n.sampleSize}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground max-w-md">{n.basis}</TableCell>
+                    <TableCell className="text-right space-x-1">
+                      <Button
+                        size="sm"
+                        variant="default"
+                        onClick={() => accept.mutate(n.id)}
+                        disabled={accept.isPending}
+                        data-testid={`button-accept-nudge-${n.id}`}
+                      >
+                        Accept
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => reject.mutate(n.id)}
+                        disabled={reject.isPending}
+                        data-testid={`button-reject-nudge-${n.id}`}
+                      >
+                        Reject
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+
+        <div>
+          <div className="text-sm font-medium mb-2">Overall accuracy (last 14 snapshots)</div>
+          {trendQuery.isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : overall.length === 0 ? (
+            <div className="text-sm text-muted-foreground">No accuracy snapshots yet — they appear after the aggregator's first run.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Window end</TableHead>
+                  <TableHead>Total</TableHead>
+                  <TableHead>Accepted</TableHead>
+                  <TableHead>Edited</TableHead>
+                  <TableHead>Rejected</TableHead>
+                  <TableHead>Acceptance</TableHead>
+                  <TableHead>MAPE</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {overall.map((s) => (
+                  <TableRow key={s.id} data-testid={`row-snapshot-${s.id}`}>
+                    <TableCell>{new Date(s.windowEnd).toLocaleDateString()}</TableCell>
+                    <TableCell>{s.totalSuggestions}</TableCell>
+                    <TableCell>{s.acceptedCount}</TableCell>
+                    <TableCell>{s.editedCount}</TableCell>
+                    <TableCell>{s.rejectedCount}</TableCell>
+                    <TableCell>{s.acceptanceRate == null ? "—" : `${(s.acceptanceRate * 100).toFixed(1)}%`}</TableCell>
+                    <TableCell>{s.mape == null ? "—" : `${(s.mape * 100).toFixed(1)}%`}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();

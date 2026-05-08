@@ -348,6 +348,25 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
 
   let observedModelId: string | null = null;
   let observedProvider: string | null = null;
+
+  // Task #2628 — calibration feedback loop. Best-effort exemplars +
+  // per-trade calibration factors injected as a second system message.
+  let calibrationBlock = "";
+  try {
+    const { loadCalibrationExemplars, formatExemplarsForPrompt, loadTradeCalibrationFactors, formatTradeCalibrationFactorsForPrompt } =
+      await import("./calibrationLoop");
+    const [exemplars, factors] = await Promise.all([
+      loadCalibrationExemplars({ organizationId: opts.organizationId, limit: 15 }),
+      loadTradeCalibrationFactors(opts.organizationId),
+    ]);
+    const parts = [
+      formatExemplarsForPrompt(exemplars),
+      formatTradeCalibrationFactorsForPrompt(factors, null),
+    ].filter((s) => s.length > 0);
+    calibrationBlock = parts.join("\n\n");
+  } catch {
+    calibrationBlock = "";
+  }
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
@@ -370,6 +389,9 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            ...(calibrationBlock
+              ? ([{ role: "system", content: calibrationBlock }] as const)
+              : []),
             {
               role: "user",
               content: blocks.map<AiContentPart>((b) => ({ type: "text", text: (b as { text: string }).text })),

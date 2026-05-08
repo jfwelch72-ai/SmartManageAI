@@ -123,6 +123,7 @@ let dotPayItemsRefreshTask: ReturnType<typeof cron.schedule> | null = null;
 // `processAiTakeoff` can override the model-reported confidence with
 // the org's empirical signal at display time.
 let aiTakeoffCalibrationTask: ReturnType<typeof cron.schedule> | null = null;
+let aiTakeoffCalibrationAggregatorTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #2129: nightly safety-net for `takeoff_recents`. The bid /
 // project DELETE handlers already call `pruneTakeoffRecentsForEntity`,
 // but the table only FKs to users / organizations — so a row that
@@ -1277,6 +1278,33 @@ export function startJobRunner() {
     }
   });
 
+  // Task #2628 — nightly AI takeoff calibration feedback loop. Runs at
+  // 04:00 UTC, after both the ingestion (02:45) and the confidence
+  // calibration (03:30), so the few-shot exemplar set + per-trade
+  // bias nudges are computed against the freshest review state.
+  aiTakeoffCalibrationAggregatorTask = cron.schedule("0 4 * * *", async () => {
+    try {
+      await withSchedulerLock("job:aiTakeoffCalibrationAggregatorTask", async () => {
+        const { runCalibrationAggregator } = await import("../services/aiEstimator/calibrationLoop");
+        const out = await runCalibrationAggregator();
+        recordJobMetrics("ai_takeoff_calibration_aggregator", {
+          succeeded: out.orgsRefreshed,
+          failed: 0,
+          triggered: out.orgsConsidered,
+          durationMs: out.durationMs,
+        });
+        logInfo("AI takeoff calibration aggregator tick", out);
+      });
+    } catch (err) {
+      recordJobOutcome("ai_takeoff_calibration_aggregator", false);
+      logJobErrorWithKind(
+        "ai_takeoff_calibration_aggregator",
+        "AI takeoff calibration aggregator failed",
+        err,
+      );
+    }
+  });
+
   // Task #2496 — nightly equipment preventative-maintenance work order
   // generation. Daily at 03:30 UTC; per-org loop wrapped in
   // `withJobOrgContext` so RLS keeps each tick scoped to one tenant.
@@ -1542,6 +1570,10 @@ export function stopJobRunner() {
     aiTakeoffCalibrationTask.stop();
     aiTakeoffCalibrationTask = null;
   }
+  if (aiTakeoffCalibrationAggregatorTask) {
+    aiTakeoffCalibrationAggregatorTask.stop();
+    aiTakeoffCalibrationAggregatorTask = null;
+  }
   if (wageDecisionRetryTask) {
     wageDecisionRetryTask.stop();
     wageDecisionRetryTask = null;
@@ -1677,6 +1709,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // logged into `ai_estimator_ingest_runs` so they surface on the admin
   // page without grepping logs.
   ai_estimator_ingestion: { fn: async () => { await processAiEstimatorScheduledIngestion(); }, description: "Refresh the AI Estimator learning pipeline (knowledge index + learned rates) for every AI_ESTIMATOR-enabled org; skips orgs with a successful run inside the cooldown window", schedule: "45 2 * * *" },
+  ai_takeoff_calibration_aggregator: { fn: async () => { const { runCalibrationAggregator } = await import("../services/aiEstimator/calibrationLoop"); await runCalibrationAggregator(); }, description: "Task #2628: rebuild per-(org, trade) few-shot exemplars from recent ai_takeoff_suggestions reviews, propose per-trade quantity-bias nudges, and write a daily accuracy snapshot row.", schedule: "0 4 * * *" },
 };
 
 async function processOutbox() {
