@@ -1,3 +1,4 @@
+// prompt-injection-guard: passes already-quarantined extracted blocks from server/services/aiEstimator/sheetIndex.ts which calls quarantineDocumentBlocks before this layer
 import { Router , NextFunction } from "express";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";

@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored over tenant-internal time-clock + cost-code aggregates; no user-authored prose
 import { logError } from "./utils/logger";
 import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";

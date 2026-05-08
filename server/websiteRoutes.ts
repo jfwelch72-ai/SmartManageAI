@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored marketing-site generation; inputs are tenant-self-authored brand brief content
 import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import { randomUUID } from "crypto";

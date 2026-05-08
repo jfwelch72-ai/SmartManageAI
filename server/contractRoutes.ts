@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted contract body — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt enforces JSON output with downstream Zod validation
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";

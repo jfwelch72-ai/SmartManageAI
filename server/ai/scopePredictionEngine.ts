@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored scope prediction over tenant-internal historical bid catalog; no third-party text reaches the model
 import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { routedChatCompletion } from './providers';

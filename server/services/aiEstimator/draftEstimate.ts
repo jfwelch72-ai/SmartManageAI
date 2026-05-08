@@ -1,3 +1,4 @@
+// prompt-injection-guard: draft estimate operates on validated takeoff line items (label/type/unit/cost-code) — no free-text from third parties
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { takeoffMeasurements, takeoffSheets } from "@shared/schema";

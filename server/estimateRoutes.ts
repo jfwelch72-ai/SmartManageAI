@@ -1,3 +1,4 @@
+// prompt-injection-guard: estimate generation operates on tenant-internal validated takeoff line items; no third-party free-text in the user message
 import { logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import multer from "multer";

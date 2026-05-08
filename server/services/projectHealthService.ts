@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored health summary over tenant-internal numeric project KPIs
 import { db } from "../db";
 import {
   projectHealthSnapshots,

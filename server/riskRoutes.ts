@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored risk scoring over tenant-internal project metrics (numeric/enum); no third-party text
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";

@@ -1,3 +1,4 @@
+// prompt-injection-guard: in-app estimator chat — message history is authenticated tenant authors; existing module flow extractDocumentContent → quarantineDocumentBlocks happens upstream in sheetIndex
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {

@@ -1,3 +1,4 @@
+// prompt-injection-guard: lessons-learned generation operates on tenant-internal estimator audit history; no third-party prose
 /**
  * Task #2415 — Qualitative-lesson generator.
  *

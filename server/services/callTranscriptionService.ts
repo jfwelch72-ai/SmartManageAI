@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted transcribed call body — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt forces JSON-only response with validateAiJsonOutput downstream
 /**
  * Task #921 — CRM call recording transcription.
  *

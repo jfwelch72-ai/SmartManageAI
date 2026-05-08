@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored marketing-site generation; inputs are tenant-self-authored brand brief content
 import { logError } from "./utils/logger";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { Router, type Request, type Response, type NextFunction } from "express";

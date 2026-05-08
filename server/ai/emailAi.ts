@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted email body — TODO(#2683-followup) wrap via quarantineUntrustedText; prompts already use system-prompt-anchored JSON-only response_format and validateAiJsonOutput
 import { logError, logWarn, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from "../services/aiGovernance";

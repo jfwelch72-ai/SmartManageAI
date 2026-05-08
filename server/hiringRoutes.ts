@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted resume content — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt is JSON-only with downstream Zod validation
 import { Router, type NextFunction } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
 import { z } from "zod";

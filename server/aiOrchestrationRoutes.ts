@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored orchestration over tenant-internal aggregates (project counts, financial rollups); no user-authored text in user message
 import { Router , NextFunction } from "express";
 import { safeJsonParse } from "./responseHelper";
 import { db, pool } from "./db";

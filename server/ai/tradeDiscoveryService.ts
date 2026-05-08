@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored discovery over tenant-internal trade catalog; numeric / enum-shaped inputs only
 import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { routedChatCompletion } from './providers';

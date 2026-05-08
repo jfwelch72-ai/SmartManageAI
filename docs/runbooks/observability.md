@@ -14,6 +14,38 @@ hits "Something went wrong" through to the responsible code path.
 | Sentry (server) | Initialized in `server/sentry.ts` (no-op without `SENTRY_DSN`) | `server/sentry.ts` |
 | Sentry (browser) | Initialized in `client/src/sentry.ts` (no-op without `VITE_SENTRY_DSN`) | `client/src/sentry.ts` |
 
+## Prompt-injection detection counter (Task #2683)
+
+`/metrics` exposes:
+
+```
+ai_prompt_injection_detections_total{route="...",pattern_id="...",action="flagged|refused|quarantined"}
+```
+
+Triage a spike:
+
+1. **Identify the noisy series.** Sort by delta over the last 15 min.
+   The label tuple tells you which AI surface fired (`route`), which
+   attack class (`pattern_id`), and whether the guard refused
+   (`action="refused"`) or merely quarantined (`action="quarantined"`).
+2. **Pull the audit trail.** Each `refused` increment also writes a
+   `logWarn` line with the `correlationId`. Search structured logs for
+   the route + correlationId to recover the `userId` /
+   `organizationId` and the upload that triggered it.
+3. **Decide intent.** A single hit on `pattern_id="role_override"` is
+   often a false positive (legitimate spec language like "you are now
+   the responsible party"). Two or more co-occurring high-signal
+   patterns (`ignore_previous` + `exfiltration`, `role_override` +
+   `exfiltration`) is the refusal threshold and almost always
+   adversarial.
+4. **Block at source if needed.** For repeated adversarial uploads from
+   the same actor, suspend the offending user via
+   `revokeUserTokens(userId)` and (for an external portal vendor)
+   revoke the bid invitation token.
+
+Pattern-id taxonomy and the canonical wiring example live at
+`docs/architecture/prompt-injection.md`.
+
 ## Required environment variables
 
 | Var | Where | Required? |

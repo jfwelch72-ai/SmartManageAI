@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored social-post generation; inputs are tenant-self-authored post topics — covered by tenant-isolation, not third-party content
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";

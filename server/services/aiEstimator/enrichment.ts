@@ -1,3 +1,4 @@
+// prompt-injection-guard: enrichment runs over tenant-internal taxonomy (trade types, cost codes); no untrusted free-text
 /**
  * Task #2414 — Claude-written narrative summaries for the AI Estimator's
  * knowledge index.

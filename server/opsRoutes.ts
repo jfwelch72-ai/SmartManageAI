@@ -52,6 +52,7 @@ import { getMonitoringStatus } from './utils/monitoring';
 import { getPoolStats } from './utils/poolHealth';
 import { getAllJobMetrics } from './utils/jobMetrics';
 import { getWebVitalsSnapshot } from './webVitalsRoutes';
+import { getPromptInjectionMetricsSnapshot } from './ai/promptInjectionGuard';
 
 const router = Router();
 
@@ -335,6 +336,27 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
     }
   } catch (err) {
     logError('Failed to read web-vitals snapshot for /metrics', {}, err as Error);
+  }
+
+  // Task #2683 — Prompt-injection detection counter. One series per
+  // (route, pattern_id, action) tuple. Cardinality is bounded by the
+  // small set of LLM-calling routes × ~12 pattern ids × 3 actions
+  // (flagged / refused / quarantined). See
+  // `docs/architecture/prompt-injection.md` and
+  // `docs/runbooks/observability.md` for triage steps.
+  try {
+    const piSnap = getPromptInjectionMetricsSnapshot();
+    if (piSnap.length) {
+      lines.push('# HELP ai_prompt_injection_detections_total Prompt-injection detections per LLM-calling route, partitioned by pattern_id and action (flagged|refused|quarantined).');
+      lines.push('# TYPE ai_prompt_injection_detections_total counter');
+      for (const row of piSnap) {
+        lines.push(
+          `ai_prompt_injection_detections_total{route="${row.route}",pattern_id="${row.patternId}",action="${row.action}"} ${row.value}`,
+        );
+      }
+    }
+  } catch (err) {
+    logError('Failed to read prompt-injection metrics for /metrics', {}, err as Error);
   }
 
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');

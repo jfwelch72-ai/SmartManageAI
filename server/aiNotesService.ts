@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted note body — TODO(#2683-followup) wrap via quarantineUserText; current prompt is JSON-only with response_format and validateAiJsonOutput
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";

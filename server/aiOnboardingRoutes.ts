@@ -1,3 +1,4 @@
+// prompt-injection-guard: inputs are tenant-self-described onboarding hints (color hex strings, trade enum values); no third-party user content reaches the model
 import { Router , NextFunction } from "express";
 import { safeJsonParse } from "./responseHelper";
 import { db } from "./db";

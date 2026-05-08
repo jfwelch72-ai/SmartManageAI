@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored analyzers operating on tenant-internal aggregated numeric snapshots; no user-authored free-text reaches the model
 import { logError, logWarn, logInfo } from "../utils/logger";
 import { governedAiCall } from "../services/aiGovernance";
 import { db } from "../db";

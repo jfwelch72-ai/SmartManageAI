@@ -66,6 +66,12 @@ run_step "background-job context lint (scripts/check-job-context.mjs)" \
 run_step "SLA doc parity (scripts/check-sla-doc.mjs)" \
   node scripts/check-sla-doc.mjs
 
+# Task #2683 — block new LLM-calling files from bypassing the
+# prompt-injection guard contract (import the helpers OR carry a
+# `// prompt-injection-guard: <reason>` annotation). Cheap (<1s).
+run_step "prompt-injection guard lint (scripts/check-prompt-injection-guard.mjs)" \
+  node scripts/check-prompt-injection-guard.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else

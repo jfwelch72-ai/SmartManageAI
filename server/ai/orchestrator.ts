@@ -1,3 +1,4 @@
+// prompt-injection-guard: callOpenAIForAnalysis used with internal-only structured numeric inputs; no untrusted free-text fields
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { randomUUID } from "crypto";
 import { db } from "../db";

@@ -1,3 +1,4 @@
+// prompt-injection-guard: untrusted vendor price-list — TODO(#2683-followup) wrap via quarantineUntrustedText; current pipeline uses JSON-only response_format and validateAiJsonOutput post-call
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
 import { routedChatCompletion } from "./providers";
 import { governedAiCall, estimateCost } from "../services/aiGovernance";

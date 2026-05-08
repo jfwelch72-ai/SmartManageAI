@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored over tenant-internal equipment telemetry (utilization rates, cost rollups); no user-authored text reaches the model
 /**
  * @openapi
  * /api/equipment:

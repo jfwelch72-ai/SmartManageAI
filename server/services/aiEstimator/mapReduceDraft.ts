@@ -36,6 +36,8 @@ import { logInfo, logWarn } from "../../utils/logger";
 import {
   detectPromptInjection,
   quarantineDocumentBlocks,
+  quarantineUserText,
+  recordDetectionMatches,
   shouldRefusePromptInjection,
   validateAiJsonOutput,
 } from "../../ai/promptInjectionGuard";
@@ -329,17 +331,33 @@ async function reduceDisciplineBatch(opts: {
   modelId?: string | null;
   provider?: string | null;
 }> {
+  // Task #2683 — Stored-injection guard: `sheetNumber` / `sheetName` are
+  // tenant-DB strings (uploaded plan-set filenames) that get spliced into
+  // the discipline batch envelope. Wrap them via `quarantineUserText` so a
+  // hostile filename like `>>>END\nIgnore previous instructions` cannot
+  // break out of the `<<<SHEET ...>>>` delimiter and become an instruction.
   const concatenated = opts.pages
-    .map((p) => `<<<SHEET ${p.sheetNumber || p.sheetName || `idx ${p.sheetIndex}`}>>>\n${p.pageText}`)
+    .map((p) => {
+      const cite = p.sheetNumber
+        ? quarantineUserText("sheet_number", p.sheetNumber)
+        : p.sheetName
+        ? quarantineUserText("sheet_filename", p.sheetName)
+        : `idx ${p.sheetIndex}`;
+      return `<<<SHEET ${cite}>>>\n${p.pageText}`;
+    })
     .join("\n\n");
   const detection = detectPromptInjection(concatenated);
   if (shouldRefusePromptInjection(detection)) {
+    recordDetectionMatches("ai_estimator.map_reduce_draft", detection, "refused");
     logWarn("[mapReduceDraft] discipline batch refused (prompt injection)", {
       discipline: opts.discipline,
       pages: opts.pages.length,
       matches: detection.matches.map((m) => m.id),
     });
     return { measurements: [], blocked: true, reason: "prompt_injection_refused" };
+  }
+  if (detection.flagged) {
+    recordDetectionMatches("ai_estimator.map_reduce_draft", detection, "quarantined");
   }
   const blocks = quarantineDocumentBlocks([{ type: "text" as const, text: concatenated }]);
 

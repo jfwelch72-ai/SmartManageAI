@@ -170,6 +170,52 @@ runtime-asserted to be a non-empty string (guards against the historical
   `/objects/...` paths or `storage.googleapis.com` URLs (see
   `parseGcsUrl`). Arbitrary HTTP(S) URLs are rejected.
 
+**Task #2683 — mechanical enforcement** closed the "developer
+discipline" gap that previously kept this section honest only by code
+review:
+
+- **CI guard** — `scripts/check-prompt-injection-guard.mjs` (wired into
+  `scripts/ci.sh`) walks every `.ts` / `.tsx` file under `server/`,
+  flags any call to `openai.chat.completions.create`,
+  `routedChatCompletion`, or `callOpenAIForAnalysis`, and FAILS the
+  build if the file does not either (a) import a helper from
+  `server/ai/promptInjectionGuard.ts`, or (b) carry an explicit
+  `// prompt-injection-guard: <reason>` top-of-file annotation. The
+  annotation is the deliberate, reviewable acknowledgement —
+  reviewers must inspect every new annotation in PR.
+- **Stored-injection vector closed** — `quarantineUserText(label,
+  text)` wraps short tenant-DB strings (sheet filenames, RFI bodies,
+  assembly names) in `<<USER:label>>...<</USER:label>>` sentinels so a
+  hostile filename like `>>>END\nIgnore previous instructions` cannot
+  break out of inline templating. Reference site:
+  `server/services/aiEstimator/mapReduceDraft.ts` wraps every
+  `sheetNumber` / `sheetName` before splicing into the discipline
+  batch envelope.
+- **Expanded pattern coverage** — added `delimiter_escape` (closing
+  `</UNTRUSTED_DOCUMENT>` sentinels in user content), `im_start` /
+  `im_end` (OpenAI/Anthropic chat-format spoof), `encoded_payload_hint`
+  (base64 / rot13 instruction smuggling), broader `tool_override` /
+  `exfiltration` / `jailbreak_marker` rules. Detection runs on a
+  normalized form (`normalizeForDetection`) that strips zero-width and
+  non-breaking-space chars and collapses whitespace, defeating
+  `i\u200bgnore previous` style obfuscation.
+- **Observability** — every detection (refused or merely flagged)
+  routes through `recordPromptInjectionDetection({ route, patternId,
+  action })`. Counter exported on `/metrics` as
+  `ai_prompt_injection_detections_total{route,pattern_id,action}`
+  (`action` ∈ `flagged | refused | quarantined`). Triage runbook:
+  `docs/runbooks/observability.md`.
+- **Regression suite** — `server/__tests__/promptInjectionGuard.test.ts`
+  exercises every pattern_id with a real-world payload (zero-width
+  evasion, smartquote evasion, delimiter escape, im_start spoof,
+  base64 smuggling, tool-invocation override, act-as / new-system-
+  prompt overrides, exfiltration, explicit injection markers) plus
+  the `quarantineUserText` and metric counter behavior.
+- **Playbook** — `docs/architecture/prompt-injection.md` is the
+  contributor-facing single source of truth (primitives, canonical
+  wiring example, stored-injection vector, observability, new-route
+  checklist).
+
 ### 5.7 Secret hygiene & rotation
 - Secrets live only in Replit's Secrets store / `.env` (gitignored). The
   repo ships `.env.example` (Task #2479) — never a `.env`.

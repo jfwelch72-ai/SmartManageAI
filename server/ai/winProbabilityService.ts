@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored win-probability scoring over tenant-internal numeric features; no free-text inputs
 import { logError } from "../utils/logger";
 import { db } from "../db";
 import { crmOpportunities, crmOpportunityActivities, bids, type CrmOpportunity } from "@shared/schema";

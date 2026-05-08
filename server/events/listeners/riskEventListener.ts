@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored over tenant-internal risk-event payloads (enum-shaped); no user-authored prose
 import { eventBus } from "../eventBus";
 import { db } from "../../db";
 import { changeOrders, projectRisks, projects, notifications, users } from "@shared/schema";

@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored summarization over tenant-internal aggregated KPIs; no third-party text
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { projects, changeOrders, bids, organizations, executiveDigests } from "@shared/schema";

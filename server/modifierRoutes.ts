@@ -1,3 +1,4 @@
+// prompt-injection-guard: system-prompt-anchored modifier suggestions over tenant-internal estimate context; no third-party free-text
 import { logError, logWarn, logInfo } from "./utils/logger";
 import { sendValidationError } from "./utils/validation";
 import { Router, type Response, NextFunction } from "express";
