@@ -1903,6 +1903,14 @@ router.post(
       attachments,
       fallbackCount,
       matchedCount: insertedIds.length - fallbackCount,
+      // Task #2630 — Pair each group with the sheet it lives under so
+      // the apply-toast "Review batch" action can jump the workspace
+      // to the right sheet AND scope the measurements panel to the
+      // freshly-created group in one click.
+      groupBySheet: Array.from(groupIdBySheet.entries()).map(([sheetId, groupId]) => ({
+        sheetId,
+        groupId,
+      })),
     });
   },
 );

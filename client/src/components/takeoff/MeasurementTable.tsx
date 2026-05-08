@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -145,6 +145,16 @@ interface MeasurementTableProps {
   groups?: Array<{ id: string; name: string; color?: string | null }>;
   onDeleteGroup?: (groupId: string) => void | Promise<void>;
   isDeletingGroup?: boolean;
+  /**
+   * Task #2630 — Programmatic group-filter request. Bumping `nonce`
+   * (with a new `groupId`) drives an effect that sets the toolbar's
+   * group filter to the requested id — used by the apply-toast
+   * "Review batch" action so a one-click jump from the AI map-reduce
+   * dialog lands the user on the freshly-created batch. Optional so
+   * legacy embedders that own the filter purely internally stay
+   * backwards-compatible.
+   */
+  groupFilterRequest?: { groupId: string; nonce: number } | null;
 }
 
 type SortField = "label" | "type" | "category" | "length" | "area" | "volume" | "count" | "cost";
@@ -172,6 +182,7 @@ export function MeasurementTable({
   groups,
   onDeleteGroup,
   isDeletingGroup,
+  groupFilterRequest,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("label");
@@ -180,6 +191,18 @@ export function MeasurementTable({
   // Task #2617 — Group filter ("all" or a specific group id). Drives
   // the "review batch" affordance for AI-applied measurements.
   const [filterGroup, setFilterGroup] = useState<string>("all");
+  // Task #2630 — When the workspace asks us to scope to a specific
+  // group (the apply-toast "Review batch" action), bump the nonce
+  // and we'll set the filter to that group id even if the user had
+  // previously cleared it. We track the last-applied nonce so a
+  // re-render with the same request doesn't fight a manual change.
+  const [lastGroupFilterNonce, setLastGroupFilterNonce] = useState<number | null>(null);
+  useEffect(() => {
+    if (!groupFilterRequest) return;
+    if (lastGroupFilterNonce === groupFilterRequest.nonce) return;
+    setFilterGroup(groupFilterRequest.groupId);
+    setLastGroupFilterNonce(groupFilterRequest.nonce);
+  }, [groupFilterRequest, lastGroupFilterNonce]);
   // Task #2617 — Confirmation dialog before nuking a whole batch.
   const [deleteGroupConfirmOpen, setDeleteGroupConfirmOpen] = useState(false);
   // Task #2581 — Scope filter (BASE / CO / ALL).

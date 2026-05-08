@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Layers, Check, PlusCircle, ChevronDown, ChevronRight, Unlink } from "lucide-react";
+import { Loader2, Layers, Check, PlusCircle, ChevronDown, ChevronRight, Unlink, ListChecks } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -70,10 +71,32 @@ interface ApplyResponse {
   skipped: number;
   insertedIds: string[];
   failed: ApplyFailure[];
+  // Task #2617 — review-batch identity returned by the apply endpoint.
+  groupName?: string;
+  groupIds?: string[];
+  // Task #2630 — Per-sheet group pairing so the "Review batch" toast
+  // action can jump to the right sheet AND set the measurements
+  // panel group filter to the freshly-created group.
+  groupBySheet?: Array<{ sheetId: string; groupId: string }>;
+}
+
+export interface ReviewBatchTarget {
+  groupName: string;
+  groupBySheet: Array<{ sheetId: string; groupId: string }>;
+  groupIds: string[];
 }
 
 interface Props {
   bidId?: string;
+  /**
+   * Task #2630 — When wired, the "Added to takeoff" toast surfaces a
+   * "Review batch" action that hands the freshly-created group(s)
+   * back to the workspace so it can jump to the relevant sheet and
+   * scope the measurements panel to the new group id. Optional so
+   * standalone embedders (storybook, tests) keep working without a
+   * workspace context.
+   */
+  onReviewBatch?: (target: ReviewBatchTarget) => void;
 }
 
 /**
@@ -95,7 +118,7 @@ interface Props {
  * the AI draft into their workspace with one click. Sheet citations
  * are preserved on the `note` + `metadata` of each inserted row.
  */
-export function MapReduceDraftButton({ bidId }: Props) {
+export function MapReduceDraftButton({ bidId, onReviewBatch }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -223,14 +246,42 @@ export function MapReduceDraftButton({ bidId }: Props) {
     onSuccess: ({ response: data, pickIndexes }) => {
       const failed = data.failed ?? [];
       setLastFailed(failed);
+      // Task #2630 — Build the "Review batch" toast action when the
+      // workspace wired the callback AND the apply call actually
+      // produced one or more groups. We close our own dialog before
+      // handing off so the user lands directly on the scoped table.
+      const groupBySheet = data.groupBySheet ?? [];
+      const reviewTarget: ReviewBatchTarget | null =
+        onReviewBatch && data.inserted > 0 && data.groupName && groupBySheet.length > 0
+          ? {
+              groupName: data.groupName,
+              groupBySheet,
+              groupIds: data.groupIds ?? groupBySheet.map((g) => g.groupId),
+            }
+          : null;
+      const description =
+        `${data.inserted} measurement${data.inserted === 1 ? "" : "s"} added as DRAFT` +
+        (reviewTarget ? ` to "${reviewTarget.groupName}".` : ".") +
+        (failed.length > 0 ? ` ${failed.length} failed — see details below.` : "");
       toast({
         title: failed.length > 0 ? "Added with errors" : "Added to takeoff",
-        description:
-          `${data.inserted} measurement${data.inserted === 1 ? "" : "s"} added as DRAFT.` +
-          (failed.length > 0
-            ? ` ${failed.length} failed — see details below.`
-            : ""),
+        description,
         variant: failed.length > 0 ? "destructive" : undefined,
+        action: reviewTarget
+          ? (
+              <ToastAction
+                altText={`Review batch ${reviewTarget.groupName}`}
+                onClick={() => {
+                  setOpen(false);
+                  onReviewBatch?.(reviewTarget);
+                }}
+                data-testid="button-review-mapreduce-batch"
+              >
+                <ListChecks className="h-3.5 w-3.5 mr-1" />
+                Review batch
+              </ToastAction>
+            )
+          : undefined,
       });
       // Refresh the workspace measurements lists. We don't know the
       // selected sheet from inside this dialog, so invalidate every

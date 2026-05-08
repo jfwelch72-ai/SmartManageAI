@@ -679,6 +679,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   });
   const [showCostPanel, setShowCostPanel] = useState(false);
   const [showMeasurementTable, setShowMeasurementTable] = useState(false);
+  // Task #2630 — Programmatic group-filter request fanned into the
+  // bottom MeasurementTable panel. Bumping `nonce` (with a new
+  // `groupId`) lets the AI map-reduce apply-toast "Review batch"
+  // action force the panel to scope to the freshly-created group
+  // without reaching into MeasurementTable's internal state.
+  const [measurementGroupFilterRequest, setMeasurementGroupFilterRequest] = useState<
+    { groupId: string; nonce: number } | null
+  >(null);
   // Task #2330 — Right-edge review-queue panel state. The count badge
   // on the bottom bar reads from `reviewQueueCountQuery` even when
   // the panel is closed, so reviewers always see the workload.
@@ -5124,6 +5132,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         await deleteGroupWithMeasurementsMutation.mutateAsync(groupId);
       },
       isDeletingGroup: deleteGroupWithMeasurementsMutation.isPending,
+      // Task #2630 — Programmatic group-filter request driven by the AI
+      // map-reduce apply-toast "Review batch" action.
+      groupFilterRequest: measurementGroupFilterRequest,
     },
     issueDetail: selectedIssue ? {
       issue: selectedIssue,
@@ -5152,6 +5163,26 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onDetectedItemsChanged: (items: DetectedItem[]) => setPreImportDetectedItems(items),
         showOverlays: showAiOverlays,
         onToggleOverlays: setShowAiOverlays,
+        // Task #2630 — Wire the apply-toast "Review batch" action so
+        // a one-click jump from the map-reduce dialog: (1) selects
+        // the sheet the new group lives on, (2) opens the bottom
+        // measurement table, and (3) scopes its group filter to the
+        // freshly-created group id. We pick the first group in the
+        // payload — almost every map-reduce apply lands on a single
+        // sheet/group anyway because the drafter writes one group
+        // per sheet per day, so this is the right default. The
+        // group-filter dropdown still lets the user flip to the
+        // other batches if the apply spanned multiple sheets.
+        onReviewMapReduceBatch: (target) => {
+          const first = target.groupBySheet[0];
+          if (!first) return;
+          setSelectedSheet(first.sheetId);
+          setShowMeasurementTable(true);
+          setMeasurementGroupFilterRequest({
+            groupId: first.groupId,
+            nonce: Date.now(),
+          });
+        },
         onItemsImported: async (items: DetectedItem[]) => {
           let succeeded = 0;
           let failed = 0;

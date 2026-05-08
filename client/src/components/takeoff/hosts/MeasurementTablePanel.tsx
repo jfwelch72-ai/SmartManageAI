@@ -65,6 +65,12 @@ export interface MeasurementTablePanelProps {
   groups?: Array<{ id: string; name: string; color?: string | null }>;
   onDeleteGroup?: (groupId: string) => void | Promise<void>;
   isDeletingGroup?: boolean;
+  /**
+   * Task #2630 — Programmatic group-filter request forwarded from the
+   * workspace. Used by the AI map-reduce apply-toast "Review batch"
+   * action to scope the panel to the freshly-created group.
+   */
+  groupFilterRequest?: { groupId: string; nonce: number } | null;
 }
 
 function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
@@ -103,6 +109,7 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           groups={props.groups}
           onDeleteGroup={props.onDeleteGroup}
           isDeletingGroup={props.isDeletingGroup}
+          groupFilterRequest={props.groupFilterRequest}
         />
       </div>
     </div>

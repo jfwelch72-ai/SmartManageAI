@@ -50,7 +50,7 @@ import { useJobProgress } from "@/hooks/use-job-progress";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
-import { MapReduceDraftButton } from "@/components/takeoff/MapReduceDraftButton";
+import { MapReduceDraftButton, type ReviewBatchTarget } from "@/components/takeoff/MapReduceDraftButton";
 import { ScheduleSymbolsPanel } from "@/components/takeoff/ScheduleSymbolsPanel";
 import { SheetReviewQueuePanel } from "@/components/takeoff/SheetReviewQueuePanel";
 import { LegendSymbolReviewPanel } from "@/components/takeoff/LegendSymbolReviewPanel";
@@ -124,6 +124,14 @@ interface AiTakeoffPanelProps {
   onDetectedItemsChanged?: (items: DetectedItem[]) => void;
   showOverlays?: boolean;
   onToggleOverlays?: (show: boolean) => void;
+  /**
+   * Task #2630 — Forwarded to MapReduceDraftButton so the apply-toast
+   * "Review batch" action can ask the workspace to jump to the
+   * relevant sheet and scope the measurements panel to the
+   * freshly-created group. Optional; when omitted the toast renders
+   * without the action affordance.
+   */
+  onReviewMapReduceBatch?: (target: ReviewBatchTarget) => void;
 }
 
 // Reject-reason codes — must stay in sync with `aiTakeoffRejectReasonEnum`
@@ -217,7 +225,7 @@ const TRADE_TYPE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
-export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays, onReviewMapReduceBatch }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
@@ -744,7 +752,7 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
               )}
             </Button>
             <DraftFullTakeoffButton bidId={bidId} projectId={projectId} standaloneTakeoffId={standaloneTakeoffId} />
-            {bidId && <MapReduceDraftButton bidId={bidId} />}
+            {bidId && <MapReduceDraftButton bidId={bidId} onReviewBatch={onReviewMapReduceBatch} />}
             {bidId && <SheetReviewQueuePanel bidId={bidId} />}
             {bidId && <LegendSymbolReviewPanel bidId={bidId} />}
             {bidId && <ScheduleSymbolsPanel bidId={bidId} />}
