@@ -786,7 +786,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
       {sidebarTab === "conditions" && (
         <ScrollArea className="flex-1">
-          <div className="p-4 pr-5 space-y-4 overflow-x-hidden">
+          <div className="p-4 pr-5 space-y-4 overflow-x-hidden w-full">
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-sm">Takeoff Conditions</h3>
               <Button size="sm" onClick={() => { setEditingCondition(null); setCondForm({ name: "", measurementType: "LINEAR", color: "#3b82f6", categoryName: "", unitCost: "", costCodeId: "", labelTemplate: "", lineStyle: "solid", formula: "", assemblyComponents: [] }); setConditionDialogOpen(true); }} data-testid="button-add-condition">
@@ -1646,7 +1646,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <div
                         key={m.id}
                         className={cn(
-                          "group/item p-2.5 rounded-lg border transition-all cursor-pointer",
+                          "group/item p-2.5 rounded-lg border transition-all cursor-pointer min-w-0 overflow-hidden",
                           selectedMeasurementId === m.id
                             ? "ring-2 ring-primary bg-primary/5 border-primary/30 shadow-sm"
                             : "bg-card hover:bg-accent/50 border-border/60 hover:border-border",
@@ -1686,7 +1686,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         onMouseLeave={() => onMeasurementHover?.(null)}
                         data-testid={`measurement-item-${m.id}`}
                       >
-                        <div className="flex items-start gap-2 mb-1.5">
+                        <div className="flex items-start gap-2 mb-1.5 min-w-0">
                           {bulkSelectMode && (
                             <input type="checkbox" checked={bulkSelectedIds.has(m.id)} readOnly className="w-3.5 h-3.5 rounded shrink-0 mt-0.5" />
                           )}
