@@ -1610,6 +1610,24 @@ router.post(
 
     const insertedIds: string[] = [];
     const failed: { index: number; label: string; reason: string }[] = [];
+    type AttachOutcome = {
+      label: string;
+      type: string;
+      value: number;
+      unit: string;
+      sheetId: string;
+      sheetNumber: string | null;
+      sheetName: string | null;
+      attachment: "matched" | "fallback";
+      sheetCitations: string[];
+      measurementId?: string;
+    };
+    const attachments: AttachOutcome[] = [];
+    const sheetById = new Map<string, { sheetNumber: string | null; sheetName: string | null }>();
+    for (const s of sheets) {
+      sheetById.set(s.id, { sheetNumber: s.sheetNumber ?? null, sheetName: s.sheetName ?? null });
+    }
+    let fallbackCount = 0;
     for (let mi = 0; mi < data.measurements.length; mi++) {
       const m = data.measurements[mi]!;
       let sheetId: string | undefined;
@@ -1620,7 +1638,15 @@ router.post(
           break;
         }
       }
-      if (!sheetId) sheetId = fallbackSheetId;
+      // Task #2620 — when no sheet citation matches, the AI draft falls
+      // back to the lowest-index sheet so the row still lands somewhere.
+      // Tag the row so estimators can audit which measurements were
+      // attached blind (vs. via a real citation match).
+      const attachment: "matched" | "fallback" = sheetId ? "matched" : "fallback";
+      if (!sheetId) {
+        sheetId = fallbackSheetId;
+        fallbackCount++;
+      }
       const groupId = await ensureGroupForSheet(sheetId);
 
       const unitUpper = m.unit.toUpperCase();
@@ -1631,6 +1657,9 @@ router.post(
       const noteParts: string[] = [
         `[ai-map-reduce] ${m.value} ${m.unit}`,
       ];
+      if (attachment === "fallback") {
+        noteParts.push("[fallback-sheet] no citation matched a real sheet; attached to lowest-index sheet");
+      }
       if (m.sheetCitations.length > 0) noteParts.push(`Sheets: ${m.sheetCitations.join(", ")}`);
       if (m.contributingDisciplines.length > 0) {
         noteParts.push(`Disciplines: ${m.contributingDisciplines.join(", ")}`);
@@ -1644,6 +1673,10 @@ router.post(
         costCode: m.costCode ?? null,
         sheetCitations: m.sheetCitations,
         contributingDisciplines: m.contributingDisciplines,
+        // Task #2620 — explicit attachment outcome so the takeoff
+        // workspace / review queue can render a "fallback sheet" badge
+        // and filter without having to grep the note text.
+        sheetAttachment: attachment,
       });
 
       try {
@@ -1669,6 +1702,19 @@ router.post(
           .returning({ id: takeoffMeasurements.id });
         if (inserted) {
           insertedIds.push(inserted.id);
+          const sheetInfo = sheetById.get(sheetId) ?? { sheetNumber: null, sheetName: null };
+          attachments.push({
+            label: m.label,
+            type: m.type,
+            value: m.value,
+            unit: m.unit,
+            sheetId,
+            sheetNumber: sheetInfo.sheetNumber,
+            sheetName: sheetInfo.sheetName,
+            attachment,
+            sheetCitations: m.sheetCitations ?? [],
+            measurementId: inserted.id,
+          });
           await logCreate(userId, "takeoff_measurement", inserted.id, {
             source: "ai_map_reduce_draft",
             bidId: data.bidId,
@@ -1676,6 +1722,7 @@ router.post(
             type: m.type,
             value: m.value,
             unit: m.unit,
+            sheetAttachment: attachment,
           }, req).catch(() => undefined);
         }
       } catch (err) {
@@ -1710,6 +1757,10 @@ router.post(
     // selection, so we keep the rows that did insert and surface the
     // failures so they can fix/retry the bad ones individually instead
     // of losing the whole batch. See task #2621.
+    //
+    // Task #2620 — also return per-row attachment outcomes plus a
+    // summary count so the client can show "N of M measurements landed
+    // on a fallback sheet — review before approving" in the apply toast.
     res.json({
       inserted: insertedIds.length,
       skipped: failed.length,
@@ -1721,6 +1772,9 @@ router.post(
       // wired to the bulk-delete endpoint).
       groupName,
       groupIds: Array.from(groupIdBySheet.values()),
+      attachments,
+      fallbackCount,
+      matchedCount: insertedIds.length - fallbackCount,
     });
   },
 );

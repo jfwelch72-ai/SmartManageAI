@@ -3,7 +3,7 @@ import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowLeft, ShieldCheck, ShieldX, Loader2, AlertCircle, ExternalLink,
-  ArrowUp, ArrowDown,
+  ArrowUp, ArrowDown, AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +75,21 @@ function quantityFor(row: QueueRow): { value: number; unit: string } {
   }
 }
 
+function sheetAttachment(metadataStr: string | null): "matched" | "fallback" | null {
+  // Task #2620 — AI map-reduce apply stamps `sheetAttachment` on the
+  // measurement metadata so we can flag rows that landed on the
+  // lowest-index sheet because no citation matched a real plan sheet.
+  if (!metadataStr) return null;
+  try {
+    const md = JSON.parse(metadataStr);
+    const v = md?.sheetAttachment;
+    if (v === "matched" || v === "fallback") return v;
+  } catch {
+    // Malformed JSON — treat as unknown rather than crashing the row.
+  }
+  return null;
+}
+
 function snapHitRatio(metadataStr: string | null): number | null {
   // Snap-hit ratio is stored on the measurement's metadata blob (when
   // the AI-takeoff or interactive snap engine produces a row). Older
@@ -117,6 +132,10 @@ export default function TakeoffReviewQueuePage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("dollarValue");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
+  // Task #2620 — toggle to scope the queue down to AI-drafted rows that
+  // landed on the fallback sheet (no citation matched). Estimators use
+  // this during the needs-review pass to triage blind attachments first.
+  const [fallbackOnly, setFallbackOnly] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<QueueRow | null>(null);
   const [rejectNote, setRejectNote] = useState("");
 
@@ -167,8 +186,16 @@ export default function TakeoffReviewQueuePage() {
     onError: (e: Error) => toast({ title: "Reject failed", description: e.message, variant: "destructive" }),
   });
 
+  const fallbackTotal = useMemo(
+    () => (data ?? []).filter(r => sheetAttachment(r.metadata) === "fallback").length,
+    [data],
+  );
+
   const filtered = useMemo(() => {
     let rows = data ?? [];
+    if (fallbackOnly) {
+      rows = rows.filter(r => sheetAttachment(r.metadata) === "fallback");
+    }
     if (search.trim()) {
       const q = search.toLowerCase();
       rows = rows.filter(r =>
@@ -200,7 +227,7 @@ export default function TakeoffReviewQueuePage() {
       return 0;
     });
     return sorted;
-  }, [data, search, sortKey, sortDir]);
+  }, [data, search, sortKey, sortDir, fallbackOnly]);
 
   // Reset sort to dollar DESC whenever the bid filter changes — that
   // matches the spec ("riskiest first") for the most-common deep-link
@@ -257,13 +284,26 @@ export default function TakeoffReviewQueuePage() {
           </p>
         </div>
 
-        <div className="mb-4">
+        <div className="mb-4 flex flex-col sm:flex-row gap-2">
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search by measurement label, bid code, requester…"
             data-testid="input-review-queue-search"
           />
+          <Button
+            variant={fallbackOnly ? "default" : "outline"}
+            onClick={() => setFallbackOnly(v => !v)}
+            disabled={fallbackTotal === 0 && !fallbackOnly}
+            data-testid="button-toggle-fallback-only"
+            className="whitespace-nowrap"
+          >
+            <AlertTriangle className="w-4 h-4 mr-1.5" />
+            Fallback sheet only
+            <Badge variant="secondary" className="ml-2 tabular-nums" data-testid="badge-fallback-total">
+              {fallbackTotal}
+            </Badge>
+          </Button>
         </div>
 
         {isLoading && (
@@ -346,6 +386,7 @@ export default function TakeoffReviewQueuePage() {
                   {filtered.map((row) => {
                     const qty = quantityFor(row);
                     const snap = snapHitRatio(row.metadata);
+                    const attachment = sheetAttachment(row.metadata);
                     return (
                       <TableRow key={row.id} data-testid={`row-review-${row.id}`}>
                         <TableCell className="max-w-[260px]">
@@ -378,6 +419,17 @@ export default function TakeoffReviewQueuePage() {
                             <div className="text-muted-foreground truncate max-w-[180px] mt-1">
                               {row.sheetName}
                             </div>
+                          )}
+                          {attachment === "fallback" && (
+                            <Badge
+                              variant="destructive"
+                              className="text-[10px] mt-1 inline-flex items-center gap-1"
+                              title="AI map-reduce could not match a sheet citation; this measurement was attached to the lowest-index sheet. Verify before approving."
+                              data-testid={`badge-fallback-sheet-${row.id}`}
+                            >
+                              <AlertTriangle className="w-3 h-3" />
+                              Fallback sheet
+                            </Badge>
                           )}
                         </TableCell>
                         <TableCell>
