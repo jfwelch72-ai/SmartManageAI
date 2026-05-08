@@ -41,13 +41,13 @@ vi.mock("../integrations/providers/dol_davis_bacon", () => ({
   importWageDetermination: vi.fn(),
   listSuppressedFailureNotifications: vi.fn(async () => []),
   resetSuppressedFailureNotification: vi.fn(),
-  resetAllSuppressedFailureNotifications: (...args: unknown[]) => resetAllMock(...args),
+  resetAllSuppressedFailureNotifications: resetAllMock,
 }));
 
 const getConnectionMock = vi.fn();
 vi.mock("../integrations/connectionService", () => ({
   listConnections: vi.fn(async () => []),
-  getConnection: (...args: unknown[]) => getConnectionMock(...args),
+  getConnection: getConnectionMock,
   getDecryptedConnection: vi.fn(),
   createConnection: vi.fn(),
   storeConnectionTokens: vi.fn(),

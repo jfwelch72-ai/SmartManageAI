@@ -743,7 +743,7 @@ export default function ProjectsPage() {
               onRowClick={(project) => setLocation(`/projects/${project.code}`)}
               canDelete={canDelete}
               onDelete={handleDeleteProject}
-              getRowProps={getProjectRowProps}
+              getRowProps={getProjectRowProps as unknown as React.ComponentProps<typeof ProjectsTable>["getRowProps"]}
               selectable={canBulkReassignProjectOwner}
               selectedIds={selectedProjectIds}
               onToggleSelect={(id, checked) =>

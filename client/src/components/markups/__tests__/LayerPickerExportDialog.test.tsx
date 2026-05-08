@@ -111,7 +111,7 @@ describe("LayerPickerExportDialog (Task #1703)", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
+    expect(String((fetchMock.mock.calls[0] as unknown[])[0])).toBe(
       `/api/plan-documents/${encodeURIComponent(DOC_ID)}/markup-layers`,
     );
 
@@ -134,7 +134,7 @@ describe("LayerPickerExportDialog (Task #1703)", () => {
     fireEvent.click(screen.getByTestId("button-layer-picker-export"));
 
     expect(openMock).toHaveBeenCalledTimes(1);
-    const url = String(openMock.mock.calls[0][0]);
+    const url = String((openMock.mock.calls[0] as unknown[])[0]);
     expect(url.startsWith(
       `/api/plan-documents/${encodeURIComponent(DOC_ID)}/export.pdf?`,
     )).toBe(true);
@@ -176,7 +176,7 @@ describe("LayerPickerExportDialog (Task #1703)", () => {
     );
 
     fireEvent.click(screen.getByTestId("button-layer-picker-export"));
-    const url = String(openMock.mock.calls[0][0]);
+    const url = String((openMock.mock.calls[0] as unknown[])[0]);
     const qs = new URLSearchParams(url.split("?")[1] ?? "");
     const ids = (qs.get("layerIds") ?? "").split(",").filter(Boolean);
     expect(new Set(ids)).toEqual(new Set(["__default__", "L-design"]));

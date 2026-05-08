@@ -3,7 +3,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { organizations, organizationSowItems, masterSowItems, masterModifierCategories, masterModifiers, scopeWorkTypeCategories, scopeWorkTypes, scopeModifierCategories, scopeModifiers, insertScopeWorkTypeCategorySchema, insertScopeWorkTypeSchema, insertScopeModifierCategorySchema, insertScopeModifierSchema, tradeTypeEnum, bids, bidModifierSelections, estimateLineItems, estimates, modifiers as modifiersTable, projects, users, scopeItems, insertScopeItemSchema, dailyScopeProgress, insertDailyScopeProgressSchema, projectMaterialBudgets, notifications } from "@shared/schema";
 import { insertNotifications } from "./services/notificationService";
-import { eq, and, or, sql, desc, type SQL, asc } from "drizzle-orm";
+import { eq, and, or, sql, desc, type SQL, asc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
@@ -1870,7 +1870,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       tradeLayer = tradeCategories.map(cat => ({
         id: cat.id,
         name: cat.name,
-        description: cat.description,
+        description: cat.description ?? undefined,
         displayOrder: cat.displayOrder,
         modifiers: tradeMods
           .filter(m => m.categoryId === cat.id)
@@ -1880,7 +1880,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
             categoryName: cat.name,
             name: m.name,
             code: m.code,
-            description: m.description,
+            description: m.description ?? undefined,
             displayOrder: m.displayOrder,
           }))
       }));
@@ -2686,7 +2686,7 @@ router.post("/api/scope-items/:scopeItemId/progress", requireAuth, async (req: A
           .where(
             and(
               eq(users.organizationId, project.gcOrganizationId),
-              eq(users.role),
+              inArray(users.role, ["ADMIN", "MANAGER"]),
               eq(users.isActive, true)
             )
           );
@@ -2815,7 +2815,7 @@ router.patch("/api/scope-items/:scopeItemId/progress/:progressId", requireAuth, 
           const officeManagers = await db
             .select()
             .from(users)
-            .where(eq(users.role));
+            .where(inArray(users.role, ["ADMIN", "MANAGER"]));
 
           if (officeManagers.length > 0) {
             const notificationValues = officeManagers.map(manager => ({

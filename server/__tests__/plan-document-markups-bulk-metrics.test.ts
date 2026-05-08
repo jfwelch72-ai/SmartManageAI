@@ -88,10 +88,10 @@ function apiDelete(path: string, token: string, body?: Record<string, unknown>) 
 }
 
 async function cleanup(): Promise<void> {
-  const orgs = await db.execute(
+  const orgs = await db.execute<{ id: string }>(
     sql`SELECT id FROM organizations WHERE slug LIKE ${TEST_PREFIX + "%"}`,
   );
-  const rows = (orgs as { rows: Array<{ id: string }> }).rows;
+  const rows = orgs.rows;
   for (const { id: orgId } of rows) {
     const projSub = sql`(SELECT id FROM projects WHERE gc_organization_id = ${orgId})`;
     const docSub = sql`(SELECT id FROM plan_documents WHERE project_id IN ${projSub})`;

@@ -151,7 +151,7 @@ describe("aiHeavyCivilFeatureRoutes — prompt-injection guard", () => {
 
       expect(res.status).toBe(200);
       expect(routedMock).toHaveBeenCalledTimes(1);
-      const callArg = routedMock.mock.calls[0][0] as {
+      const callArg = (routedMock.mock.calls[0] as unknown[])[0] as {
         request: { messages: Array<{ role: string; content: unknown }> };
       };
       const userMsg = callArg.request.messages.find((m) => m.role === "user")!;
@@ -206,7 +206,7 @@ describe("aiHeavyCivilFeatureRoutes — prompt-injection guard", () => {
 
       expect(res.status).toBe(200);
       expect(routedMock).toHaveBeenCalledTimes(1);
-      const callArg = routedMock.mock.calls[0][0] as {
+      const callArg = (routedMock.mock.calls[0] as unknown[])[0] as {
         request: { messages: Array<{ role: string; content: unknown }> };
       };
       const userMsg = callArg.request.messages.find((m) => m.role === "user")!;

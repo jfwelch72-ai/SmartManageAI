@@ -48,7 +48,7 @@ export interface Conversation {
   unreadCount: number;
 }
 
-export type ChannelRow = Conversation & { _unjoined?: boolean };
+export type ChannelRow = (Conversation & { _unjoined?: boolean }) | (Channel & { _unjoined: true });
 
 export interface MessageReaction {
   emoji: string;

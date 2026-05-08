@@ -699,7 +699,7 @@ router.post("/ai-features/change-orders/drafts/:draftId/convert", requireAuth, r
       return res.status(404).json({ error: "Draft not found" });
     }
 
-    const draftContent = safeJsonParse(draft.draftContentJson, {});
+    const draftContent = safeJsonParse(draft.draftContentJson, {}) as { description?: string; subtotals?: { total?: number } };
 
     // Generate next change order number
     const existingCOs = await db.select()

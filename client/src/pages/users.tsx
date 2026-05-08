@@ -124,7 +124,7 @@ interface UserWithPermissions extends SelectUser {
   effectiveRole?: string;
   grantedAt?: string;
   appliedPresetId?: string | null;
-  roleLabel?: string | null;
+  roleLabel: string | null;
   overrides?: Record<string, boolean>;
 }
 
@@ -1483,7 +1483,7 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                                                 {financialsOverridden && (
                                                   <button
                                                     onClick={() => {
-                                                      const defaults = u.roleDefaults || {};
+                                                      const defaults: PermissionSet = u.roleDefaults || ({} as PermissionSet);
                                                       const currentPerms = buildCurrentPermissions(u);
                                                       updatePermissionsMutation.mutate({
                                                         userId: u.id,
@@ -1733,7 +1733,9 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                       name: savePresetName.trim(),
                       description: savePresetDesc.trim() || undefined,
                       targetRole: showSavePreset.role,
-                      permissions: showSavePreset.permissions,
+                      permissions: Object.fromEntries(
+                        Object.entries(showSavePreset.permissions).map(([k, v]) => [k, !!v])
+                      ) as Record<string, boolean>,
                     });
                   }
                 }}

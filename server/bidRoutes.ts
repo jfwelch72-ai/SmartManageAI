@@ -169,7 +169,7 @@
  *       201: { description: Project created from bid }
  *       400: { description: Bid must be in AWARDED status }
  */
-import { Router, type Response, type Request } from "express";
+import { Router, type Response, type Request, type NextFunction } from "express";
 import { z } from "zod";
 import { logError, logInfo } from "./utils/logger";
 import { eventBus } from "./events";
@@ -1658,7 +1658,7 @@ router.get(
       const profitAmount = baseCost * (profitPercent / 100);
       const finalBidAmount = baseCost + overheadAmount + profitAmount;
 
-      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId ?? "");
 
       const pdfData = {
         bid: {
@@ -1763,7 +1763,7 @@ router.get(
       const finalBidAmount =
         parseFloat(bid.bidAmount as any) || totalDirectCost + overheadAmount + profitAmount;
 
-      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId ?? "");
 
       const pdfData = {
         bid: {
@@ -1851,7 +1851,7 @@ router.get(
       const finalBidAmount =
         parseFloat(bid.bidAmount as any) || totalDirectCost + overheadAmount + profitAmount;
 
-      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId);
+      const orgBranding = await getOrganizationBranding(bid.gcOrganizationId ?? "");
 
       const pdfData = {
         bid: {
@@ -2606,9 +2606,7 @@ interface MulterFile {
   mimetype: string;
 }
 
-interface MulterRequest extends Request {
-  files?: MulterFile[];
-}
+type MulterRequest = Omit<Request, "files"> & { files?: MulterFile[] };
 
 router.post("/api/public/rfq-response/:token", async (req, res, next) => {
   let parsedFiles: MulterFile[] = [];
@@ -2621,10 +2619,11 @@ router.post("/api/public/rfq-response/:token", async (req, res, next) => {
     }).array("attachments", 5);
 
     await new Promise<void>((resolve, reject) => {
-      upload(req, res, (err: Error | null) => {
+      const cb: unknown = (err: Error | null) => {
         if (err) reject(err);
         else resolve();
-      });
+      };
+      upload(req, res, cb as NextFunction);
     });
 
     parsedFiles = (req as MulterRequest).files || [];

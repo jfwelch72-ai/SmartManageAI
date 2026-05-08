@@ -335,7 +335,7 @@ export default function ClientPortalPublic({ projectIdOverride }: { projectIdOve
 
             {permissions.viewChangeOrders && (
               <TabsContent value="change-orders">
-                <PortalChangeOrdersTab changeOrders={portalData?.changeOrders} projectId={projectId} email={email} onRefresh={refreshPortalData} />
+                <PortalChangeOrdersTab changeOrders={portalData?.changeOrders as React.ComponentProps<typeof PortalChangeOrdersTab>["changeOrders"]} projectId={projectId} email={email} onRefresh={refreshPortalData} />
               </TabsContent>
             )}
 

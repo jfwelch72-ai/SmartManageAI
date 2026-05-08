@@ -1463,11 +1463,17 @@ interface ClockInData {
   costCode?: string;
   latitude?: number;
   longitude?: number;
+  accuracy?: number;
+  geofenceOverride?: boolean;
+  geofenceOverrideReason?: string;
 }
 
 interface ClockOutData {
   latitude?: number;
   longitude?: number;
+  accuracy?: number;
+  geofenceOverride?: boolean;
+  geofenceOverrideReason?: string;
 }
 
 export function useCurrentShift() {
@@ -1616,6 +1622,10 @@ export function useProjectCostCodes(projectId: string | null | undefined) {
   });
 }
 
+export type TimeClockShiftWithProject = TimeClockShift & {
+  project: { id: string; name: string; code: string | null } | null;
+};
+
 export function useMyShifts(params?: { startDate?: string; endDate?: string; pageSize?: number }) {
   const queryParams = new URLSearchParams();
   if (params?.startDate) queryParams.set("startDate", params.startDate);
@@ -1623,7 +1633,7 @@ export function useMyShifts(params?: { startDate?: string; endDate?: string; pag
   if (params?.pageSize) queryParams.set("pageSize", String(params.pageSize));
   const qs = queryParams.toString();
   const url = `/api/time-clock/my-shifts${qs ? `?${qs}` : ""}`;
-  return useQuery<TimeClockShift[]>({
+  return useQuery<TimeClockShiftWithProject[]>({
     queryKey: [url],
   });
 }

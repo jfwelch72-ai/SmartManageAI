@@ -13,8 +13,8 @@ const logWarnMock = vi.fn();
 const logErrorMock = vi.fn();
 vi.mock("../utils/logger", () => ({
   logInfo: vi.fn(),
-  logWarn: (...args: unknown[]) => logWarnMock(...args),
-  logError: (...args: unknown[]) => logErrorMock(...args),
+  logWarn: logWarnMock,
+  logError: logErrorMock,
 }));
 
 const WEBHOOK_ENV_VARS = [

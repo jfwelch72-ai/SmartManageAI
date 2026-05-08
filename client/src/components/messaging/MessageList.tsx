@@ -73,9 +73,9 @@ interface MessageListProps {
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 
   // Scroll refs
-  messagesEndRef: React.RefObject<HTMLDivElement | null>;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
-  sentinelRef: React.RefObject<HTMLDivElement | null>;
+  messagesEndRef: React.Ref<HTMLDivElement>;
+  scrollContainerRef: React.Ref<HTMLDivElement>;
+  sentinelRef: React.Ref<HTMLDivElement>;
 }
 
 export function MessageList({

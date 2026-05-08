@@ -392,7 +392,7 @@ export default function CrmPipelineView() {
       if (selectedOpp?.id === vars.id) {
         queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", vars.id, "activities"] });
         queryClient.invalidateQueries({ queryKey: ["/api/crm/opportunities", vars.id] });
-        setSelectedOpp(prev => prev ? { ...prev, ...vars.data, stage: (vars.data.stage as PipelineStage) ?? prev.stage } : null);
+        setSelectedOpp(prev => prev ? ({ ...prev, ...(vars.data as Partial<Opportunity>), stage: (vars.data.stage as PipelineStage) ?? prev.stage }) : null);
       }
       toast({ title: "Opportunity updated" });
       setEditOpen(false);
@@ -1270,7 +1270,7 @@ export default function CrmPipelineView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddOpen(false)} data-testid="button-cancel-add">Cancel</Button>
             <Button
-              onClick={() => createMutation.mutate({ ...form, customFields: formCustomFields })}
+              onClick={() => createMutation.mutate({ ...form, customFields: formCustomFields } as typeof form)}
               disabled={!form.name.trim() || createMutation.isPending}
               data-testid="button-submit-add"
             >
@@ -1297,7 +1297,7 @@ export default function CrmPipelineView() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditOpen(false)} data-testid="button-cancel-edit">Cancel</Button>
             <Button
-              onClick={() => selectedOpp && updateMutation.mutate({ id: selectedOpp.id, data: { ...editForm, customFields: editFormCustomFields } })}
+              onClick={() => selectedOpp && updateMutation.mutate({ id: selectedOpp.id, data: { ...editForm, customFields: editFormCustomFields } as Partial<typeof DEFAULT_FORM> })}
               disabled={!editForm.name.trim() || updateMutation.isPending}
               data-testid="button-submit-edit"
             >

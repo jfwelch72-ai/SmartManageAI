@@ -649,7 +649,7 @@ describe("draftTakeoffFromPlans — org scoping + JSON parsing", () => {
     });
     expect(out.result).not.toBeNull();
     expect(openaiCreate).toHaveBeenCalledTimes(1);
-    const call = openaiCreate.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const call = (openaiCreate.mock.calls[0] as unknown[])[0] as { messages: Array<{ role: string; content: unknown }> };
     const userMsg = call.messages.find((m) => m.role === "user")!;
     const userContent = JSON.stringify(userMsg.content);
     expect(userContent).toContain("UNTRUSTED_DOCUMENT");
@@ -734,7 +734,7 @@ describe("indexPlanSheetsForBid — prompt-injection guard", () => {
       bidId: ctx.bidA,
     });
     expect(openaiCreate).toHaveBeenCalledTimes(1);
-    const call = openaiCreate.mock.calls[0][0] as { messages: Array<{ role: string; content: unknown }> };
+    const call = (openaiCreate.mock.calls[0] as unknown[])[0] as { messages: Array<{ role: string; content: unknown }> };
     const userMsg = call.messages.find((m) => m.role === "user")!;
     const userContent = JSON.stringify(userMsg.content);
     expect(userContent).toContain("UNTRUSTED_DOCUMENT");

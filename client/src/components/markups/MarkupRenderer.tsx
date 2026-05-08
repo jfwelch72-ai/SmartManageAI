@@ -147,7 +147,7 @@ export function MarkupShapeView({
   const thickness = shape.thickness || 2;
   const isInteractive = listening ?? !readOnly;
   const handle = isInteractive && onSelect
-    ? (evt: KonvaEventObject<MouseEvent>) => {
+    ? (evt: KonvaEventObject<Event>) => {
         evt.cancelBubble = true;
         // Task #1729 — read the Shift modifier off the actual native
         // event Konva forwards on `evt.evt`, instead of the legacy
@@ -303,9 +303,9 @@ export function MarkupShapeView({
         handle?.(evt);
         userOnClick?.(evt);
       }}
-      onTap={(evt) => {
+      onTap={(evt: KonvaEventObject<Event>) => {
         handle?.(evt);
-        userOnTap?.(evt);
+        userOnTap?.(evt as KonvaEventObject<MouseEvent>);
       }}
     >
       {inner}

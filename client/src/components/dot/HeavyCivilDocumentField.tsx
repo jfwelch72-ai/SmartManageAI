@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import type { UploadResult } from "@uppy/core";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT } from "@/lib/uploadLimits";
 import { Button } from "@/components/ui/button";
@@ -8,17 +9,7 @@ import { Loader2, Upload, FileText, History, Download, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-interface UploadResultFile {
-  uploadURL?: string;
-  data?: { name?: string; size?: number; type?: string } | File;
-  name?: string;
-  size?: number;
-  type?: string;
-}
-
-interface UploadCompleteResult {
-  successful?: UploadResultFile[];
-}
+type UploadCompleteResult = UploadResult<Record<string, unknown>, Record<string, unknown>>;
 
 interface CreatedDoc {
   id: string;
@@ -215,7 +206,7 @@ export function HeavyCivilDocumentField({
     setBusy(true);
     try {
       if (documentId) {
-        await uploadAndCreateRevision({ documentId, fileUrl: f.uploadURL, fileName, fileSize, mimeType });
+        await uploadAndCreateRevision({ documentId, fileUrl: f.uploadURL, fileName, fileSize: fileSize ?? undefined, mimeType });
         await queryClient.invalidateQueries({ queryKey: ["/api/documents", documentId, "revisions"] });
         toast({ title: "New revision uploaded" });
       } else {
@@ -230,7 +221,7 @@ export function HeavyCivilDocumentField({
           type: docType,
           fileUrl: f.uploadURL,
           fileName,
-          fileSize,
+          fileSize: fileSize ?? undefined,
           mimeType,
         });
         onChange(doc.id);
@@ -303,7 +294,7 @@ export function HeavyCivilDocumentField({
             <ObjectUploader
               maxNumberOfFiles={1}
               fileType="DOCUMENT"
-              onComplete={handleComplete}
+              onComplete={handleComplete as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
               testId={`uploader-${testId}-replace`}
             >
               <Button type="button" size="sm" variant="outline" disabled={disabled || busy}>
@@ -320,7 +311,7 @@ export function HeavyCivilDocumentField({
           <ObjectUploader
             maxNumberOfFiles={1}
             fileType="DOCUMENT"
-            onComplete={handleComplete}
+            onComplete={handleComplete as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
             testId={`uploader-${testId}`}
           >
             <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !canUpload}>
@@ -381,7 +372,7 @@ export function HeavyCivilDocumentList({
           type: docType,
           fileUrl: f.uploadURL,
           fileName,
-          fileSize: data.size ?? f.size,
+          fileSize: data.size ?? f.size ?? undefined,
           mimeType: data.type ?? f.type,
         });
         newIds.push(doc.id);
@@ -409,7 +400,7 @@ export function HeavyCivilDocumentList({
           <ObjectUploader
             maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
             fileType="DOCUMENT"
-            onComplete={handleComplete}
+            onComplete={handleComplete as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
             testId={`uploader-${testId}`}
           >
             <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !projectId}>

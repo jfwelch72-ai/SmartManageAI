@@ -64,7 +64,7 @@ function recordExecute(query: unknown): { rows: unknown[] } {
 }
 
 const insertChain = {
-  values: vi.fn(async () => undefined),
+  values: vi.fn(async (_row: Record<string, unknown>) => undefined),
 };
 const dbMock = {
   execute: vi.fn(async (query: unknown) => recordExecute(query)),

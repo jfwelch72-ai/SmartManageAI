@@ -599,7 +599,7 @@ export default function CandidateDetailPage() {
                         <div>
                           <p className="text-xs font-medium text-green-700 dark:text-green-400 mb-1">Strengths</p>
                           <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                            {displayReview.strengths.map((s, i) => <li key={i}>{s}</li>)}
+                            {displayReview.strengths.map((s: string, i: number) => <li key={i}>{s}</li>)}
                           </ul>
                         </div>
                       )}
@@ -609,7 +609,7 @@ export default function CandidateDetailPage() {
                         <div>
                           <p className="text-xs font-medium text-orange-700 dark:text-orange-400 mb-1">Concerns</p>
                           <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                            {displayReview.concerns.map((c, i) => <li key={i}>{c}</li>)}
+                            {displayReview.concerns.map((c: string, i: number) => <li key={i}>{c}</li>)}
                           </ul>
                         </div>
                       )}
@@ -619,7 +619,7 @@ export default function CandidateDetailPage() {
                         <div>
                           <p className="text-xs font-medium text-destructive mb-1">Red Flags</p>
                           <ul className="text-xs text-muted-foreground list-disc list-inside space-y-0.5">
-                            {displayReview.redFlags.map((f, i) => <li key={i}>{f}</li>)}
+                            {displayReview.redFlags.map((f: string, i: number) => <li key={i}>{f}</li>)}
                           </ul>
                         </div>
                       )}
@@ -631,7 +631,7 @@ export default function CandidateDetailPage() {
                             <div>
                               <p className="text-xs font-medium mb-1 text-muted-foreground">Skills</p>
                               <div className="flex flex-wrap gap-1">
-                                {displayReview.extractedSkills.map((s, i) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
+                                {displayReview.extractedSkills.map((s: string, i: number) => <Badge key={i} variant="outline" className="text-xs">{s}</Badge>)}
                               </div>
                             </div>
                           )}
@@ -639,7 +639,7 @@ export default function CandidateDetailPage() {
                             <div>
                               <p className="text-xs font-medium mb-1 text-muted-foreground">Certifications</p>
                               <div className="flex flex-wrap gap-1">
-                                {displayReview.extractedCerts.map((c, i) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
+                                {displayReview.extractedCerts.map((c: string, i: number) => <Badge key={i} variant="outline" className="text-xs">{c}</Badge>)}
                               </div>
                             </div>
                           )}
@@ -647,7 +647,7 @@ export default function CandidateDetailPage() {
                             <div>
                               <p className="text-xs font-medium mb-1 text-muted-foreground">Equipment</p>
                               <div className="flex flex-wrap gap-1">
-                                {displayReview.extractedEquipment.map((e, i) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
+                                {displayReview.extractedEquipment.map((e: string, i: number) => <Badge key={i} variant="outline" className="text-xs">{e}</Badge>)}
                               </div>
                             </div>
                           )}

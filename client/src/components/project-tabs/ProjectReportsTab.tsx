@@ -935,7 +935,7 @@ function ReportDataView({ data }: { data: ReportData }) {
                     <span className="truncate max-w-[300px]">{co.description}</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="font-medium">${parseFloat(co.amount || 0).toLocaleString()}</span>
+                    <span className="font-medium">${parseFloat(String(co.amount ?? 0)).toLocaleString()}</span>
                     <Badge variant={co.status === "APPROVED" ? "default" : "secondary"} className="text-xs">{co.status}</Badge>
                   </div>
                 </div>

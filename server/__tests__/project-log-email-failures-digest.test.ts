@@ -734,7 +734,7 @@ describe("processProjectLogEmailFailuresDigest", () => {
     expect(insertedNotifications).toHaveLength(0);
     const orgEntry = summary.perOrg.get(ORG_A);
     expect(orgEntry?.skipped).toBe(true);
-    expect(orgEntry?.reason).toBe("NO_FAILURES");
+    if (orgEntry?.skipped) expect(orgEntry.reason).toBe("NO_FAILURES");
   });
 
   it("returns NO_ADMINS in the summary when the org has failures but no admins", async () => {
@@ -767,7 +767,7 @@ describe("processProjectLogEmailFailuresDigest", () => {
     expect(insertedNotifications).toHaveLength(0);
     const orgEntry = summary.perOrg.get(ORG_A);
     expect(orgEntry?.skipped).toBe(true);
-    expect(orgEntry?.reason).toBe("NO_ADMINS");
+    if (orgEntry?.skipped) expect(orgEntry.reason).toBe("NO_ADMINS");
     expect(orgEntry?.failingScheduleCount).toBe(1);
   });
 });

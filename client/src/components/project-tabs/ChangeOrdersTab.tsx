@@ -767,8 +767,8 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
             projectId={projectId}
             projectName={projectName}
             onCreateChangeOrder={(draft) => {
-              setAmount(draft.suggestedAmount.toString());
-              setDescription(draft.aiGeneratedDescription);
+              setAmount((draft.suggestedAmount ?? 0).toString());
+              setDescription(draft.aiGeneratedDescription ?? "");
               setShowCreateDialog(true);
             }}
           />

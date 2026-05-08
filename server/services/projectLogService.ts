@@ -174,7 +174,8 @@ export async function fetchProjectSubmittalLogRows(projectId: string): Promise<S
   }
 
   const ballInCourt = (r: typeof rows[number]): string | null => {
-    const closed = r.status === "APPROVED" || r.status === "REJECTED" || r.status === "CLOSED";
+    const rStatus = r.status as string;
+    const closed = rStatus === "APPROVED" || rStatus === "REJECTED" || rStatus === "CLOSED";
     if (closed) return r.reviewerName ?? null;
     return openReviewMap.get(r.id) ?? r.reviewerName ?? r.submittedByName ?? null;
   };

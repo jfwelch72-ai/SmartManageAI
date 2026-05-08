@@ -196,7 +196,7 @@ describe("POST /api/crm/calls/transcripts/backfill/test-alert — persistence", 
     expect(row!.lastTestResult).toEqual(HEALTHY_RESULT);
 
     expect(mockSendTestBackfillAlert).toHaveBeenCalledTimes(1);
-    expect(mockSendTestBackfillAlert.mock.calls[0][0]).toBe(orgId);
+    expect((mockSendTestBackfillAlert.mock.calls[0] as unknown[])[0]).toBe(orgId);
   });
 
   it("rejects unauthenticated callers and never persists for them", async () => {

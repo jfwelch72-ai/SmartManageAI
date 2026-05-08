@@ -721,9 +721,9 @@ router.get("/api/org/deletion-request/confirm", async (req, res, next) => {
     }).where(eq(orgDeletionRequests.id, row.id));
 
     // Soft-delete: deactivate the org. (Hard-delete cron job removes data after grace window.)
-    await db.update(organizations).set({ isActive: false, updatedAt: new Date() }).where(eq(organizations.id, row.organizationId));
+    await db.update(organizations).set({ isActive: false, updatedAt: new Date() }).where(eq(organizations.id, row.organizationId!));
 
-    await logAudit({ userId: row.requestedById, entityType: "org_deletion_request", entityId: row.id, action: "APPROVE", newValue: JSON.stringify({ hardDeleteScheduledAt: hardDeleteAt.toISOString() }) });
+    await logAudit({ userId: row.requestedById!, entityType: "org_deletion_request", entityId: row.id, action: "APPROVE", newValue: JSON.stringify({ hardDeleteScheduledAt: hardDeleteAt.toISOString() }) });
 
     res.setHeader("Content-Type", "text/html");
     res.send(`<!doctype html><html><body style="font-family:sans-serif;max-width:640px;margin:48px auto;padding:24px"><h1>Deletion confirmed</h1><p>Your organization has been deactivated. All data will be permanently destroyed on <strong>${hardDeleteAt.toUTCString()}</strong> unless you cancel by contacting <a href="mailto:support@smartmanage.ai">support@smartmanage.ai</a>.</p></body></html>`);

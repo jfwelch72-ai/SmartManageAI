@@ -129,10 +129,10 @@ export async function runOrgHardDeleteSweep(): Promise<{ swept: number; failed: 
       failures.push({ step: "db:users", error: e instanceof Error ? e.message : String(e) });
     }
 
-    const blob = await deleteObjectStoragePrefix(orgId, failures);
+    const blob = await deleteObjectStoragePrefix(orgId ?? "", failures);
 
     try {
-      await db.delete(organizations).where(eq(organizations.id, orgId));
+      await db.delete(organizations).where(eq(organizations.id, orgId ?? ""));
     } catch (e) {
       failures.push({ step: "db:organizations", error: e instanceof Error ? e.message : String(e) });
     }
@@ -144,7 +144,7 @@ export async function runOrgHardDeleteSweep(): Promise<{ swept: number; failed: 
       logError("[orgHardDelete] partial failure — leaving status=SCHEDULED_HARD_DELETE for retry", { id: req.id, orgId, failures }, new Error(`${failures.length} step(s) failed`));
       try {
         await logAudit({
-          userId: req.requestedById,
+          userId: req.requestedById ?? "system",
           entityType: "org_deletion_request",
           entityId: req.id,
           action: "DELETE",
@@ -159,7 +159,7 @@ export async function runOrgHardDeleteSweep(): Promise<{ swept: number; failed: 
         .set({ status: "COMPLETED", hardDeletedAt: new Date() })
         .where(eq(orgDeletionRequests.id, req.id));
       await logAudit({
-        userId: req.requestedById,
+        userId: req.requestedById ?? "system",
         entityType: "org_deletion_request",
         entityId: req.id,
         action: "DELETE",

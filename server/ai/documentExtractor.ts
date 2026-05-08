@@ -31,13 +31,14 @@ export async function extractPdfPageTexts(
 
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const canvasFactory = new NodeCanvasFactory();
-  const loadingTask = pdfjsLib.getDocument({
+  const loadOpts: unknown = {
     data: new Uint8Array(pdfBuffer),
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
-    canvasFactory: canvasFactory as any,
-  });
+    canvasFactory,
+  };
+  const loadingTask = pdfjsLib.getDocument(loadOpts as Parameters<typeof pdfjsLib.getDocument>[0]);
   const pdfDoc = await loadingTask.promise;
   const startPage = Math.max(1, opts.startPage ?? 1);
   const inclusiveEnd = Math.min(pdfDoc.numPages, opts.endPage ?? pdfDoc.numPages);
@@ -241,7 +242,7 @@ function detectFileType(buffer: Buffer, contentType: string | null, url: string)
 
 type ImageContentBlock = {
   type: "image_url";
-  image_url: { url: string; detail: string };
+  image_url: { url: string; detail: "low" | "high" | "auto" };
 };
 
 type TextContentBlock = {
@@ -314,13 +315,14 @@ async function processPdf(pdfBuffer: Buffer): Promise<DocumentContentBlock[]> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const canvasFactory = new NodeCanvasFactory();
 
-  const loadingTask = pdfjsLib.getDocument({
+  const loadOpts: unknown = {
     data: new Uint8Array(pdfBuffer),
     useSystemFonts: true,
     disableFontFace: true,
     isEvalSupported: false,
-    canvasFactory: canvasFactory as any,
-  });
+    canvasFactory,
+  };
+  const loadingTask = pdfjsLib.getDocument(loadOpts as Parameters<typeof pdfjsLib.getDocument>[0]);
 
   const pdfDoc = await loadingTask.promise;
   const numPages = Math.min(pdfDoc.numPages, MAX_PDF_PAGES);

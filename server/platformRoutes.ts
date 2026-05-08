@@ -1651,7 +1651,8 @@ router.get("/platform/monitoring/audit-logs", requireAuth, requireSuperAdmin, as
       conditions.push(gte(auditLog.createdAt, startDate));
     }
     if (endDate) {
-      const endOfDay = new Date(endDate as string);
+      const endDateUnknown: unknown = endDate;
+      const endOfDay = new Date(endDateUnknown as string);
       endOfDay.setHours(23, 59, 59, 999);
       conditions.push(lte(auditLog.createdAt, endOfDay));
     }

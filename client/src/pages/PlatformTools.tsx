@@ -738,6 +738,7 @@ function HiringTemplatesSection() {
       certificationsRequired: t.certificationsRequired || "",
       screeningQuestionsJson: t.screeningQuestionsJson || "",
       isGlobal: t.isGlobal,
+      organizationId: (allOrgs && allOrgs[0]?.id) || "",
     });
     setDialogOpen(true);
   };

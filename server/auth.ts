@@ -390,7 +390,8 @@ export type FeaturePermissionKey =
   | 'canViewMaterialCertifications' | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
   | 'canViewSuretyBonds' | 'canManageSuretyBonds'
   | 'canViewComplianceDashboard'
-  | 'canManageProjectTemplates';
+  | 'canManageProjectTemplates'
+  | 'canViewPortfolio';
 
 export async function getEffectivePermissions(userId: string, orgId: string | null, role: string): Promise<Record<string, boolean | string>> {
   if (role === "SUPER_ADMIN") return getRoleDefaults("SUPER_ADMIN");

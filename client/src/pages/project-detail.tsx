@@ -1130,7 +1130,7 @@ export default function ProjectDetailPage() {
             <LaborTab
               projectCode={projectCode}
               project={project}
-              financials={financials}
+              financials={financials as React.ComponentProps<typeof LaborTab>["financials"]}
             />
           </TabsContent>
 
@@ -1464,7 +1464,7 @@ export default function ProjectDetailPage() {
 function GeofenceEnforcementCard({ project, projectCode }: { project: Record<string, unknown>; projectCode: string }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const canManage = user && hasManagementAccess(user.role, FeaturePermissions.PROJECT_MANAGEMENT);
+  const canManage = user && hasManagementAccess(user.role);
   const currentMode = (project.geofenceEnforcement as string) || "OFF";
 
   const [editingCoords, setEditingCoords] = useState(false);
@@ -1845,7 +1845,7 @@ function CertifiedPayrollFormCard({ project, projectCode }: { project: Record<st
 function GeofenceZonesPanel({ projectId }: { projectId: string }) {
   const { user } = useAuth();
   const { toast } = useToast();
-  const canManage = user && hasManagementAccess(user.role, FeaturePermissions.PROJECT_MANAGEMENT);
+  const canManage = user && hasManagementAccess(user.role);
 
   const [newZoneName, setNewZoneName] = useState("");
   const [newZoneType, setNewZoneType] = useState<"circle" | "polygon">("circle");

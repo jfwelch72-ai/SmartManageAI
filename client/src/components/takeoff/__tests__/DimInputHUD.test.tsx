@@ -80,7 +80,7 @@ describe("DimInputHUD (Task #2140)", () => {
     type("8");
     press("Tab");
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit.mock.calls[0][0]).toEqual({ kind: "length", lengthFt: 8 });
+    expect((onCommit.mock.calls[0] as unknown[])[0]).toEqual({ kind: "length", lengthFt: 8 });
     expect(onCommit.mock.calls[0][1]).toBe("continue");
   });
 
@@ -92,7 +92,7 @@ describe("DimInputHUD (Task #2140)", () => {
     type("30");
     press("Enter");
     expect(onCommit).toHaveBeenCalledTimes(1);
-    expect(onCommit.mock.calls[0][0]).toEqual({
+    expect((onCommit.mock.calls[0] as unknown[])[0]).toEqual({
       kind: "length-angle",
       lengthFt: 12,
       angleDeg: 30,

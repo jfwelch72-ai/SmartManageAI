@@ -11,6 +11,10 @@ import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { sendEmail } from "./email";
 
+const TRADE_DETECTION_PROMPTS: Record<string, string> = {
+  GENERAL_CONTRACTOR: "General construction context.",
+};
+
 const ganttPdfUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
@@ -276,7 +280,7 @@ router.post("/ai-features/jobsite/analyze", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-async function processJobsiteBatch(batchId: string, user: { id?: string; organizationId?: string; role?: string }) {
+async function processJobsiteBatch(batchId: string, user: { id?: string; organizationId?: string | null; role?: string }) {
   const [batch] = await db.select()
     .from(jobsiteAnalysisBatches)
     .where(eq(jobsiteAnalysisBatches.id, batchId));

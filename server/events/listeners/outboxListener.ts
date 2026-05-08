@@ -64,8 +64,8 @@ function getEntityId(event: DomainEvent): string {
     case "risk.status_changed":
       return event.payload.riskId;
     default: {
-      const _exhaustive: never = event;
-      return ((_exhaustive as DomainEvent).payload as Record<string, string>)?.id ?? "unknown";
+      const _exhaustive = event as DomainEvent;
+      return ((_exhaustive).payload as Record<string, string>)?.id ?? "unknown";
     }
   }
 }

@@ -285,8 +285,10 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) =>
-      apiRequest("PATCH", `/api/projects/${projectCode}/punch-list/${id}`, data),
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }): Promise<PunchListItem> => {
+      const r = await apiRequest("PATCH", `/api/projects/${projectCode}/punch-list/${id}`, data);
+      return r.json();
+    },
     onSuccess: (updated: PunchListItem) => {
       invalidate();
       if (selected && selected.id === updated.id) setSelected(updated);
@@ -314,8 +316,10 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   });
 
   const addAttachmentMutation = useMutation({
-    mutationFn: ({ id, attachment }: { id: string; attachment: { url: string; filename: string; mimeType: string } }) =>
-      apiRequest("POST", `/api/projects/${projectCode}/punch-list/${id}/attachments`, attachment),
+    mutationFn: async ({ id, attachment }: { id: string; attachment: { url: string; filename: string; mimeType: string } }): Promise<PunchListItem> => {
+      const r = await apiRequest("POST", `/api/projects/${projectCode}/punch-list/${id}/attachments`, attachment);
+      return r.json();
+    },
     onSuccess: (updated: PunchListItem) => {
       invalidate();
       if (selected && selected.id === updated.id) setSelected(updated);
@@ -325,8 +329,10 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
   });
 
   const removeAttachmentMutation = useMutation({
-    mutationFn: ({ id, filename }: { id: string; filename: string }) =>
-      apiRequest("DELETE", `/api/projects/${projectCode}/punch-list/${id}/attachments/${encodeURIComponent(filename)}`),
+    mutationFn: async ({ id, filename }: { id: string; filename: string }): Promise<PunchListItem> => {
+      const r = await apiRequest("DELETE", `/api/projects/${projectCode}/punch-list/${id}/attachments/${encodeURIComponent(filename)}`);
+      return r.json();
+    },
     onSuccess: (updated: PunchListItem) => {
       invalidate();
       if (selected && selected.id === updated.id) setSelected(updated);

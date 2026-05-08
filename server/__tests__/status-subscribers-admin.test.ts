@@ -310,7 +310,7 @@ describe("GET /api/admin/status/subscribers (Task #868 acceptance #4)", () => {
       request(app)
         .post(`/api/webhooks/email/resend?token=${SHARED_SECRET}`)
         .set("Content-Type", "application/json")
-        .send(body);
+        .send(body as object);
 
     expect((await post({ ...bounceEvent(upper, t1) })).status).toBe(202);
     expect((await post({ ...bounceEvent(upper, t2) })).status).toBe(202);

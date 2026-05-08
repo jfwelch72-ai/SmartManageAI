@@ -1549,7 +1549,7 @@ export function LineItemFormDialog({
                 initialSource={form.getValues("equipmentSource") as "OWNED" | "RENTAL" | "MANUAL" | undefined}
               />
               
-              {form.watch("equipmentRateUsed") > 0 && form.watch("equipmentSource") !== "MANUAL" && (
+              {(form.watch("equipmentRateUsed") ?? 0) > 0 && form.watch("equipmentSource") !== "MANUAL" && (
                 <div className="text-xs text-muted-foreground bg-background rounded px-2 py-1 border" data-testid="text-equipment-rate-info">
                   Rate: ${form.watch("equipmentRateUsed")?.toFixed(2)}/hr
                   {form.watch("equipmentSource") === "OWNED" ? " (owned)" : " (rental)"}

@@ -84,13 +84,12 @@ const listCachedDecisionClassificationsMock = vi.fn();
 const queueWageDecisionSyncMock = vi.fn();
 const getWageDecisionSyncStatusMock = vi.fn();
 vi.mock("../integrations/providers/dol_davis_bacon/sync", () => ({
-  lookupCachedWageRate: (...args: unknown[]) => lookupCachedWageRateMock(...args),
-  lookupCachedRateByLocale: (...args: unknown[]) => lookupCachedRateByLocaleMock(...args),
-  isWageDeterminationCached: (...args: unknown[]) => isWageDeterminationCachedMock(...args),
-  listCachedDecisionClassifications: (...args: unknown[]) =>
-    listCachedDecisionClassificationsMock(...args),
-  queueWageDecisionSync: (...args: unknown[]) => queueWageDecisionSyncMock(...args),
-  getWageDecisionSyncStatus: (...args: unknown[]) => getWageDecisionSyncStatusMock(...args),
+  lookupCachedWageRate: lookupCachedWageRateMock,
+  lookupCachedRateByLocale: lookupCachedRateByLocaleMock,
+  isWageDeterminationCached: isWageDeterminationCachedMock,
+  listCachedDecisionClassifications: listCachedDecisionClassificationsMock,
+  queueWageDecisionSync: queueWageDecisionSyncMock,
+  getWageDecisionSyncStatus: getWageDecisionSyncStatusMock,
   fetchWageDetermination: vi.fn(),
   importWageDetermination: vi.fn(),
 }));

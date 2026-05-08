@@ -5459,15 +5459,15 @@ export function BackfillAlertFailuresDigestCard({
   // Task #1482 — surface a cross-org toggle so platform support can see
   // every tenant with failures in one place. Org-scoped admins keep the
   // single-org view they had before.
-  isSuperAdmin: boolean;
-  onSelectOrg: (organizationId: string) => void;
+  isSuperAdmin?: boolean;
+  onSelectOrg?: (organizationId: string) => void;
 }) {
   const { toast } = useToast();
   const [windowHours, setWindowHours] = useState<number>(24);
   // Default super admins to the cross-org view since that's the high-signal
   // mode for platform support; org-scoped admins never see the toggle and
   // always run in single-org mode.
-  const [crossOrg, setCrossOrg] = useState<boolean>(isSuperAdmin);
+  const [crossOrg, setCrossOrg] = useState<boolean>(!!isSuperAdmin);
   const effectiveCrossOrg = isSuperAdmin && crossOrg;
   // Task #1518 — separate "exporting" flags per dataset so platform support
   // can trigger one CSV without disabling the other button. Task #1568
@@ -5491,13 +5491,13 @@ export function BackfillAlertFailuresDigestCard({
     useState<string>("");
   const [attachNewTitle, setAttachNewTitle] = useState<string>("");
   const [attaching, setAttaching] = useState<boolean>(false);
-  const queryKey = failuresDigestKey(windowHours, effectiveCrossOrg);
+  const queryKey = failuresDigestKey(windowHours, Boolean(effectiveCrossOrg));
   const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
     queryKey,
     queryFn: async () => {
       const res = await apiRequest(
         "GET",
-        failuresDigestPath(windowHours, effectiveCrossOrg),
+        failuresDigestPath(windowHours, Boolean(effectiveCrossOrg)),
       );
       return (await res.json()) as BackfillAlertFailuresDigest;
     },
@@ -5947,7 +5947,7 @@ export function BackfillAlertFailuresDigestCard({
                             size="sm"
                             variant="outline"
                             className="ml-auto h-7 px-2 text-xs"
-                            onClick={() => onSelectOrg(o.organizationId)}
+                            onClick={() => onSelectOrg?.(o.organizationId)}
                             data-testid={`button-filter-failure-org-${o.organizationId}`}
                             title="Filter the history table to this organization"
                           >
@@ -6116,7 +6116,7 @@ export function BackfillAlertFailuresDigestCard({
                               variant="outline"
                               className="ml-auto h-7 px-2 text-xs"
                               onClick={() =>
-                                onSelectOrg(q.organizationId)
+                                onSelectOrg?.(q.organizationId)
                               }
                               data-testid={`button-filter-quiet-org-${q.organizationId}`}
                               title="Filter the history table to this organization"

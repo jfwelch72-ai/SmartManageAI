@@ -197,7 +197,8 @@ describe("resumeOrReapBackfillJobsOnBoot — persisted knobs (Task #1012)", () =
     await routes.resumeOrReapBackfillJobsOnBoot();
 
     expect(stub).toHaveBeenCalledTimes(1);
-    const [jobArg, eligibleArg, concurrencyArg, maxRecordsArg] = stub.mock.calls[0] as [
+    const callArgs: unknown = stub.mock.calls[0];
+    const [jobArg, eligibleArg, concurrencyArg, maxRecordsArg] = callArgs as [
       { id: string; orgId: string; processed: number; total: number },
       string[],
       number,
@@ -245,7 +246,8 @@ describe("resumeOrReapBackfillJobsOnBoot — persisted knobs (Task #1012)", () =
     await routes.resumeOrReapBackfillJobsOnBoot();
 
     expect(stub).toHaveBeenCalledTimes(1);
-    const [, , concurrencyArg, maxRecordsArg] = stub.mock.calls[0] as [
+    const callArgs2: unknown = stub.mock.calls[0];
+    const [, , concurrencyArg, maxRecordsArg] = callArgs2 as [
       unknown,
       string[],
       number,

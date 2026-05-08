@@ -3,7 +3,7 @@ import { db } from "./db";
 import { vendorScores, insertVendorScoreSchema, materialPriceIndex, insertMaterialPriceIndexSchema, crewMarketplace, insertCrewMarketplaceSchema, crmOrganisations, projects, users, crews, organizationNetworkSettings, marketplaceReviews, organizations, equipmentListings, equipmentRentalRequests, insertEquipmentListingSchema, insertEquipmentRentalRequestSchema, talentProfiles } from "@shared/schema";
 import { eq, and, desc, asc, gte, lte, or, isNull, sql, ne, ilike } from "drizzle-orm";
 import { z } from "zod";
-import { requireAuth, AuthRequest } from "./auth";
+import { requireAuth as _requireAuth, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
 import { insertNotification } from "./services/notificationService";
 

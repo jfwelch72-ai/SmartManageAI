@@ -240,7 +240,7 @@ export async function getEntityIdsMatchingCustomFieldFilters(
         condition,
       ));
     const ids = new Set(rows.map(r => r.id));
-    matchingIds = matchingIds === null ? ids : new Set(Array.from(matchingIds).filter(id => ids.has(id)));
+    matchingIds = matchingIds === null ? ids : new Set(Array.from(matchingIds).filter(id => ids.has(id as string)));
     if (matchingIds.size === 0) return { applies: true, ids: [] };
   }
   if (matchingIds === null) return { applies: false };

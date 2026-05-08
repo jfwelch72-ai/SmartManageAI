@@ -377,7 +377,7 @@ export function ChangeOrderDialog({
       setEditedNumber(changeOrder.changeOrderNumber);
       setEditedDescription(changeOrder.description);
       setEditedAmount(changeOrder.amount);
-      setEditedCostCodeId(changeOrder.costCodeId ? String(changeOrder.costCodeId) : "");
+      setEditedCostCodeId((changeOrder as { costCodeId?: string | null }).costCodeId ? String((changeOrder as { costCodeId?: string | null }).costCodeId) : "");
       setIsEditing(false);
       setNewApprovalSteps([{ approverRole: "MANAGER" }]);
       orgDefaultsAppliedRef.current = false;

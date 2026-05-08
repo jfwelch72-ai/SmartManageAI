@@ -98,6 +98,8 @@ function makeWebsite(overrides: Partial<Website> = {}): Website {
     footerComponentsConfig: null,
     bodyComponentsConfig: null,
     globalComponentsConfig: null,
+    careersEnabled: null,
+    careersIntroText: null,
     lastPublishedAt: "2026-04-20T12:00:00.000Z",
     defaultMetaTitle: null,
     defaultMetaDescription: null,

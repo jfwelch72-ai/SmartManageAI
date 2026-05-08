@@ -210,8 +210,8 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response, next: Next
       callbackUrl,
       entryPoint: ssoConfig.ssoLoginUrl,
       issuer: ssoConfig.entityId,
-      cert: ssoConfig.certificate,
-      nameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      idpCert: ssoConfig.certificate,
+      identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     });
 
     // Carry the optional `redirect` query param through to the callback via
@@ -263,8 +263,8 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response, next: 
       callbackUrl,
       entryPoint: ssoConfig.ssoLoginUrl,
       issuer: ssoConfig.entityId,
-      cert: ssoConfig.certificate,
-      nameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+      idpCert: ssoConfig.certificate,
+      identifierFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     });
 
     const { profile } = await saml.validatePostResponseAsync(req.body);

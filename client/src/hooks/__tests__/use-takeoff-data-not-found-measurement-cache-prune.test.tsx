@@ -43,7 +43,7 @@ vi.mock("@/lib/queryClient", async () => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return {
-    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    apiRequest: apiRequestMock,
     queryClient,
     getQueryFn: () => async () => null,
   };

@@ -17,6 +17,7 @@ import {
 import {
   Search, Plus, ChevronDown, ChevronRight, Package, Layers, Ruler,
   MoreVertical, Pencil, Trash2, Sparkles, BookOpen, ArrowRight, FolderOpen,
+  X, CheckSquare, Copy,
 } from "lucide-react";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,

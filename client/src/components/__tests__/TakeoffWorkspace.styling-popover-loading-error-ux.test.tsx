@@ -44,7 +44,7 @@ vi.mock("@/lib/queryClient", async () => {
   });
   sharedQc.current = qc;
   return {
-    apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+    apiRequest: mockApiRequest,
     queryClient: qc,
     getQueryFn: () => async () => [],
   };

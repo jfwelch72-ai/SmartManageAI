@@ -315,7 +315,7 @@ const bulkApproveHandler = async (req: AuthRequest, res: any, next: NextFunction
         if (approvalsEnabled) {
           await createApprovalRequest(
             req.user!.organizationId,
-            "TIME_ENTRY",
+            "TIME_ENTRY" as Parameters<typeof createApprovalRequest>[1],
             accessibleIds[0],
             req.user!.id,
             `Bulk approved ${accessibleIds.length} time entries`

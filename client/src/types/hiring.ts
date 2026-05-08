@@ -26,7 +26,7 @@ export type HiringCandidateSource =
 
 export type ATSProvider = "WORKABLE" | "GREENHOUSE" | "LEVER";
 export type HiringSyncStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
-export type HiringInterviewStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW";
+export type HiringInterviewStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED" | "NO_SHOW" | "RESCHEDULED";
 
 export interface HiringJob {
   id: string;

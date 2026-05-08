@@ -48,10 +48,11 @@ export function logIntegrationAudit(
     connectionId?: string;
     provider?: string;
     userId?: string;
-    entityType?: string;
-    entityId?: string;
+    entityType?: string | null;
+    entityId?: string | null;
     error?: string;
     meta?: Record<string, any>;
+    [key: string]: unknown;
   }
 ) {
   const level = action.includes("error") || action.includes("failed") || action.includes("dead_letter") ? "error" : "info";

@@ -43,7 +43,7 @@ vi.mock("../services/notificationService", async () => {
   );
   return {
     ...actual,
-    insertNotifications: (...args: unknown[]) => insertNotificationsMock(...args),
+    insertNotifications: insertNotificationsMock,
   };
 });
 vi.mock("../email", () => ({ sendEmail: async () => undefined }));

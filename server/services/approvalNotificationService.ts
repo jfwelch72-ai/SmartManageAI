@@ -9,7 +9,7 @@ type ApproverRole = typeof APPROVER_ROLES[number];
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
-interface NotificationParams {
+export interface NotificationParams {
   type: NotificationType;
   title: string;
   message: string;

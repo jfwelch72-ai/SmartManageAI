@@ -626,7 +626,7 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
     ]);
 
     expect(onComplete).toHaveBeenCalledTimes(1);
-    const enriched = onComplete.mock.calls[0][0] as {
+    const enriched = (onComplete.mock.calls[0] as unknown[])[0] as {
       successful: Array<{ id: string; uploadURL: string }>;
       failed: unknown[];
     };
@@ -713,7 +713,7 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
     // still receive their successful file so the user does not silently
     // lose freshly-uploaded data.
     expect(onComplete).toHaveBeenCalledTimes(1);
-    const result = onComplete.mock.calls[0][0] as {
+    const result = (onComplete.mock.calls[0] as unknown[])[0] as {
       successful: Array<{ id: string; uploadURL: string }>;
       failed: unknown[];
     };
@@ -935,7 +935,7 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
     expect(confirmCalls[0][2]).toEqual({ intentId: "intent-confirmed" });
 
     expect(onComplete).toHaveBeenCalledTimes(1);
-    const enriched = onComplete.mock.calls[0][0] as {
+    const enriched = (onComplete.mock.calls[0] as unknown[])[0] as {
       successful: Array<{ id: string; uploadURL: string }>;
     };
     expect(enriched.successful[0].uploadURL).toBe(
@@ -1168,7 +1168,7 @@ describe("ObjectUploader — getUploadParameters (single-PUT) callback", () => {
     // And the resulting objectPath lands on the file forwarded to
     // onComplete, proving end-to-end that the file.id keyed map worked.
     expect(onComplete).toHaveBeenCalledTimes(1);
-    const result = onComplete.mock.calls[0][0] as {
+    const result = (onComplete.mock.calls[0] as unknown[])[0] as {
       successful: Array<{ id: string; uploadURL: string }>;
     };
     expect(result.successful[0].id).toBe("the-real-file-id");
@@ -1230,7 +1230,7 @@ describe("ObjectUploader — getUploadParameters (single-PUT) callback", () => {
     ).toHaveLength(0);
     // onComplete still fires with the original uploadURL preserved.
     expect(onComplete).toHaveBeenCalledTimes(1);
-    const result = onComplete.mock.calls[0][0] as {
+    const result = (onComplete.mock.calls[0] as unknown[])[0] as {
       successful: Array<{ id: string; uploadURL: string }>;
     };
     expect(result.successful[0].uploadURL).toBe(

@@ -18,7 +18,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import type { EmailAccount } from "@shared/schema";
 
 const { sendMailMock, closeMock, createTransportMock } = vi.hoisted(() => {
-  const sendMailMock = vi.fn(async () => ({ messageId: "real-smtp-message-id" }));
+  const sendMailMock = vi.fn(async (_opts: Record<string, unknown>) => ({ messageId: "real-smtp-message-id" }));
   const closeMock = vi.fn();
   const createTransportMock = vi.fn(() => ({
     sendMail: sendMailMock,
@@ -147,7 +147,7 @@ describe("sendSmtpEmail — EMAIL_TRANSPORT=noop safety net (Task #784)", () => 
 
     expect(createTransportMock).toHaveBeenCalledTimes(1);
     expect(sendMailMock).toHaveBeenCalledTimes(1);
-    const sendArgs = sendMailMock.mock.calls[0][0] as Record<string, unknown>;
+    const sendArgs = (sendMailMock.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(sendArgs.to).toBe("alice@example.com");
     expect(sendArgs.subject).toBe("Real send");
     expect(sendArgs.from).toBe('"Test Owner" <owner@example.com>');

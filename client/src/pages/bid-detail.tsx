@@ -224,6 +224,9 @@ export default function BidDetailPage() {
     resolver: zodResolver(equipmentSelectionFormSchema),
     defaultValues: {
       source: "OWNED" as const,
+      equipmentId: undefined as string | undefined,
+      rentalCatalogId: undefined as string | undefined,
+      rentalVendorId: undefined as string | undefined,
       equipmentName: "",
       equipmentType: "",
       plannedHours: "",
@@ -422,7 +425,7 @@ export default function BidDetailPage() {
     setEditingEquipmentSelection(selection);
     setSelectedEquipmentSource(selection.source as "OWNED" | "RENTAL");
     equipmentForm.reset({
-      source: selection.source as "OWNED" | "RENTAL",
+      source: selection.source as "OWNED",
       equipmentId: selection.equipmentId || undefined,
       rentalCatalogId: selection.rentalCatalogId || undefined,
       rentalVendorId: selection.rentalVendorId || undefined,

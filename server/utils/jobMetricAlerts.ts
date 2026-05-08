@@ -1365,7 +1365,7 @@ export async function evaluateJobMetricAlerts(
   // — only the email channel is suppressed during quiet hours.
   const evaluatedAt = new Date(now);
   const emailRecipients = admins.filter(
-    (a) => a.receivesJobMetricAlertEmails && !isInJobMetricAlertQuietWindow(a, evaluatedAt),
+    (a) => a.receivesJobMetricAlertEmails && !isInJobMetricAlertQuietWindow(a as Parameters<typeof isInJobMetricAlertQuietWindow>[0], evaluatedAt),
   );
   if (emailRecipients.length > 0) {
     for (let i = 0; i < fired.length; i++) {

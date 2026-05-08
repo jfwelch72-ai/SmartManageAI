@@ -121,7 +121,7 @@ describe("resetSuppressedFailureNotification (Task #1403)", () => {
     insertNotificationMock.mockClear();
     await sync.notifyDavisBaconAutoSyncFailure(connection, "CA20261111", "post-reset");
     expect(insertNotificationMock).toHaveBeenCalledTimes(1);
-    const sentMessage = (insertNotificationMock.mock.calls[0][0] as any).message as string;
+    const sentMessage = ((insertNotificationMock.mock.calls[0] as unknown[])[0] as any).message as string;
     expect(sentMessage).not.toContain("failures in the last hour");
   });
 

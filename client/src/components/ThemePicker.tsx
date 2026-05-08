@@ -157,7 +157,7 @@ interface OrgDefaultPaletteInput {
 
 interface PresetPaletteCardProps {
   name: string;
-  colors: { light: Record<string, string>; dark: Record<string, string> };
+  colors: { light: PresetColors; dark: PresetColors };
   isSelected?: boolean;
   onSelect: () => void;
 }
@@ -410,7 +410,7 @@ export function ThemePicker() {
                   <PresetPaletteCard
                     key={key}
                     name={preset.name}
-                    colors={preset}
+                    colors={{ light: preset.light, dark: preset.dark }}
                     isSelected={activePalette?.paletteName === preset.name}
                     onSelect={() => handleSelectPreset(key)}
                   />
@@ -427,7 +427,7 @@ export function ThemePicker() {
                         size="sm"
                         variant="outline"
                         className="text-xs justify-start"
-                        onClick={() => handleSetOrgDefault({ name: preset.name, ...preset })}
+                        onClick={() => handleSetOrgDefault({ ...preset, name: preset.name })}
                         disabled={isSavingPalette}
                         data-testid={`button-org-default-${key}`}
                       >

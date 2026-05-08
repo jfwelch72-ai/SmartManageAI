@@ -41,25 +41,25 @@ import {
 import { format } from "date-fns";
 import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
 
-interface TaskData {
+export interface TaskData {
   id: string;
   title: string;
-  description: string | null;
+  description?: string | null;
   category: string;
   priority: string;
   status: string;
-  createdById: string;
-  createdByFirstName: string | null;
-  createdByLastName: string | null;
-  assignedToId: string | null;
-  assignedToFirstName: string | null;
-  assignedToLastName: string | null;
-  dueDate: string | null;
-  createdAt: string;
-  updatedAt: string;
-  projectName: string | null;
-  projectCode: string | null;
-  dismissReason: string | null;
+  createdById?: string;
+  createdByFirstName?: string | null;
+  createdByLastName?: string | null;
+  assignedToId?: string | null;
+  assignedToFirstName?: string | null;
+  assignedToLastName?: string | null;
+  dueDate?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  projectName?: string | null;
+  projectCode?: string | null;
+  dismissReason?: string | null;
 }
 
 interface SubtaskData {
@@ -329,8 +329,7 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
                 </Badge>
                 <span data-testid="task-detail-id">#{task.id.slice(0, 8)}</span>
                 <span>
-                  Created by {task.createdByFirstName} {task.createdByLastName} on{" "}
-                  {format(new Date(task.createdAt), "MMM d, yyyy")}
+                  Created by {task.createdByFirstName} {task.createdByLastName}{task.createdAt ? ` on ${format(new Date(task.createdAt), "MMM d, yyyy")}` : ""}
                 </span>
               </div>
               {task.description && (
@@ -580,7 +579,7 @@ export default function TaskDetailModal({ task, open, onOpenChange, onStatusUpda
                 <div className="space-y-1">
                   <div className="flex items-center gap-1 text-sm" data-testid="task-detail-created-date">
                     <Calendar className="h-3 w-3 text-muted-foreground" />
-                    <span>Created: {format(new Date(task.createdAt), "MMM d, yyyy")}</span>
+                    <span>Created: {task.createdAt ? format(new Date(task.createdAt), "MMM d, yyyy") : "—"}</span>
                   </div>
                   {task.dueDate && (
                     <div className="flex items-center gap-1 text-sm" data-testid="task-detail-due-date">

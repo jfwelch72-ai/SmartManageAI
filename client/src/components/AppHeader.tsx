@@ -334,7 +334,7 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                     </Avatar>
                     <div>
                       <p className="font-medium">{userName}</p>
-                      <p className="text-sm text-muted-foreground">{getRoleDisplayName(userRole, false, user?.roleLabel)}</p>
+                      <p className="text-sm text-muted-foreground">{getRoleDisplayName(userRole, false)}</p>
                     </div>
                   </div>
                   <Button

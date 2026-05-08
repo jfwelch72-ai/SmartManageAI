@@ -1268,8 +1268,8 @@ export default function ContractsTab({ projectId, projectCode, userRole }: Contr
                   newStatus: "EXECUTED",
                   extra: {
                     signatureDate: executionForm.signatureDate,
-                    signatoryNames: executionForm.signatoryNames || null,
-                    executedDocumentUrl: executionForm.executedDocumentUrl || null,
+                    signatoryNames: executionForm.signatoryNames ?? "",
+                    executedDocumentUrl: executionForm.executedDocumentUrl ?? "",
                   }
                 });
                 setShowExecutionDialog(false);

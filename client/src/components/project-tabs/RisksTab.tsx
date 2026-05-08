@@ -249,9 +249,13 @@ export default function RisksTab({ projectId, projectCode, userRole }: RisksTabP
       category: suggestion.category,
       probability: suggestion.probability,
       impact: suggestion.impact,
+      status: "OPEN",
       mitigationPlan: suggestion.mitigationPlan,
+      ownerUserId: "",
       costImpactDollars: suggestion.costImpactDollars ? String(suggestion.costImpactDollars) : null,
       scheduleImpactDays: suggestion.scheduleImpactDays,
+      linkedCostCode: "",
+      linkedMilestone: "",
     });
   };
 

@@ -56,19 +56,9 @@ const taskFormSchema = z.object({
 
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
-interface TaskItem {
-  id: string;
-  title: string;
-  description?: string;
-  status: string;
-  priority: string;
-  category: string;
+import type { TaskData as TaskItemBase } from "@/components/TaskDetailModal";
+interface TaskItem extends TaskItemBase {
   projectId?: string;
-  assignedToId?: string;
-  assignedToFirstName?: string;
-  assignedToLastName?: string;
-  dueDate?: string;
-  dismissReason?: string;
 }
 
 interface TasksFilterState {
@@ -111,7 +101,7 @@ export default function Tasks() {
   const [dismissingTaskId, setDismissingTaskId] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [selectedTask, setSelectedTask] = useState<Record<string, unknown> | null>(null);
+  const [selectedTask, setSelectedTask] = useState<TaskItem | null>(null);
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [tasksView, setTasksView] = useState<ViewType>(() => {
     if (typeof window === "undefined") return "table";
@@ -698,11 +688,11 @@ export default function Tasks() {
         />
       ) : tasksView === "kanban" ? (
         <TasksKanbanView
-          tasks={filteredTasks}
+          tasks={filteredTasks as React.ComponentProps<typeof TasksKanbanView>["tasks"]}
           onCardClick={(t) => {
             const full = filteredTasks.find((x) => x.id === t.id);
             if (full) {
-              setSelectedTask(full as unknown as Record<string, unknown>);
+              setSelectedTask(full);
               setIsDetailModalOpen(true);
             }
           }}
@@ -726,7 +716,7 @@ export default function Tasks() {
               data: t,
             }))}
           onItemClick={(t) => {
-            setSelectedTask(t as unknown as Record<string, unknown>);
+            setSelectedTask(t);
             setIsDetailModalOpen(true);
           }}
           legend={[

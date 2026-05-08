@@ -37,7 +37,7 @@ vi.mock("@/lib/queryClient", async () => {
   });
   sharedQc.current = qc;
   return {
-    apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+    apiRequest: mockApiRequest,
     queryClient: qc,
     getQueryFn: () => async () => [],
   };
@@ -61,8 +61,10 @@ function makeHistoryMock(): HistoryMock {
     pushMarkupAction: vi.fn(),
     pushMarkupUpdateAction: vi.fn(),
     pushMarkupUpdateBatchAction: vi.fn(),
+    pushMarkupDeleteBatchAction: vi.fn(),
     pushMeasurementUpdateAction: vi.fn(),
     pushMeasurementUpdateBatchAction: vi.fn(),
+    pushMeasurementDeleteBatchAction: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,

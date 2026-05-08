@@ -54,9 +54,9 @@ vi.mock("@/hooks/use-toast", () => ({
 const apiRequestMock = vi.fn();
 const invalidateSpy = vi.fn();
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  apiRequest: apiRequestMock,
   queryClient: {
-    invalidateQueries: (...args: unknown[]) => invalidateSpy(...args),
+    invalidateQueries: invalidateSpy,
   },
 }));
 

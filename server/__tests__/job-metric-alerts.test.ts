@@ -265,7 +265,7 @@ vi.mock("../services/notificationDelivery", () => ({
 }));
 const sendEmailMock = vi.fn(async () => true);
 vi.mock("../services/emailService", () => ({
-  sendEmail: (...args: unknown[]) => sendEmailMock(...args),
+  sendEmail: sendEmailMock,
 }));
 
 let alerts: typeof import("../utils/jobMetricAlerts");
@@ -789,7 +789,7 @@ describe("jobMetricAlerts (Task #718)", () => {
     // One email send, addressed only to the admin outside quiet hours.
     expect(result.emailsSent).toBe(1);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    const emailArgs = sendEmailMock.mock.calls[0][0] as { to: string[] };
+    const emailArgs = (sendEmailMock.mock.calls[0] as unknown[])[0] as { to: string[] };
     expect(emailArgs.to).toEqual(["loud@example.com"]);
 
     expect(state.events).toHaveLength(1);
@@ -935,7 +935,7 @@ describe("jobMetricAlerts (Task #718)", () => {
     // Only the opted-in admin is emailed.
     expect(result.emailsSent).toBe(1);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    const emailArgs = sendEmailMock.mock.calls[0][0] as { to: string[] };
+    const emailArgs = (sendEmailMock.mock.calls[0] as unknown[])[0] as { to: string[] };
     expect(emailArgs.to).toEqual(["in@example.com"]);
     expect(state.events[0].emailedRecipientCount).toBe(1);
   });

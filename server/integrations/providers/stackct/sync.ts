@@ -400,7 +400,7 @@ export async function exportPlans(
             const { Client: StorageClient } = await import("@replit/object-storage");
             const storageClient = new StorageClient();
             const result = await storageClient.downloadAsBytes(doc.objectKey);
-            if (result.ok) {
+            if (result.ok && result.value) {
               fileBuffer = Buffer.from(result.value);
             }
           } catch (storageErr) {

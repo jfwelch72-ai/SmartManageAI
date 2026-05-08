@@ -48,7 +48,7 @@ const CATEGORY_COLORS: Record<WidgetCategory, string> = {
 function isWidgetAvailableForRole(
   widget: WidgetDefinition,
   userRole?: string,
-  userPermissions?: Record<FeaturePermissionKey, boolean>
+  userPermissions?: Partial<Record<string, boolean>>
 ): boolean {
   const hasAllowedRole = widget.allowedRoles
     ? widget.allowedRoles.includes(userRole || "")
@@ -114,7 +114,7 @@ export function WidgetLibrary({ open, onOpenChange, defaultSectionId }: WidgetLi
   const effectiveTargetSection = targetSectionId || (sections.length > 0 ? sections[sections.length - 1].id : "");
 
   const availableWidgets = WIDGET_REGISTRY.filter((widget) =>
-    isWidgetAvailableForRole(widget, user?.role, permissions)
+    isWidgetAvailableForRole(widget, user?.role, permissions as Partial<Record<string, boolean>>)
   );
 
   const filteredWidgets = useMemo(() => {

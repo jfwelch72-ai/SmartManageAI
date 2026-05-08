@@ -1,30 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 describe("Route Module Structure", () => {
-  it("should export dashboardUserRoutes as a router", async () => {
-    const mod = await import("../dashboardUserRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
-  it("should export projectCoreRoutes as a router", async () => {
-    const mod = await import("../projectCoreRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
-  it("should export crmVendorRoutes as a router", async () => {
-    const mod = await import("../crmVendorRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
-  it("should export scopeConfigRoutes as a router", async () => {
-    const mod = await import("../scopeConfigRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
   it("should export projectContentRoutes as a router", async () => {
     const mod = await import("../projectContentRoutes");
     expect(mod.default).toBeDefined();
@@ -61,23 +37,6 @@ describe("Route Module Structure", () => {
     expect(mod.default.stack).toBeDefined();
   });
 
-  it("should export takeoffSubRoutes as a router", async () => {
-    const mod = await import("../takeoffSubRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
-  it("should export equipmentMgmtRoutes as a router", async () => {
-    const mod = await import("../equipmentMgmtRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
-
-  it("should export platformAdminRoutes as a router", async () => {
-    const mod = await import("../platformAdminRoutes");
-    expect(mod.default).toBeDefined();
-    expect(mod.default.stack).toBeDefined();
-  });
 });
 
 describe("Auth Module", () => {

@@ -83,10 +83,10 @@ function apiPatch(path: string, body?: Record<string, unknown>, token = adminTok
 }
 
 async function cleanup(): Promise<void> {
-  const orgIdsResult = await db.execute(
+  const orgIdsResult = await db.execute<{ id: string }>(
     sql`SELECT id FROM organizations WHERE slug LIKE ${TEST_PREFIX + "%"}`,
   );
-  const rows = (orgIdsResult as { rows: Array<{ id: string }> }).rows;
+  const rows = orgIdsResult.rows;
   const ids = rows.map((r) => r.id);
   if (ids.length === 0) return;
   for (const id of ids) {
@@ -319,7 +319,8 @@ describe("Task #2319 — takeoff measurement provenance & needs_review", () => {
     const rowsRes = await db.execute(
       sql`SELECT scale_at_capture_px_per_foot, scale_at_capture_label, computed_length_ft FROM takeoff_measurements WHERE id = ${beforeId}`,
     );
-    const after = (rowsRes as {
+    const rowsResU: unknown = rowsRes;
+    const after = (rowsResU as {
       rows: Array<{
         scale_at_capture_px_per_foot: number | string | null;
         scale_at_capture_label: string | null;
@@ -365,7 +366,8 @@ describe("Task #2319 — takeoff measurement provenance & needs_review", () => {
     const rowsRes = await db.execute(
       sql`SELECT scale_at_capture_px_per_foot, scale_at_capture_label, computed_length_ft FROM takeoff_measurements WHERE id = ${beforeId}`,
     );
-    const after = (rowsRes as {
+    const rowsResU: unknown = rowsRes;
+    const after = (rowsResU as {
       rows: Array<{
         scale_at_capture_px_per_foot: number | string | null;
         scale_at_capture_label: string | null;

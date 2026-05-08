@@ -149,7 +149,7 @@ function AssignmentRulesCard() {
               const cond = (r.conditions ?? {}) as Record<string, unknown>;
               const condSummary = Object.entries(cond).filter(([, v]) => v !== "" && v != null).map(([k, v]) => `${k}=${v}`).join(", ") || "Any lead";
               const target = r.assignmentType === "ROUND_ROBIN"
-                ? `Round-robin (${(r.roundRobinUserIds || []).length} users)`
+                ? `Round-robin (${((r.roundRobinUserIds as string[] | null) || []).length} users)`
                 : r.assignedToId ? userMap[r.assignedToId] || "User" : "—";
               return (
                 <div key={r.id} className="flex items-center gap-3 p-3 rounded border" data-testid={`row-rule-${r.id}`}>
@@ -205,7 +205,7 @@ function RuleDialog({ open, onOpenChange, rule, users }: {
       setIsActive(rule.isActive);
       setAssignmentType(rule.assignmentType as "USER" | "ROUND_ROBIN");
       setAssignedToId(rule.assignedToId ?? "");
-      setRoundRobinUserIds(rule.roundRobinUserIds ?? []);
+      setRoundRobinUserIds((rule.roundRobinUserIds as string[] | null) ?? []);
       const c = (rule.conditions ?? {}) as Record<string, any>;
       setSource(c.source ?? "");
       setProjectType(c.projectType ?? "");

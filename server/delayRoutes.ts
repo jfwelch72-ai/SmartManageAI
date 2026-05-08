@@ -214,7 +214,7 @@ async function notifyDelayStatusChange(
 
   if (notificationsToCreate.length > 0) {
     const inserted = await dbClient.insert(notifications).values(notificationsToCreate).returning();
-    const records: NotificationRecord[] = inserted.map(n => ({
+    const records: NotificationRecord[] = inserted.map((n: typeof notifications.$inferSelect) => ({
       id: n.id,
       userId: n.userId,
       type: n.type as NotificationRecord["type"],

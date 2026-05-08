@@ -94,7 +94,9 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
         ? def.allowedRoles.includes(user?.role || "")
         : true;
       const hasFeaturePerm = def.featurePerm
-        ? (permissions[def.featurePerm] ?? false)
+        ? (Array.isArray(def.featurePerm)
+            ? def.featurePerm.every((k) => permissions[k] ?? false)
+            : (permissions[def.featurePerm] ?? false))
         : true;
       if (def.allowedRoles && def.featurePerm) {
         if (!hasAllowedRole || !hasFeaturePerm) return false;

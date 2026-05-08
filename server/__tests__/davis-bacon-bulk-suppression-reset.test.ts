@@ -290,7 +290,7 @@ describe("resetAllSuppressedFailureNotifications (Task #1443)", () => {
     insertNotificationMock.mockClear();
     await sync.notifyDavisBaconAutoSyncFailure(connection, "CA20260777", "post-bulk-reset");
     expect(insertNotificationMock).toHaveBeenCalledTimes(1);
-    const sent = (insertNotificationMock.mock.calls[0][0] as any).message as string;
+    const sent = ((insertNotificationMock.mock.calls[0] as unknown[])[0] as any).message as string;
     expect(sent).not.toContain("failures in the last hour");
   });
 });

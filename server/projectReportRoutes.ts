@@ -20,7 +20,7 @@ interface ReportData {
   labor: { totalRegularHours: number; totalOvertimeHours: number; totalHours: number; uniqueWorkers: number; entriesCount: number };
   safety: { ppeViolations: number; materialTestsFailed: number; totalIncidents: number };
   schedule: { totalTasks: number; completedTasks: number; inProgressTasks: number; delayedTasks: number; startedTasks: number };
-  changeOrders: { total: number; items: Array<{ number: number | null; description: string | null; amount: string | null; status: string }> };
+  changeOrders: { total: number; items: Array<{ number: string | number | null; description: string | null; amount: string | null; status: string }> };
   financials: { budget: number; actualCost: number; variance: number; variancePercent: number; changeOrdersSummary: { approved: number; pending: number } } | null;
   procurement: { totalOrders: number; received: number; pending: number } | null;
   subcontractors: { totalSubcontracts: number; payApplicationsInPeriod: number; totalContractValue: number; billedToDate: number } | null;
@@ -219,7 +219,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
       variancePercent: budget > 0 ? Math.round((variance / budget) * 10000) / 100 : 0,
       changeOrdersSummary: {
         approved: cos.filter(c => c.status === "APPROVED").length,
-        pending: cos.filter(c => c.status === "PENDING" || c.status === "SUBMITTED").length,
+        pending: cos.filter(c => c.status === "PENDING_APPROVAL" || c.status === "SUBMITTED").length,
       },
     };
   } catch (err) { logError("Failed to aggregate financial summary", { projectId }, err instanceof Error ? err : new Error(String(err))); }
@@ -345,7 +345,7 @@ export async function aggregateReportData(projectId: string, startDate: string, 
     project: {
       id: project?.id,
       name: project?.name,
-      projectCode: project?.projectCode,
+      projectCode: project?.code,
       status: project?.status,
     },
     period: { start: startDate, end: endDate, type: reportType },
@@ -449,7 +449,7 @@ export function generateReportPDF(reportData: ReportData, branding?: Organizatio
     doc.fontSize(13).fillColor(primaryColor).text("Change Orders");
     doc.fontSize(10).fillColor("#374151");
     for (const co of p.changeOrders.items.slice(0, 20)) {
-      doc.text(`CO #${co.number}: ${co.description} — $${parseFloat(co.amount || 0).toLocaleString()} (${co.status})`);
+      doc.text(`CO #${co.number}: ${co.description} — $${parseFloat(String(co.amount ?? "0")).toLocaleString()} (${co.status})`);
     }
     doc.moveDown(0.5);
   }

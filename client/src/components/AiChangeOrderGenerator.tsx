@@ -44,6 +44,8 @@ interface AiCoDraft {
   linkedItemsJson?: string;
   status: "DRAFT" | "REVIEWED" | "CONVERTED" | "REJECTED";
   createdAt: string;
+  suggestedAmount?: number;
+  aiGeneratedDescription?: string;
 }
 
 interface GeneratedDraftResult {

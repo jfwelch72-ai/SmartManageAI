@@ -99,7 +99,10 @@ vi.mock("../db", () => ({
 }));
 
 vi.mock("../services/emailService", () => ({
-  sendEmail: (opts: any) => sendEmailMock(opts),
+  sendEmail: (opts: unknown) => {
+    const fn = sendEmailMock as (o: unknown) => unknown;
+    return fn(opts);
+  },
 }));
 
 vi.mock("../utils/logger", () => ({

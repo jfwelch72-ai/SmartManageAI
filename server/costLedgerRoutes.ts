@@ -81,7 +81,7 @@ router.post("/api/projects/:code/budget-lines", requireAuth, async (req: AuthReq
     }
 
     const data = parseResult.data;
-    const invalid = await validateCostCodes(project.gcOrganizationId, [data.costCode]);
+    const invalid = await validateCostCodes(project.gcOrganizationId!, [data.costCode]);
     if (invalid.length > 0) {
       return res.status(400).json({ error: `Invalid cost code '${data.costCode}' for this organization` });
     }
@@ -126,7 +126,7 @@ router.put("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
 
     if (parsed.length > 0) {
       const costCodes = parsed.map(l => l.costCode);
-      const invalid = await validateCostCodes(project.gcOrganizationId, costCodes);
+      const invalid = await validateCostCodes(project.gcOrganizationId!, costCodes);
       if (invalid.length > 0) {
         return res.status(400).json({ error: `Invalid cost codes for this organization: ${invalid.join(", ")}` });
       }

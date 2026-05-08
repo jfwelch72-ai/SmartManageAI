@@ -969,7 +969,7 @@ router.get("/oauth/gmail/initiate", requireAuth, requireInternalRole, async (req
     const gmailRedirectUri = getGmailRedirectUri(req);
 
     if (!isRedirectUriValid(gmailRedirectUri)) {
-      logError("[OAuth] Gmail redirect URI is invalid:", {}, gmailRedirectUri instanceof Error ? gmailRedirectUri : new Error(String(gmailRedirectUri)));
+      logError("[OAuth] Gmail redirect URI is invalid:", {}, new Error(String(gmailRedirectUri)));
       return res.status(400).json({
         error: "OAuth redirect URI misconfigured",
         message: `The Gmail redirect URI resolved to "${gmailRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or GOOGLE_REDIRECT_URI environment variable to your public domain.`,
@@ -1164,7 +1164,7 @@ router.get("/oauth/outlook/initiate", requireAuth, requireInternalRole, async (r
     const outlookRedirectUri = getOutlookRedirectUri(req);
 
     if (!isRedirectUriValid(outlookRedirectUri)) {
-      logError("[OAuth] Outlook redirect URI is invalid:", {}, outlookRedirectUri instanceof Error ? outlookRedirectUri : new Error(String(outlookRedirectUri)));
+      logError("[OAuth] Outlook redirect URI is invalid:", {}, new Error(String(outlookRedirectUri)));
       return res.status(400).json({
         error: "OAuth redirect URI misconfigured",
         message: `The Outlook redirect URI resolved to "${outlookRedirectUri}" which points to localhost or is empty. Set the APP_BASE_URL or MICROSOFT_REDIRECT_URI environment variable to your public domain.`,
@@ -2106,7 +2106,7 @@ async function refreshGmailAccessToken(account: typeof emailAccounts.$inferSelec
 
   if (!response.ok) {
     const errText = await response.text();
-    logError("Gmail token refresh failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
+    logError("Gmail token refresh failed:", {}, new Error(String(errText)));
     // Google returns 4xx (typically 400 invalid_grant) when the refresh token
     // can no longer be exchanged. Surface this as an auth error so the caller
     // marks the account NEEDS_RECONNECT instead of DEGRADED — there's no
@@ -2157,7 +2157,7 @@ async function refreshOutlookAccessToken(account: typeof emailAccounts.$inferSel
 
   if (!response.ok) {
     const errText = await response.text();
-    logError("Outlook token refresh failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
+    logError("Outlook token refresh failed:", {}, new Error(String(errText)));
     throw new Error("Failed to refresh Outlook access token");
   }
 
@@ -3060,7 +3060,7 @@ export async function syncGmailAccount(
 
       if (!listResponse.ok) {
         const errText = await listResponse.text();
-        logError("Gmail list messages failed:", {}, errText instanceof Error ? errText : new Error(String(errText)));
+        logError("Gmail list messages failed:", {}, new Error(String(errText)));
         // 401/403 here would normally be turned into a GmailAuthError by
         // gmailApiFetch's refresh-and-retry, but keep this defensive branch
         // in case the first call already returned 403 (no refresh path).

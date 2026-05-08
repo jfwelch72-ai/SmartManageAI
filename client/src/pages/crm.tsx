@@ -99,6 +99,7 @@ type OrganizationType =
   | "SUBCONTRACTOR"
   | "SUPPLIER"
   | "VENDOR"
+  | "SERVICE_VENDOR"
   | "OWNER_REP"
   | "RENTAL_VENDOR";
 type ContactRole =
@@ -888,7 +889,7 @@ export default function CRMPage() {
   const [createContactOpen, setCreateContactOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [viewContactOpen, setViewContactOpen] = useState(false);
-  const [selectedContact, setSelectedContact] = useState<CrmContact | null>(
+  const [selectedContact, setSelectedContact] = useState<(CrmContact & { orgName?: string | null; orgType?: string | null; customFields?: Record<string, unknown> }) | null>(
     null,
   );
 
@@ -1037,10 +1038,11 @@ export default function CRMPage() {
     queryKey: ["/api/crm/organisations/expiring-compliance"],
   });
 
-  interface AllContact extends CrmContact {
+  interface AllContact extends Omit<CrmContact, "ownerId"> {
     orgName?: string | null;
     orgType?: string | null;
-    ownerId?: string | null;
+    ownerId: string | null;
+    customFields?: Record<string, unknown>;
   }
   // Cursor pagination + TanStack Virtual for the contacts table.
   // Fetches the next page only when the virtualizer reports the last
@@ -1403,7 +1405,7 @@ export default function CRMPage() {
       companyRepresented: org.companyRepresented || "",
       activeProjectIds: org.activeProjectIds || [],
     });
-    setOrgCustomFields(org.customFields ?? {});
+    setOrgCustomFields((org as OrganizationWithContacts).customFields ?? {});
     setSelectedOrg(org as OrganizationWithContacts);
     setEditOrgOpen(true);
   };

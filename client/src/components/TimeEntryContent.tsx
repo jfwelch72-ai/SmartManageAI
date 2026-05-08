@@ -132,7 +132,7 @@ export default function TimeEntryContent() {
     });
   }, [timeEntries, projects, searchTerm, dateFilter, statusFilter, projectFilter]);
 
-  const hasActiveFilters = searchTerm || dateFilter !== "ALL" || statusFilter !== "ALL" || projectFilter !== "ALL";
+  const hasActiveFilters = !!(searchTerm || dateFilter !== "ALL" || statusFilter !== "ALL" || projectFilter !== "ALL");
 
   const weekStats = useMemo(() => {
     const now = new Date();

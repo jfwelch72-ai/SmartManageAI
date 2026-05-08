@@ -85,10 +85,11 @@ describe("sageGateway typed wrappers", () => {
   }
 
   function makeFetch(captured: { body?: string }) {
-    return vi.fn(async (_url: string, init: any) => {
+    const fn = async (_url: string | URL | Request, init?: RequestInit): Promise<Response> => {
       captured.body = String(init?.body || "");
-      return { ok: true, status: 200, text: async () => makeOkXml() } as any;
-    });
+      return new Response(makeOkXml(), { status: 200 });
+    };
+    return vi.fn(fn) as unknown as typeof fetch;
   }
 
   it("inspect → builds <inspect><object>...</object></inspect> envelope", async () => {

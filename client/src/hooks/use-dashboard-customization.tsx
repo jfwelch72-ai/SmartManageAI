@@ -694,5 +694,6 @@ export type FeaturePermissionKey = keyof UserPermissions;
 
 export function useFeaturePermission(permissionKey: FeaturePermissionKey): boolean {
   const { permissions } = useDashboardCustomization();
-  return permissions[permissionKey] ?? false;
+  const v = permissions[permissionKey];
+  return typeof v === "boolean" ? v : Boolean(v);
 }

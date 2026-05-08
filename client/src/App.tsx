@@ -410,7 +410,7 @@ function Router() {
       <Route path="/dpa" component={DpaPage} />
       <Route path="/data-management"><ProtectedRoute component={DataManagementPage} /></Route>
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
-      <Route path="/site/:subdomain" component={PublicWebsite} />
+      <Route path="/site/:subdomain"><PublicWebsite /></Route>
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
       <Route path="/portal/:projectId">{(params) => {
         const projectId = params.projectId;
@@ -515,7 +515,7 @@ function Router() {
       <Route path="/takeoff/:bidCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff" component={() => <ProtectedRoute component={TakeoffIndexPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />
-      <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} featurePerm="canAccessTimeMaterial" />} />
+      <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} />} />
       <Route path="/tm-billing" component={() => <ProtectedRoute component={TMBillingPage} permission={RoutePermissions.TM_BILLING} featurePerm="canViewFinancials" />} />
       <Route path="/progress-billing" component={() => <ProtectedRoute component={ProgressBillingPage} permission={RoutePermissions.PROGRESS_BILLING} featurePerm="canViewFinancials" />} />
       <Route path="/wip-report" component={() => <ProtectedRoute component={WipReportPage} permission={RoutePermissions.CFO} />} />

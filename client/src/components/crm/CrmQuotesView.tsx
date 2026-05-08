@@ -89,7 +89,7 @@ export function CrmQuotesView() {
                     <td className="px-3 py-2 font-mono text-xs">{q.quoteNumber}</td>
                     <td className="px-3 py-2">{q.title}</td>
                     <td className="px-3 py-2"><Badge variant={STATUS_VARIANTS[q.status] || "outline"}>{q.status}</Badge></td>
-                    <td className="px-3 py-2 text-right font-mono">${Number(q.total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-right font-mono">${Number((q as { total?: number | string | null }).total ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-3 py-2 text-xs text-muted-foreground">{q.validUntil ? format(new Date(q.validUntil), "MMM d, yyyy") : "—"}</td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex items-center gap-1 justify-end">

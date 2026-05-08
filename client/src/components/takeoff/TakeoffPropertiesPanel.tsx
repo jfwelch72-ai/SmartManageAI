@@ -412,7 +412,7 @@ export function TakeoffPropertiesPanel({
               <CheckCircle2 className="w-3.5 h-3.5" />
               Installation Status
             </Label>
-            <Select value={installationStatus} onValueChange={setInstallationStatus}>
+            <Select value={installationStatus} onValueChange={(v: string) => setInstallationStatus(v as typeof installationStatus)}>
               <SelectTrigger className="h-8 text-xs" data-testid="select-installation-status">
                 <SelectValue />
               </SelectTrigger>

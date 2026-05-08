@@ -11,7 +11,7 @@ const apiRequestMock = vi.fn();
 const invalidateQueriesMock = vi.fn();
 
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  apiRequest: apiRequestMock,
   queryClient: { invalidateQueries: (...args: unknown[]) => invalidateQueriesMock(...args) },
 }));
 
@@ -184,7 +184,7 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
 
     await act(async () => { await result.current.undo(); });
     expect(apiRequestMock).toHaveBeenCalledTimes(1);
-    expect(apiRequestMock.mock.calls[0][0]).toBe("PATCH");
+    expect((apiRequestMock.mock.calls[0] as unknown[])[0]).toBe("PATCH");
     expect(apiRequestMock.mock.calls[0][1]).toBe("/api/takeoff/markups/bulk");
     expect((apiRequestMock.mock.calls[0][2] as { updates: unknown[] }).updates).toHaveLength(50);
     expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);

@@ -10,9 +10,9 @@ import { AttachmentRenderer } from "./AttachmentRenderer";
 import { MessageComposer } from "./MessageComposer";
 import { getInitials, type Message, type TaskMention, type EntitySearchResult } from "./types";
 
-interface EntityMessage extends Message {
+interface EntityMessage extends Omit<Message, "conversationId"> {
   conversationName?: string | null;
-  conversationId?: string;
+  conversationId?: string | undefined;
 }
 
 interface EntityDiscussionProps {

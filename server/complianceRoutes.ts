@@ -305,7 +305,8 @@ router.get(
       }
 
       for (const p of permitRows) {
-        if (p.status === "RENEWED" || p.status === "CANCELLED" || p.status === "CANCELED") continue;
+        const pStatus = p.status as string;
+        if (pStatus === "RENEWED" || pStatus === "CANCELLED" || pStatus === "CANCELED") continue;
         items.push(buildItem({
           id: `permit:${p.id}`,
           type: "PERMIT",
@@ -455,10 +456,10 @@ router.get(
       const expiringSoonCount =
         (certAgg?.expiring ?? 0) + (bondAgg?.expiring ?? 0) + (orgAgg?.expiring ?? 0) + (permitAgg?.expiring ?? 0);
       const maxDaysExpired = Math.max(
-        certAgg?.maxDays ?? 0,
-        bondAgg?.maxDays ?? 0,
-        orgAgg?.maxDays ?? 0,
-        permitAgg?.maxDays ?? 0,
+        (certAgg?.maxDays as number) ?? 0,
+        (bondAgg?.maxDays as number) ?? 0,
+        (orgAgg?.maxDays as number) ?? 0,
+        (permitAgg?.maxDays as number) ?? 0,
       );
 
       res.json({ expiredCount, expiringSoonCount, maxDaysExpired });

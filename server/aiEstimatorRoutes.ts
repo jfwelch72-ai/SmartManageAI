@@ -2411,7 +2411,7 @@ router.post(
     for (let mi = 0; mi < data.measurements.length; mi++) {
       const m = data.measurements[mi]!;
       let sheetId: string | undefined;
-      for (const cite of m.sheetCitations) {
+      for (const cite of (m.sheetCitations ?? [])) {
         const hit = sheetByCitation.get(cite.trim().toLowerCase());
         if (hit) {
           sheetId = hit;
@@ -2440,9 +2440,9 @@ router.post(
       if (attachment === "fallback") {
         noteParts.push("[fallback-sheet] no citation matched a real sheet; attached to lowest-index sheet");
       }
-      if (m.sheetCitations.length > 0) noteParts.push(`Sheets: ${m.sheetCitations.join(", ")}`);
-      if (m.contributingDisciplines.length > 0) {
-        noteParts.push(`Disciplines: ${m.contributingDisciplines.join(", ")}`);
+      if ((m.sheetCitations ?? []).length > 0) noteParts.push(`Sheets: ${(m.sheetCitations ?? []).join(", ")}`);
+      if ((m.contributingDisciplines ?? []).length > 0) {
+        noteParts.push(`Disciplines: ${(m.contributingDisciplines ?? []).join(", ")}`);
       }
       if (m.rationale) noteParts.push(m.rationale);
 
@@ -2465,7 +2465,7 @@ router.post(
           .values({
             sheetId,
             groupId: groupId ?? undefined,
-            type: m.type,
+            type: m.type as "LINEAR" | "AREA" | "VOLUME" | "COUNT",
             label: m.label,
             points: "[]",
             count: m.type === "COUNT" ? m.value : null,

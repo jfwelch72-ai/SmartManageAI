@@ -179,7 +179,7 @@ async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisRe
     const dueDate = new Date();
     dueDate.setDate(dueDate.getDate() + (task.due_date_offset_days || 0));
 
-    let enrichedMetadata = task.metadata || {};
+    let enrichedMetadata: Record<string, unknown> = (task.metadata as Record<string, unknown>) || {};
 
     const effectiveOrgId = organizationId || (task.project_code && projectOrgMap?.get(task.project_code)) || null;
 
@@ -188,7 +188,7 @@ async function createTasksFromAIResponse(runId: string, aiResponse: AIAnalysisRe
         const trade = enrichedMetadata.trade || enrichedMetadata.specialty || null;
         const recommendations = await getSubcontractorRecommendations({
           organizationId: effectiveOrgId,
-          tradeSpecialty: trade || undefined,
+          tradeSpecialty: typeof trade === "string" && trade ? trade : undefined,
           maxResults: 3,
         });
         if (recommendations.length > 0) {

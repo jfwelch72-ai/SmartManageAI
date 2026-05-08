@@ -560,11 +560,9 @@ export async function buildDataSnapshot(): Promise<DataSnapshot> {
     const totalAmt = Number(r.total_amount || 0);
     const paidAmt = Number(r.paid_amount || 0);
     return {
-      type,
-      invoice_number: r.invoice_number,
-      project_name: r.project_name,
+      project_code: r.project_name as string | null,
+      reference: `${type}:${r.invoice_number}`,
       amount: totalAmt - paidAmt,
-      due_date: r.due_date,
       days_overdue: Math.floor((today.getTime() - new Date(r.due_date).getTime()) / (1000 * 60 * 60 * 24)),
     };
   }

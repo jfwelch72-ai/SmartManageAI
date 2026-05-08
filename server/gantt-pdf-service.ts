@@ -74,7 +74,7 @@ export interface GanttPdfOptions {
 declare global {
   interface Window {
     __GANTT_READY?: boolean;
-    __GANTT_ERROR?: string | null;
+    __GANTT_ERROR?: string;
   }
 }
 

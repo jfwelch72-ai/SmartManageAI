@@ -75,7 +75,7 @@ beforeAll(async () => {
       isActive: true,
     })
     .returning();
-  userToken = generateToken({ userId: user.id, email: user.email, role: user.role, organizationId: org.id });
+  userToken = generateToken(user.id, null);
   await setAllFeatureFlags(org.id, { DOT_PAY_ITEMS: true } as Record<FeatureFlagKey, boolean>);
 
   const [agency] = await db

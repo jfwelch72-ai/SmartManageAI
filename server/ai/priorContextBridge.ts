@@ -27,7 +27,7 @@
  *     is prepended as a system message so Claude sees the trail.
  */
 
-import type { TakeoffFeatureKey } from "./types";
+import type { TakeoffFeatureKey } from "./providers/types";
 
 export interface PriorContextScope {
   /** Required — multi-tenant boundary. */

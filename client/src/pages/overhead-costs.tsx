@@ -275,10 +275,10 @@ function ItemDialog({
   function onSubmit(values: ItemFormValues) {
     const payload = {
       ...values,
-      amortizationMonths: values.frequency === "ONE_TIME" ? (values.amortizationMonths || null) : null,
-      effectiveDate: values.effectiveDate || null,
-      endDate: values.endDate || null,
-      notes: values.notes || null,
+      amortizationMonths: values.frequency === "ONE_TIME" ? (values.amortizationMonths || undefined) : undefined,
+      effectiveDate: values.effectiveDate || undefined,
+      endDate: values.endDate || undefined,
+      notes: values.notes || undefined,
     };
     if (editItem) {
       updateMutation.mutate(payload);

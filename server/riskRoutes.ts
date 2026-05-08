@@ -381,14 +381,14 @@ Status: ${project.status}
 Budget: $${project.budget || "Not set"}
 Contract Amount: $${project.contractAmount || "Not set"}
 ${project.description ? `Description: ${project.description}` : ""}
-${project.address ? `Location: ${project.address}` : ""}
+${[project.city, project.state].filter(Boolean).length ? `Location: ${[project.city, project.state].filter(Boolean).join(", ")}` : ""}
 
 Already identified risks: ${existingRisks.length > 0 ? existingRisks.map(r => `${r.title} (${r.category})`).join(", ") : "None"}
 
 Suggest relevant construction project risks that haven't been identified yet.`;
 
     const governed = await governedAiCall({
-      orgId: req.user!.organizationId,
+      orgId: req.user!.organizationId!,
       userId: req.user!.id,
       actionType: "risk_ai_suggestions",
       inputRefs: { projectId },

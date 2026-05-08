@@ -12,7 +12,7 @@ import { sql, inArray } from "drizzle-orm";
 
 const isFeatureEnabledMock = vi.fn(async () => true);
 vi.mock("../services/featureFlagService", () => ({
-  isFeatureEnabled: (...args: unknown[]) => isFeatureEnabledMock(...args),
+  isFeatureEnabled: isFeatureEnabledMock,
 }));
 
 const sentEmails: Array<{ to: string; subject: string; html: string; text: string }> = [];

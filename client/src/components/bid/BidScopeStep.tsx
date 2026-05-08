@@ -382,7 +382,7 @@ export default function BidScopeStep({
                       variant="outline"
                       size="sm"
                       className="border-blue-300 text-blue-700 hover:bg-blue-100 dark:border-blue-700 dark:text-blue-300 dark:hover:bg-blue-900/30 shrink-0"
-                      onClick={() => importOnlyMutation.mutate()}
+                      onClick={() => importOnlyMutation.mutate(undefined as never)}
                       disabled={importOnlyMutation.isPending}
                       data-testid="button-import-takeoff-only"
                     >

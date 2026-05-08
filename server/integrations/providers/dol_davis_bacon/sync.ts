@@ -100,8 +100,8 @@ export async function fetchWageDetermination(
   const apiKey = meta.apiKey || meta.accessToken;
   if (!apiKey) throw new Error("SAM.gov API key not configured on connection");
 
-  const data = await samFetch(`${SAM_BASE}/wagedeterminations/v1/details/${encodeURIComponent(decisionNumber)}`, apiKey) as { wageDetermination?: { rates?: unknown }; rates?: unknown };
-  const det = data?.wageDetermination ?? data ?? {};
+  const data = await samFetch(`${SAM_BASE}/wagedeterminations/v1/details/${encodeURIComponent(decisionNumber)}`, apiKey) as { wageDetermination?: Record<string, unknown>; rates?: unknown; [key: string]: unknown };
+  const det = (data?.wageDetermination ?? data ?? {}) as Record<string, any>;
   const rows: SamWageRow[] = Array.isArray((det as { rates?: unknown }).rates) ? ((det as { rates: SamWageRow[] }).rates) : [];
 
   const rates: DavisBaconWageRate[] = rows.map((r) => {

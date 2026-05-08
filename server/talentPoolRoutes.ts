@@ -771,7 +771,7 @@ router.post("/api/talent-pool/upload-portfolio-photos", requireAuth, sensitiveLi
 
 router.get("/api/talent-pool/portfolio-files/*", async (req, res, next) => {
   try {
-    const objectId = req.params[0];
+    const objectId = (req.params as Record<string, string>)[0];
     if (!objectId) {
       res.status(400).json({ error: "Missing file path" });
       return;

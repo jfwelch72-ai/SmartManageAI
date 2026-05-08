@@ -229,7 +229,7 @@ async function seedLoadFixture(): Promise<SeedResult> {
   for (let i = 0; i < PUNCH_COUNT; i++) {
     const assignee = i % 6 === 0 ? reportIds[i % reportIds.length] : manager.id;
     const status = PUNCH_STATUSES[i % PUNCH_STATUSES.length];
-    const priority = ["LOW", "MEDIUM", "HIGH", "CRITICAL"][i % 4];
+    const priority = (["LOW", "MEDIUM", "HIGH", "CRITICAL"] as const)[i % 4];
     const projectId = projectIds[i % projectIds.length];
     const dueDate = i % 13 === 0 ? null : dayOffset((i % 100) - 10);
     punchRows.push({
@@ -252,7 +252,7 @@ async function seedLoadFixture(): Promise<SeedResult> {
   for (let i = 0; i < RFI_COUNT; i++) {
     const assignee = i % 7 === 0 ? reportIds[i % reportIds.length] : manager.id;
     const status = RFI_STATUSES[i % RFI_STATUSES.length];
-    const priority = ["LOW", "MEDIUM", "HIGH", "URGENT"][i % 4];
+    const priority = (["LOW", "MEDIUM", "HIGH", "URGENT"] as const)[i % 4];
     const projectId = projectIds[i % projectIds.length];
     const dueDate = i % 11 === 0 ? null : dayOffset((i % 80) - 5);
     rfiRows.push({

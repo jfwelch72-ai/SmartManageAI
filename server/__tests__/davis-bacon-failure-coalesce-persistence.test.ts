@@ -160,7 +160,7 @@ describe("notifyDavisBaconAutoSyncFailure — restart persistence (Task #1370)",
     // Window expired → notification goes out, with the absorbed-count suffix
     // sourced from the persisted suppressedCount.
     expect(insertNotificationMock).toHaveBeenCalledTimes(1);
-    const call = insertNotificationMock.mock.calls[0][0] as Record<string, unknown>;
+    const call = (insertNotificationMock.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
     expect(call.message as string).toMatch(/4 failures in the last hour/);
 
     // Persisted state was refreshed with the new lastNotifiedAt.

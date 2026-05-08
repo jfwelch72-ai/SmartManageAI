@@ -434,7 +434,8 @@ export function TeamMessagesContent({ compact = false }: { compact?: boolean }) 
     },
   }), []);
 
-  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessage, callEventHandler);
+  const updateOlderMessageUntyped: unknown = updateOlderMessage;
+  const { sseLive, typingNames } = useMessagingEvents(selectedConversationId, updateOlderMessageUntyped as Parameters<typeof useMessagingEvents>[1], callEventHandler);
 
   // ── Pagination state ──
   const [olderMessages, setOlderMessages] = useState<Message[]>([]);

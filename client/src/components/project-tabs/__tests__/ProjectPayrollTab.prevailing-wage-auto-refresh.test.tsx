@@ -122,7 +122,7 @@ function seedAndRender(summary: Summary) {
 }
 
 function summaryInvalidated(spy: ReturnType<typeof vi.spyOn>) {
-  return spy.mock.calls.some((args) => {
+  return spy.mock.calls.some((args: unknown[]) => {
     const arg0 = args[0] as { queryKey?: unknown } | undefined;
     if (!arg0 || !Array.isArray(arg0.queryKey)) return false;
     const key = arg0.queryKey as unknown[];

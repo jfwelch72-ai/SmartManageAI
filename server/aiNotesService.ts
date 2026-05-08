@@ -493,7 +493,7 @@ Return format: { "insights": [ ... ] }`;
     // Filter by user role if provided (RBAC)
     if (userRole && !["ADMIN", "MANAGER"].includes(userRole)) {
       parsedInsights = parsedInsights.filter(insight => 
-        insight.recipients.includes(userRole)
+        (insight.recipients as string[]).includes(userRole)
       );
     }
 
@@ -548,7 +548,7 @@ Return format: { "insights": [ ... ] }`;
     // Filter by user role if provided (RBAC)
     if (userRole && !["ADMIN", "MANAGER"].includes(userRole)) {
       enrichedInsights = enrichedInsights.filter(insight => 
-        insight.recipients.includes(userRole)
+        (insight.recipients as string[]).includes(userRole)
       );
     }
 

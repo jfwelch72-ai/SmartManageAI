@@ -7,7 +7,7 @@ import {
 } from "@shared/schema";
 import { eq, and, asc, desc } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
-import { notifyUsers, getApproverUserIds } from "./approvalNotificationService";
+import { notifyUsers, getApproverUserIds, type NotificationParams } from "./approvalNotificationService";
 
 const WORKFLOW_ENTITY_TYPES = ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "HAUL_TICKET", "INSPECTOR_REPORT", "MATERIAL_CERT", "SURETY_BOND"] as const;
 type WorkflowEntityType = (typeof WORKFLOW_ENTITY_TYPES)[number];
@@ -395,7 +395,7 @@ async function deliverByChannel(
   const title = `Workflow Update: ${entityLabel}`;
 
   await notifyUsers(recipientIds, {
-    type: notificationType,
+    type: notificationType as NonNullable<NotificationParams["type"]>,
     title,
     message,
     relatedEntityId: entityId,

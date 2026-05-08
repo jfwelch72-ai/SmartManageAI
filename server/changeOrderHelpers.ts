@@ -107,7 +107,7 @@ async function notifyStatusChange(
 
     if (notifyRequestedBy && order.requestedById && newStatus !== "SUBMITTED") {
       await notifySubmitter(order.requestedById, {
-        type: notificationType,
+        type: notificationType as Parameters<typeof notifySubmitter>[1]["type"],
         title: `Change Order ${newStatus.charAt(0) + newStatus.slice(1).toLowerCase()}`,
         message,
         relatedEntityId: order.id,

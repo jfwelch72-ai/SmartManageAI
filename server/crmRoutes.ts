@@ -1843,12 +1843,13 @@ router.get("/api/crm/contacts/birthdays/upcoming", requireAuth, requireRole(...C
     const items = rows
       .map((r) => {
         let raw: string;
-        if (r.birthday instanceof Date) {
+        const bday = r.birthday as unknown;
+        if (bday instanceof Date) {
           // Use UTC components to avoid local-timezone shifts pushing the
           // date back/forward by a day when the column is a DATE.
-          const y = r.birthday.getUTCFullYear();
-          const mo = String(r.birthday.getUTCMonth() + 1).padStart(2, "0");
-          const da = String(r.birthday.getUTCDate()).padStart(2, "0");
+          const y = bday.getUTCFullYear();
+          const mo = String(bday.getUTCMonth() + 1).padStart(2, "0");
+          const da = String(bday.getUTCDate()).padStart(2, "0");
           raw = `${y}-${mo}-${da}`;
         } else {
           raw = String(r.birthday);

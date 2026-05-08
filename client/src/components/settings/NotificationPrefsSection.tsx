@@ -1383,7 +1383,7 @@ export default function NotificationPrefsSection() {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       toast({
         title: "Digest size updated",
-        description: `Quiet-hours digest will now include up to ${value} recent alert${value === 1 ? "" : "s"}.`,
+        description: `Quiet-hours digest will now include up to ${value} recent alert${(value as number) === 1 ? "" : "s"}.`,
       });
     },
     onError: (error: Error) => {

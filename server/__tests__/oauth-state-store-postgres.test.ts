@@ -36,10 +36,10 @@ describe("oauthStateStore (Postgres)", () => {
   it("persists an issued state to oauth_state and lets consume read it back", async () => {
     const state = await createOAuthState("apple");
 
-    const before = await db.execute(
+    const before = await db.execute<{ state: string; provider: string }>(
       sql`SELECT state, provider FROM oauth_state WHERE state = ${state}`,
     );
-    const beforeRows = (before as { rows?: Array<{ state: string; provider: string }> }).rows ?? [];
+    const beforeRows = before.rows ?? [];
     expect(beforeRows).toHaveLength(1);
     expect(beforeRows[0].provider).toBe("apple");
 
@@ -50,7 +50,7 @@ describe("oauthStateStore (Postgres)", () => {
     const after = await db.execute(
       sql`SELECT 1 FROM oauth_state WHERE state = ${state}`,
     );
-    const afterRows = (after as { rows?: unknown[] }).rows ?? [];
+    const afterRows = after.rows ?? [];
     expect(afterRows).toHaveLength(0);
   });
 
@@ -110,7 +110,7 @@ describe("oauthStateStore (Postgres)", () => {
     const remaining = await db.execute(
       sql`SELECT 1 FROM oauth_state WHERE state = ${state}`,
     );
-    expect(((remaining as { rows?: unknown[] }).rows ?? []).length).toBe(1);
+    expect((remaining.rows ?? []).length).toBe(1);
   });
 
   it("isolates state values by provider so an Apple state cannot be consumed as Google", async () => {

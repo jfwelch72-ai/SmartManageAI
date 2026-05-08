@@ -59,6 +59,8 @@ export interface Website {
   defaultMetaDescription: string | null;
   ogImageUrl: string | null;
   googleAnalyticsId: string | null;
+  careersEnabled: boolean | null;
+  careersIntroText: string | null;
   createdAt: string;
   updatedAt: string | null;
 }

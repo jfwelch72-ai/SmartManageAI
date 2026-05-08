@@ -66,7 +66,7 @@ vi.mock("@/lib/queryClient", async () => {
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   return {
-    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    apiRequest: apiRequestMock,
     queryClient,
     getQueryFn: () => async () => null,
   };
@@ -92,8 +92,10 @@ function makeMockTakeoffHistory(): TakeoffHistory {
     pushMarkupAction: vi.fn(),
     pushMarkupUpdateAction: vi.fn(),
     pushMarkupUpdateBatchAction: vi.fn(),
+    pushMarkupDeleteBatchAction: vi.fn(),
     pushMeasurementUpdateAction: vi.fn(),
     pushMeasurementUpdateBatchAction: vi.fn(),
+    pushMeasurementDeleteBatchAction: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,

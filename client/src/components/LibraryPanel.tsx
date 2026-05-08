@@ -30,7 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Plus, ChevronDown, ChevronRight, Package, Layers, Ruler,
   MoreVertical, Pencil, Trash2, Settings, Download, Sparkles, BookOpen, FolderOpen, RefreshCw,
-  CheckSquare, X,
+  CheckSquare, X, Copy,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LibraryItemDialog from "./LibraryItemDialog";

@@ -235,8 +235,8 @@ afterEach(() => {
 
 const farFutureExpiry = new Date(Date.now() + 60 * 60 * 1000);
 
-function gmailAccount(overrides: Record<string, unknown> = {}) {
-  return {
+function gmailAccount(overrides: Record<string, unknown> = {}): import("@shared/schema/features/email").EmailAccount {
+  const base: Record<string, unknown> = {
     id: "acct-gmail-1",
     organizationId: "org-1",
     userId: "user-1",
@@ -256,14 +256,15 @@ function gmailAccount(overrides: Record<string, unknown> = {}) {
     syncStatus: "OK",
     pendingProviderPush: null,
     ...overrides,
-  } as never;
+  };
+  return base as import("@shared/schema/features/email").EmailAccount;
 }
 
-function outlookAccount(overrides: Record<string, unknown> = {}) {
+function outlookAccount(overrides: Record<string, unknown> = {}): import("@shared/schema/features/email").EmailAccount {
   return gmailAccount({ id: "acct-outlook-1", provider: "OUTLOOK", ...overrides });
 }
 
-function imapAccount(overrides: Record<string, unknown> = {}) {
+function imapAccount(overrides: Record<string, unknown> = {}): import("@shared/schema/features/email").EmailAccount {
   return gmailAccount({
     id: "acct-imap-1",
     provider: "IMAP",
@@ -778,6 +779,8 @@ describe("Two-way email sync (mocked Gmail / Outlook providers)", () => {
           isRead: false,
           hasAttachments: false,
           messageId: "<imap-uid-1@example.com>",
+          inReplyTo: "",
+          references: "",
         },
       ]);
 
@@ -829,6 +832,8 @@ describe("Two-way email sync (mocked Gmail / Outlook providers)", () => {
           isRead: true,
           hasAttachments: false,
           messageId: "<imap-uid-1@example.com>",
+          inReplyTo: "",
+          references: "",
         },
       ]);
 

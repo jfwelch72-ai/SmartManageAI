@@ -153,6 +153,11 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
     phone: "",
     email: "",
     address: "",
+    stylePreference: "",
+    colorPreference: "",
+    contactEmail: "",
+    contactPhone: "",
+    contactAddress: "",
   });
   const [wizardGenerating, setWizardGenerating] = useState(false);
   const [wizardProgress, setWizardProgress] = useState(0);
@@ -517,7 +522,7 @@ export default function WebsiteBuilderPage({ embedded }: { embedded?: boolean } 
           <WebsiteSetupTab
             website={website}
             websiteForm={websiteForm}
-            setWebsiteForm={setWebsiteForm}
+            setWebsiteForm={setWebsiteForm as React.ComponentProps<typeof WebsiteSetupTab>["setWebsiteForm"]}
             selectedTemplateId={selectedTemplateId}
             onTemplateSelect={handleTemplateSelect}
             onSave={handleSaveWebsite}

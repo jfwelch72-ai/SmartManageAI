@@ -75,7 +75,7 @@ export interface WidgetComponentProps {
   config?: Record<string, unknown>;
 }
 
-export type WidgetComponent = (props: WidgetComponentProps) => JSX.Element;
+export type WidgetComponent = (props: WidgetComponentProps) => JSX.Element | null;
 
 export type WidgetCategory = "Financial" | "Operational" | "Workforce" | "Communication" | "AI" | "General";
 

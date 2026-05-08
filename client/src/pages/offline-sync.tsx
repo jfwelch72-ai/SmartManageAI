@@ -843,14 +843,14 @@ export default function OfflineSyncPage() {
                   </div>
                 )}
 
-                {selectedItem.payload && typeof selectedItem.payload === 'object' && (
+                {selectedItem.payload && typeof selectedItem.payload === 'object' ? (
                   <div className="space-y-2">
                     <span className="text-sm text-muted-foreground">Payload</span>
                     <pre className="p-3 bg-muted rounded-lg text-xs overflow-auto max-h-40">
                       {JSON.stringify(selectedItem.payload, null, 2)}
                     </pre>
                   </div>
-                )}
+                ) : null}
               </div>
             </ScrollArea>
           )}

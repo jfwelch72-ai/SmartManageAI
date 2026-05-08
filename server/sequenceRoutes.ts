@@ -330,8 +330,9 @@ router.post("/api/crm/sequences/:id/enroll", requireAuth, requireRole(...ROLES),
         .limit(1);
       if (!opp) return res.status(404).json({ error: "Opportunity not found in this organization" });
       if (contactIds.length === 0) {
-        if (!opp.primaryContactId) return res.status(400).json({ error: "Opportunity has no primary contact to enroll" });
-        contactIds.push(opp.primaryContactId);
+        const primaryContactId = (opp as { primaryContactId?: string | null }).primaryContactId;
+        if (!primaryContactId) return res.status(400).json({ error: "Opportunity has no primary contact to enroll" });
+        contactIds.push(primaryContactId);
       }
     }
     // Validate every contact belongs to this org
@@ -398,7 +399,8 @@ router.get("/api/crm/sequences/:id/enrollments", requireAuth, requireRole(...ROL
     const sortParam = typeof req.query.sort === "string" ? req.query.sort : "createdAt:desc";
     const [sortField, sortDir] = sortParam.split(":");
     const dir = sortDir === "asc" ? asc : desc;
-    const orderCol = (SORT_FIELDS as Record<string, typeof crmSequenceEnrollments.createdAt>)[sortField] || crmSequenceEnrollments.createdAt;
+    const sortFieldsAsUnknown: unknown = SORT_FIELDS;
+    const orderCol = (sortFieldsAsUnknown as Record<string, typeof crmSequenceEnrollments.createdAt>)[sortField] || crmSequenceEnrollments.createdAt;
 
     const conds = [eq(crmSequenceEnrollments.sequenceId, seq.id)];
     if (exitReasonFilter === "NONE") {

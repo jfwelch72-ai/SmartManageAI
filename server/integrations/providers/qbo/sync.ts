@@ -625,7 +625,7 @@ export async function exportPurchaseOrders(
         const vendorId = await getOrCreateVendor(metadata.realmId, metadata.accessToken || "", vendorName);
 
         const lines = groupItems.map((g, idx) => {
-          const costCode = g.item.costCode || "";
+          const costCode = (g.item as { costCode?: string | null }).costCode || "";
           const mapping = costCode ? accountMappings.get(`${costCode}:cost_code`) : null;
           const lineAccountRef = mapping
             ? { value: mapping.qboAccountId, name: mapping.qboAccountName }
@@ -739,7 +739,7 @@ export async function reconcilePayments(
         if (localInvoice.status !== newStatus) {
           if (!dryRun) {
             await db.update(tmInvoices)
-              .set({ status: newStatus, updatedAt: new Date() })
+              .set({ status: newStatus as "DRAFT" | "CANCELLED" | "SENT" | "PAID", updatedAt: new Date() })
               .where(eq(tmInvoices.id, localInvoice.id));
           }
           statusChanges.push({ localId: localInvoice.id, oldStatus: localInvoice.status, newStatus });

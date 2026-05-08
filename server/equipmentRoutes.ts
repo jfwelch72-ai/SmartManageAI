@@ -641,7 +641,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { equipment, equipmentAssignments, equipmentMaintenanceSchedules, equipmentMaintenanceHistory, equipmentRateProfiles, insertEquipmentRateProfileSchema, validatedEquipmentSchema, projects, users, auditLog, rentalVendors, insertRentalVendorSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, equipmentHourLogs, equipmentRepairs, bidEquipmentSelections, projectEquipmentPlans, bids, notifications, equipmentFuelLogs } from "@shared/schema";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
-import { eq, desc, sql, and, or, ne } from "drizzle-orm";
+import { eq, desc, sql, and, or, ne, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
@@ -3436,7 +3436,7 @@ Please provide:
         .select({ id: users.id })
         .from(users)
         .where(and(
-          eq(users.role),
+          inArray(users.role, ["ADMIN", "MANAGER"]),
           eq(users.isActive, true)
         ));
       

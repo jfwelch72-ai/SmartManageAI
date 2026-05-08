@@ -184,10 +184,10 @@ export default function MediaTab({ projectCode, project }: MediaTabProps) {
                   maxFileSize={MAX_STORAGE_FILE_SIZE}
                   allowedFileTypes={mediaType === "IMAGE" ? ["image/*"] : ["video/*"]}
                   fileType="MEDIA"
-                  onComplete={(result) => {
+                  onComplete={((result: Parameters<typeof handleMediaUploadComplete>[0]) => {
                     setIsUploadingMedia(true);
                     handleMediaUploadComplete(result);
-                  }}
+                  }) as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
                   buttonVariant="default"
                   testId="button-select-media-file"
                 >

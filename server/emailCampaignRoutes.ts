@@ -141,7 +141,8 @@ router.get("/api/email-campaigns", requireAuth, async (req, res, next) => {
     const orgCtx = getOrgIdForFilter(authReq);
     if (orgCtx.mustDenyAccess) return res.status(403).json({ error: "Access denied" });
 
-    const { limit, offset } = parsePagination(req.query as Record<string, unknown>);
+    const { pageSize: limit, page } = parsePagination(req.query as Record<string, unknown>);
+    const offset = (page - 1) * limit;
     const conditions = orgCtx.isSuperAdmin ? [] : [eq(emailCampaigns.organizationId, orgCtx.orgId!)];
     const whereClause = conditions.length ? and(...conditions) : undefined;
 

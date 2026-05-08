@@ -561,7 +561,7 @@ export default function TakeoffStandalonePage() {
               maxNumberOfFiles={10}
               allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg"]}
               fileType="DOCUMENT"
-              onComplete={handleUploadComplete}
+              onComplete={handleUploadComplete as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
               testId="button-upload-plan"
             >
               <Button

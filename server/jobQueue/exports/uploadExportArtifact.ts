@@ -65,13 +65,14 @@ export async function uploadExportArtifact(
         resumable: false,
         metadata: { contentType: input.contentType },
       });
-      input.body.on("data", (chunk: Buffer | string) => {
+      const body = input.body as NodeJS.ReadableStream;
+      body.on("data", (chunk: Buffer | string) => {
         bytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
       });
-      input.body.on("error", reject);
+      body.on("error", reject);
       ws.on("error", reject);
       ws.on("finish", () => resolve());
-      input.body.pipe(ws);
+      body.pipe(ws);
     });
   }
 

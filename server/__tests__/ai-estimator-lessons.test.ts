@@ -29,7 +29,7 @@ const routedChatCompletionMock = vi.fn();
 const isFeatureEnabledMock = vi.fn();
 
 vi.mock("../ai/providers", () => ({
-  routedChatCompletion: (...args: unknown[]) => routedChatCompletionMock(...args),
+  routedChatCompletion: routedChatCompletionMock,
 }));
 
 vi.mock("../services/aiGovernance", () => ({

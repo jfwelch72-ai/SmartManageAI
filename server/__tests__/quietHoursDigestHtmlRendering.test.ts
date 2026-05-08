@@ -21,6 +21,7 @@ const events = [
     kind: "spike" as const,
     triggeredAt: new Date("2026-04-21T02:15:00.000Z"),
     message: "errors spiked 12x baseline",
+    emailed: false,
   },
   {
     job: "ingest_worker",
@@ -28,6 +29,7 @@ const events = [
     kind: "stall" as const,
     triggeredAt: new Date("2026-04-21T03:42:00.000Z"),
     message: "queue_depth stalled below floor",
+    emailed: false,
   },
   {
     job: "billing_runner",
@@ -35,6 +37,7 @@ const events = [
     kind: "spike" as const,
     triggeredAt: new Date("2026-04-21T04:05:00.000Z"),
     message: "latency spiked 7x baseline",
+    emailed: false,
   },
 ];
 

@@ -279,7 +279,7 @@ describe('Task #2100 — round-trip parity with DB tradeTypeEnum', () => {
     const { tradeTypeEnum } = await import('./schema/enums');
     const { BASE_TRADE_FALLBACKS, resolveBaseTradeType } = await import('./tradeTypeUtils');
     for (const value of tradeTypeEnum.enumValues) {
-      expect(BASE_TRADE_FALLBACKS[value as any]).toBeDefined();
+      expect(BASE_TRADE_FALLBACKS[value as keyof typeof BASE_TRADE_FALLBACKS]).toBeDefined();
       // The base must itself be a valid trade type (no dangling references).
       const base = resolveBaseTradeType(value);
       expect(isValidTradeType(base)).toBe(true);

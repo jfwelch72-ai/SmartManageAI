@@ -39,7 +39,7 @@ vi.mock("../integrations/audit", () => ({
   logIntegrationAudit: vi.fn(),
   getSecurityAuditLog: () => [],
   recordSuppressionReset: vi.fn(),
-  listSuppressionResets: (...args: unknown[]) => listSuppressionResetsMock(...args),
+  listSuppressionResets: listSuppressionResetsMock,
 }));
 
 vi.mock("../integrations/providers/dol_davis_bacon", () => ({
@@ -144,14 +144,15 @@ function setBufferReturn(
     timestamp: string;
   }>,
 ) {
-  listSuppressionResetsMock.mockImplementation((orgId: string) => {
+  const impl: unknown = (orgId: string) => {
     const filtered = entries.filter((e) => e.orgId === orgId);
     lastUserQueryOrg = orgId;
     lastUserQueryIds = Array.from(
       new Set(filtered.map((e) => e.userId).filter((u): u is string => !!u)),
     );
     return filtered as unknown[];
-  });
+  };
+  listSuppressionResetsMock.mockImplementation(impl as () => unknown[]);
 }
 
 vi.mock("../utils/logger", () => ({

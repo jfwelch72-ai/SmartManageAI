@@ -3195,7 +3195,7 @@ router.post("/api/auth/change-password", requireAuth, sensitiveLimiter, async (r
       return;
     }
 
-    const isValid = await verifyPassword(data.currentPassword, user.passwordHash);
+    const isValid = await verifyPassword(data.currentPassword, user.passwordHash!);
     
     if (!isValid) {
       res.status(401).json({ error: "Current password is incorrect" });

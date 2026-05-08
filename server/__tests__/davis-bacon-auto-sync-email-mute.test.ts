@@ -201,10 +201,10 @@ describe("GET /api/notifications/mute/davis-bacon-auto-sync-failed", () => {
 // advance past the window without sleeping, and a vi.mock spy on
 // `insertNotification` so we can count exactly how many notifications
 // the public helper actually emits.
-const insertNotificationMock = vi.fn(async () => undefined);
+const insertNotificationMock = vi.fn(async (..._args: unknown[]) => undefined);
 vi.mock("../services/notificationService", () => ({
   insertNotification: insertNotificationMock,
-  insertNotifications: vi.fn(async () => undefined),
+  insertNotifications: vi.fn(async (..._args: unknown[]) => undefined),
 }));
 vi.mock("../integrations/encryption", () => ({
   decryptMetadata: (m: unknown) => m,
@@ -233,7 +233,7 @@ describe("notifyDavisBaconAutoSyncFailure — coalescing window", () => {
       // First failure → delivered.
       await sync.notifyDavisBaconAutoSyncFailure(connection, "CA20260999", "boom-1");
       expect(insertNotificationMock).toHaveBeenCalledTimes(1);
-      const firstCall = insertNotificationMock.mock.calls[0][0] as Record<string, unknown>;
+      const firstCall = (insertNotificationMock.mock.calls[0] as unknown[])[0] as Record<string, unknown>;
       expect(firstCall.userId).toBe("owner-1");
       expect((firstCall.message as string)).not.toContain("failures in the last hour");
 

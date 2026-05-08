@@ -177,7 +177,7 @@ router.post(
                   role: "user",
                   content: [
                     ...blocks,
-                    { type: "text", text: "Extract every pay item visible. Do not invent rows. If a row is illegible mark its description as \"UNREADABLE\"." },
+                    { type: "text" as const, text: "Extract every pay item visible. Do not invent rows. If a row is illegible mark its description as \"UNREADABLE\"." },
                   ],
                 },
               ],
@@ -284,7 +284,7 @@ router.post(
                   role: "user",
                   content: [
                     ...blocks,
-                    { type: "text", text: "Extract the ticket fields. Do not guess; use null for unreadable fields." },
+                    { type: "text" as const, text: "Extract the ticket fields. Do not guess; use null for unreadable fields." },
                   ],
                 },
               ],

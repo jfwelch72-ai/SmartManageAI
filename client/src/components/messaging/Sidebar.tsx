@@ -154,13 +154,13 @@ export function Sidebar({
   const joinedCrewIds = new Set(conversations.filter(c => !!c.crewId).map(c => c.id));
 
   const projectChannels: ChannelRow[] = [
-    ...conversations.filter(c => !!c.projectId),
-    ...allChannels.filter(ch => !!ch.projectId && !joinedProjectIds.has(ch.id)).map(ch => ({ ...ch, _unjoined: true as const })),
+    ...(conversations.filter(c => !!c.projectId) as ChannelRow[]),
+    ...(allChannels.filter(ch => !!ch.projectId && !joinedProjectIds.has(ch.id)).map(ch => ({ ...ch, _unjoined: true as const })) as ChannelRow[]),
   ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 
   const crewChannels: ChannelRow[] = [
-    ...conversations.filter(c => !!c.crewId),
-    ...allChannels.filter(ch => !!ch.crewId && !joinedCrewIds.has(ch.id)).map(ch => ({ ...ch, _unjoined: true as const })),
+    ...(conversations.filter(c => !!c.crewId) as ChannelRow[]),
+    ...(allChannels.filter(ch => !!ch.crewId && !joinedCrewIds.has(ch.id)).map(ch => ({ ...ch, _unjoined: true as const })) as ChannelRow[]),
   ].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
 
   const directMessages = conversations.filter(c => c.type === "DIRECT");

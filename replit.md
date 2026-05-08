@@ -23,7 +23,7 @@ The following workflows must boot cleanly and stay green:
 
 *   `Start application` — Express + Vite dev server on port 5000
 *   `artifacts/mockup-sandbox: Component Preview Server` — preview at `/__mockup/`
-*   `typecheck` — currently has a known backlog (see Gotchas → "Typecheck backlog"). New code MUST NOT add to the count.
+*   `typecheck` — `npx tsc -p tsconfig.json`. Restored to zero errors in Task #2647. New code MUST keep it at zero — do not introduce regressions and do not mask with `// @ts-ignore` / `// @ts-expect-error` / `as any`.
 
 ## Stack
 
@@ -87,7 +87,7 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **Legacy `drizzle/` directory**: Removed; its content superseded and auto-applied by `reconcileSchemaDrift`.
 *   **AI Provider Routing (Takeoff)**: Ensure `AI_PROVIDER_TAKEOFF` feature flag is correctly configured for Anthropic Claude usage and fallbacks. Embeddings and other AI features still use OpenAI directly.
 *   **`server/storage.ts`**: This file is intentionally *not* deleted yet; other domains will incrementally adopt the new storage seam pattern.
-*   **Typecheck backlog**: `npm run check` currently reports ~462 pre-existing TS errors across ~107 files (mostly Drizzle `inArray` / enum drift, nullable `organizationId` narrowing, and schema drift). The `typecheck` workflow is therefore RED at HEAD. Task #2490 made meaningful inroads — added the missing `audit_action` / `notification_type` / `DomainEvent` members, the `DashboardWidgetConfig.config` field, and tightened `req.user!.X` narrowing across the AI/route surface — but a full burn-down was not feasible in one session. **Rule for all new work**: do not add to the count and do not mask with `// @ts-ignore` / `// @ts-expect-error` / `as any`. Run `npm run check 2>&1 | grep -c "error TS"` before/after your change to confirm the count did not grow.
+*   **Typecheck baseline (Task #2647)**: `npm run check` is now at **zero errors** and the `typecheck` workflow is part of the green baseline. The remaining backlog from Task #2490 was actually a single broken file (`client/src/pages/ai-estimator-admin.tsx`) where the `AssemblyEditorDialog` JSX body had been spliced into the middle of the `SettingsTab` region-factors form — restoring the original ordering closed all 222 reported errors. `tsconfig.json` runs with `incremental: true` and a `tsBuildInfoFile` under `node_modules/.cache/typecheck/` so subsequent runs reuse build info and don't OOM. **Rule for all new work**: keep the count at zero and do not mask with `// @ts-ignore` / `// @ts-expect-error` / `as any`. Run `npm run check 2>&1 | grep -c "error TS"` before/after your change to confirm.
 
 ## Security
 

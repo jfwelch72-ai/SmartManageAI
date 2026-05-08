@@ -67,6 +67,9 @@ const ADDON_ICONS: Record<AddOnKey, React.ElementType> = {
   website_seo: Globe,
   bid_network: Network,
   ai_vision: Sparkles,
+  integration_qbo: BarChart3,
+  integration_esign: Mail,
+  ai_governance_pack: Sparkles,
 };
 
 export function PlanSelectionStep({ 

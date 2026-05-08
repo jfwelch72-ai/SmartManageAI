@@ -172,7 +172,7 @@ router.get("/api/onboarding-library/for-org", requireAuth, async (req: Request, 
 
     const { groups, materials: allMaterials } = (() => {
       const scopeMaterialFamilies = new Set<string>();
-      filteredScopes.forEach(s => {
+      filteredScopes!.forEach(s => {
         s.material_families.forEach(mf => scopeMaterialFamilies.add(mf));
       });
 

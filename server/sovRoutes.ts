@@ -94,7 +94,7 @@ import { Router, Response, NextFunction } from "express";
 import { z } from "zod";
 import { db } from "./db";
 import { scheduleOfValues, sovLineItems, projects, estimateLineItems, organizations, changeOrders, users, notifications, lienWaivers, sovPayments } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { requireAuth, AuthRequest, requireRole, requireFeaturePermission } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { verifyProjectAccess, verifySOVAccess, calculateSOVTotals } from "./sovHelpers";
@@ -1244,7 +1244,7 @@ router.patch("/sov/:sovId/line-items/:lineItemId", requireAuth, requireRole("SUP
             .where(
               and(
                 eq(users.organizationId, project.gcOrganizationId),
-                eq(users.role),
+                inArray(users.role, ["ADMIN", "MANAGER"]),
                 eq(users.isActive, true)
               )
             );

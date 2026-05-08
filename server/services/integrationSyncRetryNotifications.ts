@@ -371,6 +371,7 @@ interface BackfillRow {
   connection_id: string;
   entity_type: string;
   last_error: string | null;
+  [key: string]: unknown;
 }
 
 export interface BackfillExhaustedSyncAlertsResult {

@@ -113,12 +113,22 @@ export default function TimeClockPage() {
   const clockOut = useClockOut();
   const updateCostCode = useUpdateShiftCostCode();
 
-  const shiftIds = useMemo(() => myShifts.map((s: Record<string, unknown>) => s.id as string), [myShifts]);
+  const shiftIds = useMemo(() => myShifts.map((s) => s.id), [myShifts]);
   const { data: otRequests = [] } = useOvertimeRequestsByShifts(shiftIds);
   const { data: approvers = [] } = useOvertimeApprovers();
   const createOtRequest = useCreateOvertimeRequest();
 
-  const { data: activeSiteLeave, isLoading: siteLeaveLoading } = useQuery({
+  const { data: activeSiteLeave, isLoading: siteLeaveLoading } = useQuery<{
+    leave: {
+      id: string;
+      shiftId: string;
+      reason: string;
+      category: string;
+      estimatedReturnMinutes: number | null;
+      departedAt: string | Date;
+      returnedAt: string | Date | null;
+    } | null;
+  }>({
     queryKey: ["/api/time-clock/site-leave/active"],
     enabled: Boolean(currentShift?.shift),
     refetchInterval: 30000,
@@ -163,9 +173,9 @@ export default function TimeClockPage() {
   });
 
   const otRequestMap = useMemo(() => {
-    const map = new Map<string, Record<string, unknown>>();
-    otRequests.forEach((req: Record<string, unknown>) => {
-      map.set(req.shiftId as string, req);
+    const map = new Map<string, { shiftId: string; status: string; approvedHours?: string | number | null; requestedHours?: string | number | null; [key: string]: unknown }>();
+    otRequests.forEach((req: { shiftId: string; status: string; approvedHours?: string | number | null; requestedHours?: string | number | null; [key: string]: unknown }) => {
+      map.set(req.shiftId, req);
     });
     return map;
   }, [otRequests]);
@@ -457,7 +467,7 @@ export default function TimeClockPage() {
     }
   };
 
-  const getShiftDuration = (clockInTime: string, clockOutTime?: string) => {
+  const getShiftDuration = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -466,7 +476,7 @@ export default function TimeClockPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const getRegularDuration = (clockInTime: string, clockOutTime?: string) => {
+  const getRegularDuration = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -477,7 +487,7 @@ export default function TimeClockPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const getOvertimeDuration = (clockInTime: string, clockOutTime?: string) => {
+  const getOvertimeDuration = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -489,7 +499,7 @@ export default function TimeClockPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const getRegularHours = (clockInTime: string, clockOutTime?: string) => {
+  const getRegularHours = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -500,7 +510,7 @@ export default function TimeClockPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const getOvertimeHours = (clockInTime: string, clockOutTime?: string) => {
+  const getOvertimeHours = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -512,7 +522,7 @@ export default function TimeClockPage() {
     return `${hours}h ${minutes}m`;
   };
 
-  const getOvertimeDecimal = (clockInTime: string, clockOutTime?: string) => {
+  const getOvertimeDecimal = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -521,7 +531,7 @@ export default function TimeClockPage() {
     return (totalHours - 8).toFixed(2);
   };
 
-  const hasOvertime = (clockInTime: string, clockOutTime?: string) => {
+  const hasOvertime = (clockInTime: string | Date, clockOutTime?: string | Date | null) => {
     const start = new Date(clockInTime);
     const end = clockOutTime ? new Date(clockOutTime) : new Date();
     const durationMs = end.getTime() - start.getTime();
@@ -875,7 +885,7 @@ export default function TimeClockPage() {
 
                           let workerInRange = false;
                           let distanceMeters = 0;
-                          const radiusMeters = (proj as Record<string, unknown>)?.geofenceRadius as number || GEOFENCE_RADIUS;
+                          const radiusMeters = proj?.geofenceRadius || GEOFENCE_RADIUS;
                           if (hasSiteCoords && hasWorkerCoords) {
                             distanceMeters = calculateDistance(coordinates!.latitude, coordinates!.longitude, proj.siteLatitude!, proj.siteLongitude!);
                             workerInRange = distanceMeters <= radiusMeters;

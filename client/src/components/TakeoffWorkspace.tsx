@@ -2042,7 +2042,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // pass `undefined` and the hook falls back to legacy
     // `snapEnabled` / `orthoLock` booleans.
     enabledSnapModes: unifiedRibbon ? enabledSnapModes : undefined,
-    constraintMode: unifiedRibbon ? constraintMode : undefined,
     orthoPresetIndex: unifiedRibbon ? orthoPresetIndex : undefined,
     // Task #2142 — flow the per-user mobile/stylus prefs into the
     // pinch + touch-down handlers so palm rejection and the

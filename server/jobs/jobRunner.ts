@@ -3399,7 +3399,7 @@ async function processPeriodicReports(type: "WEEKLY" | "MONTHLY") {
 
         try {
           const orgResult = await db.execute(
-            sql`SELECT name, primary_color FROM organizations WHERE id = ${project.gcOrganizationId}`
+            sql`SELECT name, primary_color FROM organizations WHERE id = ${project.gc_organization_id}`
           );
           const orgRow = (orgResult.rows || [])[0] as { name?: string; primary_color?: string } | undefined;
           const branding = {

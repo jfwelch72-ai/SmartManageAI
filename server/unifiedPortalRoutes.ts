@@ -311,7 +311,7 @@ router.get("/portal/org-logo/:orgId", async (req: Request, res: Response, next: 
       )
       .limit(1);
 
-    let fileUrl = logoDoc?.fileUrl;
+    let fileUrl: string | null = logoDoc?.fileUrl ?? null;
 
     if (!fileUrl) {
       const [org] = await db

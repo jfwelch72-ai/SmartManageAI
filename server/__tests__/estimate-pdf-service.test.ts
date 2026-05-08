@@ -286,8 +286,6 @@ describe("generateEstimatePdf", () => {
       id: "li-all-blocks",
       description: "Slab on grade — full calculator coverage",
       category: "MATERIAL",
-      quantity: calculatorInputs.quantity,
-      unit: calculatorInputs.unit,
       totalCost: 5000,
       ...calculatorInputs,
       calculatedConcreteYards: r.calculatedConcreteYards!,

@@ -608,7 +608,7 @@ export default function PlanMarkupLayer({
         snapshots.push({
           id: m.id,
           pageNumber: m.pageNumber ?? pageNumber,
-          tool: m.tool,
+          tool: m.tool as MarkupTool,
           points: m.points.map((p) => ({ x: p.x, y: p.y })),
           color: m.color,
           thickness: m.thickness,

@@ -889,11 +889,11 @@ export default function SubcontractsPage() {
 
       {selectedContract && (
         <ContractDetailView
-          contract={selectedContract}
+          contract={selectedContract as React.ComponentProps<typeof ContractDetailView>["contract"]}
           open={showDetailDialog}
           onOpenChange={setShowDetailDialog}
-          canEdit={canEdit}
-          canDelete={canDelete}
+          canEdit={Boolean(canEdit)}
+          canDelete={Boolean(canDelete)}
           onEdit={() => { setShowDetailDialog(false); openEditDialog(selectedContract); }}
           onDelete={() => {
             if (confirm("Are you sure you want to delete this subcontract?")) {

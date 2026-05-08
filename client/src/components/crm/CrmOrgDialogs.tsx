@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import type { Project } from "@shared/schema";
 import { CrmCustomFieldsForm, type CustomFieldsValue } from "./CrmCustomFieldsForm";
 
-type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP" | "RENTAL_VENDOR";
+type OrganizationType = "CONTRACTOR" | "SUBCONTRACTOR" | "SUPPLIER" | "VENDOR" | "OWNER_REP" | "RENTAL_VENDOR" | "SERVICE_VENDOR";
 
 export interface OrgFormState {
   type: OrganizationType;

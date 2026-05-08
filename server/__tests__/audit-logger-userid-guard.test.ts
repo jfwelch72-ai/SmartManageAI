@@ -23,7 +23,7 @@ const logErrorMock = vi.fn();
 vi.mock("../utils/logger", () => ({
   logInfo: vi.fn(),
   logWarn: vi.fn(),
-  logError: (...args: unknown[]) => logErrorMock(...args),
+  logError: logErrorMock,
 }));
 
 beforeEach(() => {

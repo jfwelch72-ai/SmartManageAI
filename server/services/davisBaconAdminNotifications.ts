@@ -197,7 +197,7 @@ export async function processMissingWageDecisionReminders(
     Array.from(
       new Set(
         candidates.map((p) =>
-          cacheKey(p.organizationId, (p.wageDecision || "").trim()),
+          cacheKey(p.organizationId ?? "", (p.wageDecision || "").trim()),
         ),
       ),
     ).map(async (key) => {
@@ -224,11 +224,13 @@ export async function processMissingWageDecisionReminders(
   for (const p of candidates) {
     const decision = (p.wageDecision || "").trim();
     if (!decision) continue;
-    const cached = cacheStatus.get(cacheKey(p.organizationId, decision));
+    const orgId = p.organizationId;
+    if (!orgId) continue;
+    const cached = cacheStatus.get(cacheKey(orgId, decision));
     if (cached !== false) continue;
-    const list = missingByOrg.get(p.organizationId) ?? [];
+    const list = missingByOrg.get(orgId) ?? [];
     list.push({ id: p.id, name: p.name || "", wageDecision: decision });
-    missingByOrg.set(p.organizationId, list);
+    missingByOrg.set(orgId, list);
   }
 
   const throttleCutoff = new Date(now.getTime() - REMINDER_THROTTLE_MS);

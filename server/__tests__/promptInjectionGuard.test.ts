@@ -88,15 +88,16 @@ describe("quarantineUntrustedText", () => {
 
 describe("quarantineDocumentBlocks", () => {
   it("wraps text blocks and prepends a guardrail block before each image block", () => {
-    const blocks = [
+    const blocksRaw: unknown = [
       { type: "text", text: "spec text" },
       { type: "image_url", image_url: { url: "data:image/png;base64,x", detail: "high" } },
     ];
+    const blocks = blocksRaw as Parameters<typeof quarantineDocumentBlocks>[0];
     const out = quarantineDocumentBlocks(blocks);
     expect(out).toHaveLength(3);
-    expect((out[0] as any).text).toContain("UNTRUSTED");
-    expect((out[1] as any).type).toBe("text");
-    expect((out[1] as any).text).toContain("UNTRUSTED_DOCUMENT_IMAGE");
+    expect((out[0] as { text: string }).text).toContain("UNTRUSTED");
+    expect((out[1] as { type: string }).type).toBe("text");
+    expect((out[1] as { text: string }).text).toContain("UNTRUSTED_DOCUMENT_IMAGE");
     expect(out[2]).toEqual(blocks[1]);
   });
 });

@@ -111,19 +111,17 @@ export async function calculateProjectWip(projectId: string): Promise<WipProject
 }
 
 export async function calculateAllProjectsWip(orgId?: string): Promise<WipProjectData[]> {
-  let query = db
+  const baseWhere = orgId
+    ? and(
+        sql`${projects.status} IN ('ACTIVE', 'PLANNING')`,
+        eq(projects.gcOrganizationId, orgId),
+      )
+    : sql`${projects.status} IN ('ACTIVE', 'PLANNING')`;
+  const activeProjects = await db
     .select({ id: projects.id })
     .from(projects)
-    .where(sql`${projects.status} IN ('ACTIVE', 'PLANNING')`);
-
-  if (orgId) {
-    query = query.where(and(
-      sql`${projects.status} IN ('ACTIVE', 'PLANNING')`,
-      eq(projects.gcOrganizationId, orgId),
-    )) as typeof query;
-  }
-
-  const activeProjects = await query.limit(200);
+    .where(baseWhere)
+    .limit(200);
 
   const results: WipProjectData[] = [];
   for (const p of activeProjects) {

@@ -422,20 +422,21 @@ export function useUpdateMessageState(threadId?: string) {
       if (vars.isArchived !== undefined) undo.isArchived = !vars.isArchived;
       if (vars.isRead !== undefined) undo.isRead = !vars.isRead;
       const hasUndo = Object.keys(undo).length > 0;
+      const undoAction: unknown = hasUndo
+        ? React.createElement(
+            ToastAction,
+            {
+              altText: "Undo",
+              onClick: () => {
+                mutation.mutate({ messageId: vars.messageId, ...undo });
+              },
+            } as React.ComponentProps<typeof ToastAction>,
+            "Undo",
+          )
+        : undefined;
       toast({
         title,
-        action: hasUndo
-          ? React.createElement(
-              ToastAction,
-              {
-                altText: "Undo",
-                onClick: () => {
-                  mutation.mutate({ messageId: vars.messageId, ...undo });
-                },
-              } as React.ComponentProps<typeof ToastAction>,
-              "Undo",
-            )
-          : undefined,
+        action: undoAction as Parameters<typeof toast>[0]["action"],
       });
     },
     onSettled: () => {
@@ -504,20 +505,21 @@ export function useUpdateThreadState() {
       if (vars.isArchived !== undefined) undo.isArchived = !vars.isArchived;
       if (vars.isRead !== undefined) undo.isRead = !vars.isRead;
       const hasUndo = Object.keys(undo).length > 0;
+      const undoAction: unknown = hasUndo
+        ? React.createElement(
+            ToastAction,
+            {
+              altText: "Undo",
+              onClick: () => {
+                mutation.mutate({ threadId: vars.threadId, ...undo });
+              },
+            } as React.ComponentProps<typeof ToastAction>,
+            "Undo",
+          )
+        : undefined;
       toast({
         title,
-        action: hasUndo
-          ? React.createElement(
-              ToastAction,
-              {
-                altText: "Undo",
-                onClick: () => {
-                  mutation.mutate({ threadId: vars.threadId, ...undo });
-                },
-              } as React.ComponentProps<typeof ToastAction>,
-              "Undo",
-            )
-          : undefined,
+        action: undoAction as Parameters<typeof toast>[0]["action"],
       });
     },
     onSettled: () => {

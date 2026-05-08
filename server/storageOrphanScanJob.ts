@@ -1,6 +1,6 @@
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
-import cron from "node-cron";
+import cron, { type ScheduledTask } from "node-cron";
 import { db } from "./db";
 import { media, planDocuments, receipts, bidDocuments, userPhotos, changeOrders, userCertifications } from "@shared/schema";
 import { objectStorageClient } from "./objectStorage";
@@ -54,7 +54,7 @@ async function getKnownObjectKeys(): Promise<Set<string>> {
     if (!row.attachmentsJson) continue;
     let attachments: any[] = [];
     try {
-      attachments = safeJsonParse(row.attachmentsJson, null);
+      attachments = safeJsonParse(row.attachmentsJson, null) ?? [];
     } catch (err) {
       logError("Failed to parse attachmentsJson during orphan scan:", { changeOrderId: row.id }, err instanceof Error ? err : new Error(String(err)));
     }
@@ -154,7 +154,7 @@ function logScanResult(result: OrphanScanResult) {
   }
 }
 
-let cronJob: cron.ScheduledTask | null = null;
+let cronJob: ScheduledTask | null = null;
 
 export function startOrphanScanScheduler() {
   if (cronJob) return;

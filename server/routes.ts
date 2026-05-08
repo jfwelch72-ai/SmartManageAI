@@ -1186,7 +1186,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             list.push({
               id: row.id,
               at: row.startedAt.toISOString(),
-              actorId: row.userId,
+              actorId: row.userId ?? "",
               actorEmail: row.userEmail ?? null,
               status: row.status,
               ledgerCleared: row.ledgerCleared,

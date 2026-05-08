@@ -159,7 +159,7 @@ async function runDailyDbeRiskJob() {
       await insertNotifications(recipients.map(r => ({
         userId: r.id,
         organizationId: row.organizationId,
-        type: 'AI_ALERT' as const,
+        type: 'GENERAL' as const,
         title,
         message,
         relatedEntityType: 'projectDbeGoal',

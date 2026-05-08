@@ -40,7 +40,7 @@ const apiRequestMock = vi.fn(
   async () => new Response(JSON.stringify({}), { status: 200 }),
 );
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  apiRequest: apiRequestMock,
   queryClient: {
     invalidateQueries: vi.fn(),
     setQueryData: vi.fn(),

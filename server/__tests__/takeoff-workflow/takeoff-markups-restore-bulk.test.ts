@@ -78,10 +78,10 @@ function apiDelete(path: string, body?: Record<string, unknown>, token: string |
 }
 
 async function cleanup(): Promise<void> {
-  const orgIdsResult = await db.execute(
+  const orgIdsResult = await db.execute<{ id: string }>(
     sql`SELECT id FROM organizations WHERE slug LIKE ${TEST_PREFIX + "%"}`,
   );
-  const rows = (orgIdsResult as { rows: Array<{ id: string }> }).rows;
+  const rows = orgIdsResult.rows;
   const ids = rows.map((r) => r.id);
   if (ids.length === 0) return;
 

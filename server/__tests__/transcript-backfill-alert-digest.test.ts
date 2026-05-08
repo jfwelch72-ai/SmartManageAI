@@ -286,7 +286,7 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     mockAggregateFailures.mockResolvedValue([]);
     const fixedNow = new Date("2026-04-22T12:00:00.000Z");
     await runAlertFailureDigest({ now: fixedNow, windowHours: 48 });
-    const sinceArg = mockAggregateFailures.mock.calls[0][0] as Date;
+    const sinceArg = (mockAggregateFailures.mock.calls[0] as unknown[])[0] as Date;
     expect(sinceArg.toISOString()).toBe("2026-04-20T12:00:00.000Z");
   });
 
@@ -298,7 +298,7 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     const fixedNow = new Date("2026-04-22T12:00:00.000Z");
     const summary = await runAlertFailureDigest({ now: fixedNow });
     expect(mockPruneAlertFallbackSentBefore).toHaveBeenCalledTimes(1);
-    const cutoff = mockPruneAlertFallbackSentBefore.mock.calls[0][0] as Date;
+    const cutoff = (mockPruneAlertFallbackSentBefore.mock.calls[0] as unknown[])[0] as Date;
     // Cutoff is exactly 7 days before `now`, which is comfortably larger
     // than the 1-hour FAILURE_FALLBACK_DEDUPE_MS window so housekeeping
     // can't accidentally re-enable a deduped alert.

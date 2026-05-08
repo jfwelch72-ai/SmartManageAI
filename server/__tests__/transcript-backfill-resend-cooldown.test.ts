@@ -89,26 +89,16 @@ vi.mock("../storage", async () => {
   );
   return {
     ...actual,
-    getCrmTranscriptBackfillAlertDelivery: (...args: unknown[]) =>
-      mockGetDelivery(...(args as [])),
-    getCrmTranscriptBackfillJob: (...args: unknown[]) =>
-      mockGetJob(...(args as [])),
-    getCrmTranscriptBackfillOperatorContact: (...args: unknown[]) =>
-      mockGetOperator(...(args as [])),
-    getCrmTranscriptBackfillNotificationSettings: (...args: unknown[]) =>
-      mockGetSettings(...(args as [])),
-    listCrmTranscriptBackfillAlertDeliveries: (...args: unknown[]) =>
-      mockListDeliveries(...(args as [])),
-    recordCrmTranscriptBackfillAlertDelivery: (...args: unknown[]) =>
-      mockRecordDelivery(...(args as [])),
-    listOrgAdminsForAlertFailureFallback: (...args: unknown[]) =>
-      mockListOrgAdmins(...(args as [])),
-    wasAlertFallbackSentSince: (...args: unknown[]) =>
-      mockWasFallbackSent(...(args as [])),
-    recordAlertFallbackSent: (...args: unknown[]) =>
-      mockRecordFallbackSent(...(args as [])),
-    aggregateRecentCrmTranscriptBackfillAlertFailures: (...args: unknown[]) =>
-      mockAggregateFailures(...(args as [])),
+    getCrmTranscriptBackfillAlertDelivery: mockGetDelivery,
+    getCrmTranscriptBackfillJob: mockGetJob,
+    getCrmTranscriptBackfillOperatorContact: mockGetOperator,
+    getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
+    listCrmTranscriptBackfillAlertDeliveries: mockListDeliveries,
+    recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
+    listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
+    wasAlertFallbackSentSince: mockWasFallbackSent,
+    recordAlertFallbackSent: mockRecordFallbackSent,
+    aggregateRecentCrmTranscriptBackfillAlertFailures: mockAggregateFailures,
   };
 });
 
@@ -297,8 +287,9 @@ describe("resendBackfillAlertDelivery — cooldown branch (Task #1068 / #1099)",
     // Pretend the original delivery already succeeded — the helper short-
     // circuits BEFORE setting any cooldown timestamp, so a follow-up call
     // for a real failure on the same key must NOT be rate-limited.
+    const successDelivery: unknown = { ...failedDelivery, status: "success" };
     mockGetDelivery
-      .mockResolvedValueOnce({ ...failedDelivery, status: "success" })
+      .mockResolvedValueOnce(successDelivery as typeof failedDelivery)
       .mockResolvedValueOnce(failedDelivery);
 
     const first = await resendBackfillAlertDelivery(

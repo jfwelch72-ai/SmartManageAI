@@ -116,8 +116,10 @@ vi.mock("../email", () => ({
 
 const insertNotificationsMock = vi.fn(async () => undefined);
 vi.mock("../services/notificationService", () => ({
-  insertNotifications: (...args: any[]) =>
-    insertNotificationsMock(...(args as [any])),
+  insertNotifications: (...args: unknown[]) => {
+    const fn = insertNotificationsMock as (...a: unknown[]) => Promise<undefined>;
+    return fn(...args);
+  },
 }));
 
 // ---------------------------------------------------------------------------
@@ -508,7 +510,7 @@ describe("portfolio-pdf-alerts delivery recording", () => {
     expect(result.recipientCount).toBe(1);
     expect(result.recipients).toEqual(["ops@example.com"]);
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    expect(sendEmailMock.mock.calls[0][0]).toMatchObject({
+    expect((sendEmailMock.mock.calls[0] as unknown[])[0]).toMatchObject({
       to: ["ops@example.com"],
     });
 
@@ -524,7 +526,7 @@ describe("portfolio-pdf-alerts delivery recording", () => {
 
     // In-app notification was created for the userId-bearing recipient.
     expect(insertNotificationsMock).toHaveBeenCalledTimes(1);
-    expect(insertNotificationsMock.mock.calls[0][0]).toEqual([
+    expect((insertNotificationsMock.mock.calls[0] as unknown[])[0]).toEqual([
       expect.objectContaining({
         userId: "user-1",
         relatedEntityType: "portfolio_pdf_alert",

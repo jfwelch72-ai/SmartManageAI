@@ -21,8 +21,8 @@ const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useQuery: useQueryMock,
+  useMutation: useMutationMock,
   QueryClient: class {},
   QueryClientProvider: ({ children }: { children: React.ReactNode }) =>
     children as React.ReactElement,

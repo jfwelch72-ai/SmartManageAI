@@ -46,9 +46,9 @@ const logInfoMock = vi.fn();
 const logWarnMock = vi.fn();
 const logErrorMock = vi.fn();
 vi.mock("../utils/logger", () => ({
-  logInfo: (...args: unknown[]) => logInfoMock(...args),
-  logWarn: (...args: unknown[]) => logWarnMock(...args),
-  logError: (...args: unknown[]) => logErrorMock(...args),
+  logInfo: logInfoMock,
+  logWarn: logWarnMock,
+  logError: logErrorMock,
 }));
 
 const SHARED_SECRET = "shared-token-value";

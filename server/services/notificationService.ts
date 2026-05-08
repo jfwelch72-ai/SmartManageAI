@@ -229,7 +229,7 @@ export function queueOwnerReassignmentNotification(args: QueueReassignmentArgs):
         await insertNotification({
           userId: args.recipientUserId,
           organizationId: args.organizationId,
-          type: cfg.notificationType,
+          type: (cfg.notificationType ?? "GENERAL") as NonNullable<NotificationRecord["type"]>,
           title: cfg.immediateTitle,
           message: `${args.reassignerName} assigned ${args.entityName} to you.`,
           relatedEntityId: args.entityId,
@@ -286,7 +286,7 @@ async function flushPendingReassignment(
   await insertNotification({
     userId: recipientUserId,
     organizationId: entry.organization_id ?? undefined,
-    type: cfg.notificationType,
+    type: (cfg.notificationType ?? "GENERAL") as NonNullable<NotificationRecord["type"]>,
     title: `${count} more ${noun} assigned to you`,
     message: `${reassignerName} assigned ${count} more ${noun} to you in the last few minutes.`,
     relatedEntityId: entry.first_additional_contact_id,
@@ -356,7 +356,7 @@ export async function sweepStaleContactReassignments(
       await insertNotification({
         userId: recipientUserId,
         organizationId: entry.organization_id ?? undefined,
-        type: cfg.notificationType,
+        type: (cfg.notificationType ?? "GENERAL") as NonNullable<NotificationRecord["type"]>,
         title: `${count} more ${noun} assigned to you`,
         message: `${reassignerName} assigned ${count} more ${noun} to you in the last few minutes.`,
         relatedEntityId: entry.first_additional_contact_id,

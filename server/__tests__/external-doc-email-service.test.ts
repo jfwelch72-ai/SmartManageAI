@@ -72,12 +72,12 @@ vi.mock("../db", () => ({ db: dbMock, pool: {} }));
 
 const isFeatureEnabledMock = vi.fn();
 vi.mock("../services/featureFlagService", () => ({
-  isFeatureEnabled: (...args: unknown[]) => isFeatureEnabledMock(...args),
+  isFeatureEnabled: isFeatureEnabledMock,
 }));
 
 const sendEmailMock = vi.fn(async () => undefined);
 vi.mock("../services/emailService", () => ({
-  sendEmail: (...args: unknown[]) => sendEmailMock(...args),
+  sendEmail: sendEmailMock,
 }));
 
 vi.mock("../portalAuth", () => ({
@@ -199,7 +199,7 @@ describe("sendExternalDocEmail — EXTERNAL_DOC_EMAIL gating", () => {
     expect(insertCalls[0].values.crmOrganisationId).toBe("crm-org-1");
     expect(insertCalls[0].values.contactEmail).toBe("ae@example.com");
     expect(sendEmailMock).toHaveBeenCalledTimes(1);
-    const arg = sendEmailMock.mock.calls[0][0] as { to: string; subject: string; html: string; text: string };
+    const arg = (sendEmailMock.mock.calls[0] as unknown[])[0] as { to: string; subject: string; html: string; text: string };
     expect(arg.to).toBe("ae@example.com");
     expect(arg.subject).toContain("SUB-0001");
     expect(arg.subject).toContain("I-95 Widening");

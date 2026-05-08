@@ -155,7 +155,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
     const sageRecordNo = "987654";
 
     const requestBodies: string[] = [];
-    const fetchStub = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(
+    const fetchStub = vi.fn(
       async (_url, init) => {
         const body = init?.body;
         requestBodies.push(typeof body === "string" ? body : "");
@@ -174,7 +174,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
         lineItems: [{ description: "Mobilization", amount: 1000 }],
       },
       false,
-      { fetchImpl: fetchStub },
+      { fetchImpl: fetchStub as typeof fetch },
     );
 
     expect(first.success).toBe(true);
@@ -208,7 +208,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
         lineItems: [{ description: "Mobilization", amount: 1000 }],
       },
       false,
-      { fetchImpl: fetchStub },
+      { fetchImpl: fetchStub as typeof fetch },
     );
     expect(second.success).toBe(true);
     expect(second.alreadyExported).toBe(true);
@@ -221,7 +221,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
   it("a different localInvoiceId on the same connection performs a fresh export", async () => {
     const firstId = `${PREFIX}inv-A`;
     const secondId = `${PREFIX}inv-B`;
-    const fetchStub = vi.fn<Parameters<typeof fetch>, ReturnType<typeof fetch>>(
+    const fetchStub = vi.fn(
       async (_url, init) => {
         const body = init?.body;
         const bodyText = typeof body === "string" ? body : "";
@@ -241,7 +241,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
         lineItems: [{ description: "L1", amount: 100 }],
       },
       false,
-      { fetchImpl: fetchStub },
+      { fetchImpl: fetchStub as typeof fetch },
     );
     await exportInvoice(
       connection,
@@ -251,7 +251,7 @@ describe("exportInvoice idempotency (DB-backed)", () => {
         lineItems: [{ description: "L2", amount: 200 }],
       },
       false,
-      { fetchImpl: fetchStub },
+      { fetchImpl: fetchStub as typeof fetch },
     );
 
     expect(fetchStub).toHaveBeenCalledTimes(2);

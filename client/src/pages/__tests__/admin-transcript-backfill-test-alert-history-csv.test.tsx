@@ -60,7 +60,7 @@ let historyPayload: { total: number; alerts: unknown[]; crossOrg: boolean } = {
 };
 
 const apiRequestMock = vi.fn(
-  async () =>
+  async (..._args: unknown[]) =>
     new Response("id\nrow-1\n", {
       status: 200,
       headers: { "Content-Type": "text/csv" },
@@ -92,7 +92,7 @@ vi.mock("wouter", () => ({
 }));
 
 vi.mock("@/lib/queryClient", () => ({
-  apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+  apiRequest: apiRequestMock,
   queryClient: {
     invalidateQueries: vi.fn(),
     setQueryData: vi.fn(),

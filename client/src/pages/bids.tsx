@@ -472,7 +472,7 @@ export default function BidsPage() {
       if (data.clientContactName) form.setValue("clientContactName", data.clientContactName);
       if (data.clientContactEmail) form.setValue("clientContactEmail", data.clientContactEmail);
       if (data.clientContactPhone) form.setValue("clientContactPhone", data.clientContactPhone);
-      if (data.dueDate) form.setValue("dueDate", data.dueDate);
+      if (data.dueDate) form.setValue("dueDate", new Date(data.dueDate));
       if (data.locationAddress) form.setValue("locationAddress", data.locationAddress);
       if (data.city) form.setValue("city", data.city);
       if (data.state) form.setValue("state", data.state);
@@ -1042,7 +1042,7 @@ export default function BidsPage() {
               .map<CalendarEntityItem<typeof filteredBids[number]>>((b) => ({
                 id: b.id,
                 label: `${b.code} · ${b.name}`,
-                date: new Date(b.dueDate as string),
+                date: new Date(b.dueDate as Date | string),
                 colorClass: b.status === "AWARDED"
                   ? "bg-emerald-500 hover:bg-emerald-600"
                   : b.status === "LOST" || b.status === "CANCELLED"
@@ -1066,13 +1066,13 @@ export default function BidsPage() {
           />
         ) : (
           <BidsTable
-            bids={filteredBids}
+            bids={filteredBids as React.ComponentProps<typeof BidsTable>["bids"]}
             onRowClick={(bid) => setLocation(`/bids/${bid.code}`)}
             canDelete={canDeleteBids(user?.role)}
             onDelete={handleDeleteBid}
             canConvert={canEditBids(user?.role)}
             onConvert={handleConvertToProject}
-            getRowProps={getBidRowProps}
+            getRowProps={getBidRowProps as unknown as React.ComponentProps<typeof BidsTable>["getRowProps"]}
           />
         )}
         </>

@@ -243,7 +243,7 @@ export function MessageComposer({
         {/* Text input */}
         <div className="flex-1 relative">
           <Textarea
-            ref={textareaRef}
+            ref={textareaRef as React.Ref<HTMLTextAreaElement>}
             placeholder="Type a message… (@ to mention a task)"
             value={messageInput}
             onChange={onInputChange}

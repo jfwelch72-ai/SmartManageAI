@@ -79,7 +79,7 @@ router.post("/api/crm/quotes", requireAuth, requireRole(...ROLES), async (req: A
 
     const taxRate = Number(body.taxRate ?? 0);
     const discount = Number(body.discountAmount ?? 0);
-    const totals = recalcTotals(body.lineItems, taxRate, discount);
+    const totals = recalcTotals(body.lineItems.map(l => ({ ...l, quantity: l.quantity ?? "0", unitPrice: l.unitPrice ?? "0" })), taxRate, discount);
     const quoteNumber = await nextQuoteNumber(orgId);
 
     const [quote] = await db.insert(crmQuotes).values({
@@ -151,7 +151,7 @@ router.patch("/api/crm/quotes/:id", requireAuth, requireRole(...ROLES), async (r
       }
       const taxRate = Number(body.taxRate ?? existing.taxRate ?? 0);
       const discount = Number(body.discountAmount ?? existing.discountAmount ?? 0);
-      const totals = recalcTotals(body.lineItems, taxRate, discount);
+      const totals = recalcTotals(body.lineItems.map(l => ({ ...l, quantity: l.quantity ?? "0", unitPrice: l.unitPrice ?? "0" })), taxRate, discount);
       patch.subtotal = String(totals.subtotal);
       patch.taxRate = String(taxRate);
       patch.taxAmount = String(totals.taxAmount);

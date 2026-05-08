@@ -96,8 +96,9 @@ function loadLASPoints(buffer: ArrayBuffer, budget: number) {
 
 async function decompressLAZ(buffer: ArrayBuffer, budget: number): Promise<{ positions: Float32Array; colors: Float32Array; count: number; hasRealColor: boolean }> {
   try {
-    const lazPerf = await import("laz-perf");
-    const module = await (lazPerf as { default: () => Promise<{ LASZip: new () => { open: (data: Uint8Array, len: number) => void; getPoint: (buf: Uint8Array) => void; getCount: () => number; close: () => void } }> }).default();
+    const lazPerfImport: { default: unknown } = await import("laz-perf");
+    const lazFactory = lazPerfImport.default as () => Promise<{ LASZip: new () => { open: (data: Uint8Array, len: number) => void; getPoint: (buf: Uint8Array) => void; getCount: () => number; close: () => void } }>;
+    const module = await lazFactory();
     const laszip = new module.LASZip();
     const uint8 = new Uint8Array(buffer);
     laszip.open(uint8, uint8.length);

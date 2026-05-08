@@ -67,7 +67,6 @@ export class CrmTaskReminderScheduler {
         type: "CRM_TASK_REMINDER",
         title: overdue ? "Overdue task" : "Task due soon",
         message: `"${t.title}" — due ${t.dueDate.toLocaleString()}${row.opportunityName ? ` (re: ${row.opportunityName})` : ""}`,
-        link: t.opportunityId ? `/crm?tab=pipeline&opportunity=${t.opportunityId}` : `/crm?tab=tasks`,
       });
 
       await db.update(crmTasks).set({ reminderSentAt: now }).where(eq(crmTasks.id, t.id));

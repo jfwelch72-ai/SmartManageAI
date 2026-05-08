@@ -877,7 +877,7 @@ router.post("/hustler/link-requests/accept-invite", sensitiveLimiter, async (req
       return res.status(400).json({ error: "This invite has expired" });
     }
 
-    const email = request.hustlerEmail.toLowerCase();
+    const email = request.hustlerEmail!.toLowerCase();
     let [existingUser] = await db.select().from(users).where(eq(users.email, email));
 
     let userId: string;

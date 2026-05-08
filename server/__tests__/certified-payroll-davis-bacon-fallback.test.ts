@@ -86,9 +86,9 @@ const lookupCachedWageRateMock = vi.fn();
 const lookupCachedRateByLocaleMock = vi.fn();
 const isWageDeterminationCachedMock = vi.fn();
 vi.mock("../integrations/providers/dol_davis_bacon/sync", () => ({
-  lookupCachedWageRate: (...args: unknown[]) => lookupCachedWageRateMock(...args),
-  lookupCachedRateByLocale: (...args: unknown[]) => lookupCachedRateByLocaleMock(...args),
-  isWageDeterminationCached: (...args: unknown[]) => isWageDeterminationCachedMock(...args),
+  lookupCachedWageRate: lookupCachedWageRateMock,
+  lookupCachedRateByLocale: lookupCachedRateByLocaleMock,
+  isWageDeterminationCached: isWageDeterminationCachedMock,
   fetchWageDetermination: vi.fn(),
   importWageDetermination: vi.fn(),
 }));
@@ -105,7 +105,7 @@ const generateWH347PdfMock = vi.fn(async (_payload: unknown, _variant: string) =
   return Buffer.from("%PDF-1.4 stub");
 });
 vi.mock("../services/wh347Generator", () => ({
-  generateWH347Pdf: (...args: unknown[]) => generateWH347PdfMock(...(args as [unknown, string])),
+  generateWH347Pdf: generateWH347PdfMock,
 }));
 
 // Heavy / unrelated transitive deps — quiet the import graph.

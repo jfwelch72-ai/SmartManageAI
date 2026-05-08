@@ -20,7 +20,7 @@ const apiRequestMock = vi.fn();
 vi.mock("@/lib/queryClient", async () => {
   const { QueryClient } = await import("@tanstack/react-query");
   return {
-    apiRequest: (...args: unknown[]) => apiRequestMock(...args),
+    apiRequest: apiRequestMock,
     queryClient: new QueryClient(),
     getQueryFn: () => async () => ({ items: [] }),
   };

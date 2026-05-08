@@ -917,7 +917,7 @@ export default function ScopeSettings() {
       updateWorkTypeMutation.mutate({
         id: editingWorkType.id,
         ...workTypeForm,
-        defaultCostCode: workTypeForm.defaultCostCode || null,
+        defaultCostCode: workTypeForm.defaultCostCode || "",
       });
     } else {
       const tradeName = selectedTrade;
@@ -932,7 +932,7 @@ export default function ScopeSettings() {
         ...workTypeForm,
         tradeName: tradeName,
         categoryName: categoryName,
-        defaultCostCode: workTypeForm.defaultCostCode || null,
+        defaultCostCode: workTypeForm.defaultCostCode || "",
       });
     }
   };

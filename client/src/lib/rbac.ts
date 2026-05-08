@@ -716,14 +716,14 @@ export const VendorPortalNavConfig = {
 };
 
 export const VendorRoutePermissions = {
-  VENDOR_DASHBOARD: (role: string) => role === "VENDOR",
-  VENDOR_ANALYTICS: (role: string) => role === "VENDOR",
-  VENDOR_PRICING: (role: string) => role === "VENDOR",
-  VENDOR_CLIENTS: (role: string) => role === "VENDOR",
-  VENDOR_MESSAGES: (role: string) => role === "VENDOR",
-  VENDOR_DOCUMENTS: (role: string) => role === "VENDOR",
-  VENDOR_COMPLIANCE: (role: string) => role === "VENDOR",
-  VENDOR_PURCHASE_ORDERS: (role: string) => role === "VENDOR",
-  VENDOR_SCHEDULE: (role: string) => role === "VENDOR",
-  BID_INBOX: (role: string) => role === "VENDOR",
+  VENDOR_DASHBOARD: (role?: string): boolean => role === "VENDOR",
+  VENDOR_ANALYTICS: (role?: string): boolean => role === "VENDOR",
+  VENDOR_PRICING: (role?: string): boolean => role === "VENDOR",
+  VENDOR_CLIENTS: (role?: string): boolean => role === "VENDOR",
+  VENDOR_MESSAGES: (role?: string): boolean => role === "VENDOR",
+  VENDOR_DOCUMENTS: (role?: string): boolean => role === "VENDOR",
+  VENDOR_COMPLIANCE: (role?: string): boolean => role === "VENDOR",
+  VENDOR_PURCHASE_ORDERS: (role?: string): boolean => role === "VENDOR",
+  VENDOR_SCHEDULE: (role?: string): boolean => role === "VENDOR",
+  BID_INBOX: (role?: string): boolean => role === "VENDOR",
 };

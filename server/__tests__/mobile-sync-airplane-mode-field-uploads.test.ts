@@ -153,7 +153,7 @@ function authedPost(path: string, body: unknown) {
     .set("X-Test-User-Id", userId)
     .set("X-Test-Org-Id", orgId)
     .set("Content-Type", "application/json")
-    .send(body);
+    .send(body as object);
 }
 
 function buildFallbackPayload(deviceId: string | undefined) {

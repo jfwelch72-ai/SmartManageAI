@@ -133,9 +133,9 @@ describe("GET /api/crm/calls/transcripts/backfill/alert-deliveries — fallbackM
 
     expect(res.status).toBe(200);
     expect(mockListDeliveries).toHaveBeenCalledTimes(1);
-    expect(mockListDeliveries.mock.calls[0][0]).toBe(orgId);
+    expect((mockListDeliveries.mock.calls[0] as unknown[])[0]).toBe(orgId);
     expect(mockSummarizeFallback).toHaveBeenCalledTimes(1);
-    expect(mockSummarizeFallback.mock.calls[0][0]).toBe(orgId);
+    expect((mockSummarizeFallback.mock.calls[0] as unknown[])[0]).toBe(orgId);
 
     expect(res.body.fallbackMuteSummary).toBeDefined();
     expect(res.body.fallbackMuteSummary.digest).toEqual({

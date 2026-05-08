@@ -1801,7 +1801,7 @@ router.post(
         .set({ aiScore: score, aiRecommendation: r.summary ?? recommendation, updatedAt: new Date() })
         .where(and(eq(hiringCandidates.id, req.params.id), eq(hiringCandidates.organizationId, orgId(req))));
 
-      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_COMPLETED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT5, promptVersion: AI_REVIEW_PROMPT_VERSION });
+      void logActivity(orgId(req), userId(req), userName(req), "AI_REVIEW_GENERATED", "candidate", candidate.id, candidate.fullName, { score, model: AI_MODEL_GPT5, promptVersion: AI_REVIEW_PROMPT_VERSION });
 
       res.json({
         score,

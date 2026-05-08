@@ -466,7 +466,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
       {batches.some(b => {
         let summary = b.summary;
         if (!summary && b.summaryJson) {
-          try { summary = JSON.parse(b.summaryJson); } catch { summary = null; }
+          try { summary = JSON.parse(b.summaryJson); } catch { summary = undefined; }
         }
         return summary?.analysisMethod?.includes("Fallback") || summary?.analysisMethod?.includes("Demo");
       }) && (
@@ -694,8 +694,8 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                             {issue.location && (
                               <span className="text-sm text-muted-foreground">{issue.location}</span>
                             )}
-                            {issue.category && (
-                              <span className="text-xs text-muted-foreground capitalize">{issue.category.toLowerCase().replace(/_/g, " ")}</span>
+                            {"category" in issue && issue.category && (
+                              <span className="text-xs text-muted-foreground capitalize">{String(issue.category).toLowerCase().replace(/_/g, " ")}</span>
                             )}
                           </div>
                           <p className="font-medium">{issue.description}</p>

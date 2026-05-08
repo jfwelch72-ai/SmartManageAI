@@ -40,7 +40,7 @@ import {
   wasAlertFallbackSentSince,
   type AlertFailureFallbackMuteSummary,
   type AlertFallbackSentKey,
-  type CrmTranscriptBackfillAlertDelivery,
+  getCrmTranscriptBackfillAlertDelivery as _getDeliveryForType,
   type CrmTranscriptBackfillAlertFailureDigestEntry,
   type CrmTranscriptBackfillOperatorContact,
   type CrmTranscriptBackfillQuietOrgEntry,
@@ -1352,6 +1352,7 @@ export async function sendTestBackfillAlert(
 // the new outcome. Successful or non-existent deliveries are rejected so the
 // UI can never accidentally double-fire a working alert.
 // ---------------------------------------------------------------------------
+export type CrmTranscriptBackfillAlertDelivery = NonNullable<Awaited<ReturnType<typeof _getDeliveryForType>>>;
 export type ResendBackfillAlertResult =
   | { ok: true; delivery: CrmTranscriptBackfillAlertDelivery }
   | {

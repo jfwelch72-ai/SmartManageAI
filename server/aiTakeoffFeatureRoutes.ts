@@ -159,8 +159,8 @@ interface RawDetectedItem {
   unit: string;
   itemType: string;
   confidence: number;
-  boundingBox?: { x: number; y: number; w: number; h: number };
-  suggestedSowItem?: { code: string; description: string };
+  boundingBox?: { x: number; y: number; w: number; h: number } | undefined;
+  suggestedSowItem?: { code: string; description?: string; name?: string } | undefined;
   // Task #2323 — when calibration overrides the model-reported value,
   // we keep the raw model confidence here so the UI can show "model
   // said X%, your team historically accepts Y%" tooltips.

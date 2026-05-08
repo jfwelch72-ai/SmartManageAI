@@ -546,7 +546,7 @@ function RemoteParticipantTile({
 }: {
   participant: RemoteParticipant;
   callParticipants: { userId: string; user: { firstName: string; lastName: string } }[];
-  tracks: { participant?: LocalParticipant | RemoteParticipant; source: Track.Source; publication?: { track?: unknown } }[];
+  tracks: ReturnType<typeof useTracks>;
   isScreenShareActive?: boolean;
 }) {
   const matchedParticipant = callParticipants.find(p => p.userId === participant.identity);
@@ -581,9 +581,9 @@ function RemoteParticipantTile({
       className="relative rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center overflow-hidden aspect-video shrink-0 w-40 lg:w-auto"
       data-testid={`video-feed-${participant.identity}`}
     >
-      {activeVideoTrack?.publication?.track ? (
+      {activeVideoTrack && !!activeVideoTrack.publication?.track ? (
         <VideoTrack
-          trackRef={activeVideoTrack as Parameters<typeof VideoTrack>[0]["trackRef"]}
+          trackRef={activeVideoTrack}
           className="w-full h-full object-cover"
           data-testid="video-remote-feed"
         />
@@ -601,9 +601,9 @@ function RemoteParticipantTile({
         </div>
       )}
 
-      {audioTrack?.publication?.track && (
+      {audioTrack && !!audioTrack.publication?.track && (
         <AudioTrack
-          trackRef={audioTrack as Parameters<typeof AudioTrack>[0]["trackRef"]}
+          trackRef={audioTrack}
         />
       )}
 

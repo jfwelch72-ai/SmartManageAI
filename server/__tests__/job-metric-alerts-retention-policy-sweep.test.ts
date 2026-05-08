@@ -490,15 +490,16 @@ describe("jobMetricAlerts — retention_policy_sweep `policiesUnsupported` (Task
       },
     ];
 
+    const metricsResult: unknown = [
+      {
+        job: JOB,
+        samples,
+        latest: samples[samples.length - 1],
+        totals: { policiesUnsupported: 2, policiesProcessed: 3 },
+      },
+    ];
     const result = await alerts.evaluateJobMetricAlerts({
-      metricsSource: () => [
-        {
-          job: JOB,
-          samples,
-          latest: samples[samples.length - 1],
-          totals: { policiesUnsupported: 2, policiesProcessed: 3 },
-        },
-      ],
+      metricsSource: () => metricsResult as NonNullable<Parameters<typeof alerts.evaluateJobMetricAlerts>[0]>["metricsSource"] extends ((() => infer R) | undefined) ? R : never,
     });
 
     const spikes = result.alertsFired.filter(

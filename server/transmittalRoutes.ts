@@ -713,7 +713,7 @@ router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER
       return res.status(404).json({ error: "File not found" });
     }
 
-    const file = currentAttachments[fileIndex];
+    const file = currentAttachments[fileIndex] as { id: string; uploadedById?: string; objectKey?: string; fileUrl?: string; [key: string]: unknown };
     const userRole = req.user!.role;
     if (file.uploadedById !== req.user!.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole)) {
       return res.status(403).json({ error: "You don't have permission to delete this file" });

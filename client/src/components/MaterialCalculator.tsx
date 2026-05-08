@@ -510,10 +510,8 @@ export default function MaterialCalculator({
         underlaymentOverlapInches: value.underlaymentOverlapInches || null,
         underlaymentWasteFactor: value.underlaymentWasteFactor || "10",
       };
-      return await apiRequest("/api/material-calculator/presets", {
-        method: "POST",
-        body: JSON.stringify(presetData),
-      });
+      const r = await apiRequest("POST", "/api/material-calculator/presets", presetData);
+      return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/material-calculator/presets"] });
@@ -529,9 +527,8 @@ export default function MaterialCalculator({
   // Delete preset mutation
   const deletePresetMutation = useMutation({
     mutationFn: async (id: string) => {
-      return await apiRequest(`/api/material-calculator/presets/${id}`, {
-        method: "DELETE",
-      });
+      const r = await apiRequest("DELETE", `/api/material-calculator/presets/${id}`);
+      return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/material-calculator/presets"] });
