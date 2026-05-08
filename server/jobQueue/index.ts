@@ -262,8 +262,13 @@ async function runJobWithContext(
     organizationId: orgId,
     userId: data.userId,
     idempotencyKey: data.idempotencyKey,
-    // pg-boss exposes the attempt count via `retrycount` (0 on first try).
-    attempt: ((job as unknown as { retrycount?: number }).retrycount ?? 0) + 1,
+    // pg-boss 10 exposes the attempt count via `retry_count`
+    // (snake_case; older versions used `retrycount`). Read both for
+    // compatibility with mocked job objects in tests.
+    attempt:
+      ((job as unknown as { retry_count?: number; retrycount?: number }).retry_count ??
+        (job as unknown as { retrycount?: number }).retrycount ??
+        0) + 1,
     progress: async (pct, message, extra) => {
       await publishJobProgress({
         jobId: job.id,
@@ -365,10 +370,12 @@ async function findActiveJobBySingletonKey(
     const dbi = await getBoss().getDb();
     const schema = process.env.PGBOSS_SCHEMA || "pgboss";
     const result = await dbi.executeSql(
+      // pg-boss 10 columns are snake_case (singleton_key, created_on);
+      // legacy camelCase variants no longer exist and threw 500s.
       `SELECT id FROM ${schema}.job
-        WHERE name = $1 AND singletonkey = $2
+        WHERE name = $1 AND singleton_key = $2
           AND state IN ('created','retry','active')
-        ORDER BY createdon DESC LIMIT 1`,
+        ORDER BY created_on DESC LIMIT 1`,
       [name, singletonKey],
     );
     const row = (result?.rows ?? [])[0] as { id?: string } | undefined;
@@ -402,7 +409,7 @@ export async function getJobStatus(jobId: string): Promise<JobStatus | null> {
   const dbi = await getBoss().getDb();
   const schema = process.env.PGBOSS_SCHEMA || "pgboss";
   const result = await dbi.executeSql(
-    `SELECT id, name, state, data, output, retrycount, createdon, startedon, completedon
+    `SELECT id, name, state, data, output, retry_count, created_on, started_on, completed_on
        FROM ${schema}.job
        WHERE id = $1
        LIMIT 1`,
@@ -416,10 +423,10 @@ export async function getJobStatus(jobId: string): Promise<JobStatus | null> {
     state: String(row.state ?? ""),
     data: row.data,
     output: row.output,
-    createdOn: (row.createdon as Date | null) ?? null,
-    startedOn: (row.startedon as Date | null) ?? null,
-    completedOn: (row.completedon as Date | null) ?? null,
-    retryCount: Number(row.retrycount ?? 0),
+    createdOn: (row.created_on as Date | null) ?? null,
+    startedOn: (row.started_on as Date | null) ?? null,
+    completedOn: (row.completed_on as Date | null) ?? null,
+    retryCount: Number(row.retry_count ?? 0),
   };
 }
 
@@ -476,10 +483,10 @@ export async function listDeadLetterJobs(limit = 50): Promise<DeadLetterRow[]> {
   const db = await b.getDb();
   const schema = process.env.PGBOSS_SCHEMA || "pgboss";
   const result = await db.executeSql(
-    `SELECT id, name, data, output, retrycount, createdon, completedon
+    `SELECT id, name, data, output, retry_count, created_on, completed_on
        FROM ${schema}.job
        WHERE state = 'failed'
-       ORDER BY completedon DESC NULLS LAST
+       ORDER BY completed_on DESC NULLS LAST
        LIMIT $1`,
     [limit],
   );
@@ -489,9 +496,9 @@ export async function listDeadLetterJobs(limit = 50): Promise<DeadLetterRow[]> {
     name: String(r.name),
     data: r.data,
     output: r.output,
-    retryCount: Number(r.retrycount ?? 0),
-    createdOn: (r.createdon as Date | null) ?? null,
-    completedOn: (r.completedon as Date | null) ?? null,
+    retryCount: Number(r.retry_count ?? 0),
+    createdOn: (r.created_on as Date | null) ?? null,
+    completedOn: (r.completed_on as Date | null) ?? null,
   }));
 }
 

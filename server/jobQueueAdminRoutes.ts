@@ -43,15 +43,20 @@ router.get(
         orgClause = ` AND COALESCE(data->>'organizationId', '') = $${params.length}`;
       }
       params.push(limit);
+      // pg-boss 10 stores its queue in snake_case columns
+      // (retry_count / created_on / started_on / completed_on);
+      // older versions used the camelCase variants. This route was
+      // written against the legacy names which silently 500'd on
+      // pg-boss 10.x because Postgres threw "column does not exist".
       const result = await dbi.executeSql(
-        `SELECT id, name, state, data, output, retrycount, createdon, startedon, completedon
+        `SELECT id, name, state, data, output, retry_count, created_on, started_on, completed_on
            FROM ${schema}.job
           WHERE data->>'userId' = $1${orgClause}
             AND (
               state IN ('created','active','retry')
-              OR completedon > NOW() - INTERVAL '24 hours'
+              OR completed_on > NOW() - INTERVAL '24 hours'
             )
-          ORDER BY createdon DESC
+          ORDER BY created_on DESC
           LIMIT $${params.length}`,
         params,
       );
@@ -62,10 +67,10 @@ router.get(
           id: String(r.id),
           name: String(r.name ?? ""),
           state: String(r.state ?? ""),
-          retryCount: Number(r.retrycount ?? 0),
-          createdOn: r.createdon ?? null,
-          startedOn: r.startedon ?? null,
-          completedOn: r.completedon ?? null,
+          retryCount: Number(r.retry_count ?? 0),
+          createdOn: r.created_on ?? null,
+          startedOn: r.started_on ?? null,
+          completedOn: r.completed_on ?? null,
           idempotencyKey: data.idempotencyKey ?? null,
         };
       });
