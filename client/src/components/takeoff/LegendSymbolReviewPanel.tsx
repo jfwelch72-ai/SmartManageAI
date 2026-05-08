@@ -47,7 +47,9 @@ export function LegendSymbolReviewPanel({ bidId }: Props) {
     count: string;
   }>({ definition: "", count: "" });
 
-  const listKey = ["/api/ai-estimator/bids", bidId, "legend-symbols"];
+  const listKey = [
+    `/api/ai-estimator/bids/${bidId}/legend-symbols?includeRejected=true`,
+  ];
   const listQuery = useQuery<ListResponse>({
     queryKey: listKey,
     enabled: !!bidId && open,
@@ -174,10 +176,15 @@ export function LegendSymbolReviewPanel({ bidId }: Props) {
             <div className="space-y-2">
               {symbols.map((s) => {
                 const editing = editingId === s.id;
+                const rejected = s.reviewStatus === "REJECTED";
                 return (
                   <div
                     key={s.id}
-                    className="rounded border p-2 space-y-1.5"
+                    className={
+                      rejected
+                        ? "rounded border p-2 space-y-1.5 opacity-50 bg-muted/40"
+                        : "rounded border p-2 space-y-1.5"
+                    }
                     data-testid={`row-legend-symbol-${s.id}`}
                   >
                     <div className="flex items-center justify-between gap-2">

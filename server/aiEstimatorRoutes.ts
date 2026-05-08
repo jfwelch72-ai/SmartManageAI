@@ -1773,9 +1773,11 @@ router.get(
   requireAuth,
   requireEstimatorAccess,
   async (req: AuthRequest, res: Response) => {
+    const includeRejected = req.query.includeRejected === "true";
     const rows = await listLegendSymbolsForBid(
       req.user!.organizationId!,
       req.params.bidId,
+      { includeRejected },
     );
     res.json({ symbols: rows });
   },
