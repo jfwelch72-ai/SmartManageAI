@@ -1,0 +1,71 @@
+Based on the documentation, here's a precise breakdown of why the provider routing split creates a hidden single point of failure.
+What the doc says
+Three separate passages piece together the full picture:
+AI Provider Routing for Takeoff Features: Uses a configurable abstraction (server/ai/providers/) for OpenAI and Anthropic Claude, with per-org routing via feature flags and automatic fallback.
+Required Environment Variables: ANTHROPIC_API_KEY (for Takeoff family AI routing)
+And in the Gotchas section:
+AI Provider Routing (Takeoff): Ensure AI_PROVIDER_TAKEOFF feature flag is correctly configured for Anthropic Claude usage and fallbacks. Embeddings and other AI features still use OpenAI directly.
+That last sentence is the problem. Everything else in the architecture gets an abstraction layer. Embeddings don't.
+How the routing architecture is supposed to work
+The design for Takeoff is genuinely well-thought-out. server/ai/providers/ is a provider-agnostic abstraction that:
+•	Routes per-org to either OpenAI or Anthropic Claude based on the AI_PROVIDER_TAKEOFF feature flag
+•	Supports automatic fallback if the primary provider fails
+•	Allows different tenants to use different providers without code changes
+This is the right pattern. It means a Takeoff outage on one provider doesn't necessarily mean a platform outage — the fallback kicks in. It also means Anthropic and OpenAI can be evaluated per-org, pricing can be optimized, and new providers can be added behind the abstraction without touching calling code.
+The problem is that this abstraction was only built for Takeoff. Everything else went a different direction.
+Where the abstraction stops
+The Gotchas entry is explicit: embeddings and other AI features still use OpenAI directly. This means:
+•	No provider abstraction
+•	No fallback path
+•	No feature flag routing
+•	No per-org configurability
+•	A hard dependency on OpenAI availability
+If OpenAI goes down, is rate-limited, or changes its API, everything that depends on embeddings fails — and fails completely, with no fallback.
+What embeddings are used for
+The documentation doesn't enumerate every embedding use case, but based on the feature set described, embeddings almost certainly power:
+Semantic search across documents — plan sheets, contracts, RFIs, and specifications. Construction projects generate enormous amounts of documentation. Vector search over embeddings is the standard approach to making that searchable in natural language.
+Sheet classification in the estimator — sheetIndex.ts classifies plan sheets by discipline using "AI + filename heuristics." The AI component of that classification likely uses embeddings to compare sheet content against known discipline signatures.
+The assemblies and legend symbol matching — matching extracted symbols and assemblies from uploaded plans against the org's catalog almost certainly involves embedding similarity rather than exact string matching.
+Potentially the CRM and Sales Pipeline — semantic matching of leads, vendors, or subcontractors to projects or categories.
+Takeoff scoping — draftTakeoffFromPlans accepts disciplines/tradeFilter to scope plan docs per trade. Filtering by discipline relevance likely uses embedding similarity.
+If any of these assumptions are correct, an OpenAI embedding outage doesn't just break a peripheral feature — it breaks core estimating and document workflows that the platform's primary value proposition depends on.
+The asymmetry this creates
+The routing architecture now has a structural inconsistency:
+Takeoff generation    →  provider abstraction  →  OpenAI OR Anthropic (with fallback)
+Embeddings            →  OpenAI directly        →  no fallback
+Sheet classification  →  AI + heuristics        →  depends on embeddings → no fallback
+Document search       →  embeddings             →  OpenAI directly → no fallback
+A Takeoff feature can survive an OpenAI outage by routing to Anthropic. But if the same outage also takes down the embedding layer, the documents that the Takeoff feature needs to process can't be searched, classified, or retrieved. The fallback for generation is worthless if the upstream embedding pipeline is broken.
+This also creates an operational reasoning problem. When an incident occurs, the on-call engineer has to reason about two different failure models simultaneously — one for Takeoff (which has a fallback) and one for embeddings (which doesn't). The runbook has to document both, and the mental model for "what breaks when OpenAI goes down" is more complex than it should be.
+The rate limiting dimension
+Beyond full outages, OpenAI enforces rate limits per API key. A platform with multiple tenants all using the same direct OpenAI embedding calls has no throttle management, no queue, and no backpressure. A spike in document processing — multiple large plan sets uploaded simultaneously — could hit the rate limit, causing embedding calls to fail or be retried aggressively.
+The Takeoff abstraction layer is the natural place to implement rate limit handling, retry logic, and request queuing. By bypassing that abstraction, embeddings bypass those protections too — even if they're ever built into the abstraction later.
+The vendor lock-in dimension
+OpenAI is not the only embedding provider. Anthropic, Cohere, Voyage AI, and open-source models via local inference all produce embeddings. Some are cheaper, some are faster, some produce better results for domain-specific content like construction documents.
+By hardcoding OpenAI into the embedding layer, the platform has made a permanent architectural bet on OpenAI's embedding API — its pricing, its availability, its model versions, and its terms of service. Switching later means re-embedding every stored vector in the database, which for a platform handling large construction PDF plans could be an enormous migration.
+The Takeoff abstraction was specifically built to avoid this kind of lock-in for generation. The same reasoning applies to embeddings, but the work wasn't done.
+The feature flag gap
+The AI_PROVIDER_TAKEOFF feature flag enables per-org routing for Takeoff. There is no equivalent flag for embeddings. This means:
+•	No org can opt into a different embedding provider
+•	No gradual rollout of a new embedding model is possible
+•	No A/B testing of embedding quality across providers
+•	No kill switch to disable embeddings for a specific org if their usage is causing issues
+For a multi-tenant platform where different orgs may have different document volumes, different languages, or different quality requirements, this is a significant gap in configurability.
+What should be done
+Immediately — wrap embeddings in the provider abstraction. Extend server/ai/providers/ to include an embedding provider interface alongside the generation provider interface. The initial implementation can simply wrap the existing OpenAI call — no behavior change, but the abstraction now exists.
+typescript
+// server/ai/providers/embeddingProvider.ts
+interface EmbeddingProvider {
+  embed(texts: string[]): Promise<number[][]>;
+}
+
+class OpenAIEmbeddingProvider implements EmbeddingProvider { ... }
+// Future: class VoyageEmbeddingProvider implements EmbeddingProvider { ... }
+Add a fallback path. Even a degraded fallback is better than none. If the primary embedding provider fails, options include: retrying with exponential backoff, falling back to a secondary provider, or returning a graceful error that queues the operation for retry rather than failing the entire request.
+Add an AI_PROVIDER_EMBEDDINGS feature flag. Mirror the AI_PROVIDER_TAKEOFF flag for embeddings. Even if it only has one valid value today, the infrastructure for future routing and per-org configuration is in place.
+Document embedding dependencies explicitly. Every feature that depends on embeddings should be tagged in the codebase. When OpenAI goes down, the on-call engineer should be able to pull up a single list of affected features rather than reasoning from first principles during an incident.
+Add an embedding health check. The smoke test (scripts/smoke-test.sh) probes a booted server. An embedding health check — a small test embed on boot or on a heartbeat interval — would surface OpenAI embedding API issues before they manifest as user-facing failures in the middle of a document processing workflow.
+The core problem
+The provider abstraction was built for Takeoff because Takeoff was the feature being built at the time. Embeddings were likely already in place, using OpenAI directly, and abstracting them was deferred. That deferral is now a permanent architectural inconsistency — half the AI surface has resilience, the other half doesn't, and the half that doesn't is the foundation the resilient half depends on.
+The Takeoff fallback routing is excellent engineering. The embedding single point of failure undermines it.
+

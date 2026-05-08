@@ -1,0 +1,57 @@
+Based on the documentation, here's a precise breakdown of why duplicated truth is a reliability and legal liability problem.
+What the doc says
+Two separate entries in the architecture notes:
+SLA targets live in both docs/sla.md and server/support/slaPolicy.ts (kept in sync).
+And in the Pointers section:
+On-Call Runbook: docs/ops/runbook.md
+The phrase "kept in sync" is the entire synchronization strategy. There is no described mechanism — just an expectation.
+Why two sources of truth exist
+The split is understandable in origin. docs/sla.md serves an external audience — it's what you show customers, embed in contracts, reference in sales conversations, and publish on a status page. server/support/slaPolicy.ts serves the application — it's what the support ticket system actually enforces when calculating response deadlines, triggering escalations, and running the weekly KPI digest.
+Having both makes sense. Having them synchronized only by human discipline does not.
+What "kept in sync" actually means in practice
+There is no:
+•	CI check comparing the two files
+•	Code generation where one derives from the other
+•	Test asserting that the values in slaPolicy.ts match the values in sla.md
+•	Single source of truth that both files import from
+•	Review checklist item reminding developers to update both
+"Kept in sync" means someone has to remember. In a fast-moving codebase with multiple contributors, that is not a synchronization strategy — it is a hope.
+The exact drift scenarios
+Scenario 1 — Marketing updates the docs. A customer success manager or technical writer updates docs/sla.md to reflect a new enterprise tier with a 1-hour response SLA. They open a PR, it gets merged. server/support/slaPolicy.ts is not in their mental model. The application continues enforcing the old 4-hour target. Enterprise customers are promised 1-hour responses; the system never escalates until hour 4.
+Scenario 2 — A developer updates the code. An engineer tightens the P1 response window from 2 hours to 1 hour in slaPolicy.ts to match a new operations commitment. They test it, ship it, done. docs/sla.md still says 2 hours. A customer reads the SLA doc, expects 2 hours, gets a 1-hour response — fine in practice, but the contract says something different from reality. Worse in reverse: if the code is loosened but the doc isn't updated, customers are contractually owed more than the system delivers.
+Scenario 3 — An incident triggers an SLA audit. A customer escalates a support complaint. Legal pulls docs/sla.md as the contractual reference. Engineering pulls slaPolicy.ts as the system of record. They disagree. Now the incident response has a second problem: which one is right, and for how long has there been drift?
+Scenario 4 — The weekly KPI digest. server/supportWeeklyReport.ts runs every Monday and emails SLA metrics to recipients in SUPPORT_REPORT_RECIPIENTS. If slaPolicy.ts has drifted from docs/sla.md, the digest is reporting compliance against a target that doesn't match what was promised to customers. Leadership reads "98% SLA compliance" without knowing the denominator is wrong.
+Why this is both a reliability and legal risk
+Most sync risks are purely technical — a bug surfaces, it gets fixed. This one has a legal dimension. docs/sla.md is almost certainly referenced in customer contracts or terms of service. If the application enforces different targets than what's documented, the company is either:
+•	Under-delivering on a contractual commitment (liability), or
+•	Over-delivering in a way that sets an unintended legal precedent
+Neither is safe. And unlike a code bug, SLA drift can exist undetected for months — accumulating exposure silently across every customer interaction in that period.
+What should be done
+The right fix — single source of truth:
+Create a shared constants file, something like shared/sla/targets.ts, that both the documentation generator and the application import from:
+typescript
+// shared/sla/targets.ts
+export const SLA_TARGETS = {
+  P1: { responseMinutes: 60,  resolutionHours: 4  },
+  P2: { responseMinutes: 240, resolutionHours: 24 },
+  P3: { responseMinutes: 480, resolutionHours: 72 },
+} as const;
+server/support/slaPolicy.ts imports from this file. docs/sla.md becomes a generated artifact — or at minimum, a file that references the canonical values from code comments that are easy to audit.
+If generation isn't feasible immediately — a CI check:
+Add a script to scripts/ci.sh that extracts the numeric SLA values from both files and asserts they match. This is crude but effective:
+bash
+# scripts/check-sla-sync.sh
+# Parse response time values from both files and diff them
+# Fail CI if any value differs
+This won't catch structural drift, but it will catch the most common case — a number changed in one place and not the other.
+Add it to the PR template:
+Until a technical enforcement exists, add an explicit checklist item to the PR template:
+- [ ] If SLA targets changed, both docs/sla.md and 
+      server/support/slaPolicy.ts have been updated
+Checklists are weak enforcement, but they're better than no enforcement.
+Audit the current state immediately:
+Before implementing any fix, compare the two files right now to establish whether drift already exists. Given there's no automated check, there's no way to know from the documentation alone whether they're currently in sync.
+The deeper pattern this represents
+The SLA sync risk is a symptom of a broader pattern in the codebase: documentation and code that describe the same thing but live in separate places. The SLA is the highest-stakes instance because of its legal and customer-facing implications, but the same risk exists anywhere a business rule is expressed in both a markdown file and a TypeScript file without a mechanical link between them.
+The principle to establish: if a value matters enough to put in a contract, it matters enough to have exactly one place in the codebase where it lives.
+
