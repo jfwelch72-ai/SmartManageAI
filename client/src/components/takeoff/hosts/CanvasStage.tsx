@@ -368,7 +368,10 @@ function CanvasStageImpl(props: CanvasStageProps) {
   } = props;
 
   return (
-    <>
+    // Wrap in a <div style="display:contents"> instead of a bare Fragment so
+    // that Replit devtools can attach data-replit-metadata without React
+    // warning "Invalid prop supplied to React.Fragment".
+    <div style={{ display: "contents" }}>
             <Stage
               ref={stageRef}
               width={stageDimensions.width}
@@ -2583,7 +2586,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
               ))}
             </div>
 
-    </>
+    </div>
   );
 }
 

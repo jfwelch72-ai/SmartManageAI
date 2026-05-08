@@ -5231,7 +5231,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           let succeeded = 0;
           let failed = 0;
           const failedItems: string[] = [];
-          const imgW = pdfImage?.width || 2000;
+          // Use pageDims (world-coordinate canvas size) when available so that
+          // bounding-box percentages map to the correct Konva coordinate space.
+          // Falling back to pdfImage dimensions caused all imported measurements
+          // to cluster in the top-left because pdfImage is the low-res
+          // placeholder bitmap (e.g. 816 px) while the canvas world space can
+          // be 8000+ px wide.
+          const imgW = pageDims?.width || pdfImage?.width || 2000;
           const existingAiCount = measurements.filter(m => m.source === "AI" && m.type === "COUNT").length;
 
           const isBidContext = context?.type === "bid";
@@ -5275,7 +5281,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           // Task #2323 — track aiItemId -> created measurement id so the
           // panel can stitch them onto the closed-loop bulk-accept call.
           const measurementIdsByItemId: Record<string, string> = {};
-          const imgH = pdfImage?.height || 1500;
+          const imgH = pageDims?.height || pdfImage?.height || 1500;
 
           const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters", "feet", "meters", "inches"]);
           const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters", "sq", "squares", "sy", "square yards"]);
