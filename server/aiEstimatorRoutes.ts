@@ -50,7 +50,7 @@ import {
   listIngestRuns,
   runIngestion,
 } from "./services/aiEstimator/ingestion";
-import { logCreate, logDelete } from "./auditLogger";
+import { logCreate, logDelete, logUpdate } from "./auditLogger";
 import { suggestInline } from "./services/aiEstimator/inlineSuggest";
 import {
   createSession,
@@ -84,6 +84,13 @@ import {
   getOrgFactors,
   upsertOrgFactors,
 } from "./services/aiEstimator/orgFactors";
+// Task #2627 — Per-org region factor CRUD.
+import {
+  listRegionFactors,
+  createRegionFactor,
+  updateRegionFactor,
+  deleteRegionFactor,
+} from "./services/aiEstimator/regionFactors";
 import {
   listLegendSymbolsForBid,
   upsertLegendSymbol,
@@ -111,6 +118,7 @@ import {
   insertAiEstimatorAssemblySchema,
   insertAiEstimatorAssemblyComponentSchema,
   insertAiEstimatorOrgFactorsSchema,
+  insertAiEstimatorRegionFactorSchema,
   insertAiEstimatorLegendSymbolSchema,
   SHEET_DISCIPLINES,
 } from "@shared/schema";
@@ -630,6 +638,10 @@ const inlineSchema = z.object({
   costCode: z.string().min(1),
   metric: z.enum(["unit_cost", "labor_hours_per_unit", "production_rate"]),
   unit: z.string().min(1),
+  // Task #2627 — When supplied, the active project's region factor is
+  // applied to the rate before it's surfaced. Optional so existing
+  // callers continue to work unmodified.
+  bidId: z.string().min(1).optional(),
 });
 router.post(
   `${estimatorBase}/suggest/inline`,
@@ -643,6 +655,7 @@ router.post(
       costCode: data.costCode,
       metric: data.metric,
       unit: data.unit,
+      bidId: data.bidId,
     });
     res.json({ suggestion });
   },
@@ -1203,6 +1216,81 @@ router.put(
       req.user!.id,
     );
     res.json(row);
+  },
+);
+
+// =====================================================================
+// Task #2627 — Per-org region factor CRUD. Multipliers applied to
+// learned-rate values when surfaced on a project tagged to that
+// region. Archived rows (`isActive=false`) stay in the database for
+// historical reference but are hidden from the active selector by
+// default.
+// =====================================================================
+const regionFactorBodySchema = insertAiEstimatorRegionFactorSchema
+  .omit({ organizationId: true, createdById: true, updatedById: true })
+  .extend({
+    multiplier: z.coerce.number().positive().finite(),
+  });
+
+router.get(
+  `${estimatorBase}/region-factors`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const includeArchived = req.query.includeArchived === "true";
+    const rows = await listRegionFactors(req.user!.organizationId!, { includeArchived });
+    res.json({ regionFactors: rows });
+  },
+);
+
+router.post(
+  `${estimatorBase}/region-factors`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const body = validateBody(regionFactorBodySchema, req.body, res);
+    if (!body) return;
+    const orgId = req.user!.organizationId!;
+    try {
+      const row = await createRegionFactor({
+        ...body,
+        organizationId: orgId,
+        createdById: req.user!.id,
+        updatedById: req.user!.id,
+      });
+      await logCreate(req.user!.id, "ai_estimator_region_factor", row.id, body, req);
+      res.status(201).json(row);
+    } catch (err) {
+      logError("Failed to create region factor", { error: String(err) });
+      res.status(500).json({ error: "Failed to create region factor" });
+    }
+  },
+);
+
+router.put(
+  `${estimatorBase}/region-factors/:id`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const patch = validateBody(regionFactorBodySchema.partial(), req.body, res);
+    if (!patch) return;
+    const orgId = req.user!.organizationId!;
+    const row = await updateRegionFactor(orgId, req.params.id, patch, req.user!.id);
+    if (!row) return res.status(404).json({ error: "Region factor not found" });
+    await logUpdate(req.user!.id, "ai_estimator_region_factor", row.id, {}, patch, req);
+    res.json(row);
+  },
+);
+
+router.delete(
+  `${estimatorBase}/region-factors/:id`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    await logDelete(req.user!.id, "ai_estimator_region_factor", req.params.id, {}, req);
+    await deleteRegionFactor(orgId, req.params.id);
+    res.status(204).send();
   },
 );
 

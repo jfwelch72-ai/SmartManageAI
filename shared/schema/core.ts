@@ -792,6 +792,13 @@ export const projects = pgTable("projects", {
   autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
   safetyOfficerId: varchar("safety_officer_id").references(() => users.id, { onDelete: "set null" }),
   payrollFormVariant: payrollFormVariantEnum("payroll_form_variant").notNull().default("WH_347"),
+  // Task #2627 — Active regional cost adjustment for this project. The
+  // AI Estimator surfaces learned-rate values multiplied by the linked
+  // region's `multiplier`. Null = use national-average / unadjusted
+  // rates. Region rows live in `ai_estimator_region_factors`; the FK is
+  // unenforced at the type level (varchar) to avoid a schema cycle
+  // between core and the ai_estimator feature module.
+  regionFactorId: varchar("region_factor_id"),
   // Task #494: project-level Davis-Bacon wage decision number (e.g. "CA20240001").
   // When set, the WH-347 generator looks up cached DOL rates for any
   // classification missing an explicit per-project `prevailingWageRates` entry,

@@ -6,6 +6,7 @@ import { governedAiCall } from "../aiGovernance";
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
 import { routedChatCompletion } from "../../ai/providers";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
+import { resolveRegionForBid } from "./regionFactors";
 import {
   citationsFromRows,
   formatLessonsForPrompt,
@@ -132,12 +133,17 @@ export async function generateDraftEstimate(opts: {
 
   await reportProgress(45, "Loading learned cost rates");
   // 2. Pull learned-rates so the model can ground unit costs in tenant data.
-  const rates = await listLearnedRatesForOrg(opts.organizationId);
+  //    Task #2627 — apply the project's active region factor (if any) so
+  //    the rates handed to the model reflect the regional cost index.
+  const [rates, regionInfo] = await Promise.all([
+    listLearnedRatesForOrg(opts.organizationId),
+    resolveRegionForBid(opts.organizationId, opts.bidId),
+  ]);
   const rateSummary = rates.slice(0, 60).map((r) => ({
     costCode: r.costCode,
     metric: r.metric,
     unit: r.unit,
-    ...summarizeRate(r),
+    ...summarizeRate(r, { regionMultiplier: regionInfo.multiplier }),
   }));
 
   await reportProgress(60, "Retrieving prior estimating context");

@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Loader2, RefreshCcw, Database, Sparkles, AlertTriangle,
   ChevronDown, ChevronRight, Download, X, Ban, RotateCcw,
-  Info, AlertCircle, CheckCircle2, TrendingUp
+  Info, AlertCircle, CheckCircle2, TrendingUp, Settings, Plus, Trash2,
+  HelpCircle
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -96,6 +97,27 @@ interface FeedbackRow {
   outcome: string;
   costCode: string | null;
   comment: string | null;
+}
+
+interface OrgFactors {
+  organizationId: string;
+  excludeCancelledLostJobs: boolean;
+  cityCostIndexDefault?: string | number | null;
+  laborProductivityDefault?: string | number | null;
+  wasteFactorDefault?: string | number | null;
+  notes?: string | null;
+}
+
+interface RegionFactor {
+  id: string;
+  name: string;
+  regionType: string;
+  code: string | null;
+  multiplier: number;
+  notes: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface FeedbackStats {
@@ -314,6 +336,256 @@ function SamplesDrawer({
   );
 }
 
+function SettingsTab() {
+  const { toast } = useToast();
+  const orgFactorsQuery = useQuery<OrgFactors | null>({ queryKey: ["/api/ai-estimator/org-factors"] });
+  const regionsQuery = useQuery<{ regionFactors: RegionFactor[] }>({
+    queryKey: ["/api/ai-estimator/region-factors", { includeArchived: true }],
+    queryFn: async () => {
+      const res = await fetch("/api/ai-estimator/region-factors?includeArchived=true", { credentials: "include" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    },
+  });
+
+  const [excludeFilter, setExcludeFilter] = useState<boolean>(true);
+  useEffect(() => {
+    if (orgFactorsQuery.data) {
+      setExcludeFilter(!!orgFactorsQuery.data.excludeCancelledLostJobs);
+    }
+  }, [orgFactorsQuery.data]);
+
+  const saveOrgFactors = useMutation({
+    mutationFn: async (vars: { excludeCancelledLostJobs: boolean }) =>
+      apiRequest("PUT", "/api/ai-estimator/org-factors", vars),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/org-factors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/admin/learned-rates"] });
+      toast({ title: "Saved", description: "Quality filter updated; rates recompute on next training run." });
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [draft, setDraft] = useState<{ name: string; regionType: string; code: string; multiplier: string; notes: string }>({
+    name: "",
+    regionType: "METRO",
+    code: "",
+    multiplier: "1.00",
+    notes: "",
+  });
+
+  const createRegion = useMutation({
+    mutationFn: async () =>
+      apiRequest("POST", "/api/ai-estimator/region-factors", {
+        name: draft.name.trim(),
+        regionType: draft.regionType,
+        code: draft.code.trim() || null,
+        multiplier: Number(draft.multiplier),
+        notes: draft.notes.trim() || null,
+        isActive: true,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/region-factors", { includeArchived: true }] });
+      setDraft({ name: "", regionType: "METRO", code: "", multiplier: "1.00", notes: "" });
+      toast({ title: "Region added" });
+    },
+    onError: (err: Error) => toast({ title: "Add failed", description: err.message, variant: "destructive" }),
+  });
+
+  const updateRegion = useMutation({
+    mutationFn: async (vars: { id: string; patch: Partial<RegionFactor> }) =>
+      apiRequest("PUT", `/api/ai-estimator/region-factors/${vars.id}`, vars.patch),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/region-factors", { includeArchived: true }] });
+      toast({ title: "Region updated" });
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteRegion = useMutation({
+    mutationFn: async (id: string) =>
+      apiRequest("DELETE", `/api/ai-estimator/region-factors/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/region-factors", { includeArchived: true }] });
+      toast({ title: "Region deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
+  });
+
+  const regions = regionsQuery.data?.regionFactors ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Sample quality filter</CardTitle>
+          <CardDescription>
+            Hide samples from bids you didn't win. Keeping these out of the rate pool
+            stops Lost / Cancelled jobs from skewing your learned medians.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {orgFactorsQuery.isLoading ? (
+            <Loader2 className="animate-spin h-5 w-5" />
+          ) : (
+            <div className="flex items-center justify-between gap-4 max-w-xl">
+              <div>
+                <Label htmlFor="exclude-lost">Exclude LOST &amp; CANCELLED bid samples</Label>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Default: on. Disable if you specifically want losing bids to inform your learned rates.
+                </p>
+              </div>
+              <Switch
+                id="exclude-lost"
+                checked={excludeFilter}
+                onCheckedChange={(v) => {
+                  setExcludeFilter(v);
+                  saveOrgFactors.mutate({ excludeCancelledLostJobs: v });
+                }}
+                data-testid="switch-exclude-cancelled-lost"
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Region factors</CardTitle>
+          <CardDescription>
+            Multiplier applied to learned-rate values when shown on a project tagged to that region.
+            1.00 = no adjustment. A value of 1.25 means 25% more expensive than your default.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end" data-testid="form-region-create">
+            <div className="sm:col-span-2">
+              <Label>Name</Label>
+              <Input
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                placeholder="Bay Area Metro"
+                data-testid="input-region-name"
+              />
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select value={draft.regionType} onValueChange={(v) => setDraft({ ...draft, regionType: v })}>
+                <SelectTrigger data-testid="select-region-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="METRO">Metro</SelectItem>
+                  <SelectItem value="STATE">State</SelectItem>
+                  <SelectItem value="CUSTOM">Custom</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Code</Label>
+              <Input
+                value={draft.code}
+                onChange={(e) => setDraft({ ...draft, code: e.target.value })}
+                placeholder="SFO"
+                data-testid="input-region-code"
+              />
+            </div>
+            <div>
+              <Label>Multiplier</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={draft.multiplier}
+                onChange={(e) => setDraft({ ...draft, multiplier: e.target.value })}
+                data-testid="input-region-multiplier"
+              />
+            </div>
+            <Button
+              onClick={() => createRegion.mutate()}
+              disabled={createRegion.isPending || !draft.name.trim() || !(Number(draft.multiplier) > 0)}
+              data-testid="button-region-add"
+            >
+              {createRegion.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}
+              Add
+            </Button>
+          </div>
+
+          {regionsQuery.isLoading ? (
+            <Loader2 className="animate-spin h-5 w-5" />
+          ) : regions.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              No region factors yet. Add one above to start adjusting learned rates by location.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Multiplier</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead className="w-[80px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {regions.map((r) => (
+                  <TableRow key={r.id} data-testid={`row-region-${r.id}`}>
+                    <TableCell className="font-medium">{r.name}</TableCell>
+                    <TableCell><Badge variant="outline">{r.regionType}</Badge></TableCell>
+                    <TableCell className="font-mono text-xs">{r.code ?? "—"}</TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min="0.01"
+                        defaultValue={r.multiplier}
+                        className="w-24"
+                        onBlur={(e) => {
+                          const v = Number(e.target.value);
+                          if (Number.isFinite(v) && v > 0 && v !== r.multiplier) {
+                            updateRegion.mutate({ id: r.id, patch: { multiplier: v } });
+                          }
+                        }}
+                        data-testid={`input-multiplier-${r.id}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Switch
+                        checked={r.isActive}
+                        onCheckedChange={(v) => updateRegion.mutate({ id: r.id, patch: { isActive: v } })}
+                        data-testid={`switch-region-active-${r.id}`}
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive"
+                        onClick={() => deleteRegion.mutate(r.id)}
+                        disabled={deleteRegion.isPending}
+                        data-testid={`button-region-delete-${r.id}`}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Assign a region to a project from its detail page. Inline suggestions
+            on bids tied to that project will multiply learned medians by the
+            region's multiplier and surface the math in the "Why this number?" expander.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState("access");
@@ -334,6 +606,15 @@ export default function AiEstimatorAdminPage() {
   const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
   const [pendingExclude, setPendingExclude] = useState<{ projectId: string; projectName: string } | null>(null);
   const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(new Set());
+  const [expandedRateIds, setExpandedRateIds] = useState<Set<string>>(new Set());
+  const toggleRateExpanded = (id: string) => {
+    setExpandedRateIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const toggleRunExpanded = (id: string) => {
     setExpandedRunIds((prev) => {
       const next = new Set(prev);
@@ -446,6 +727,7 @@ export default function AiEstimatorAdminPage() {
           <TabsTrigger value="ingest" data-testid="tab-ingest">Training runs</TabsTrigger>
           <TabsTrigger value="rates" data-testid="tab-rates">Learned rates</TabsTrigger>
           <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
+          <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
         </TabsList>
 
         <TabsContent value="access" className="space-y-4">
@@ -852,32 +1134,84 @@ export default function AiEstimatorAdminPage() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredRates.map((r) => (
-                        <TableRow
-                          key={r.id}
-                          className="cursor-pointer hover:bg-muted/50"
-                          onClick={() => openDrawer(r)}
-                          data-testid={`row-rate-${r.id}`}
-                        >
-                          <TableCell className="font-mono text-xs">
-                            {r.costCode}
-                            {r.excludedSampleCount > 0 && (
-                              <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">
-                                -{r.excludedSampleCount} excl.
-                              </Badge>
-                            )}
-                          </TableCell>
-                          <TableCell className="text-xs">{r.metric.replace(/_/g, " ")}</TableCell>
-                          <TableCell>{r.unit}</TableCell>
-                          <TableCell>{r.sampleSize}</TableCell>
-                          <TableCell>{r.median ?? r.mean ?? "—"}</TableCell>
-                          <TableCell>{r.p25 && r.p75 ? `${r.p25} – ${r.p75}` : "—"}</TableCell>
-                          <TableCell>
-                            <ConfidenceChip confidence={r.confidence} sampleSize={r.sampleSize} />
-                          </TableCell>
-                          <TableCell className="whitespace-nowrap text-xs">{new Date(r.lastUpdatedAt).toLocaleDateString()}</TableCell>
-                        </TableRow>
-                      ))}
+                      {filteredRates.flatMap((r) => {
+                        const isExpanded = expandedRateIds.has(r.id);
+                        const point = r.median ?? r.mean ?? null;
+                        const rangeLabel = r.p25 && r.p75 ? `${r.p25} – ${r.p75}` : null;
+                        const rows = [
+                          <TableRow
+                            key={r.id}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => openDrawer(r)}
+                            data-testid={`row-rate-${r.id}`}
+                          >
+                            <TableCell className="font-mono text-xs">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-5 w-5 p-0 mr-1 align-middle"
+                                onClick={(e) => { e.stopPropagation(); toggleRateExpanded(r.id); }}
+                                aria-label={isExpanded ? "Hide explanation" : "Why this number?"}
+                                data-testid={`button-why-${r.id}`}
+                              >
+                                {isExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                              </Button>
+                              {r.costCode}
+                              {r.excludedSampleCount > 0 && (
+                                <Badge variant="outline" className="ml-1 text-[9px] border-amber-300 text-amber-700">
+                                  -{r.excludedSampleCount} excl.
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-xs">{r.metric.replace(/_/g, " ")}</TableCell>
+                            <TableCell>{r.unit}</TableCell>
+                            <TableCell>{r.sampleSize}</TableCell>
+                            <TableCell>{point ?? "—"}</TableCell>
+                            <TableCell>{rangeLabel ?? "—"}</TableCell>
+                            <TableCell>
+                              <ConfidenceChip confidence={r.confidence} sampleSize={r.sampleSize} />
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap text-xs">{new Date(r.lastUpdatedAt).toLocaleDateString()}</TableCell>
+                          </TableRow>,
+                        ];
+                        if (isExpanded) {
+                          rows.push(
+                            <TableRow key={`${r.id}-why`} className="bg-muted/20 hover:bg-muted/20">
+                              <TableCell colSpan={8} className="py-3">
+                                <div className="flex items-start gap-2 text-xs" data-testid={`text-why-${r.id}`}>
+                                  <HelpCircle className="h-4 w-4 mt-0.5 text-primary shrink-0" />
+                                  <div className="space-y-1.5 min-w-0 flex-1">
+                                    <div className="font-medium text-foreground">Why this number?</div>
+                                    <ul className="list-disc pl-5 space-y-0.5 text-muted-foreground">
+                                      <li>
+                                        Median <strong>{point ?? "—"}</strong> across <strong>{r.sampleSize}</strong> sample{r.sampleSize !== 1 ? "s" : ""} from your historical {r.metric.replace(/_/g, " ")} for cost code <span className="font-mono">{r.costCode}</span>.
+                                      </li>
+                                      {rangeLabel && (
+                                        <li>
+                                          Middle 50% (P25 – P75) sits in <strong>{rangeLabel}</strong>. Wider ranges = larger natural variability.
+                                        </li>
+                                      )}
+                                      <li>
+                                        Confidence <strong>{r.confidence}</strong> (Strong ≥ 10 samples · Mixed ≥ 3 · Sparse &lt; 3).
+                                      </li>
+                                      {r.excludedSampleCount > 0 && (
+                                        <li className="text-amber-700">
+                                          {r.excludedSampleCount} sample{r.excludedSampleCount !== 1 ? "s" : ""} excluded by admin or by the Lost/Cancelled bid filter (see <strong>Settings</strong>).
+                                        </li>
+                                      )}
+                                      <li className="italic">
+                                        Inline suggestions multiply this by the project's region factor when one is selected.
+                                      </li>
+                                    </ul>
+                                  </div>
+                                </div>
+                              </TableCell>
+                            </TableRow>,
+                          );
+                        }
+                        return rows;
+                      })}
                       {filteredRates.length === 0 && allRates.length > 0 && (
                         <TableRow>
                           <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
@@ -948,6 +1282,10 @@ export default function AiEstimatorAdminPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="settings" className="space-y-4">
+          <SettingsTab />
         </TabsContent>
       </Tabs>
 

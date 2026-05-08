@@ -1,4 +1,5 @@
 import { getLearnedRate, summarizeRate, type RateMetric } from "./learnedRates";
+import { resolveRegionForBid } from "./regionFactors";
 
 export interface InlineSuggestion {
   metric: RateMetric;
@@ -9,6 +10,16 @@ export interface InlineSuggestion {
   sampleSize: number;
   source: "learned_rate";
   message: string;
+  /**
+   * Task #2627 — Region adjustment that was applied (if any). Surfaced
+   * so the UI's "Why this number?" expander can show the math.
+   * `multiplier === 1` means no region adjustment.
+   */
+  region: {
+    multiplier: number;
+    name: string | null;
+    code: string | null;
+  };
 }
 
 /**
@@ -22,15 +33,20 @@ export async function suggestInline(opts: {
   costCode: string;
   metric: RateMetric;
   unit: string;
+  /** Task #2627 — when provided, the active project's region factor is applied. */
+  bidId?: string | null;
 }): Promise<InlineSuggestion | null> {
   if (!opts.costCode || !opts.unit) return null;
-  const rate = await getLearnedRate(opts.organizationId, {
-    costCode: opts.costCode,
-    metric: opts.metric,
-    unit: opts.unit,
-  });
+  const [rate, regionInfo] = await Promise.all([
+    getLearnedRate(opts.organizationId, {
+      costCode: opts.costCode,
+      metric: opts.metric,
+      unit: opts.unit,
+    }),
+    resolveRegionForBid(opts.organizationId, opts.bidId ?? null),
+  ]);
   if (!rate) return null;
-  const summary = summarizeRate(rate);
+  const summary = summarizeRate(rate, { regionMultiplier: regionInfo.multiplier });
   if (summary.point == null) return null;
   const verb =
     opts.metric === "unit_cost"
@@ -38,6 +54,10 @@ export async function suggestInline(opts: {
       : opts.metric === "labor_hours_per_unit"
         ? "labor hours / unit"
         : "production rate";
+  const regionSuffix =
+    regionInfo.region && summary.regionMultiplier !== 1
+      ? ` × ${summary.regionMultiplier.toFixed(2)} (${regionInfo.region.name})`
+      : "";
   return {
     metric: opts.metric,
     costCode: opts.costCode,
@@ -50,6 +70,11 @@ export async function suggestInline(opts: {
       summary.range.low != null && summary.range.high != null
         ? ` (range ${summary.range.low.toFixed(2)} – ${summary.range.high.toFixed(2)})`
         : ""
-    }.`,
+    }${regionSuffix}.`,
+    region: {
+      multiplier: summary.regionMultiplier,
+      name: regionInfo.region?.name ?? null,
+      code: regionInfo.region?.code ?? null,
+    },
   };
 }

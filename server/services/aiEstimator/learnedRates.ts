@@ -4,6 +4,8 @@ import {
   aiEstimatorLearnedRates,
   aiEstimatorRateSamples,
   aiEstimatorExcludedSources,
+  aiEstimatorOrgFactors,
+  bids,
   type AiEstimatorLearnedRate,
   type AiEstimatorRateSample,
   type AiEstimatorExcludedSource,
@@ -79,17 +81,50 @@ function percentile(sortedAsc: number[], q: number): number | null {
 
 /** Load the set of excluded projectIds for an org (cached within the request) */
 export async function getExcludedIds(organizationId: string): Promise<{ projectIds: Set<string>; bidIds: Set<string> }> {
-  const rows = await db
-    .select({ projectId: aiEstimatorExcludedSources.projectId, bidId: aiEstimatorExcludedSources.bidId })
-    .from(aiEstimatorExcludedSources)
-    .where(eq(aiEstimatorExcludedSources.organizationId, organizationId));
+  const [rows, qualityBidIds] = await Promise.all([
+    db
+      .select({ projectId: aiEstimatorExcludedSources.projectId, bidId: aiEstimatorExcludedSources.bidId })
+      .from(aiEstimatorExcludedSources)
+      .where(eq(aiEstimatorExcludedSources.organizationId, organizationId)),
+    getQualityFilteredBidIds(organizationId),
+  ]);
   const projectIds = new Set<string>();
-  const bidIds = new Set<string>();
+  const bidIds = new Set<string>(qualityBidIds);
   for (const r of rows) {
     if (r.projectId) projectIds.add(r.projectId);
     if (r.bidId) bidIds.add(r.bidId);
   }
   return { projectIds, bidIds };
+}
+
+/**
+ * Task #2627 — Quality filter. When the org has
+ * `excludeCancelledLostJobs` enabled (default true), pull every
+ * LOST/CANCELLED bid id so any rate sample whose `bidId` matches is
+ * dropped from the recompute pool. Returns an empty set when the
+ * filter is disabled. Failure-safe: if the org-factors row hasn't
+ * been provisioned yet, defaults to "filter on".
+ */
+export async function getQualityFilteredBidIds(
+  organizationId: string,
+): Promise<Set<string>> {
+  const [factors] = await db
+    .select({ excludeCancelledLostJobs: aiEstimatorOrgFactors.excludeCancelledLostJobs })
+    .from(aiEstimatorOrgFactors)
+    .where(eq(aiEstimatorOrgFactors.organizationId, organizationId))
+    .limit(1);
+  const enabled = factors?.excludeCancelledLostJobs ?? true;
+  if (!enabled) return new Set<string>();
+  const rows = await db
+    .select({ id: bids.id })
+    .from(bids)
+    .where(
+      and(
+        eq(bids.gcOrganizationId, organizationId),
+        inArray(bids.status, ["LOST", "CANCELLED"]),
+      ),
+    );
+  return new Set(rows.map((r) => r.id));
 }
 
 /** @deprecated Use getExcludedIds */
@@ -579,17 +614,29 @@ export async function bulkRecordRateSamples(
   return valid.length;
 }
 
-export function summarizeRate(rate: AiEstimatorLearnedRate | null): {
+export function summarizeRate(
+  rate: AiEstimatorLearnedRate | null,
+  opts: { regionMultiplier?: number | null } = {},
+): {
   point: number | null;
   range: { low: number | null; high: number | null };
   n: number;
+  /** Region multiplier actually applied (1 if none / invalid). */
+  regionMultiplier: number;
 } {
-  if (!rate) return { point: null, range: { low: null, high: null }, n: 0 };
-  const num = (v: string | null) => (v == null ? null : Number(v));
+  if (!rate) {
+    return { point: null, range: { low: null, high: null }, n: 0, regionMultiplier: 1 };
+  }
+  const m =
+    typeof opts.regionMultiplier === "number" && Number.isFinite(opts.regionMultiplier) && opts.regionMultiplier > 0
+      ? opts.regionMultiplier
+      : 1;
+  const num = (v: string | null) => (v == null ? null : Number(v) * m);
   return {
     point: num(rate.medianValue) ?? num(rate.meanValue),
     range: { low: num(rate.p25Value) ?? num(rate.minValue), high: num(rate.p75Value) ?? num(rate.maxValue) },
     n: rate.sampleSize,
+    regionMultiplier: m,
   };
 }
 

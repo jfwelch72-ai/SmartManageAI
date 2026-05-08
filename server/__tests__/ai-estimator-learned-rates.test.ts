@@ -153,7 +153,14 @@ describe("learnedRates — listLearnedRatesForOrg + summarizeRate", () => {
   });
 
   it("summarizeRate returns nulls for a missing rate", () => {
-    expect(summarizeRate(null)).toEqual({ point: null, range: { low: null, high: null }, n: 0 });
+    // Task #2627 — summary now also carries the applied region
+    // multiplier (1 == no adjustment) so the UI can render the math.
+    expect(summarizeRate(null)).toEqual({
+      point: null,
+      range: { low: null, high: null },
+      n: 0,
+      regionMultiplier: 1,
+    });
   });
 
   it("summarizeRate prefers median for the point value and IQR for the range", async () => {

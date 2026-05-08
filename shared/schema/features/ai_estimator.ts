@@ -480,6 +480,12 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
   // alongside the other markups. Per-category overrides still live in
   // `wasteFactorsByCategory` and win when set.
   defaultWasteFactor: doublePrecision("default_waste_factor").notNull().default(0),
+  // Task #2627 — quality filter for the learned-rates pool. When true,
+  // samples whose source bid is LOST or CANCELLED (or whose source
+  // project's originating bid was) are excluded from rate recompute.
+  // Defaults to true so new orgs benefit immediately; existing orgs can
+  // opt out from the settings UI.
+  excludeCancelledLostJobs: boolean("exclude_cancelled_lost_jobs").notNull().default(true),
   notes: text("notes"),
   updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
@@ -490,6 +496,33 @@ export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
 export const insertAiEstimatorOrgFactorsSchema = createInsertSchema(aiEstimatorOrgFactors).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAiEstimatorOrgFactors = z.infer<typeof insertAiEstimatorOrgFactorsSchema>;
 export type AiEstimatorOrgFactors = typeof aiEstimatorOrgFactors.$inferSelect;
+
+// Task #2627 — Per-org region factors. Each row is a named region
+// (metro / state / custom) with a multiplier applied to learned-rate
+// values when surfaced to estimators on a project tagged to that
+// region. Multiplier is a positive number (1.0 = national avg / no
+// adjustment). `isActive=false` archives the row without deleting it
+// so historical projects keep their reference.
+export const aiEstimatorRegionFactors = pgTable("ai_estimator_region_factors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  regionType: text("region_type").notNull().default("CUSTOM"), // 'METRO' | 'STATE' | 'CUSTOM'
+  code: text("code"), // optional short code (e.g. metro abbr / state code)
+  multiplier: doublePrecision("multiplier").notNull().default(1.0),
+  notes: text("notes"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_region_factors_org_idx").on(table.organizationId),
+  uniqOrgName: uniqueIndex("ai_estimator_region_factors_uniq_name").on(table.organizationId, table.name),
+}));
+export const insertAiEstimatorRegionFactorSchema = createInsertSchema(aiEstimatorRegionFactors).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorRegionFactor = z.infer<typeof insertAiEstimatorRegionFactorSchema>;
+export type AiEstimatorRegionFactor = typeof aiEstimatorRegionFactors.$inferSelect;
 
 // Sheet-discipline whitelist for prompt validation. Anything else is
 // stored as 'O' (other). Matches the AIA convention.
