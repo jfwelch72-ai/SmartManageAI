@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Layers, Check } from "lucide-react";
+import { Layers, Check } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { JobProgressBar } from "@/components/JobProgressBar";
 
 interface MapReduceMeasurement {
   label: string;
@@ -45,25 +46,36 @@ interface Props {
  * which uses the single-shot drafter; this one calls
  * `POST /api/ai-estimator/draft/map-reduce` directly and renders the
  * per-sheet citations on every measurement.
+ *
+ * Task #2606 — routes the call through the `ai_estimator_draft` job
+ * queue (`async: true`) so the dialog can render `<JobProgressBar />`
+ * with live per-discipline progress instead of a static spinner. The
+ * final draft is fetched from `/api/jobs/:id` once the SSE channel
+ * reports the job completed.
  */
 export function MapReduceDraftButton({ bidId }: Props) {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<MapReduceDraftResult | null>(null);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [fetchingResult, setFetchingResult] = useState(false);
 
   const draftIt = useMutation({
-    mutationFn: async (): Promise<MapReduceDraftResult> => {
+    mutationFn: async (): Promise<{ jobId?: string }> => {
       const r = await apiRequest("POST", "/api/ai-estimator/draft/map-reduce", {
         bidId,
+        async: true,
       });
-      return (await r.json()) as MapReduceDraftResult;
+      return (await r.json()) as { jobId?: string };
     },
     onSuccess: (data) => {
-      setDraft(data);
-      if (data.partial) {
+      if (data.jobId) {
+        setJobId(data.jobId);
+      } else {
         toast({
-          title: "Partial draft",
-          description: "Some disciplines were skipped. Re-run with a narrower discipline filter to cover the rest.",
+          title: "Map-reduce draft failed",
+          description: "No job id returned",
+          variant: "destructive",
         });
       }
     },
@@ -71,13 +83,73 @@ export function MapReduceDraftButton({ bidId }: Props) {
       toast({ title: "Map-reduce draft failed", description: err.message, variant: "destructive" }),
   });
 
+  const handleJobComplete = async (id: string) => {
+    if (fetchingResult || draft) return;
+    setFetchingResult(true);
+    try {
+      const r = await apiRequest("GET", `/api/jobs/${id}`);
+      const status = await r.json();
+      const output = (status?.output ?? null) as
+        | (MapReduceDraftResult & { fallback?: undefined })
+        | { fallback: true; blocked?: boolean; message?: string }
+        | null;
+      if (output && "fallback" in output && output.fallback) {
+        toast({
+          title: "Map-reduce draft failed",
+          description: output.message ?? "AI returned no usable draft",
+          variant: "destructive",
+        });
+        setJobId(null);
+      } else if (output && Array.isArray((output as MapReduceDraftResult).measurements)) {
+        const result = output as MapReduceDraftResult;
+        setDraft(result);
+        if (result.partial) {
+          toast({
+            title: "Partial draft",
+            description:
+              "Some disciplines were skipped. Re-run with a narrower discipline filter to cover the rest.",
+          });
+        }
+      } else {
+        toast({
+          title: "Map-reduce draft failed",
+          description: "No draft payload returned",
+          variant: "destructive",
+        });
+        setJobId(null);
+      }
+    } catch (err) {
+      toast({
+        title: "Failed to load draft",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+      setJobId(null);
+    } finally {
+      setFetchingResult(false);
+    }
+  };
+
+  const handleJobFail = (_id: string, message?: string) => {
+    toast({
+      title: "Map-reduce draft failed",
+      description: message ?? "Background draft failed",
+      variant: "destructive",
+    });
+    setJobId(null);
+  };
+
   useEffect(() => {
-    if (!open) setDraft(null);
+    if (!open) {
+      setDraft(null);
+      setJobId(null);
+      setFetchingResult(false);
+    }
   }, [open]);
 
   if (!bidId) return null;
 
-  const isWorking = draftIt.isPending;
+  const isWorking = draftIt.isPending || (!!jobId && !draft);
   const coverageEntries = draft ? Object.entries(draft.disciplineCoverage) : [];
 
   return (
@@ -103,7 +175,7 @@ export function MapReduceDraftButton({ bidId }: Props) {
             </DialogDescription>
           </DialogHeader>
 
-          {!draft && (
+          {!draft && !jobId && (
             <div className="py-3 text-sm text-muted-foreground" data-testid="text-mapreduce-explainer">
               This may take a few minutes for large plan sets. The drafter scopes work to the
               disciplines it detects on the indexed sheets and caps the work per discipline so a
@@ -111,10 +183,15 @@ export function MapReduceDraftButton({ bidId }: Props) {
             </div>
           )}
 
-          {isWorking && (
-            <div className="py-6 flex items-center justify-center gap-2 text-sm text-muted-foreground" data-testid="text-mapreduce-working">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Reading indexed plan sheets…
+          {jobId && !draft && (
+            <div className="py-3" data-testid="text-mapreduce-working">
+              <JobProgressBar
+                jobId={jobId}
+                fallbackMessage="Reading indexed plan sheets..."
+                onComplete={handleJobComplete}
+                onFail={handleJobFail}
+                testIdPrefix="job-progress-mapreduce-draft"
+              />
             </div>
           )}
 
@@ -200,11 +277,7 @@ export function MapReduceDraftButton({ bidId }: Props) {
                 disabled={isWorking}
                 data-testid="button-run-mapreduce-draft"
               >
-                {isWorking ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Layers className="h-4 w-4 mr-2" />
-                )}
+                <Layers className="h-4 w-4 mr-2" />
                 Run map-reduce draft
               </Button>
             ) : (

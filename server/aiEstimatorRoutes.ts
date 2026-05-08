@@ -1332,6 +1332,12 @@ router.post(
 const mapReduceDraftSchema = z.object({
   bidId: z.string().min(1),
   disciplines: z.array(z.string()).optional(),
+  // Task #2606 — when true, route enqueues `ai_estimator_draft`
+  // (mode: takeoff, useMapReduce: true) and returns `{ jobId }` so the
+  // dialog can drive a `<JobProgressBar />` from the per-discipline
+  // progress emitted by `mapReduceDraftFromPlans` instead of showing a
+  // static spinner for minutes on 200+ sheet plan sets.
+  async: z.boolean().optional(),
 });
 
 router.post(
@@ -1342,9 +1348,48 @@ router.post(
   async (req: AuthRequest, res: Response) => {
     const data = validateBody(mapReduceDraftSchema, req.body, res);
     if (!data) return;
+    const organizationId = req.user!.organizationId!;
+    const userId = req.user!.id;
+    if (data.async) {
+      try {
+        const { enqueueJob } = await import("./jobQueue");
+        const idemBasis = [
+          `bid:${data.bidId}`,
+          data.disciplines?.slice().sort().join("+"),
+          "mr",
+        ].filter((p): p is string => Boolean(p)).join("|");
+        const enq = await enqueueJob(
+          "ai_estimator_draft",
+          {
+            mode: "takeoff",
+            draftOptions: {
+              organizationId,
+              userId,
+              bidId: data.bidId,
+              disciplines: data.disciplines,
+              useMapReduce: true,
+            },
+          },
+          {
+            organizationId,
+            userId,
+            idempotencyKey: `ai_estimator_draft:map-reduce:${idemBasis}:${userId}`,
+          },
+        );
+        return res.status(202).json({
+          jobId: enq.jobId,
+          idempotencyKey: enq.idempotencyKey,
+          deduplicated: enq.deduplicated,
+          status: "QUEUED",
+        });
+      } catch (err) {
+        logError("Map-reduce draft enqueue failed", { error: String(err) });
+        return res.status(500).json({ error: "Failed to enqueue map-reduce draft" });
+      }
+    }
     const out = await mapReduceDraftFromPlans({
-      organizationId: req.user!.organizationId!,
-      userId: req.user!.id,
+      organizationId,
+      userId,
       bidId: data.bidId,
       disciplines: data.disciplines,
     });
