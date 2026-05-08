@@ -157,6 +157,12 @@ export interface CanvasStageProps {
 
   flashMeasurementId: string | null;
   flashPulse: number;
+  /**
+   * ID of the measurement the user is hovering in the sidebar list.
+   * The canvas draws a persistent highlight ring around that measurement
+   * so the user can instantly locate it on the drawing.
+   */
+  hoveredMeasurementId?: string | null;
 
   calibrationPoints: Point[];
   verifyPoints: Point[];
@@ -315,6 +321,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     failedMarkupIds,
     flashMeasurementId,
     flashPulse,
+    hoveredMeasurementId,
     calibrationPoints,
     verifyPoints,
     currentSnap,
@@ -848,6 +855,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     }
                   }
                   const isSelected = selectedMeasurementId === m.id;
+                  const isHovered = !isSelected && hoveredMeasurementId === m.id;
                   const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
                   const baseColor = catColor || (
@@ -958,12 +966,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       <Fragment key={m.id}>
                         <Line
                           points={flatPoints}
-                          stroke={baseColor}
-                          strokeWidth={effectiveWidth}
+                          stroke={isSelected || isHovered ? baseColor : hexToRgba(baseColor, 0.6)}
+                          strokeWidth={isSelected ? effectiveWidth : isHovered ? Math.max(effectiveWidth, 2.5 / stageScale) : Math.max(1 / stageScale, 1)}
                           dash={dashArray.length > 0 ? dashArray : undefined}
                           hitStrokeWidth={isMobile ? 20 : 0}
-                          fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
-                          opacity={isSelected ? 1 : 0.8}
+                          fill={isSelected ? hexToRgba(baseColor, 0.3) : isHovered ? hexToRgba(baseColor, 0.28) : hexToRgba(baseColor, 0.07)}
+                          opacity={isSelected ? 1 : isHovered ? 1 : 0.85}
                           closed={true}
                           perfectDrawEnabled={false}
                           shadowEnabled={false}
@@ -977,7 +985,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             stroke="#ef4444"
                             strokeWidth={2}
                             dash={[6, 4]}
-                            fill="rgba(239,68,68,0.15)"
+                            fill="rgba(239,68,68,0.12)"
                             closed={true}
                             listening={false}
                             perfectDrawEnabled={false}
@@ -998,12 +1006,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       <Fragment key={m.id}>
                         <Line
                           points={flatPoints}
-                          stroke={baseColor}
-                          strokeWidth={effectiveWidth}
+                          stroke={isSelected || isHovered ? baseColor : hexToRgba(baseColor, 0.6)}
+                          strokeWidth={isSelected ? effectiveWidth : isHovered ? Math.max(effectiveWidth, 2.5 / stageScale) : Math.max(1 / stageScale, 1)}
                           dash={dashArray.length > 0 ? dashArray : undefined}
                           hitStrokeWidth={isMobile ? 20 : 0}
-                          fill={isSelected ? hexToRgba(baseColor, 0.3) : hexToRgba(baseColor, 0.15)}
-                          opacity={isSelected ? 1 : 0.8}
+                          fill={isSelected ? hexToRgba(baseColor, 0.3) : isHovered ? hexToRgba(baseColor, 0.28) : hexToRgba(baseColor, 0.07)}
+                          opacity={isSelected ? 1 : isHovered ? 1 : 0.85}
                           closed={true}
                           perfectDrawEnabled={false}
                           shadowEnabled={false}
@@ -1017,7 +1025,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                             stroke="#ef4444"
                             strokeWidth={2}
                             dash={[6, 4]}
-                            fill="rgba(239,68,68,0.15)"
+                            fill="rgba(239,68,68,0.12)"
                             closed={true}
                             listening={false}
                             perfectDrawEnabled={false}
@@ -1366,6 +1374,43 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     );
                   });
                   return elements;
+                })()}
+
+                {/* Hover-from-sidebar highlight — a steady glow ring drawn
+                    around whichever measurement the user is hovering in the
+                    sidebar list so they can instantly locate it on the plan. */}
+                {hoveredMeasurementId && !flashMeasurementId && (() => {
+                  const hm = measurements.find(m => m.id === hoveredMeasurementId);
+                  if (!hm) return null;
+                  const center = getMeasurementCenter(hm);
+                  if (!center) return null;
+                  const r = 28 / stageScale;
+                  return (
+                    <Group key={`hover-ring-${hoveredMeasurementId}`} listening={false}>
+                      <Circle
+                        x={center.x}
+                        y={center.y}
+                        radius={r}
+                        fill="rgba(251,191,36,0.15)"
+                        stroke="#fbbf24"
+                        strokeWidth={3 / stageScale}
+                        opacity={0.85}
+                        perfectDrawEnabled={false}
+                        shadowEnabled={false}
+                      />
+                      <Circle
+                        x={center.x}
+                        y={center.y}
+                        radius={r * 1.6}
+                        fill="transparent"
+                        stroke="#fbbf24"
+                        strokeWidth={1.5 / stageScale}
+                        opacity={0.4}
+                        perfectDrawEnabled={false}
+                        shadowEnabled={false}
+                      />
+                    </Group>
+                  );
                 })()}
 
                 {flashMeasurementId && flashPulse > 0 && (() => {

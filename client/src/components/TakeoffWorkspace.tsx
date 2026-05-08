@@ -607,6 +607,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [hoveredLinkId, setHoveredLinkId] = useState<string | null>(null);
   const [flashMeasurementId, setFlashMeasurementId] = useState<string | null>(null);
   const [flashPulse, setFlashPulse] = useState(0);
+  const [hoveredMeasurementId, setHoveredMeasurementId] = useState<string | null>(null);
   const [gridEnabled, setGridEnabled] = useState(() => {
     try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch (err) { console.warn("[Takeoff] Failed to read grid setting:", err); return false; }
   });
@@ -4582,6 +4583,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     failedMarkupIds,
     flashMeasurementId,
     flashPulse,
+    hoveredMeasurementId,
     calibrationPoints,
     verifyPoints,
     currentSnap,
@@ -4995,6 +4997,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onPrintSheet: handlePrintSheet,
       onZoomToMeasurement: handleZoomToMeasurement,
       onZoomToFitMeasurement: handleZoomToFitMeasurement,
+      onMeasurementHover: setHoveredMeasurementId,
       hideAiMeasurements,
       setHideAiMeasurements,
       measurementLinks,

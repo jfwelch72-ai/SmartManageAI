@@ -216,6 +216,8 @@ interface TakeoffSidebarProps {
   onPrintSheet?: () => void;
   onZoomToMeasurement?: (measurement: TakeoffMeasurement) => void;
   onZoomToFitMeasurement?: (measurement: TakeoffMeasurement) => void;
+  /** Called when the user hovers a measurement row. `null` on mouse-leave. */
+  onMeasurementHover?: (id: string | null) => void;
   conditions?: TakeoffCondition[];
   activeCondition?: TakeoffCondition | null;
   onActivateCondition?: (condition: TakeoffCondition) => void;
@@ -292,7 +294,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     issues = [], allSheetIssues = [], selectedIssueId = null, onSelectIssue,
     onExportCurrentSheet, onExportAllSheets,
     onExportQuantityDelta, onExportBidPackage, onPrintSheet,
-    onZoomToMeasurement, onZoomToFitMeasurement,
+    onZoomToMeasurement, onZoomToFitMeasurement, onMeasurementHover,
     conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
     onSaveCondition, onUpdateCondition, onDeleteCondition, onPinConditionToChest, saveConditionPending = false,
     hideAiMeasurements = false, setHideAiMeasurements,
@@ -1680,6 +1682,8 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         }}
                         draggable={!bulkSelectMode}
                         onDragStart={(e) => { e.dataTransfer.setData("measurement-id", m.id); e.dataTransfer.effectAllowed = "move"; }}
+                        onMouseEnter={() => onMeasurementHover?.(m.id)}
+                        onMouseLeave={() => onMeasurementHover?.(null)}
                         data-testid={`measurement-item-${m.id}`}
                       >
                         <div className="flex items-center gap-2 mb-1.5">
