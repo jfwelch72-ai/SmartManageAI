@@ -7,6 +7,10 @@ export interface JobProgressState {
   status: JobProgressStatus;
   progress: number;
   message?: string;
+  // Task #2668 — millisecond timestamp of the last SSE event observed
+  // for this job. Consumers can compare against `Date.now()` to detect
+  // a "live but stalled" stream and fall back to polled progress.
+  lastEventAt: number | null;
 }
 
 interface JobProgressEventPayload {
@@ -19,7 +23,7 @@ interface JobProgressEventPayload {
   message?: string;
 }
 
-const INITIAL_STATE: JobProgressState = { status: "idle", progress: 0 };
+const INITIAL_STATE: JobProgressState = { status: "idle", progress: 0, lastEventAt: null };
 
 /**
  * Subscribe to live progress events for a background job (Task #2518).
@@ -41,7 +45,7 @@ export function useJobProgress(jobId: string | null | undefined): JobProgressSta
       return;
     }
 
-    setState({ status: "running", progress: 0 });
+    setState({ status: "running", progress: 0, lastEventAt: null });
 
     const handler = (e: MessageEvent) => {
       let payload: JobProgressEventPayload;
@@ -62,6 +66,7 @@ export function useJobProgress(jobId: string | null | undefined): JobProgressSta
         status,
         progress: status === "completed" ? 100 : progress,
         message: payload.message,
+        lastEventAt: Date.now(),
       });
     };
 

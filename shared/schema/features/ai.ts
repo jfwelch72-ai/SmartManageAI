@@ -367,6 +367,16 @@ export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
   aiNotes: text("ai_notes"),
   errorMessage: text("error_message"),
   processingTimeMs: integer("processing_time_ms"),
+  // Task #2668 — persist the active background job id and the latest
+  // progress snapshot so the takeoff panel can recover from a hard
+  // reload (no jobId in React state) and so polling clients still see
+  // an advancing bar when SSE drops or is buffered upstream. The
+  // watchdog also reads `progressUpdatedAt` to decide when a row has
+  // stalled and must be flipped to FAILED.
+  currentJobId: text("current_job_id"),
+  progressPct: integer("progress_pct"),
+  progressMessage: text("progress_message"),
+  progressUpdatedAt: timestamp("progress_updated_at"),
   // Task #2335 — Persist scale-mismatch evaluation alongside the analysis so
   // the AI takeoff dashboard can roll up calibration drift across sheets and
   // organizations. Null on rows where calibration or detection couldn't be

@@ -154,6 +154,13 @@ let aiEstimatorIngestionTickRunning = false;
 // each repair with `[PM:<scheduleId>]` and skips schedules that already
 // have an open WO), so re-running on the same day is safe.
 let equipmentPmGenerationTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2668 — once-per-minute sweep that flips PENDING / PROCESSING
+// `ai_takeoff_analyses` rows to FAILED when their last persisted
+// progress tick is older than `AI_TAKEOFF_STALL_TIMEOUT_MS` (default
+// 5 min). Pairs with the in-process try/finally backstop in
+// `processAiTakeoff` to make the cross-process / killed-pod case also
+// recover, so the AI Auto-Takeoff panel never spins forever.
+let aiTakeoffStallWatchdogTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -1321,7 +1328,158 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, and equipment PM generation schedulers)");
+  // Task #2668 — every minute, sweep ai_takeoff_analyses for rows
+  // whose last persisted progress tick is older than the configured
+  // stall window. Flip them to FAILED and broadcast a terminal SSE so
+  // any subscribed AI Auto-Takeoff panel transitions out of pending.
+  aiTakeoffStallWatchdogTask = cron.schedule("* * * * *", async () => {
+    try {
+      await withSchedulerLock("job:aiTakeoffStallWatchdog", async () => {
+        const summary = await processAiTakeoffStallWatchdog();
+        recordJobOutcome("ai_takeoff_stall_watchdog", true);
+        if (summary.flagged > 0) {
+          logInfo("AI takeoff stall watchdog flagged stalled rows", summary);
+        }
+      });
+    } catch (err) {
+      recordJobOutcome("ai_takeoff_stall_watchdog", false);
+      logJobErrorWithKind("ai_takeoff_stall_watchdog", "AI takeoff stall watchdog failed", err);
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, equipment PM generation, and AI takeoff stall watchdog schedulers)");
+}
+
+// Task #2668 — sweep helper. Exported so tests can drive it directly
+// without spinning up the cron.
+export interface AiTakeoffStallWatchdogSummary {
+  scanned: number;
+  flagged: number;
+  stallTimeoutMs: number;
+  /** Rows that looked stale by `progress_updated_at` but whose backing
+   * pg-boss job is still active/created/retry, so we left them alone. */
+  skippedJobActive: number;
+}
+
+export async function processAiTakeoffStallWatchdog(): Promise<AiTakeoffStallWatchdogSummary> {
+  const stallTimeoutMs = Math.max(
+    30_000,
+    Number(process.env.AI_TAKEOFF_STALL_TIMEOUT_MS) || 5 * 60 * 1000,
+  );
+
+  const { aiTakeoffAnalyses } = await import("@shared/schema");
+  const { publishJobProgress, getBoss } = await import("../jobQueue");
+
+  const cutoff = new Date(Date.now() - stallTimeoutMs);
+
+  // Match rows that are still in a non-terminal status AND haven't ticked
+  // since the cutoff. We treat a NULL `progress_updated_at` as stalled
+  // too — only happens if the worker crashed before the very first
+  // tick, which is exactly the case we want to recover from.
+  const stalled = await db.select()
+    .from(aiTakeoffAnalyses)
+    .where(and(
+      inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+      or(
+        isNull(aiTakeoffAnalyses.progressUpdatedAt),
+        lt(aiTakeoffAnalyses.progressUpdatedAt, cutoff),
+      ),
+    ));
+
+  let flagged = 0;
+  let skippedJobActive = 0;
+  // Resolve the pg-boss handle once so we can check job state before
+  // we declare a row truly stalled. A row whose backing job is still
+  // `created`/`active`/`retry` may simply be in the middle of a long
+  // model call — we must not force-fail it.
+  let boss: ReturnType<typeof getBoss> | null = null;
+  try {
+    boss = getBoss();
+  } catch {
+    boss = null;
+  }
+  const liveStates = new Set(["created", "active", "retry"]);
+  for (const row of stalled) {
+    try {
+      if (boss && row.currentJobId) {
+        try {
+          const job = await boss.getJobById("ai_takeoff_analyze", row.currentJobId, { includeArchive: true });
+          // Only treat the row as stalled when the backing job is
+          // demonstrably no longer making progress. `created`,
+          // `active`, and `retry` all mean pg-boss still owns it.
+          // `null` (job missing entirely) is treated as stalled —
+          // that's the orphaned-row case we want the watchdog to
+          // recover from.
+          if (job && liveStates.has(String(job.state))) {
+            skippedJobActive += 1;
+            continue;
+          }
+        } catch (lookupErr) {
+          logWarn("AI takeoff stall watchdog: pg-boss lookup failed, will still flip row", {
+            analysisId: row.id,
+            jobId: row.currentJobId,
+            error: lookupErr instanceof Error ? lookupErr.message : String(lookupErr),
+          });
+        }
+      }
+      // Conditional UPDATE so two concurrent watchdog ticks (across
+      // pods that lost the leader race for a fraction of a second)
+      // can't both publish a terminal SSE. The status check inside
+      // the WHERE makes this idempotent.
+      const updated = await db.update(aiTakeoffAnalyses)
+        .set({
+          status: "FAILED",
+          errorMessage: "Analysis stalled — no progress reported",
+          progressMessage: "Analysis stalled — no progress reported",
+          progressUpdatedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(aiTakeoffAnalyses.id, row.id),
+          inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+        ))
+        .returning({ id: aiTakeoffAnalyses.id });
+
+      if (updated.length === 0) continue;
+      flagged += 1;
+
+      // Best-effort terminal SSE. The owner is the analysis creator
+      // (`createdByUserId`); when that's null (legacy rows) we fall
+      // back to the first active admin in the org so the SSE has a
+      // valid addressee.
+      if (row.currentJobId && row.organizationId) {
+        const ownerRow = row.createdByUserId
+          ? [{ id: row.createdByUserId }]
+          : await db.select({ id: users.id })
+              .from(users)
+              .where(and(
+                eq(users.organizationId, row.organizationId),
+                eq(users.isActive, true),
+                inArray(users.role, ["SUPER_ADMIN", "ADMIN"]),
+              ))
+              .limit(1);
+        const userId = ownerRow[0]?.id ?? null;
+        if (userId) {
+          await publishJobProgress({
+            jobId: row.currentJobId,
+            jobName: "ai_takeoff_analyze",
+            organizationId: row.organizationId,
+            userId,
+            status: "failed",
+            progress: row.progressPct ?? 0,
+            message: "Analysis stalled — no progress reported",
+          });
+        }
+      }
+    } catch (err) {
+      logError("AI takeoff stall watchdog row failed", {
+        analysisId: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return { scanned: stalled.length, flagged, stallTimeoutMs, skippedJobActive };
 }
 
 // Task #2496 — daily PM auto-WO generation. Walks every active org that
@@ -1425,6 +1583,10 @@ export function stopJobRunner() {
   if (equipmentPmGenerationTask) {
     equipmentPmGenerationTask.stop();
     equipmentPmGenerationTask = null;
+  }
+  if (aiTakeoffStallWatchdogTask) {
+    aiTakeoffStallWatchdogTask.stop();
+    aiTakeoffStallWatchdogTask = null;
   }
   if (coiReminderTask) {
     coiReminderTask.stop();

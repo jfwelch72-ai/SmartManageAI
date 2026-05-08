@@ -524,7 +524,10 @@ interface PublishProgressArgs {
   extra?: Record<string, unknown>;
 }
 
-async function publishJobProgress(args: PublishProgressArgs): Promise<void> {
+// Task #2668 — exported so the AI takeoff cancel endpoint and the stall
+// watchdog can publish terminal SSE events from outside the queue
+// pipeline.
+export async function publishJobProgress(args: PublishProgressArgs): Promise<void> {
   if (!args.userId || !args.organizationId) return;
   try {
     // Reuse the messaging bus fan-out so SSE/WS clients on any pod see

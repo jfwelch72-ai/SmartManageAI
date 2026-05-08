@@ -139,6 +139,19 @@ router.post("/ai-features/takeoff/analyze", requireAuth, requireRole("ADMIN", "M
       },
     );
 
+    // Task #2668 — persist the active job id + an initial progress
+    // snapshot so a client that reloads mid-run can rehydrate from
+    // the polled results endpoint instead of being stuck at 0%.
+    await db.update(aiTakeoffAnalyses)
+      .set({
+        currentJobId: enqueued.jobId,
+        progressPct: 0,
+        progressMessage: "Queued for analysis",
+        progressUpdatedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(aiTakeoffAnalyses.id, analysis.id));
+
     res.json({
       success: true,
       analysisId: analysis.id,
@@ -514,6 +527,20 @@ export type AiTakeoffProgressFn = (
   meta?: Record<string, unknown>,
 ) => void | Promise<void>;
 
+// Task #2668 — sentinel thrown by `processAiTakeoff` when the COMPLETE
+// write is suppressed because the row is already in a terminal state
+// (cancelled by user or flipped by the watchdog). The queue handler
+// catches it and uses it to skip the catch-block's redundant FAILED
+// rewrite while still re-throwing so `runJobWithContext` publishes
+// `failed` (not `completed`) — keeping the SSE stream consistent
+// with the row state.
+export class AiTakeoffAlreadyTerminalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AiTakeoffAlreadyTerminalError";
+  }
+}
+
 export async function processAiTakeoff(
   analysisId: string,
   tradeType: string,
@@ -523,22 +550,62 @@ export async function processAiTakeoff(
   onProgress?: AiTakeoffProgressFn,
 ) {
   const startTime = Date.now();
+  // Task #2668 — every progress tick now also persists pct + message +
+  // timestamp on the analysis row so the polled results endpoint can
+  // serve as a fallback when SSE drops, and so the stall watchdog can
+  // tell the difference between "worker quiet" and "worker dead".
   const reportProgress = async (
     pct: number,
     message: string,
     meta?: Record<string, unknown>,
   ) => {
+    const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+    try {
+      await db.update(aiTakeoffAnalyses)
+        .set({
+          progressPct: clamped,
+          progressMessage: message,
+          progressUpdatedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(aiTakeoffAnalyses.id, analysisId));
+    } catch (persistErr) {
+      logWarn("AI takeoff progress persist failed", {
+        analysisId,
+        error: persistErr instanceof Error ? persistErr.message : String(persistErr),
+      });
+    }
     if (!onProgress) return;
     try {
-      await onProgress(pct, message, meta);
+      await onProgress(clamped, message, meta);
     } catch {
       // Progress reporting must never break the analysis pipeline.
     }
   };
 
-  await db.update(aiTakeoffAnalyses)
+  let terminalStatusWritten = false;
+
+  // Task #2668 — Guard the initial PENDING→PROCESSING transition with the
+  // same status filter we use everywhere else, so a row that the user
+  // (cancel endpoint) or the watchdog already flipped to FAILED before
+  // the worker actually started cannot be resurrected. If 0 rows are
+  // affected, throw the terminal sentinel — the queue handler will
+  // catch it, the catch branch above preserves the existing
+  // user-visible error message, and `runJobWithContext` publishes
+  // `failed` (matching the row state) instead of `completed`.
+  const claimed = await db.update(aiTakeoffAnalyses)
     .set({ status: "PROCESSING" })
-    .where(eq(aiTakeoffAnalyses.id, analysisId));
+    .where(and(
+      eq(aiTakeoffAnalyses.id, analysisId),
+      inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+    ))
+    .returning({ id: aiTakeoffAnalyses.id });
+  if (claimed.length === 0) {
+    terminalStatusWritten = true;
+    throw new AiTakeoffAlreadyTerminalError(
+      `AI takeoff ${analysisId} already terminal — worker start suppressed`,
+    );
+  }
   await reportProgress(10, "Loading takeoff sheet");
 
   try {
@@ -1080,34 +1147,111 @@ Return JSON with:
       (metadata as Record<string, unknown>).calibrationApplied = true;
     }
 
-    await db.update(aiTakeoffAnalyses)
+    // Task #2668 — guard the COMPLETE write so a worker that finishes
+    // *after* the user (or watchdog) cancelled the run cannot
+    // resurrect a row that has already been flipped to FAILED. The
+    // status filter inside WHERE makes this race-safe even across
+    // pods.
+    const completed = await db.update(aiTakeoffAnalyses)
       .set({
         status: "COMPLETE",
         detectedItemsJson: JSON.stringify(detectedItems),
         metadataJson: JSON.stringify(metadata),
         aiNotes,
         processingTimeMs: Date.now() - startTime,
-        // Task #2335 — Mirror the in-memory mismatch evaluation onto the
-        // queryable columns so the AI takeoff dashboard / report can
-        // aggregate without re-parsing `metadata_json` for every row.
+        progressPct: 100,
+        progressMessage: "Analysis complete",
+        progressUpdatedAt: new Date(),
         scaleMismatchDetected: scaleMismatchEval?.mismatch ?? false,
         detectedScaleLabel: scaleMismatchEval?.detectedLabel ?? null,
         calibratedScaleLabel: scaleMismatchEval?.calibratedLabel ?? null,
         scaleDeltaPercent: scaleMismatchEval?.deltaPercent ?? null,
         updatedAt: new Date(),
       })
-      .where(eq(aiTakeoffAnalyses.id, analysisId));
+      .where(and(
+        eq(aiTakeoffAnalyses.id, analysisId),
+        inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+      ))
+      .returning({ id: aiTakeoffAnalyses.id });
+    if (completed.length === 0) {
+      logWarn("AI takeoff worker finished but row was already terminal — skipping COMPLETE write", {
+        analysisId,
+      });
+      // Task #2668 — propagate non-success up to the queue handler so
+      // `runJobWithContext` does NOT publish a terminal `completed`
+      // SSE for a row that is actually FAILED (cancelled by user or
+      // the watchdog). The handler's catch path emits `failed` which
+      // matches the row state, giving subscribers a consistent view.
+      terminalStatusWritten = true;
+      throw new AiTakeoffAlreadyTerminalError(
+        `AI takeoff ${analysisId} already terminal — completion suppressed`,
+      );
+    }
+    terminalStatusWritten = true;
   } catch (error: unknown) {
     const errObj = error instanceof Error ? error : new Error(String(error));
+    // Task #2668 — when the sentinel fires, the row is already
+    // terminal (cancelled by user or flipped by the watchdog). Do
+    // NOT overwrite `error_message` / `progress_message` — those
+    // strings are user-visible and should preserve the actual reason
+    // ("Analysis cancelled by user", "Analysis stalled — …"). Just
+    // re-throw so `runJobWithContext` publishes `failed`.
+    if (error instanceof AiTakeoffAlreadyTerminalError) {
+      terminalStatusWritten = true;
+      throw error;
+    }
     logError("AI Takeoff processing error:", {}, errObj);
+    // Race-safe: only write FAILED if no other terminal-state writer
+    // (cancel endpoint, watchdog) already won.
     await db.update(aiTakeoffAnalyses)
       .set({
         status: "FAILED",
         errorMessage: errObj.message || "Processing failed",
         processingTimeMs: Date.now() - startTime,
+        progressMessage: errObj.message || "Processing failed",
+        progressUpdatedAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(aiTakeoffAnalyses.id, analysisId));
+      .where(and(
+        eq(aiTakeoffAnalyses.id, analysisId),
+        inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+      ));
+    terminalStatusWritten = true;
+    // Task #2668 — re-throw so the queue handler's surrounding
+    // publishJobProgress("failed") path also fires. The handler in
+    // `server/jobQueue/index.ts` catches and emits a terminal SSE.
+    throw error;
+  } finally {
+    // Task #2668 — defense in depth. If something exotic (e.g. an
+    // uncaught throw inside the try, a process kill mid-update) leaves
+    // the row in PROCESSING with no terminal status, force a FAILED
+    // terminal state so the panel never spins forever. The watchdog
+    // is the cross-process backstop; this branch handles the same-
+    // process case.
+    if (!terminalStatusWritten) {
+      try {
+        const [current] = await db.select({ status: aiTakeoffAnalyses.status })
+          .from(aiTakeoffAnalyses)
+          .where(eq(aiTakeoffAnalyses.id, analysisId));
+        if (current && (current.status === "PENDING" || current.status === "PROCESSING")) {
+          await db.update(aiTakeoffAnalyses)
+            .set({
+              status: "FAILED",
+              errorMessage: "Analysis worker exited without a terminal status",
+              processingTimeMs: Date.now() - startTime,
+              progressMessage: "Analysis worker exited without a terminal status",
+              progressUpdatedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(aiTakeoffAnalyses.id, analysisId));
+        }
+      } catch (finalErr) {
+        logWarn("AI takeoff terminal-state finalizer failed", {
+          analysisId,
+          error: finalErr instanceof Error ? finalErr.message : String(finalErr),
+        });
+      }
+    }
   }
 }
 
@@ -1281,11 +1425,157 @@ router.get("/ai-features/takeoff/results/:analysisId", requireAuth, async (req: 
       metadata,
       aiNotes: analysis.aiNotes,
       processingTimeMs: analysis.processingTimeMs,
+      // Task #2668 — fields needed for the panel to rehydrate after a
+      // hard reload and to fall back to polled progress when SSE is
+      // unavailable. `currentJobId` lets the client re-subscribe to
+      // the live SSE channel; `progressPct` / `progressMessage` /
+      // `progressUpdatedAt` feed the polled fallback bar; and
+      // `errorMessage` powers the failure card.
+      currentJobId: analysis.currentJobId ?? null,
+      progressPct: analysis.progressPct ?? null,
+      progressMessage: analysis.progressMessage ?? null,
+      progressUpdatedAt: analysis.progressUpdatedAt ?? null,
+      errorMessage: analysis.errorMessage ?? null,
     });
   } catch (error) {
     next(error);
   }
 });
+
+// Task #2668 — POST /api/ai-features/takeoff/analyze/:analysisId/cancel
+// Marks an in-flight analysis as FAILED ("cancelled by user"), best-
+// effort cancels the underlying pg-boss job, and broadcasts a terminal
+// SSE event so any connected panels promptly transition out of the
+// pending state. Idempotent — cancelling an already-terminal row is a
+// no-op that returns the row's current status.
+router.post(
+  "/ai-features/takeoff/analyze/:analysisId/cancel",
+  requireAuth,
+  // Task #2668 — Mirror the role gate from the analyze endpoint so a
+  // lower-privilege authenticated user (e.g. FIELD_WORKER) cannot
+  // cancel an in-flight takeoff they were never authorized to start.
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const [analysis] = await db.select()
+        .from(aiTakeoffAnalyses)
+        .where(and(
+          eq(aiTakeoffAnalyses.id, req.params.analysisId),
+          eq(aiTakeoffAnalyses.organizationId, organizationId),
+        ));
+
+      if (!analysis) {
+        return res.status(404).json({ error: "Analysis not found" });
+      }
+
+      if (analysis.status === "COMPLETE" || analysis.status === "FAILED") {
+        return res.json({
+          success: true,
+          analysisId: analysis.id,
+          status: analysis.status,
+          alreadyTerminal: true,
+        });
+      }
+
+      // Task #2668 — atomic transition. The status check above is an
+      // optimization (lets us early-return without writing); the
+      // authoritative race-safe check is the WHERE filter on this
+      // UPDATE. If the worker finished between our SELECT and this
+      // UPDATE, `affected.length === 0` and we must NOT force the row
+      // back to FAILED — re-read and surface the actual terminal
+      // status instead.
+      const cancelMessage = "Analysis cancelled by user";
+      const cancelled = await db.update(aiTakeoffAnalyses)
+        .set({
+          status: "FAILED",
+          errorMessage: cancelMessage,
+          progressMessage: cancelMessage,
+          progressUpdatedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(aiTakeoffAnalyses.id, analysis.id),
+          inArray(aiTakeoffAnalyses.status, ["PENDING", "PROCESSING"]),
+        ))
+        .returning({ id: aiTakeoffAnalyses.id });
+
+      if (cancelled.length === 0) {
+        // Worker beat us to it — return the now-terminal row's actual
+        // status without publishing a misleading "failed" SSE.
+        const [latest] = await db.select({ status: aiTakeoffAnalyses.status })
+          .from(aiTakeoffAnalyses)
+          .where(eq(aiTakeoffAnalyses.id, analysis.id));
+        return res.json({
+          success: true,
+          analysisId: analysis.id,
+          status: latest?.status ?? analysis.status,
+          alreadyTerminal: true,
+        });
+      }
+
+      // Best-effort: cancel the pg-boss job so the worker stops as soon
+      // as it next checks. We swallow errors because the row has
+      // already been flipped to FAILED — the job becoming a no-op is
+      // an optimization, not a correctness requirement.
+      const jobId = analysis.currentJobId;
+      if (jobId) {
+        try {
+          const { getBoss } = await import("./jobQueue");
+          const boss = getBoss();
+          if (boss && typeof boss.cancel === "function") {
+            // pg-boss `cancel(name, id)` requires the queue name as
+            // the first argument; passing only the id throws at
+            // runtime (and fails our typecheck).
+            await boss.cancel("ai_takeoff_analyze", jobId);
+          }
+        } catch (cancelErr) {
+          logWarn("AI takeoff job cancel best-effort failed", {
+            analysisId: analysis.id,
+            jobId,
+            error: cancelErr instanceof Error ? cancelErr.message : String(cancelErr),
+          });
+        }
+
+        // Publish a terminal SSE so any subscribed panel transitions
+        // out of pending immediately, regardless of whether the worker
+        // actually picks up the cancel.
+        try {
+          const { publishJobProgress } = await import("./jobQueue");
+          await publishJobProgress({
+            jobId,
+            jobName: "ai_takeoff_analyze",
+            organizationId,
+            userId,
+            status: "failed",
+            progress: analysis.progressPct ?? 0,
+            message: cancelMessage,
+          });
+        } catch (publishErr) {
+          logWarn("AI takeoff cancel SSE publish failed", {
+            analysisId: analysis.id,
+            jobId,
+            error: publishErr instanceof Error ? publishErr.message : String(publishErr),
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        analysisId: analysis.id,
+        status: "FAILED",
+        cancelled: true,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.get("/ai-features/takeoff/history/:contextId", requireAuth, async (req: AuthRequest, res, next) => {
   try {

@@ -264,6 +264,14 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
     metadata?: Record<string, any>;
     aiNotes?: string;
     processingTimeMs?: number;
+    // Task #2668 — fields used to recover from a hard reload (no jobId
+    // in React state) and to render a polled progress fallback when SSE
+    // is unavailable + a failure card on terminal FAILED.
+    currentJobId?: string | null;
+    progressPct?: number | null;
+    progressMessage?: string | null;
+    progressUpdatedAt?: string | null;
+    errorMessage?: string | null;
   }
 
   const { data: analysisResults, isLoading: resultsLoading, refetch: refetchResults } = useQuery<AnalysisResult | null>({
@@ -277,6 +285,23 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
       return false;
     },
   });
+
+  // Task #2668 — rehydrate the live SSE jobId after a page reload.
+  // The mutation's onSuccess only fires when the user just clicked
+  // "Analyze"; if they reload mid-run we instead pick the jobId off
+  // the polled results endpoint so the progress bar can re-attach.
+  useEffect(() => {
+    if (!analysisResults) return;
+    if (analysisResults.currentJobId && analysisResults.currentJobId !== analysisJobId) {
+      setAnalysisJobId(analysisResults.currentJobId);
+    }
+    if (
+      (analysisResults.status === "PENDING" || analysisResults.status === "PROCESSING") &&
+      !isAnalyzing
+    ) {
+      setIsAnalyzing(true);
+    }
+  }, [analysisResults, analysisJobId, isAnalyzing]);
 
   // Task #2551 — Standalone takeoff is its own history context.
   const historyContextId = standaloneTakeoffId || projectId || bidId;
@@ -297,7 +322,27 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
   const { data: analysisHistory } = useQuery<{ analyses: AnalysisHistoryEntry[] }>({
     queryKey: [`/api/ai-features/takeoff/history/${historyContextId}?type=${historyContextType}`],
     enabled: !!historyContextId,
+    // Task #2668 — keep polling history while no analysis is selected
+    // so a hard reload mid-run finds the in-flight row and re-attaches.
+    refetchInterval: !analysisId && !!historyContextId ? 3000 : false,
   });
+
+  // Task #2668 — true reload recovery. After a hard refresh `analysisId`
+  // is null, so the results query never starts. Walk the most-recent
+  // history entries and adopt the latest non-terminal one as the
+  // active analysis. That hydrates the results query, which in turn
+  // hydrates `analysisJobId` (above) so the live SSE bar re-attaches
+  // without the user clicking "Analyze" again.
+  useEffect(() => {
+    if (analysisId) return;
+    const inflight = analysisHistory?.analyses?.find(
+      (a) => a.status === "PENDING" || a.status === "PROCESSING",
+    );
+    if (inflight) {
+      setAnalysisId(inflight.id);
+      setIsAnalyzing(true);
+    }
+  }, [analysisHistory, analysisId]);
 
   const { data: compareResults } = useQuery<AnalysisResult | null>({
     queryKey: ["/api/ai-features/takeoff/results", compareRunId],
@@ -767,6 +812,30 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
             jobId={analysisJobId}
             tradeLabel={analysisResults?.tradeType || "trade"}
             analysisMode={analysisMode}
+            polledProgress={analysisResults?.progressPct ?? null}
+            polledMessage={analysisResults?.progressMessage ?? null}
+            analysisId={analysisId}
+            onCancelled={() => {
+              setIsAnalyzing(false);
+              refetchResults();
+            }}
+          />
+        )}
+
+        {analysisResults?.status === "FAILED" && (
+          <AiTakeoffFailureCard
+            errorMessage={
+              analysisResults.errorMessage
+              || analysisResults.progressMessage
+              || "AI takeoff analysis failed"
+            }
+            onRetry={() => {
+              setAnalysisId(null);
+              setAnalysisJobId(null);
+              setIsAnalyzing(false);
+              analyzeMutation.mutate();
+            }}
+            isRetrying={analyzeMutation.isPending}
           />
         )}
       </div>
@@ -1363,22 +1432,91 @@ function AiTakeoffPendingProgress({
   jobId,
   tradeLabel,
   analysisMode,
+  polledProgress,
+  polledMessage,
+  analysisId,
+  onCancelled,
 }: {
   jobId: string | null;
   tradeLabel: string;
   analysisMode: "QUICK" | "DETAILED";
+  // Task #2668 — when SSE drops or the user reloaded the page the
+  // server-persisted progress on `ai_takeoff_analyses` is the only
+  // signal the UI has. We surface it as a fallback so the bar is
+  // never stuck at 5%.
+  polledProgress?: number | null;
+  polledMessage?: string | null;
+  analysisId?: string | null;
+  onCancelled?: () => void;
 }) {
   const job = useJobProgress(jobId);
-  const hasLive = !!jobId && job.status !== "idle";
-  const value = hasLive ? job.progress : 5;
+  // Task #2668 — "Live SSE" only counts as live if we've actually heard
+  // from it AND the most recent event is recent enough that we can
+  // trust it. If SSE drops or the proxy buffers it, the polled
+  // snapshot from `ai_takeoff_analyses.progress_pct` becomes the
+  // source of truth and the bar continues to advance.
+  const SSE_STALE_AFTER_MS = 15_000;
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 5_000);
+    return () => clearInterval(t);
+  }, []);
+  const sseFresh =
+    !!jobId
+    && job.lastEventAt != null
+    && (now - job.lastEventAt) < SSE_STALE_AFTER_MS;
+  const hasLive = sseFresh && job.status !== "idle" && (job.progress > 0 || !!job.message);
+  const polledPct = typeof polledProgress === "number" ? polledProgress : null;
+  // Prefer the live SSE value when it is fresh AND has actually
+  // advanced; otherwise prefer whichever of (polled, last live) is
+  // higher so the bar never visually rewinds; otherwise placeholder.
+  const polledOrZero = polledPct ?? 0;
+  const liveOrZero = sseFresh ? job.progress : 0;
+  const value = hasLive
+    ? Math.max(job.progress, polledOrZero)
+    : polledPct != null
+      ? Math.max(polledPct, liveOrZero)
+      : 5;
+  const message = (hasLive && job.message)
+    ? job.message
+    : polledMessage
+      || (sseFresh && job.message)
+      || "AI is analyzing your blueprint...";
+  const showPct = hasLive || polledPct != null;
+  const displayPct = hasLive
+    ? Math.max(job.progress, polledOrZero)
+    : (polledPct ?? liveOrZero);
+
+  const { toast } = useToast();
+  const cancelMutation = useMutation({
+    mutationFn: async () => {
+      if (!analysisId) throw new Error("No analysis to cancel");
+      const res = await apiRequest(
+        "POST",
+        `/api/ai-features/takeoff/analyze/${analysisId}/cancel`,
+        {},
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Analysis cancelled" });
+      onCancelled?.();
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Cancel failed",
+        description: err.message || "Could not cancel the analysis",
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="space-y-3" data-testid="ai-takeoff-pending-progress">
       <div className="flex items-center gap-2">
         <Loader2 className="w-4 h-4 animate-spin text-primary" />
         <span className="text-sm" data-testid="text-ai-takeoff-progress-message">
-          {hasLive && job.message
-            ? job.message
-            : "AI is analyzing your blueprint..."}
+          {message}
         </span>
       </div>
       <Progress value={value} className="h-2" data-testid="progress-ai-takeoff" />
@@ -1387,12 +1525,89 @@ function AiTakeoffPendingProgress({
           Detecting {tradeLabel}-specific items
           {analysisMode === "DETAILED" && " (multi-pass verification)"}
         </span>
-        {hasLive && (
+        {showPct && (
           <span className="tabular-nums" data-testid="text-ai-takeoff-progress-pct">
-            {job.progress}%
+            {displayPct}%
           </span>
         )}
       </div>
+      {analysisId && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="w-full"
+          onClick={() => cancelMutation.mutate()}
+          disabled={cancelMutation.isPending}
+          data-testid="button-ai-takeoff-cancel"
+        >
+          {cancelMutation.isPending ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+              Cancelling…
+            </>
+          ) : (
+            "Cancel analysis"
+          )}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Task #2668 — render a destructive failure card when an AI takeoff
+ * analysis terminates with `status = FAILED`. Surfaces the persisted
+ * `errorMessage` and offers a one-click retry that re-fires the
+ * analyze mutation with the current panel selections.
+ */
+function AiTakeoffFailureCard({
+  errorMessage,
+  onRetry,
+  isRetrying,
+}: {
+  errorMessage: string;
+  onRetry: () => void;
+  isRetrying: boolean;
+}) {
+  return (
+    <div
+      className="space-y-3 p-3 rounded-lg border border-destructive/40 bg-destructive/10"
+      data-testid="ai-takeoff-failure-card"
+    >
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="w-4 h-4 text-destructive mt-0.5 flex-shrink-0" />
+        <div className="space-y-1">
+          <div className="text-sm font-semibold text-destructive">
+            AI Auto-Takeoff failed
+          </div>
+          <div
+            className="text-xs text-destructive/90"
+            data-testid="text-ai-takeoff-failure-message"
+          >
+            {errorMessage}
+          </div>
+        </div>
+      </div>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="w-full"
+        onClick={onRetry}
+        disabled={isRetrying}
+        data-testid="button-ai-takeoff-retry"
+      >
+        {isRetrying ? (
+          <>
+            <Loader2 className="w-3.5 h-3.5 mr-2 animate-spin" />
+            Retrying…
+          </>
+        ) : (
+          <>
+            <Zap className="w-3.5 h-3.5 mr-2" />
+            Retry analysis
+          </>
+        )}
+      </Button>
     </div>
   );
 }
