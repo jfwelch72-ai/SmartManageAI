@@ -61,6 +61,11 @@ run_step "legacy-storage freeze (scripts/check-legacy-storage.mjs)" \
 run_step "background-job context lint (scripts/check-job-context.mjs)" \
   node scripts/check-job-context.mjs
 
+# Task #2680 — block docs/sla.md drift from the canonical SLA tier table
+# in shared/sla/policy.ts. Cheap (<2s).
+run_step "SLA doc parity (scripts/check-sla-doc.mjs)" \
+  node scripts/check-sla-doc.mjs
+
 if [[ "${SKIP_BUILD:-0}" != "1" ]]; then
   run_step "build (npm run build)" npm run build
 else

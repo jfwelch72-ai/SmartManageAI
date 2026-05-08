@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import {
   SLA_TIERS,
   addBusinessMinutes,
@@ -8,6 +11,17 @@ import {
   BUSINESS_DAY_START_HOUR_UTC,
   BUSINESS_DAY_END_HOUR_UTC,
 } from "../slaPolicy";
+import {
+  SLA_TIERS as CANONICAL_SLA_TIERS,
+  SUPPORT_TIERS,
+  SUPPORT_PRIORITIES,
+} from "../../../shared/sla/policy";
+import {
+  buildTierTableRows,
+  formatTarget,
+  formatUptime,
+  formatChannels,
+} from "../../../shared/sla/format";
 
 // All anchor dates are chosen on regular Mon–Fri working days that are NOT
 // US federal holidays, so the math is easy to reason about.
@@ -124,3 +138,92 @@ describe("business-hour window constants", () => {
     expect(BUSINESS_DAY_END_HOUR_UTC).toBe(18);
   });
 });
+
+// ─── Task #2680: canonical-source single-source-of-truth assertions ──────────
+
+describe("canonical SLA module is the single source of truth", () => {
+  it("server/support/slaPolicy.ts re-exports the canonical SLA_TIERS object", () => {
+    // Reference equality, not just deep-equal — guarantees the server
+    // hasn't accidentally cloned or shadowed the canonical values.
+    expect(SLA_TIERS).toBe(CANONICAL_SLA_TIERS);
+  });
+
+  it("every tier defines a target for every priority on both windows", () => {
+    for (const tier of SUPPORT_TIERS) {
+      for (const priority of SUPPORT_PRIORITIES) {
+        const fr = SLA_TIERS[tier].firstResponse[priority];
+        const res = SLA_TIERS[tier].resolution[priority];
+        expect(fr).toBeDefined();
+        expect(res).toBeDefined();
+        for (const t of [fr, res]) {
+          expect(typeof t.amount).toBe("number");
+          expect(t.amount).toBeGreaterThan(0);
+          expect(["minutes", "hours"]).toContain(t.unit);
+          expect(["wall", "business"]).toContain(t.clock);
+        }
+      }
+    }
+  });
+
+  it("every tier carries an uptime %, channels list, and status cadence", () => {
+    for (const tier of SUPPORT_TIERS) {
+      const p = SLA_TIERS[tier];
+      expect(p.uptimeTargetPct).toBeGreaterThan(0);
+      expect(p.uptimeTargetPct).toBeLessThanOrEqual(100);
+      expect(Array.isArray(p.channels)).toBe(true);
+      expect(p.channels.length).toBeGreaterThan(0);
+      expect(typeof p.statusUpdateCadence).toBe("string");
+      expect(p.statusUpdateCadence.length).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("formatters produce the published cell strings", () => {
+  it("formatUptime trims trailing zeros and keeps the percent sign", () => {
+    expect(formatUptime(99.5)).toBe("99.5%");
+    expect(formatUptime(99.9)).toBe("99.9%");
+    expect(formatUptime(99.95)).toBe("99.95%");
+    expect(formatUptime(100)).toBe("100%");
+  });
+
+  it("formatTarget renders the exact strings used in docs/sla.md", () => {
+    expect(formatTarget(SLA_TIERS.starter.firstResponse.urgent)).toBe("1 business day");
+    expect(formatTarget(SLA_TIERS.starter.firstResponse.normal)).toBe("2 business days");
+    expect(formatTarget(SLA_TIERS.pro.firstResponse.urgent)).toBe("4 business hours");
+    expect(formatTarget(SLA_TIERS.pro.firstResponse.normal)).toBe("1 business day");
+    expect(formatTarget(SLA_TIERS.enterprise.firstResponse.urgent)).toBe("30 minutes (24×7)");
+    expect(formatTarget(SLA_TIERS.enterprise.firstResponse.normal)).toBe("4 business hours");
+    expect(formatTarget(SLA_TIERS.starter.resolution.urgent)).toBe("5 business days");
+    expect(formatTarget(SLA_TIERS.pro.resolution.urgent)).toBe("2 calendar days");
+    expect(formatTarget(SLA_TIERS.enterprise.resolution.urgent)).toBe("8 hours");
+  });
+
+  it("formatChannels joins with ' + '", () => {
+    expect(formatChannels(SLA_TIERS.starter.channels)).toBe("In-app + email");
+    expect(formatChannels(SLA_TIERS.pro.channels)).toBe("In-app + email + Slack");
+    expect(formatChannels(SLA_TIERS.enterprise.channels))
+      .toBe("In-app + email + Slack + CSM");
+  });
+});
+
+describe("docs/sla.md mirrors the canonical tier table", () => {
+  it("every published row matches the formatter output", () => {
+    const docPath = path.resolve(__dirname, "../../../docs/sla.md");
+    const md = readFileSync(docPath, "utf8");
+    const rows = buildTierTableRows();
+    for (const [label, starter, pro, enterprise] of rows) {
+      const expectedRow = `| ${label} | ${starter} | ${pro} | ${enterprise} |`;
+      expect(md).toContain(expectedRow);
+    }
+  });
+
+  it("scripts/check-sla-doc.mjs passes against the committed file", () => {
+    const repoRoot = path.resolve(__dirname, "../../..");
+    // Spawn synchronously; throws (and fails the test) on non-zero exit.
+    execFileSync("node", ["scripts/check-sla-doc.mjs"], {
+      cwd: repoRoot,
+      stdio: "pipe",
+    });
+  });
+});
+

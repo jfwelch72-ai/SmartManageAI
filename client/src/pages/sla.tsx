@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "wouter";
+import { buildTierTableRows } from "@shared/sla/format";
 
 export default function SlaPage() {
   useEffect(() => {
@@ -17,6 +18,13 @@ export default function SlaPage() {
       "SmartManageAI uptime, first-response time, and resolution time targets per plan tier.",
     );
   }, []);
+
+  // Render every tier-table cell straight from the canonical SLA module —
+  // editing a number anywhere in the UI requires editing
+  // `shared/sla/policy.ts` (and re-running `npx tsx scripts/generate-sla-doc.ts`
+  // so docs/sla.md stays in lock-step). See replit.md → "SLA single source
+  // of truth".
+  const tierRows = buildTierTableRows();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -57,14 +65,7 @@ export default function SlaPage() {
                 </tr>
               </thead>
               <tbody>
-                {[
-                  ["Monthly uptime", "99.5%", "99.9%", "99.95%"],
-                  ["First response (urgent)", "1 business day", "4 business hours", "30 minutes (24×7)"],
-                  ["First response (normal)", "2 business days", "1 business day", "4 business hours"],
-                  ["Target resolution (Sev 1)", "5 business days", "2 calendar days", "8 hours"],
-                  ["Channels", "In-app + email", "In-app + email + Slack", "In-app + email + Slack + CSM"],
-                  ["Status updates", "Best effort", "≤ 60 min cadence", "≤ 30 min cadence"],
-                ].map(([k, a, b, c]) => (
+                {tierRows.map(([k, a, b, c]) => (
                   <tr key={k} className="border-t border-border">
                     <td className="p-3 font-medium">{k}</td>
                     <td className="p-3">{a}</td>
@@ -110,8 +111,9 @@ export default function SlaPage() {
         </section>
 
         <p className="text-xs text-muted-foreground">
-          Canonical version: <code>docs/sla.md</code>. The in-app SLA enforcement in{" "}
-          <code>server/support/slaPolicy.ts</code> mirrors these targets.
+          Canonical version: <code>shared/sla/policy.ts</code>. The contractual text in{" "}
+          <code>docs/sla.md</code> and the in-app SLA enforcement in{" "}
+          <code>server/support/slaPolicy.ts</code> are derived from it.
         </p>
       </main>
     </div>

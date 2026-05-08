@@ -1,6 +1,12 @@
-// Tiered SLA policy for customer support. Mirrored in `docs/sla.md` and
-// `client/src/pages/sla.tsx` so the published commitments and the system
-// enforcement never drift apart.
+// Tiered SLA policy for customer support.
+//
+// The tier table itself lives in `shared/sla/policy.ts` — that module is
+// the single source of truth for the published SLA, the in-app `/sla`
+// page, and the markdown contractual reference (`docs/sla.md`, generated
+// by `scripts/generate-sla-doc.ts` and verified by
+// `scripts/check-sla-doc.mjs`). This file owns only the *computation*
+// helpers (business-hours math, holiday calendar, due-time helpers) and
+// re-exports the canonical types/values for back-compat.
 //
 // First-response and resolution targets are *priority-aware* per tier — the
 // urgent target is much tighter than the normal one — and the computation
@@ -17,87 +23,22 @@
 // (the in-app SLA page calls this out). UTC is the safe default until the
 // billing-address TZ is plumbed through.
 
-export type SupportTier = "starter" | "pro" | "enterprise";
-export type SupportPriority = "low" | "normal" | "high" | "urgent";
-export type SlaClock = "wall" | "business";
+import {
+  SLA_TIERS as CANONICAL_SLA_TIERS,
+  type SlaPolicy,
+  type SlaTarget,
+  type SupportTier,
+  type SupportPriority,
+  type SlaClock,
+} from "@shared/sla/policy";
 
-export interface SlaTarget {
-  /** Minutes (for first-response) or hours (for resolution). */
-  amount: number;
-  unit: "minutes" | "hours";
-  clock: SlaClock;
-}
+export type { SlaClock, SlaPolicy, SlaTarget, SupportPriority, SupportTier };
 
-export interface SlaPolicy {
-  uptimeTargetPct: number;
-  channels: string[];
-  firstResponse: Record<SupportPriority, SlaTarget>;
-  resolution: Record<SupportPriority, SlaTarget>;
-}
-
-const BH = (amount: number, unit: "minutes" | "hours" = "minutes"): SlaTarget => ({
-  amount,
-  unit,
-  clock: "business",
-});
-const WALL = (amount: number, unit: "minutes" | "hours"): SlaTarget => ({
-  amount,
-  unit,
-  clock: "wall",
-});
-
-// Targets are derived directly from docs/sla.md. Any change here must be
-// mirrored there (and vice-versa) — the test suite enforces the parity.
-export const SLA_TIERS: Record<SupportTier, SlaPolicy> = {
-  starter: {
-    uptimeTargetPct: 99.5,
-    channels: ["in-app help widget", "email"],
-    firstResponse: {
-      urgent: BH(8 * 60),     // 1 business day
-      high: BH(8 * 60),       // 1 business day
-      normal: BH(16 * 60),    // 2 business days
-      low: BH(24 * 60),       // 3 business days
-    },
-    resolution: {
-      urgent: BH(40, "hours"), // 5 business days
-      high: BH(64, "hours"),   // 8 business days
-      normal: BH(96, "hours"), // 12 business days
-      low: BH(120, "hours"),   // 15 business days
-    },
-  },
-  pro: {
-    uptimeTargetPct: 99.9,
-    channels: ["in-app help widget", "email", "shared Slack channel"],
-    firstResponse: {
-      urgent: BH(4 * 60),     // 4 business hours
-      high: BH(4 * 60),       // 4 business hours
-      normal: BH(8 * 60),     // 1 business day
-      low: BH(16 * 60),       // 2 business days
-    },
-    resolution: {
-      urgent: WALL(48, "hours"), // 2 calendar days
-      high: WALL(72, "hours"),
-      normal: WALL(96, "hours"),
-      low: WALL(120, "hours"),
-    },
-  },
-  enterprise: {
-    uptimeTargetPct: 99.95,
-    channels: ["in-app help widget", "email", "shared Slack channel", "named CSM"],
-    firstResponse: {
-      urgent: WALL(30, "minutes"), // 30 min, 24×7
-      high: BH(60),                // 1 business hour
-      normal: BH(4 * 60),          // 4 business hours
-      low: BH(8 * 60),             // 1 business day
-    },
-    resolution: {
-      urgent: WALL(8, "hours"),
-      high: WALL(16, "hours"),
-      normal: WALL(24, "hours"),
-      low: WALL(48, "hours"),
-    },
-  },
-};
+/**
+ * Re-export of the canonical tier table from `shared/sla/policy.ts`. Edit
+ * the canonical module — never reassign or override here.
+ */
+export const SLA_TIERS = CANONICAL_SLA_TIERS;
 
 // ─── plan tier mapping ────────────────────────────────────────────────────────
 type PlanTier = "free" | "starter" | "professional" | "enterprise";
