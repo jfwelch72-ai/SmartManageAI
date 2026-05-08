@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash, GripVertical } from "lucide-react";
 import { PayItemPicker, type SelectedPayItem } from "@/components/dot/PayItemPicker";
+import { CostBookPickerButton, CrewTemplatePickerButton } from "@/components/estimate/CostBookCrewPickers";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1194,6 +1195,34 @@ export function LineItemFormDialog({
                 lineItemId={lineItemId}
                 onSelectionsChange={() => {}}
               />
+            </div>
+          )}
+
+          {isEdit && lineItemId && estimateId && (
+            <div className="border rounded-md p-4 bg-muted/30 flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium mr-2">Cost sources</span>
+              <CostBookPickerButton
+                estimateId={estimateId}
+                lineItemId={lineItemId}
+                defaultQuantity={Number(form.getValues("quantity")) || undefined}
+                onApplied={(r) => {
+                  form.setValue("materialCost", r.materialCost, { shouldDirty: false });
+                  form.setValue("laborCost", r.laborCost, { shouldDirty: false });
+                  form.setValue("equipmentCost", r.equipmentCost, { shouldDirty: false });
+                }}
+              />
+              <CrewTemplatePickerButton
+                estimateId={estimateId}
+                lineItemId={lineItemId}
+                onApplied={(r) => {
+                  form.setValue("laborCost", r.laborCost, { shouldDirty: false });
+                  form.setValue("equipmentCost", r.equipmentCost, { shouldDirty: false });
+                  form.setValue("laborHours", r.laborHours, { shouldDirty: false });
+                }}
+              />
+              <span className="text-xs text-muted-foreground ml-auto">
+                Applies pricing immediately and stamps source/code/as-of on the line.
+              </span>
             </div>
           )}
           

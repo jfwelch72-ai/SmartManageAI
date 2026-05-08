@@ -24,7 +24,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { FileText, Pencil, Trash2, Layers, Ruler, Wrench, Camera, ExternalLink } from "lucide-react";
+import { FileText, Pencil, Trash2, Layers, Ruler, Wrench, Camera, ExternalLink, BookOpen, Users } from "lucide-react";
 import type { EstimateLineItem, StandaloneTakeoff } from "@shared/schema";
 
 function PhotoThumbnail({
@@ -143,6 +143,53 @@ function FromTakeoffBadge({ itemId, takeoffId }: { itemId: string; takeoffId: st
   );
 }
 
+function CostBookProvenanceCaption({
+  item,
+  testPrefix,
+}: {
+  item: EstimateLineItem;
+  testPrefix: string;
+}) {
+  const anyItem = item as EstimateLineItem & {
+    costBookSource?: string | null;
+    costBookSourceCode?: string | null;
+    costBookAsOfDate?: string | null;
+    costBookGeoFactor?: string | null;
+    crewTemplateId?: string | null;
+    crewDays?: string | null;
+  };
+  const hasCostBook =
+    anyItem.costBookSource || anyItem.costBookSourceCode || anyItem.costBookAsOfDate;
+  const hasCrew = anyItem.crewTemplateId && anyItem.crewDays;
+  if (!hasCostBook && !hasCrew) return null;
+  const factor = anyItem.costBookGeoFactor ? Number(anyItem.costBookGeoFactor) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] text-muted-foreground">
+      {hasCostBook && (
+        <span
+          className="inline-flex items-center gap-1"
+          data-testid={`text-cost-book-provenance-${testPrefix}${item.id}`}
+        >
+          <BookOpen className="h-2.5 w-2.5" />
+          {anyItem.costBookSource ?? "Cost book"}
+          {anyItem.costBookSourceCode ? ` · ${anyItem.costBookSourceCode}` : ""}
+          {anyItem.costBookAsOfDate ? ` · as-of ${anyItem.costBookAsOfDate}` : ""}
+          {factor && Math.abs(factor - 1) > 0.001 ? ` · ×${factor.toFixed(3)}` : ""}
+        </span>
+      )}
+      {hasCrew && (
+        <span
+          className="inline-flex items-center gap-1"
+          data-testid={`text-crew-provenance-${testPrefix}${item.id}`}
+        >
+          <Users className="h-2.5 w-2.5" />
+          Crew × {Number(anyItem.crewDays).toLocaleString(undefined, { maximumFractionDigits: 2 })} d
+        </span>
+      )}
+    </div>
+  );
+}
+
 function SourceBadge({ source }: { source: string }) {
   if (source === "ASSEMBLY") {
     return (
@@ -234,6 +281,7 @@ export function LineItemsTable({
                           <FromTakeoffBadge itemId={item.id} takeoffId={item.sourceTakeoffId} />
                         )}
                       </div>
+                      <CostBookProvenanceCaption item={item} testPrefix="mobile-" />
                     </div>
                   </div>
                   <Badge variant="outline" className="text-xs shrink-0">{item.category}</Badge>
@@ -364,7 +412,10 @@ export function LineItemsTable({
                             description={item.description}
                           />
                         )}
-                        <span className="line-clamp-3">{item.description}</span>
+                        <div className="min-w-0 flex-1">
+                          <span className="line-clamp-3">{item.description}</span>
+                          <CostBookProvenanceCaption item={item} testPrefix="" />
+                        </div>
                       </div>
                     </TableCell>
                     <TableCell>
