@@ -31,6 +31,10 @@ interface CollabClient {
   currentSheetId: string | null;
   lastActivity: number;
   sheetLock: string | null;
+  // Task #2657 — measurement the user currently has selected /
+  // is editing in the properties panel. Included in the presence
+  // snapshot so newly-joining peers see existing focus immediately.
+  currentMeasurementId: string | null;
 }
 
 type MessageType =
@@ -47,6 +51,15 @@ type MessageType =
   // never has to wait for the next failed PATCH (#1837) to discover
   // the row is gone.
   | "MARKUP_DELETED"
+  // Task #2657 — A teammate selected (or deselected) a measurement
+  // in the properties panel. Broadcast so other viewers can render a
+  // small "Jane is editing this measurement" indicator on the same
+  // properties panel BEFORE a save-time conflict happens. The payload
+  // is `{ measurementId: string | null, sheetId: string | null }`;
+  // `measurementId === null` means the sender just blurred whatever
+  // they were focused on. Re-sent every few seconds by the client
+  // hook so peers can age out stale entries.
+  | "MEASUREMENT_FOCUSED"
   | "PRESENCE_JOIN"
   | "PRESENCE_LEAVE"
   | "SHEET_CHANGED"
@@ -188,11 +201,24 @@ export function broadcastTakeoffEvent(
   });
 }
 
-function getPresenceList(roomId: string): Array<{ userId: string; userName: string; userColor: string; currentSheetId: string | null; sheetLock: string | null }> {
+interface PresenceEntry {
+  userId: string;
+  userName: string;
+  userColor: string;
+  currentSheetId: string | null;
+  sheetLock: string | null;
+  // Task #2657 — Surface "what measurement is each peer focused on"
+  // in the presence snapshot so newly-joining clients can render the
+  // properties-panel "X is editing" indicator without waiting for the
+  // next MEASUREMENT_FOCUSED heartbeat.
+  currentMeasurementId: string | null;
+}
+
+function getPresenceList(roomId: string): PresenceEntry[] {
   const room = rooms.get(roomId);
   if (!room) return [];
   const seen = new Set<string>();
-  const result: Array<{ userId: string; userName: string; userColor: string; currentSheetId: string | null; sheetLock: string | null }> = [];
+  const result: PresenceEntry[] = [];
   room.forEach((client) => {
     if (!seen.has(client.userId)) {
       seen.add(client.userId);
@@ -202,6 +228,7 @@ function getPresenceList(roomId: string): Array<{ userId: string; userName: stri
         userColor: client.userColor,
         currentSheetId: client.currentSheetId,
         sheetLock: client.sheetLock,
+        currentMeasurementId: client.currentMeasurementId,
       });
     }
   });
@@ -301,6 +328,7 @@ export function setupTakeoffCollaboration(server: HttpServer) {
       currentSheetId: null,
       lastActivity: Date.now(),
       sheetLock: null,
+      currentMeasurementId: null,
     };
 
     room.set(connectionId, client);
@@ -373,6 +401,31 @@ export function setupTakeoffCollaboration(server: HttpServer) {
             timestamp: Date.now(),
           }, connectionId);
           break;
+
+        case "MEASUREMENT_FOCUSED": {
+          // Task #2657 — Track per-connection focused measurement and
+          // re-broadcast to peers so the properties panel can show
+          // "Jane is editing this measurement" before the user hits
+          // save. Sender is excluded — they already know their own
+          // selection. `measurementId === null` is a blur signal.
+          const rawId = msg.payload?.measurementId;
+          const measurementId =
+            typeof rawId === "string" && rawId.length > 0 ? rawId : null;
+          const sheetId =
+            typeof msg.payload?.sheetId === "string" && msg.payload.sheetId.length > 0
+              ? msg.payload.sheetId
+              : client.currentSheetId;
+          client.currentMeasurementId = measurementId;
+          broadcastToRoom(roomId, {
+            type: "MEASUREMENT_FOCUSED",
+            payload: { measurementId, sheetId },
+            senderId: userId,
+            senderName: userName,
+            senderColor: userColor,
+            timestamp: Date.now(),
+          }, connectionId);
+          break;
+        }
 
         case "SHEET_CHANGED":
           client.currentSheetId = msg.payload?.sheetId || null;

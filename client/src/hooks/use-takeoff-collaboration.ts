@@ -8,6 +8,25 @@ export interface Collaborator {
   userColor: string;
   currentSheetId: string | null;
   sheetLock: string | null;
+  /** Task #2657 — measurement the peer currently has selected /
+   *  is editing in the properties panel. Surfaced via the
+   *  presence snapshot so newly-joining clients can render the
+   *  properties-panel "X is editing" indicator without waiting for
+   *  the next MEASUREMENT_FOCUSED heartbeat. */
+  currentMeasurementId?: string | null;
+}
+
+/** Task #2657 — Live "Jane is editing this measurement" presence
+ *  entry consumed by `TakeoffPropertiesPanel`. Refreshed by every
+ *  incoming `MEASUREMENT_FOCUSED` event and aged out client-side
+ *  if no refresh arrives within `MEASUREMENT_FOCUS_STALE_MS`. */
+export interface MeasurementFocusEntry {
+  userId: string;
+  userName: string;
+  userColor: string;
+  measurementId: string;
+  sheetId: string | null;
+  lastUpdate: number;
 }
 
 export interface CollaboratorCursor {
@@ -39,6 +58,14 @@ const RECONNECT_BASE_MS = 1000;
 const MAX_RECONNECT_MS = 30000;
 const POLL_INTERVAL_MS = 5000;
 const CURSOR_STALE_MS = 3000;
+// Task #2657 — How often the local client re-broadcasts its current
+// measurement focus so peers can age it out, and how long peers will
+// keep displaying a peer's focus without a refresh before clearing
+// the indicator. Stale window is generous enough to ride out a
+// missed heartbeat but short enough that "Jane closed the panel"
+// clears within a few seconds.
+const MEASUREMENT_FOCUS_HEARTBEAT_MS = 4000;
+const MEASUREMENT_FOCUS_STALE_MS = 10000;
 
 interface UseTakeoffCollaborationParams {
   roomId: string | null;
@@ -68,6 +95,15 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
   const [cursors, setCursors] = useState<Map<string, CollaboratorCursor>>(new Map());
   const [sheetLocks, setSheetLocks] = useState<Map<string, SheetLockInfo>>(new Map());
+  // Task #2657 — Live "X is editing this measurement" presence keyed
+  // by peer userId. We key by user (not by measurement) so a peer
+  // jumping selection between two measurements naturally moves the
+  // indicator instead of producing two stale entries.
+  const [measurementFocus, setMeasurementFocus] = useState<Map<string, MeasurementFocusEntry>>(new Map());
+  const myFocusRef = useRef<{ measurementId: string | null; sheetId: string | null }>({
+    measurementId: null,
+    sheetId: null,
+  });
   const [connected, setConnected] = useState(false);
   const [myColor, setMyColor] = useState<string>("#3b82f6");
   const reconnectAttemptRef = useRef(0);
@@ -153,7 +189,32 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
       switch (msg.type) {
         case "PRESENCE_JOIN": {
           if (msg.payload?.presence) {
-            setCollaborators(msg.payload.presence.filter((p: Collaborator) => p.userId !== currentUserIdRef.current));
+            const presence: Collaborator[] = msg.payload.presence.filter(
+              (p: Collaborator) => p.userId !== currentUserIdRef.current,
+            );
+            setCollaborators(presence);
+            // Task #2657 — Seed measurement-focus state from the
+            // presence snapshot so the indicator appears immediately
+            // for measurements that peers were already editing when
+            // we connected (instead of waiting for the next 4s
+            // heartbeat).
+            const now = Date.now();
+            setMeasurementFocus((prev) => {
+              const next = new Map(prev);
+              for (const p of presence) {
+                if (p.currentMeasurementId) {
+                  next.set(p.userId, {
+                    userId: p.userId,
+                    userName: p.userName,
+                    userColor: p.userColor,
+                    measurementId: p.currentMeasurementId,
+                    sheetId: p.currentSheetId ?? null,
+                    lastUpdate: now,
+                  });
+                }
+              }
+              return next;
+            });
           }
           if (msg.payload?.userColor && msg.payload?.userId === currentUserIdRef.current) {
             setMyColor(msg.payload.userColor);
@@ -181,7 +242,50 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
               next.delete(msg.senderId!);
               return next;
             });
+            // Task #2657 — Clear the leaving peer's focus indicator.
+            setMeasurementFocus((prev) => {
+              if (!prev.has(msg.senderId!)) return prev;
+              const next = new Map(prev);
+              next.delete(msg.senderId!);
+              return next;
+            });
           }
+          break;
+        }
+
+        case "MEASUREMENT_FOCUSED": {
+          // Task #2657 — A peer just selected (or deselected) a
+          // measurement in their properties panel. Update our
+          // per-peer focus map so the panel can show "X is editing
+          // this measurement" before the user tries to save and
+          // hits a conflict.
+          if (!msg.senderId || msg.senderId === currentUserIdRef.current) break;
+          const senderId = msg.senderId;
+          const measurementId: string | null =
+            typeof msg.payload?.measurementId === "string" && msg.payload.measurementId.length > 0
+              ? msg.payload.measurementId
+              : null;
+          const sheetId: string | null =
+            typeof msg.payload?.sheetId === "string" && msg.payload.sheetId.length > 0
+              ? msg.payload.sheetId
+              : null;
+          setMeasurementFocus((prev) => {
+            const next = new Map(prev);
+            if (measurementId === null) {
+              if (!next.has(senderId)) return prev;
+              next.delete(senderId);
+            } else {
+              next.set(senderId, {
+                userId: senderId,
+                userName: msg.senderName || "Unknown",
+                userColor: msg.senderColor || "#3b82f6",
+                measurementId,
+                sheetId,
+                lastUpdate: Date.now(),
+              });
+            }
+            return next;
+          });
           break;
         }
 
@@ -345,7 +449,44 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
         });
         return changed ? next : prev;
       });
+      // Task #2657 — Age out per-peer measurement-focus entries we
+      // haven't heard a heartbeat for in MEASUREMENT_FOCUS_STALE_MS.
+      // This catches cases where a teammate's tab crashed or the
+      // network dropped before they could broadcast a blur.
+      setMeasurementFocus((prev) => {
+        if (prev.size === 0) return prev;
+        const next = new Map(prev);
+        let changed = false;
+        next.forEach((entry, key) => {
+          if (now - entry.lastUpdate > MEASUREMENT_FOCUS_STALE_MS) {
+            next.delete(key);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
     }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Task #2657 — Heartbeat that re-broadcasts the local user's
+  // current measurement focus every few seconds. Without this peers
+  // would have to keep their own focus state alive forever; with it
+  // they can confidently age out entries that stop refreshing.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const ws = wsRef.current;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      const focus = myFocusRef.current;
+      if (!focus.measurementId) return;
+      ws.send(JSON.stringify({
+        type: "MEASUREMENT_FOCUSED",
+        payload: {
+          measurementId: focus.measurementId,
+          sheetId: focus.sheetId,
+        },
+      }));
+    }, MEASUREMENT_FOCUS_HEARTBEAT_MS);
     return () => clearInterval(interval);
   }, []);
 
@@ -364,6 +505,24 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
   const broadcastMeasurementChange = useCallback((type: "MEASUREMENT_CREATED" | "MEASUREMENT_UPDATED" | "MEASUREMENT_DELETED", payload: any) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type, payload }));
+    }
+  }, []);
+
+  // Task #2657 — Broadcast which measurement the local user is
+  // currently focused on (selected in the properties panel).
+  // `measurementId === null` clears the focus. The workspace calls
+  // this from a useEffect that watches `selectedMeasurementId` so
+  // peers see the indicator the instant the panel opens — well
+  // before the user starts typing and risks a save-time conflict.
+  const broadcastMeasurementFocus = useCallback((measurementId: string | null, sheetId: string | null) => {
+    const prev = myFocusRef.current;
+    if (prev.measurementId === measurementId && prev.sheetId === sheetId) return;
+    myFocusRef.current = { measurementId, sheetId };
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({
+        type: "MEASUREMENT_FOCUSED",
+        payload: { measurementId, sheetId },
+      }));
     }
   }, []);
 
@@ -415,6 +574,11 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, 
     myColor,
     sendCursorMove,
     broadcastMeasurementChange,
+    // Task #2657 — Live "X is editing this measurement" presence
+    // and the broadcaster used by the workspace to publish the
+    // local user's selected measurement.
+    measurementFocus,
+    broadcastMeasurementFocus,
     lockSheet,
     unlockSheet,
   };

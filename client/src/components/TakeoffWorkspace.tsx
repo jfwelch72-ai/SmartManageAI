@@ -2861,6 +2861,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setSelectedMeasurementIds,
   ]);
 
+  // Task #2657 — Broadcast the local user's currently-focused
+  // measurement to peers over the existing collab WebSocket so the
+  // properties panel can render a "Jane is editing this measurement"
+  // indicator BEFORE a save-time conflict happens. Re-broadcast on
+  // sheet change too so a peer who joins mid-edit still sees the
+  // sheet context. Cleared on unmount so a closed tab doesn't leave
+  // a phantom indicator behind (server-side stale aging is the
+  // belt-and-braces fallback if the close packet is dropped).
+  useEffect(() => {
+    collab.broadcastMeasurementFocus(selectedMeasurementId, selectedSheet);
+    return () => {
+      collab.broadcastMeasurementFocus(null, null);
+    };
+  }, [selectedMeasurementId, selectedSheet, collab.broadcastMeasurementFocus]);
+
   // Task #1861 — route Delete/Backspace through the same bulk-delete
   // mutation the multi-select panel button uses, so the keyboard and
   // the button never drift apart. Scope is intentionally narrow:
@@ -5509,6 +5524,26 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       if (!selectedMeasurementId) return null;
       const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
       if (!selectedMeasurement) return null;
+      // Task #2657 — Surface live "Jane is editing this measurement"
+      // presence on the properties panel BEFORE the user hits save.
+      // Filter the per-peer focus map down to peers focused on this
+      // measurement and de-dupe by userId so two browser tabs from
+      // the same person collapse into a single avatar.
+      const focusedBy: Array<{ userId: string; userName: string; userColor: string }> = [];
+      const seenFocusUsers = new Set<string>();
+      collab.measurementFocus.forEach((entry) => {
+        if (
+          entry.measurementId === selectedMeasurementId &&
+          !seenFocusUsers.has(entry.userId)
+        ) {
+          seenFocusUsers.add(entry.userId);
+          focusedBy.push({
+            userId: entry.userId,
+            userName: entry.userName,
+            userColor: entry.userColor,
+          });
+        }
+      });
       // Task #2312 — Below the `lg` breakpoint the inspector switches
       // to a right-edge Sheet drawer (auto-opens on selection, can be
       // dismissed without losing the selection). The previous
@@ -5542,6 +5577,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             selectedSheet,
             onClose: () => setInspectorDrawerOpen(false),
             variant: "drawer" as const,
+            focusedBy,
             ...scopeProps,
           },
           drawer: {
@@ -5557,6 +5593,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           selectedSheet,
           onClose: () => setPropertiesPanelOpen(false),
           variant: "inline" as const,
+          focusedBy,
           ...scopeProps,
         },
       };

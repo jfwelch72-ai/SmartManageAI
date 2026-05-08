@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { X, Building2, Truck, MapPin, CheckCircle2, Tag, DollarSign, Ruler, Square, Box, GitBranch, FileText } from "lucide-react";
+import { X, Building2, Truck, MapPin, CheckCircle2, Tag, DollarSign, Ruler, Square, Box, GitBranch, FileText, Pencil } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { TakeoffMeasurement } from "@shared/schema";
 
 interface TakeoffPropertiesPanelProps {
@@ -38,6 +39,16 @@ interface TakeoffPropertiesPanelProps {
     payload: { scopeTag: "BASE" | "CO"; changeOrderId: string | null },
   ) => void;
   isMovingScope?: boolean;
+  /**
+   * Task #2657 — Live "X is editing this measurement" presence
+   * surfaced from the collab WebSocket. The workspace filters the
+   * per-peer focus map to peers focused on the currently-selected
+   * measurement and passes the de-duped list here. Renders a small
+   * cluster of avatars at the top of the panel so the user sees a
+   * potential edit conflict BEFORE they start typing — instead of
+   * discovering it from a failed PATCH after they hit Save.
+   */
+  focusedBy?: Array<{ userId: string; userName: string; userColor: string }>;
 }
 
 export function TakeoffPropertiesPanel({
@@ -48,6 +59,7 @@ export function TakeoffPropertiesPanel({
   changeOrders,
   onMoveScope,
   isMovingScope,
+  focusedBy,
 }: TakeoffPropertiesPanelProps) {
   const { toast } = useToast();
   const [subcontractorId, setSubcontractorId] = useState(measurement.subcontractorId || "");
@@ -154,13 +166,65 @@ export function TakeoffPropertiesPanel({
       }
       data-testid="properties-panel"
     >
-      <div className="flex items-center justify-between px-3 py-2 border-b">
+      <div className="flex items-center justify-between px-3 py-2 border-b gap-2">
         <h3 className="text-sm font-semibold">Properties</h3>
-        {!isDrawer && (
-          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-properties">
-            <X className="w-4 h-4" />
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* Task #2657 — Live "X is editing this measurement" presence
+           *  badge. Renders only when at least one peer has the same
+           *  measurement focused. Designed to mirror the look of the
+           *  workspace-level collaborator avatars so users recognize
+           *  the metaphor instantly. */}
+          {focusedBy && focusedBy.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <div
+                  className="flex items-center gap-1 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 px-1.5 py-0.5"
+                  data-testid="indicator-measurement-focused-by"
+                >
+                  <Pencil className="w-3 h-3" />
+                  <div className="flex items-center -space-x-1.5">
+                    {focusedBy.slice(0, 3).map((u) => (
+                      <div
+                        key={u.userId}
+                        className="w-5 h-5 rounded-full border border-background flex items-center justify-center text-[9px] font-bold text-white"
+                        style={{ backgroundColor: u.userColor }}
+                        data-testid={`avatar-measurement-focused-by-${u.userId}`}
+                      >
+                        {u.userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)}
+                      </div>
+                    ))}
+                    {focusedBy.length > 3 && (
+                      <div className="w-5 h-5 rounded-full border border-background bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground">
+                        +{focusedBy.length - 3}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </TooltipTrigger>
+              <TooltipContent>
+                {focusedBy.length === 1 ? (
+                  <p>{focusedBy[0].userName} is editing this measurement</p>
+                ) : (
+                  <div className="space-y-0.5">
+                    <p className="font-medium">
+                      {focusedBy.length} people are editing this measurement
+                    </p>
+                    {focusedBy.map((u) => (
+                      <p key={u.userId} className="text-xs text-muted-foreground">
+                        {u.userName}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {!isDrawer && (
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-properties">
+              <X className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">
