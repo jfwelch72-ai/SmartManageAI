@@ -1,4 +1,5 @@
 // prompt-injection-guard: system-prompt-anchored marketing-site generation; inputs are tenant-self-authored brand brief content
+// ai-router-bypass: marketing-site generation pipeline (multi-step copy + section + brand calls) keeps direct OpenAI integration pending a coordinated migration. Tracked as a dedicated follow-up under Task #2684.
 import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import { randomUUID } from "crypto";

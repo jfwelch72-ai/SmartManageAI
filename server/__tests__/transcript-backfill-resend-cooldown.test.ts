@@ -83,10 +83,10 @@ const mockWasFallbackSent = vi.fn(async () => false);
 const mockRecordFallbackSent = vi.fn(async () => undefined);
 const mockAggregateFailures = vi.fn(async () => []);
 
-vi.mock("../storage", async () => {
-  const actual = await vi.importActual<typeof import("../storage")>(
-    "../storage",
-  );
+vi.mock("../crm/transcriptBackfillStorage", async () => {
+  const actual = await vi.importActual<
+    typeof import("../crm/transcriptBackfillStorage")
+  >("../crm/transcriptBackfillStorage");
   return {
     ...actual,
     getCrmTranscriptBackfillAlertDelivery: mockGetDelivery,

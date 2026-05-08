@@ -1,4 +1,5 @@
 import { z } from "zod";
+// ai-router-bypass: COI extraction uses OpenAI-typed ChatCompletionMessageParam mixed-content (vision + text) shape directly; not yet portable to provider-agnostic AiMessage. Tracked for follow-up under Task #2684.
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
 import type {
   ChatCompletionContentPartImage,

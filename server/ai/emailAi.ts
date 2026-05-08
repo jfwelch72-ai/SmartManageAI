@@ -1,4 +1,5 @@
 // prompt-injection-guard: untrusted email body — TODO(#2683-followup) wrap via quarantineUntrustedText; prompts already use system-prompt-anchored JSON-only response_format and validateAiJsonOutput
+// ai-router-bypass: email AI pipeline (classify, summary, reply draft, daily digest) processes untrusted third-party email bodies and is paired with the prompt-injection envelope; migration deferred until quarantine is portable to AiMessage. Tracked as a dedicated follow-up under Task #2684.
 import { logError, logWarn, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from "../services/aiGovernance";

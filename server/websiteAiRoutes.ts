@@ -1,4 +1,5 @@
 // prompt-injection-guard: system-prompt-anchored marketing-site generation; inputs are tenant-self-authored brand brief content
+// ai-router-bypass: companion to websiteRoutes.ts — same multi-step marketing-site generation pipeline. Tracked as a dedicated follow-up under Task #2684.
 import { logError } from "./utils/logger";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { Router, type Request, type Response, type NextFunction } from "express";

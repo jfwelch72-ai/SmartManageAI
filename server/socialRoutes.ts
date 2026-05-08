@@ -1,4 +1,5 @@
 // prompt-injection-guard: system-prompt-anchored social-post generation; inputs are tenant-self-authored post topics — covered by tenant-isolation, not third-party content
+// ai-router-bypass: social-post generation — single small JSON call; migration deferred to coordinated marketing-AI cleanup. Tracked as a dedicated follow-up under Task #2684.
 import {logError, logWarn } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import { db } from "./db";

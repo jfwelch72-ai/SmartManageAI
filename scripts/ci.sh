@@ -72,6 +72,17 @@ run_step "SLA doc parity (scripts/check-sla-doc.mjs)" \
 run_step "prompt-injection guard lint (scripts/check-prompt-injection-guard.mjs)" \
   node scripts/check-prompt-injection-guard.mjs
 
+# Task #2684 — block new direct openai.chat.completions.create calls
+# from bypassing the AI provider router (carry a per-call or preamble
+# `// ai-router-bypass: <reason>` annotation, or migrate to
+# routedGeneralChatCompletion). Cheap (<1s). Self-tests lock the
+# guard's own behavior so the regression-prevention guard cannot itself
+# silently regress.
+run_step "ai router bypass guard self-test (scripts/check-ai-router-bypass.mjs --self-test)" \
+  node scripts/check-ai-router-bypass.mjs --self-test
+run_step "ai router bypass lint (scripts/check-ai-router-bypass.mjs)" \
+  node scripts/check-ai-router-bypass.mjs
+
 # Task #2685 — block new duplicate 4-digit prefixes in migrations/ from
 # slipping into main. Historical duplicates (Task #2435) are allowlisted
 # inside the script. Cheap (<1s).

@@ -76,6 +76,21 @@ export const FEATURE_FLAG_KEYS = [
   // keep their current GPT-5.2 behavior until a Super Admin flips them over.
   // New trial orgs can be flipped on at provisioning time.
   "AI_PROVIDER_TAKEOFF",
+  // Task #2684: routes the non-Takeoff family of AI calls (executive digest,
+  // project health, risk scoring, hiring, website/social copy, document analysis,
+  // CRM, change-orders, and the rest) through the same OpenAI/Anthropic provider
+  // router used by the Takeoff family. Default OFF — when OFF the router selects
+  // OpenAI as the primary provider with no fallback, which is byte-for-byte
+  // identical to the legacy direct-`openai.chat.completions.create` behavior.
+  // When ON, eligible calls get Anthropic Claude primary with OpenAI automatic
+  // fallback, exactly mirroring AI_PROVIDER_TAKEOFF for the General family.
+  "AI_PROVIDER_GENERAL",
+  // Task #2684: provider seam for embedding calls. Today every embedding call
+  // resolves to OpenAI's `text-embedding-3-*` family because no other provider
+  // is wired in (Anthropic does not ship a first-party embedding API as of this
+  // writing). The flag exists so a future Voyage/Cohere/Bedrock provider can
+  // be added without re-touching every call site. Default OFF preserves OpenAI.
+  "AI_PROVIDER_EMBEDDINGS",
   // Task #2484 — when ON, COI compliance gating BLOCKS the release of
   // pay applications, purchase orders, and subcontractor payable
   // approvals when any project party is non-compliant (EXPIRED or
@@ -136,6 +151,8 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
   AI_ESTIMATOR: "AI Estimator (takeoff, estimate, chat)",
   AI_PROVIDER_TAKEOFF: "AI Provider — Takeoff family on Claude",
+  AI_PROVIDER_GENERAL: "AI Provider — General family on Claude",
+  AI_PROVIDER_EMBEDDINGS: "AI Provider — Embeddings (reserved)",
   COI_COMPLIANCE_HOLD: "COI Compliance — Block release on non-compliance",
 };
 
@@ -187,6 +204,8 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   AI_TAKEOFF_FEW_SHOT: "Inject up to five recent EDITED takeoff suggestions per trade into the next AI takeoff prompt as a 'Recent corrections' few-shot block.",
   AI_ESTIMATOR: "AI Estimator workspace: AI-drafted takeoffs, draft estimates, inline cost suggestions, an Ask the Estimator chat, and learning from your historical bids.",
   AI_PROVIDER_TAKEOFF: "Route the Takeoff/Heavy-Civil/AI-Estimator calls to Anthropic Claude instead of OpenAI GPT. Falls back to OpenAI automatically if Claude errors.",
+  AI_PROVIDER_GENERAL: "Route the non-Takeoff AI calls (digest, health, risk, hiring, website/social copy, document analysis, CRM) through the provider router. When ON, primary is Anthropic Claude with OpenAI automatic fallback. When OFF, primary is OpenAI with no fallback (legacy behavior).",
+  AI_PROVIDER_EMBEDDINGS: "Reserved provider seam for embedding calls. No alternative embedding provider is wired in today; flipping this on currently has no effect because every call site still resolves to OpenAI text-embedding-3-large.",
   COI_COMPLIANCE_HOLD: "Block pay-app, PO, and subcontractor payable approvals when project insurance compliance is EXPIRED or MISSING. Audited overrides bypass the hold. When OFF, the dashboard still shows non-compliance but releases are not blocked.",
 };
 
@@ -257,6 +276,8 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   AI_TAKEOFF_FEW_SHOT: "Advanced Tech",
   AI_ESTIMATOR: "Advanced Tech",
   AI_PROVIDER_TAKEOFF: "Advanced Tech",
+  AI_PROVIDER_GENERAL: "Advanced Tech",
+  AI_PROVIDER_EMBEDDINGS: "Advanced Tech",
   COI_COMPLIANCE_HOLD: "Core Platform",
 };
 
@@ -315,6 +336,12 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // explicitly flips them to Claude. Default-OFF preserves the current
   // behavior for every tenant on rollout day.
   "AI_PROVIDER_TAKEOFF",
+  // Task #2684: Default OFF — when OFF the General router selects OpenAI as
+  // primary with no fallback, byte-for-byte identical to legacy behavior.
+  "AI_PROVIDER_GENERAL",
+  // Task #2684: Default OFF — embedding provider seam is reserved; flipping
+  // it has no observable effect today (only OpenAI provider is wired in).
+  "AI_PROVIDER_EMBEDDINGS",
   // Task #2484: tenants opt into the new gating after they have
   // backfilled certs / project requirements.
   "COI_COMPLIANCE_HOLD",

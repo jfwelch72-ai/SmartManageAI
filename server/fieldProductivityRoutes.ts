@@ -6,6 +6,7 @@ import { voiceLogs, issueCaptures, offlineSyncQueue, media, projects, insertVoic
 import { eq, and, desc, sql, inArray, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { ObjectStorageService } from "./objectStorage";
 import { parseOrRespond } from "./utils/validation";
@@ -684,14 +685,17 @@ Respond with valid JSON only.`;
       actionType: `voice_log_parse_${outputType}`,
       inputRefs: { outputType },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: transcription },
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 1024,
+        const completion = await routedGeneralChatCompletion({
+          orgId: req.user!.organizationId,
+          featureKey: "general.field_productivity.analyze",
+          request: {
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: transcription },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 1024,
+          },
         });
         const content = completion.choices[0]?.message?.content;
         if (!content) throw new Error("No response from AI");
@@ -774,6 +778,7 @@ Respond with valid JSON only: { "tags": [...], "description": "..." }`;
       actionType: "photo_auto_tag",
       inputRefs: { mediaId },
       fn: async () => {
+        // ai-router-bypass: vision (image_url) photo auto-tag — depends on OpenAI-typed mixed-content message shape; migration tracked as a dedicated follow-up under Task #2684.
         const completion = await openai.chat.completions.create({
           model: AI_MODEL_GPT5,
           messages: [

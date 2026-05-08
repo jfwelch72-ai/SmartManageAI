@@ -23,6 +23,7 @@ import {
 import { eq, and, sql, desc, count, lt } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
+import { routedGeneralChatCompletion } from "../ai/providers";
 import { governedAiCall } from "./aiGovernance";
 import { getFeatureFlags } from "./featureFlagService";
 
@@ -545,13 +546,16 @@ Provide a concise explanation focusing on what's driving the score ${previousSco
       actionType: "project_health_explanation",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
-            { role: "user", content: prompt },
-          ],
-          max_completion_tokens: 200,
+        const completion = await routedGeneralChatCompletion({
+          orgId,
+          featureKey: "general.project_health.summary",
+          request: {
+            messages: [
+              { role: "system", content: "You are a construction project health analyst. Be concise and specific." },
+              { role: "user", content: prompt },
+            ],
+            max_completion_tokens: 200,
+          },
         });
         return { result: completion.choices[0]?.message?.content?.trim() || null, completion };
       },

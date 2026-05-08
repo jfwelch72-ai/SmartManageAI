@@ -1,4 +1,5 @@
 // prompt-injection-guard: system-prompt-anchored over tenant-internal equipment telemetry (utilization rates, cost rollups); no user-authored text reaches the model
+// ai-router-bypass: equipment AI recommendation lazy-loads the OpenAI client via dynamic import to avoid a startup-time dep on the AI SDK; migration to the General router deferred to a coordinated dynamic-import cleanup. Tracked as a dedicated follow-up under Task #2684.
 /**
  * @openapi
  * /api/equipment:

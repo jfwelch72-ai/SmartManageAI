@@ -1,4 +1,5 @@
 // prompt-injection-guard: untrusted resume content — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt is JSON-only with downstream Zod validation
+// ai-router-bypass: resume-scoring is paired with the prompt-injection quarantine envelope around untrusted resume text; migration deferred until that envelope is portable to AiMessage. Tracked as a dedicated follow-up under Task #2684.
 import { Router, type NextFunction } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
 import { z } from "zod";

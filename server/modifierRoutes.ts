@@ -17,6 +17,7 @@ import { estimates, estimateLineItems } from "../shared/schema/operations";
 import { requireAuth, requireOrgUser, type AuthRequest } from "./auth";
 import { governedAiCall } from "./services/aiGovernance";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { MODIFIER_AI_SYSTEM_PROMPT, buildModifierUserPrompt } from "./ai/modifierPrompt";
 import { requireFeature } from "./middleware/requireFeature";
 
@@ -654,14 +655,17 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
       actionType: "modifier_ai_suggest",
       inputRefs: { trade_name, scope_name, uom, material_families },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: MODIFIER_AI_SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 2048,
+        const completion = await routedGeneralChatCompletion({
+          orgId,
+          featureKey: "general.modifier.suggest",
+          request: {
+            messages: [
+              { role: "system", content: MODIFIER_AI_SYSTEM_PROMPT },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 2048,
+          },
         });
 
         const content = completion.choices[0]?.message?.content;

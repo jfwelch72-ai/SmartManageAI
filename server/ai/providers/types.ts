@@ -117,3 +117,86 @@ export type TakeoffFeatureKey =
   | "estimation.module_analyze.equipment"
   | "estimation.module_analyze.vendor_pricing"
   | "estimation.module_analyze.project_health";
+
+/**
+ * Task #2684 — Logical labels for every non-Takeoff call site that goes
+ * through the General router (`routedGeneralChatCompletion`). Routing is
+ * decided per-org by the `AI_PROVIDER_GENERAL` flag (default OFF =
+ * OpenAI-only, ON = Anthropic primary with OpenAI fallback). Keep these
+ * keys disjoint from `TakeoffFeatureKey` so per-feature spend and audit
+ * filters can target each family independently.
+ */
+export type GeneralFeatureKey =
+  // Documents / RFIs / submittals
+  | "general.document.analyze"
+  | "general.document.contract_analyze"
+  | "general.document.compare"
+  | "general.document.schedule_extract"
+  | "general.document.search_assist"
+  | "general.document.intent_classify"
+  | "general.document.contract_extract_clause"
+  // CRM / Email / Notes
+  | "general.email.classify"
+  | "general.email.thread_summary"
+  | "general.email.reply_draft"
+  | "general.email.daily_summary"
+  | "general.notes.enrich"
+  | "general.call.transcript_summary"
+  | "general.coi.extract"
+  // Hiring
+  | "general.hiring.score_resume"
+  // Risk / Health / Productivity / Equipment / Modifiers
+  | "general.risk.score"
+  | "general.risk.event_summary"
+  | "general.project_health.summary"
+  | "general.field_productivity.analyze"
+  | "general.field_productivity.recommend"
+  | "general.equipment.analyze"
+  | "general.modifier.suggest"
+  // Reporting / Digests
+  | "general.executive_digest"
+  // Marketing / Website / Social
+  | "general.website.copy"
+  | "general.website.section"
+  | "general.website.brand"
+  | "general.website.seo"
+  | "general.website.blog_draft"
+  | "general.social.post_draft"
+  // Onboarding
+  | "general.onboarding.color_palette"
+  | "general.onboarding.trade_research";
+
+/**
+ * Task #2684 — Embedding provider seam. The router emits
+ * OpenAI-shaped vectors so any swap (Voyage, Cohere, Bedrock) only needs
+ * to map through this interface. `AI_PROVIDER_EMBEDDINGS` is the per-org
+ * flag that selects the primary; today only OpenAI is wired in.
+ */
+export type EmbeddingFeatureKey =
+  | "embeddings.document"
+  | "embeddings.knowledge"
+  | "embeddings.search";
+
+export interface AiEmbeddingRequest {
+  /** A single string or batch of strings to embed. */
+  input: string | string[];
+  /** Optional model override; usually omitted to use provider default. */
+  model?: string;
+  /** Optional output dimensionality (OpenAI text-embedding-3-* supports this). */
+  dimensions?: number;
+}
+
+export interface AiEmbeddingResponse {
+  data: Array<{ embedding: number[]; index: number }>;
+  model: string;
+  usage: { prompt_tokens: number; total_tokens: number };
+  provider: AiProviderName;
+  latencyMs: number;
+}
+
+export interface AiEmbeddingProvider {
+  readonly name: AiProviderName;
+  readonly defaultModel: string;
+  isConfigured(): boolean;
+  createEmbedding(req: AiEmbeddingRequest): Promise<AiEmbeddingResponse>;
+}

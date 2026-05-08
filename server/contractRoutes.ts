@@ -1,4 +1,5 @@
 // prompt-injection-guard: untrusted contract body — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt enforces JSON output with downstream Zod validation
+// ai-router-bypass: contract clause extraction depends on long-context OpenAI request shape and downstream prompt-injection envelope. Migration tracked as a dedicated follow-up under Task #2684.
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";

@@ -11,8 +11,9 @@
 
 import { eq } from "drizzle-orm";
 import { db } from "../db";
-import { crmCallRecordings } from "@shared/schema";
+import { crmCallRecordings, crmCalls } from "@shared/schema";
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
+import { routedGeneralChatCompletion } from "../ai/providers";
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { safeDownload, SafeDownloadError } from "./safeDownload";
 
@@ -69,19 +70,22 @@ Guidelines:
 - Refer to participants by role (caller, customer, rep) if names are unclear.
 - Do not invent information that is not in the transcript.`;
 
-export async function summarizeTranscript(transcript: string): Promise<CallSummary | null> {
+export async function summarizeTranscript(transcript: string, orgId: string): Promise<CallSummary | null> {
   const trimmed = transcript.trim();
   if (!trimmed) return null;
   const input = trimmed.length > SUMMARY_MAX_CHARS ? trimmed.slice(0, SUMMARY_MAX_CHARS) : trimmed;
   try {
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        { role: "system", content: SUMMARY_SYSTEM_PROMPT },
-        { role: "user", content: `Transcript:\n\n${input}` },
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 1024,
+    const completion = await routedGeneralChatCompletion({
+      orgId,
+      featureKey: "general.call.transcript_summary",
+      request: {
+        messages: [
+          { role: "system", content: SUMMARY_SYSTEM_PROMPT },
+          { role: "user", content: `Transcript:\n\n${input}` },
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 1024,
+      },
     });
     const content = completion.choices[0]?.message?.content;
     if (!content) return null;
@@ -219,7 +223,12 @@ export async function transcribeCallRecording(recordingId: string): Promise<Tran
     // skim the call without reading the whole thing. Stored alongside the
     // transcript so we don't regenerate on every view.
     if (transcript.length >= SUMMARY_MIN_CHARS) {
-      const summary = await summarizeTranscript(transcript);
+      const [callRow] = await db
+        .select({ organizationId: crmCalls.organizationId })
+        .from(crmCalls)
+        .where(eq(crmCalls.id, rec.callId))
+        .limit(1);
+      const summary = await summarizeTranscript(transcript, callRow?.organizationId ?? "system");
       if (summary && (summary.summary || summary.keyPoints.length || summary.actionItems.length || summary.nextSteps.length)) {
         await db
           .update(crmCallRecordings)

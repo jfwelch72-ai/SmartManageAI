@@ -1,4 +1,5 @@
 // prompt-injection-guard: system-prompt-anchored orchestration over tenant-internal aggregates (project counts, financial rollups); no user-authored text in user message
+// ai-router-bypass: orchestration pipeline coordinates multi-step tool/function calls and currently depends on OpenAI's tools/functions API surface. Migration tracked as a dedicated follow-up under Task #2684.
 import { Router , NextFunction } from "express";
 import { safeJsonParse } from "./responseHelper";
 import { db, pool } from "./db";

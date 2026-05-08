@@ -27,9 +27,11 @@ const hoisted = vi.hoisted(() => ({
   listMostRecentSpy: vi.fn(),
 }));
 
-vi.mock("../storage", async () => {
+vi.mock("../crm/transcriptBackfillStorage", async () => {
   const actual =
-    await vi.importActual<typeof import("../storage")>("../storage");
+    await vi.importActual<typeof import("../crm/transcriptBackfillStorage")>(
+      "../crm/transcriptBackfillStorage",
+    );
   return {
     ...actual,
     listMostRecentRunningCrmTranscriptBackfillJobsPerOrg: hoisted.listMostRecentSpy,

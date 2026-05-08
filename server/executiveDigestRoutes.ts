@@ -7,6 +7,7 @@ import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { logError } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { createExecutiveDigest, getLatestExecutiveDigest } from "./executiveDigest/storage";
@@ -223,13 +224,17 @@ Requirements:
       actionType: "executive_digest_generation",
       inputRefs: { period, orgId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: dataContext },
-          ],
-          response_format: { type: "json_object" },
+        const completion = await routedGeneralChatCompletion({
+          orgId,
+          featureKey: "general.executive_digest",
+          request: {
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: dataContext },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 4096,
+          },
         });
 
         const content = completion.choices[0]?.message?.content || "{}";

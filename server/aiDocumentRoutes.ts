@@ -1,3 +1,4 @@
+// ai-router-bypass: vision (image_url) + tool-calling pipeline; uses OpenAI-typed mixed-content messages and depends on prompt-injection guard quarantine envelope. Migration tracked as a dedicated follow-up under Task #2684.
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { 

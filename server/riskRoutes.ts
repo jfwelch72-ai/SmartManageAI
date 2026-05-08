@@ -10,6 +10,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { eventBus } from "./events";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 
 const router = Router();
@@ -388,20 +389,24 @@ Already identified risks: ${existingRisks.length > 0 ? existingRisks.map(r => `$
 
 Suggest relevant construction project risks that haven't been identified yet.`;
 
+    const orgIdForAi = req.user!.organizationId!;
     const governed = await governedAiCall({
-      orgId: req.user!.organizationId!,
+      orgId: orgIdForAi,
       userId: req.user!.id,
       actionType: "risk_ai_suggestions",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 2048,
+        const completion = await routedGeneralChatCompletion({
+          orgId: orgIdForAi,
+          featureKey: "general.risk.score",
+          request: {
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 2048,
+          },
         });
         const content = completion.choices[0]?.message?.content;
         if (!content) throw new Error("No response from AI");

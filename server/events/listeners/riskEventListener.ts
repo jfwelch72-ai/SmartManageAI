@@ -7,6 +7,7 @@ import {logError, logInfo, logWarn } from "../../utils/logger";
 import { deliverNotifications } from "../../services/notificationDelivery";
 import type { RiskStatusChangedEvent, ProjectCreatedEvent } from "../eventTypes";
 import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
+import { routedGeneralChatCompletion } from "../../ai/providers";
 import { governedAiCall } from "../../services/aiGovernance";
 import { sanitizeShortText, sanitizeText } from "../../sanitization";
 
@@ -235,14 +236,17 @@ ${project.locationAddress ? `Location: ${project.locationAddress}` : ""}${histor
       actionType: "risk_auto_generation",
       inputRefs: { projectId: payload.projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 1500,
+        const completion = await routedGeneralChatCompletion({
+          orgId,
+          featureKey: "general.risk.event_summary",
+          request: {
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 1500,
+          },
         });
         const content = completion.choices[0]?.message?.content;
         if (!content) throw new Error("No response from AI");

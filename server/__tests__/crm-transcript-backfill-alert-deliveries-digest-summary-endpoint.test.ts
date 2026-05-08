@@ -35,10 +35,10 @@ const { mockListDeliveries, mockSummarizeFallback } = vi.hoisted(() => ({
   mockSummarizeFallback: vi.fn(),
 }));
 
-vi.mock("../storage", async () => {
-  const actual = await vi.importActual<typeof import("../storage")>(
-    "../storage",
-  );
+vi.mock("../crm/transcriptBackfillStorage", async () => {
+  const actual = await vi.importActual<
+    typeof import("../crm/transcriptBackfillStorage")
+  >("../crm/transcriptBackfillStorage");
   return {
     ...actual,
     listCrmTranscriptBackfillAlertDeliveries: mockListDeliveries,

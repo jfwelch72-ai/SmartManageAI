@@ -206,7 +206,11 @@ climbing; same job appearing repeatedly in Sentry; user reports of
   drain.
 - **Provider outage** (Anthropic, OpenAI, SendGrid): flip the relevant
   AI feature flag to fall back to the alternate provider per the AI
-  routing notes in `replit.md`.
+  routing notes in `replit.md`. The router auto-falls-back on retryable
+  errors, but flipping the per-org `AI_PROVIDER_TAKEOFF` /
+  `AI_PROVIDER_GENERAL` flag back to OFF forces every subsequent call
+  to OpenAI without the failed-primary attempt. See
+  `docs/architecture/ai-provider-routing.md` for the full playbook.
 
 **Post-incident**
 

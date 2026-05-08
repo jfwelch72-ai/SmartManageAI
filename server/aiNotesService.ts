@@ -2,6 +2,7 @@
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { db } from "./db";
 import { 
@@ -177,13 +178,17 @@ Return format: { "insights": [ ... ] }`;
         actionType: "notes_analysis",
         inputRefs: { noteCount: notes.length },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
-            ],
-            response_format: { type: "json_object" }
+          const completion = await routedGeneralChatCompletion({
+            orgId: "system",
+            featureKey: "general.notes.enrich",
+            request: {
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: userPrompt }
+              ],
+              response_format: { type: "json_object" },
+              max_completion_tokens: 2048,
+            },
           });
           return {
             result: completion.choices[0]?.message?.content,
