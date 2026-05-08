@@ -1,0 +1,27 @@
+Based on the documentation, here's a thorough breakdown of the server/storage.ts risk.
+What the doc says
+The replit.md explicitly states:
+
+server/storage.ts: This file is intentionally not deleted yet; other domains will incrementally adopt the new storage seam pattern.
+
+That single sentence is the entire treatment of what is clearly a significant architectural liability.
+Why this is risky
+It's a monolith masquerading as a temporary file. The "storage seam" pattern — where each domain gets its own server/bids/storage.ts, server/bids/storage.drizzle.ts, etc. — is the correct target architecture. server/storage.ts is the old world that should be getting hollowed out. But without a deadline or migration tracker, "incremental" almost always means "never."
+Coupling accumulates silently. Every developer who needs to add a database operation has two choices: write a proper domain-scoped storage module, or just drop a function into the existing server/storage.ts. The path of least resistance is the monolith. Without a lint guard or CI rule explicitly blocking new additions to server/storage.ts, it will keep growing.
+The RLS tenant isolation system partially depends on where DB calls happen. The doc describes server/middleware/orgContext.ts wrapping every authenticated request and routing through an ALS-bound client when a context is active. If server/storage.ts contains DB calls that bypass the domain-scoped seam pattern, those calls may not be flowing through the correct org-scoped client — which means they could be operating outside the tenant isolation boundary.
+There's already a precedent for lint guards on this. The doc mentions scripts/check-db-imports.mjs wired into scripts/ci.sh to protect the RLS pattern. The same approach could — and should — be applied to server/storage.ts to block new imports.
+What's missing from the current plan
+The doc gives you no answers to these questions:
+
+How many functions/queries currently live in server/storage.ts? (No count mentioned)
+Which domains have already migrated vs. which still depend on it?
+Is there a migration tracker or GitHub issue tracking remaining dependents?
+What is the target date for deletion?
+Is there a CI rule preventing new code from being added to it?
+
+What should be done
+Immediately: Add a lint rule (similar to check-db-imports.mjs) that fails CI if any new function is added to server/storage.ts or if new files import from it. This stops the bleeding without requiring any migration work today.
+Short term: Audit and count how many functions remain and which domains own them. Create a migration board — one ticket per domain — so progress is visible.
+Medium term: Assign each unmigrated domain a deadline to adopt the storage.drizzle.ts seam pattern. As each domain migrates, shrink server/storage.ts explicitly.
+Long term: When the last function is migrated, delete the file. The CI check then becomes a "file must not exist" rule as a permanent guard.
+The risk isn't that server/storage.ts will cause an outage tomorrow. The risk is that a year from now it's twice as large, deeply coupled to core features, and the migration cost is 10x what it would be today. "Intentionally not deleted yet" without a plan is just undocumented debt with a polite name.
