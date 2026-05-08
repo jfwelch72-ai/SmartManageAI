@@ -1072,13 +1072,49 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
 
   const handleStageDragStart = useCallback(() => { setIsDraggingStage(true); }, []);
 
+  // Konva fires `dragmove` on every pointer event during a pan (often
+  // 100+/s on a high-refresh display). Calling `setStagePosition` on
+  // each one re-renders TakeoffWorkspace and re-runs the tile-renderer
+  // viewport effect on every pixel of motion — that storm is the
+  // source of the laggy pan + the "ghost duplicate" tearing the user
+  // reported (React re-applies a stale `x`/`y` to <Stage> mid-frame
+  // while Konva is mid-drag). RAF-coalesce so React state updates
+  // happen at most once per animation frame; Konva's own internal
+  // drag transform still tracks the pointer in real time.
+  const dragMoveRafScheduledRef = useRef(false);
+  const dragMovePendingPosRef = useRef<{ x: number; y: number } | null>(null);
   const handleStageDragMove = useCallback((e: any) => {
     if (activeTool !== "pan") return;
     const stage = e.target;
-    setStagePosition({ x: stage.x(), y: stage.y() });
+    dragMovePendingPosRef.current = { x: stage.x(), y: stage.y() };
+    if (dragMoveRafScheduledRef.current) return;
+    dragMoveRafScheduledRef.current = true;
+    const flush = () => {
+      dragMoveRafScheduledRef.current = false;
+      const next = dragMovePendingPosRef.current;
+      dragMovePendingPosRef.current = null;
+      if (next) setStagePosition(next);
+    };
+    if (typeof requestAnimationFrame === "function") {
+      requestAnimationFrame(flush);
+    } else {
+      Promise.resolve().then(flush);
+    }
   }, [activeTool, setStagePosition]);
 
-  const handleStageDragEnd = useCallback(() => { setIsDraggingStage(false); }, []);
+  const handleStageDragEnd = useCallback((e: any) => {
+    setIsDraggingStage(false);
+    // Drain any pending RAF-coalesced position so the final stage
+    // position state always matches Konva's real one (otherwise the
+    // viewport would be off by up to one frame's worth of motion
+    // after a fast pan release).
+    dragMoveRafScheduledRef.current = false;
+    dragMovePendingPosRef.current = null;
+    const stage = e?.target;
+    if (stage && typeof stage.x === "function" && typeof stage.y === "function") {
+      setStagePosition({ x: stage.x(), y: stage.y() });
+    }
+  }, [setIsDraggingStage, setStagePosition]);
 
   const handleStageMouseMove = useCallback((e: any) => {
     if (e.evt && (e.evt.type === "touchmove" || e.evt.touches)) {
