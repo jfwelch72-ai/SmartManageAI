@@ -1,0 +1,80 @@
+Based on the documentation, here's a precise breakdown of why this is a gap that compounds every other risk on the platform.
+What the doc says
+The entire mobile app treatment in the documentation:
+Mobile Field App: Native Expo/React Native app with offline sync for daily reports, time clock, photos, punch list, RFIs, and inspections.
+That's it. One sentence. Offline sync is listed as a feature. How it works, what happens when it fails, and how conflicts are resolved are completely absent from the documentation.
+What the silence means
+Every other major architectural decision in the codebase has documentation. Tenant isolation has a dedicated docs/architecture/tenant-isolation.md. The storage seam pattern has docs/architecture/storage-pattern.md. Billing has a migration playbook. The SLA has two files. The AI provider routing has a gotcha entry. The PM engine has an architecture note.
+Offline sync — one of the most technically complex distributed systems problems in the entire platform — gets a clause in a feature bullet point.
+This isn't an oversight in the documentation. It's a signal about the implementation. Systems with well-designed conflict resolution strategies tend to document them because they're hard-won and non-obvious. The absence of documentation here almost certainly reflects the absence of a formal strategy in the code.
+Why offline sync conflict resolution is genuinely hard
+Before mapping the specific risks, it's worth establishing why this problem is difficult — because "offline sync" sounds simple and isn't.
+A field worker goes offline at 7am on a job site with no cell coverage. They spend eight hours submitting daily reports, clocking in and out, adding punch list items, uploading photos, and completing inspection checklists — all stored locally on their device. At 3pm they drive to an area with coverage and the app syncs.
+During those eight hours, other things happened on the server:
+•	A project manager updated the punch list remotely, changing the status of items the field worker also modified
+•	Another field worker on the same project submitted a daily report that conflicts with observations in the offline worker's report
+•	The time clock server recorded a system entry when the field worker's GPS triggered a geofence, but the worker also clocked in manually on their device
+•	An RFI the field worker responded to was already answered by someone else on the web app
+•	An inspection checklist item the field worker marked complete was reassigned to a different person by a supervisor
+When the device syncs, every one of these is a conflict. The app has to decide what to do with each one. Without a defined strategy, it either silently overwrites server data with local data, silently drops local data in favor of server data, or errors out and loses both.
+The specific data types and their conflict profiles
+Each data type the mobile app handles has a different conflict profile:
+Daily reports are narrative records — observations, weather, crew counts, work performed. Two people writing daily reports for the same project on the same day produce two legitimate records that should both exist. But if one person edits a shared template or a pre-populated field, last-write-wins produces data loss. The correct resolution is likely merge — combine non-overlapping edits, flag overlapping ones for human review.
+Time clock entries are the highest-stakes conflict surface. The architecture describes GPS/geofence-based automatic time clock alongside manual entry. If a geofence triggers an automatic clock-in at 7:02am and the worker manually clocked in at 7:00am on their offline device, the sync produces two clock-in events two minutes apart. Payroll runs on time clock data. Certified payroll — explicitly mentioned in the feature list — is a legal document. A duplicate clock-in that inflates hours, or a dropped clock-in that loses hours, has direct legal and financial consequences.
+Punch list items are shared across the project team. A field worker marking an item complete offline while a project manager changes its assignee online produces a conflict where the item is simultaneously complete and reassigned. Neither resolution is obviously correct — completing and reassigning might both be valid, or the completion might be invalid because the reassignment reflects a discovered deficiency.
+Photos are append-only by nature — a photo taken offline doesn't conflict with photos taken online. But photo metadata does conflict: if a photo is tagged to a punch list item that was modified or deleted while offline, the association is broken on sync.
+RFIs have a formal status workflow — submitted, under review, answered, closed. An offline response to an RFI that was already answered by someone else produces two responses to the same RFI. The formal RFI process in construction has contractual implications — a response from the wrong party or a duplicate response could affect the official record.
+Inspections have sign-off chains. An inspection item marked passing offline that was subsequently flagged failing by a remote inspector produces a record that is simultaneously passing and failing. Inspection records feed compliance tracking and potentially regulatory reporting.
+The tenant isolation intersection
+The platform has a sophisticated tenant isolation system via Postgres RLS. Offline sync bypasses this entirely during the offline period — the device holds a local copy of data, processes it without any server-side tenant context, and then attempts to write it back.
+This creates questions the documentation doesn't address:
+•	Is the local device storage encrypted per-tenant?
+•	When syncing, does the sync process authenticate each write through the normal orgContext middleware, ensuring RLS applies?
+•	If a device is used by multiple workers from different orgs — unlikely but possible in a white-label SaaS — is there any tenant boundary in local storage?
+•	If a device is stolen or compromised while offline, what data is accessible without server authentication?
+The RLS architecture is designed around the assumption that all data access flows through authenticated server requests. Offline sync creates a data path that doesn't — and the security implications of that path are undocumented.
+The time clock and certified payroll legal dimension
+The feature list explicitly includes certified payroll. Certified payroll is a legal requirement on prevailing wage projects — it certifies to a government agency that workers were paid the correct wage for the hours worked. Errors in certified payroll can result in penalties, contract termination, and debarment from future government contracts.
+The time clock feeds payroll. Offline sync feeds the time clock. A conflict resolution strategy that silently drops a clock-out event — the worker clocked out on their device offline, the sync failed to apply it — means an employee's hours are not recorded. The certified payroll report is wrong. The legal document is wrong.
+There is no described mechanism for detecting or alerting on dropped sync events. A clock-out that failed to sync looks identical to a worker who forgot to clock out — both appear as missing clock-out records in the system.
+The GPS/geofence compounding factor
+The time clock is described as "GPS/geofence" enabled. This means location data is part of the time clock record. An offline device captures GPS coordinates at clock-in and clock-out. When it syncs, those coordinates need to be reconciled with any geofence-triggered events the server recorded during the offline period.
+GPS coordinates are timestamped. Geofence events are timestamped. A merge strategy based on timestamps sounds simple but isn't:
+•	Device clocks drift. An offline device with a clock that's three minutes fast creates timestamps that don't align correctly with server-side events
+•	GPS coordinates can be imprecise inside buildings — a worker on a job site inside a concrete structure may have coordinates that don't match the geofence boundary
+•	A worker who drove through a geofence boundary while traveling — not starting work — generates a spurious geofence event that conflicts with their manual clock-in
+None of these are hypothetical. They're the normal operational reality of GPS time tracking on construction sites.
+What conflict resolution strategies exist and which fits
+There are four standard approaches to offline sync conflict resolution:
+Last write wins. The most recent timestamp wins regardless of which device or server generated it. Simple to implement, catastrophically wrong for construction data. A project manager's remote punch list update from 2pm overwrites a field worker's offline update from 1pm — even though the field worker has ground truth about actual site conditions.
+Server wins. Server state always takes precedence over device state. Safe for reading, destructive for writing. A field worker's eight hours of offline data entry is silently discarded on sync. Unacceptable for any data that represents real field observations.
+Client wins. Device state always takes precedence over server state. Preserves field data but overwrites legitimate remote updates. A project manager's correction to an inspection record is silently discarded when the field worker syncs.
+Merge with conflict flagging. Non-conflicting changes are merged automatically. Conflicting changes are flagged for human resolution. This is the correct approach for construction field data — it preserves all data, surfaces genuine conflicts, and gives the appropriate humans (project managers, supervisors) the ability to resolve them. It is also the most complex to implement.
+The documentation gives no indication which strategy the app uses, or whether it uses any consistent strategy at all.
+The operational failure mode with no strategy
+Without a defined conflict resolution strategy, what actually happens in most ad-hoc implementations is:
+•	Simple cases work correctly because they don't actually produce conflicts
+•	Edge cases silently corrupt data in ways that aren't immediately visible
+•	The corruption surfaces later — in a payroll run, a certified payroll audit, a punch list discrepancy, an inspection sign-off dispute
+•	By the time it surfaces, the original sync event is long gone from any log
+•	Recovery requires manually reconciling records with no automated tooling
+The insidious quality of offline sync data corruption is that it looks like human error. A missing clock-out looks like a worker who forgot to clock out. A missing punch list item looks like a field worker who didn't submit their report. A duplicate RFI response looks like a miscommunication. The root cause — a silent sync conflict resolution failure — is invisible.
+What should be done
+Define the conflict resolution strategy explicitly for each data type. Not one strategy for everything — different data types need different approaches:
+•	Daily reports: merge non-overlapping fields, flag overlapping fields
+•	Time clock: strict deduplication by worker + timestamp window, alert on gaps
+•	Punch list items: operational transform or CRDT for concurrent edits, flag status conflicts
+•	Photos: append-only, no conflict possible on the photo itself, metadata conflicts flagged
+•	RFIs: server wins on status transitions, client wins on draft responses, flag if both have responses
+•	Inspections: server wins on sign-off status, merge field observations, flag completion conflicts
+Implement a sync event log. Every sync operation should produce a structured log entry: what was submitted, what was accepted, what was rejected, what conflicted. This log should be accessible to project managers and administrators — not just engineers reviewing server logs.
+Add conflict visibility to the UI. When a sync produces conflicts that require human resolution, the app should surface them explicitly — not silently resolve them or silently discard them. A "conflicts requiring review" queue in the project manager's dashboard is the correct UX.
+Implement vector clocks or logical timestamps. Wall clock timestamps are unreliable on offline devices — clocks drift, time zones cause errors, users change system time. Vector clocks or Lamport timestamps provide ordering guarantees that don't depend on synchronized clocks.
+Audit the time clock sync path immediately. Given the certified payroll legal exposure, the time clock sync path deserves an immediate, specific audit: what happens when a clock-in or clock-out conflicts? Is the conflict detected? Is it logged? Is it flagged? Is payroll ever run on data that includes unresolved time clock conflicts?
+Encrypt local device storage. Given the tenant isolation architecture, local device storage holding multi-tenant construction data should be encrypted at rest with keys tied to authenticated sessions. An offline device should not provide access to project data without authentication.
+Add a sync health dashboard. Project managers should be able to see sync status for every field worker's device — last sync time, number of pending local changes, any unresolved conflicts. A field worker whose device hasn't synced in 48 hours is a data integrity risk that a supervisor should be aware of before it becomes a payroll or compliance problem.
+The core problem
+Offline sync is listed as a feature. It is actually a distributed systems problem with legal, financial, and safety implications specific to construction — a domain where field observations are ground truth, time records are legal documents, and inspection sign-offs feed regulatory compliance.
+Implementing offline sync without a documented, tested, data-type-specific conflict resolution strategy means the feature works correctly in demos and fails silently in production. The failures are invisible until they surface as payroll errors, inspection record discrepancies, or certified payroll audit findings — at which point the original sync events are unrecoverable and the damage is already done.
+The documentation's silence on this topic is the most significant product gap in the entire platform. Every other risk identified in this review has a bounded blast radius. Offline sync data corruption compounds across every data type the mobile app touches — time, labor, compliance, and project records — with no detection mechanism and no recovery path.
+

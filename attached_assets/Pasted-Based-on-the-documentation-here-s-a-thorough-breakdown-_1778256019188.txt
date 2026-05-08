@@ -1,0 +1,116 @@
+Based on the documentation, here's a thorough breakdown of how a notification system would fit into the existing architecture — what's already there to build on, what's missing, and how it should be designed.
+What the doc says that's relevant
+Several existing systems are directly applicable:
+Cross-Replica Messaging Bus: Unified messaging SSE/WS events fan out across pods via Postgres LISTEN/NOTIFY (server/messagingBus.ts); originating pod ignores its own echo via per-pod PEER_POD_ID.
+Unified External Portal (/portal): Provides a single entry point for Client, Subcontractor, and Vendor access with automatic role-based detection.
+Support, Help Center & SLA: In-app HelpWidget + public /help and /sla pages back an internal-first ticket pipeline.
+No-Code Workflow Builder: Visual editor for custom approval chains, status pipelines, and notification triggers.
+Mobile Field App: Native Expo/React Native app with offline sync for daily reports, time clock, photos, punch list, RFIs, and inspections.
+The real-time transport layer exists. The portal exists. The workflow builder exists. What doesn't exist is a persistent, queryable notification inbox that sits between the event bus and the user.
+What's already there to build on
+The messaging bus
+server/messagingBus.ts uses Postgres LISTEN/NOTIFY to fan out SSE/WS events across all pods. This is already the right foundation for real-time notification delivery. The bus already handles:
+•	Cross-replica fan-out so a notification triggered on pod A reaches a client connected to pod B
+•	Echo suppression via PEER_POD_ID so the originating pod doesn't double-deliver
+•	The SSE/WS connection infrastructure for pushing events to connected clients
+What it doesn't have is persistence. An SSE event is fire-and-forget — if the client is offline, disconnected, or not connected to the portal when the event fires, it's gone. A notification system needs the event to survive until the recipient reads it.
+The workflow builder
+The No-Code Workflow Builder supports "notification triggers" as part of custom approval chains and status pipelines. This is the correct place to define when notifications fire — a change order approved, an RFI answered, a punch list item marked complete, a payment processed. The notification system doesn't need to hardcode every trigger — it should consume events from the workflow engine.
+The tenant isolation system
+Every notification is inherently tenant-scoped. The existing orgContext middleware and RLS policies mean a properly implemented notification table automatically inherits tenant isolation — no additional work required as long as the table follows the existing multi-tenant schema pattern.
+The support ticket weekly digest
+server/supportWeeklyReport.ts already implements scheduled email delivery to a recipient list. The email infrastructure exists — it just needs to be generalized from a single internal digest to a per-user, per-event notification delivery system.
+What a complete notification system requires
+A notification system has four distinct layers. The existing architecture covers one of them partially.
+Layer 1 — Event capture
+Every action in the system that a portal user might care about needs to emit a structured notification event. Based on the platform's feature set, this includes:
+Project events — status changes, milestone completions, schedule updates, budget threshold breaches, change order submissions and approvals.
+Financial events — invoice generated, payment received, payment overdue, AIA billing application submitted, lien waiver requested.
+Document events — RFI submitted, RFI answered, submittal approved or rejected, closeout package ready, inspection report available.
+Field events — daily report submitted, punch list item opened or closed, inspection scheduled or completed, photo documentation added.
+Compliance events — document expiring, certification renewal required, permit status change.
+Communication events — new message in a project thread, mention in a note, assignment to an item.
+Each of these needs a canonical event schema:
+interface NotificationEvent {
+  id: string;                    // UUID
+  orgId: string;                 // tenant scope
+  projectId?: string;            // optional project scope
+  eventType: NotificationEventType;
+  actorId?: string;              // who triggered it (null for system events)
+  recipientIds: string[];        // who should receive it
+  payload: Record<string, unknown>; // event-specific data
+  occurredAt: Date;
+}
+Layer 2 — Persistent storage
+This is the missing piece. A notifications table needs to exist between the event bus and the user:
+// shared/schema/features/notifications.ts
+notifications {
+  id: uuid primary key
+  orgId: uuid not null          // tenant isolation
+  recipientId: uuid not null    // portal user
+  eventType: string not null
+  projectId: uuid               // nullable
+  title: string not null
+  body: string not null
+  actionUrl: string             // deep link into portal
+  readAt: timestamp             // null = unread
+  dismissedAt: timestamp        // null = not dismissed
+  deliveredChannels: string[]   // email, push, in-app
+  createdAt: timestamp not null
+  expiresAt: timestamp          // auto-expire old notifications
+}
+With indexes on (orgId, recipientId, readAt) for the unread count query, and (orgId, recipientId, createdAt DESC) for the inbox feed.
+RLS applies automatically via the existing tenant isolation policies — a portal user can only query their own org's notifications, and only their own recipientId.
+Layer 3 — Delivery channels
+A notification sitting in the database is useless unless it reaches the user. There are three delivery channels, each with different characteristics:
+In-app (SSE/WS). When a notification is written to the database, the messaging bus fires a LISTEN/NOTIFY event. Any pod with a connected SSE/WS session for that recipient receives the push. The client updates the unread count badge and optionally shows a toast. This is the real-time path — zero additional infrastructure required beyond the existing bus.
+Email. For recipients who aren't currently connected to the portal, email is the fallback. Email delivery should be:
+•	Immediate for high-priority events (payment overdue, RFI requiring urgent response)
+•	Batched for lower-priority events (daily digest of punch list updates)
+•	Suppressed if the in-app delivery was read within a configurable window (no email if the user already saw it in the portal)
+The existing email infrastructure from supportWeeklyReport.ts provides the delivery mechanism. What's needed is per-user, per-event-type preference management.
+Push notifications. The mobile field app is Expo/React Native. Expo provides a push notification service that works across iOS and Android without managing APNs and FCM separately. For portal users who primarily use the mobile app, push is more reliable than email and more persistent than SSE.
+Push tokens need to be stored per-user-per-device and rotated appropriately. The notification delivery service needs to handle push token expiry gracefully — a delivery failure due to an expired token should not error, it should trigger token refresh.
+Layer 4 — Preference management
+Not every user wants every notification on every channel. The preference system needs to be:
+Per-event-type. A client might want immediate push for payment events but only a weekly digest for punch list updates. A subcontractor might want immediate email for RFI responses but no push notifications at all.
+Per-channel. For each event type, the user configures which channels receive it — in-app always, email sometimes, push sometimes.
+Per-project. A user involved in multiple projects might want high-verbosity notifications for an active project and low-verbosity for a project in closeout.
+Role-aware defaults. The portal has automatic role-based detection for Client, Subcontractor, and Vendor. Each role should have sensible notification defaults:
+•	Clients: financial events, document approvals, project milestones
+•	Subcontractors: RFIs, punch list assignments, schedule changes, payment status
+•	Vendors: purchase orders, delivery confirmations, payment processing
+How it fits into the existing portal architecture
+The /portal unified entry point already handles role detection. The notification system integrates at three points:
+The notification bell. A persistent UI element in the portal header showing an unread count badge. Clicking it opens the notification inbox. The unread count is driven by a GET /api/portal/notifications/unread-count endpoint — a lightweight query against the notifications table filtered by recipientId and readAt IS NULL.
+The notification inbox. A paginated feed of all notifications for the recipient, with filtering by read/unread, by project, and by event type. Each notification has an action URL that deep-links into the relevant portal section — clicking "RFI #42 has been answered" navigates directly to that RFI.
+Real-time updates. The existing SSE connection the portal already maintains for messaging can carry notification events. When a new notification is written to the database, the LISTEN/NOTIFY fires, the SSE pushes a notification:new event to the client, and the bell badge increments without a page refresh.
+The workflow builder integration
+The No-Code Workflow Builder already supports notification triggers. The notification system should expose a notification action that workflow steps can invoke:
+Trigger: Change order submitted
+Condition: Amount > $10,000
+Action: Notify [Project Manager, Client Contact]
+  Channel: Email + In-app
+  Priority: High
+  Message: "Change order #{id} for ${amount} requires your approval"
+This means the notification system doesn't need hardcoded business logic for every event type. The workflow builder becomes the configuration layer — operations teams can define exactly who gets notified about what, under what conditions, without engineering involvement.
+The digest system
+Not all notifications warrant immediate delivery. A field crew submitting 40 daily reports generates 40 events that a project manager doesn't need 40 immediate notifications for. A digest system batches lower-priority events:
+Hourly digest for active project stakeholders during business hours — groups punch list updates, photo uploads, and daily reports into a single summary.
+Daily digest for less frequent stakeholders — a weekly summary of project progress, financial status, and open items.
+Immediate delivery for high-priority events — payment overdue, RFI blocking work, inspection failure, change order requiring approval.
+The digest scheduler is a natural extension of the existing supportWeeklyReport.ts cron pattern — a configurable cron that queries undelivered notifications grouped by recipient, renders a digest template, and marks them as delivered.
+What needs to be built
+Ordered by dependency:
+First — the notifications table and its RLS policy. Everything else depends on this. One migration, follows the existing schema pattern exactly.
+Second — the notification write service. A thin service that accepts a NotificationEvent and writes rows to the notifications table for each recipient. This is called by the workflow engine and by domain event handlers.
+Third — the LISTEN/NOTIFY integration. When a notification row is inserted, trigger a Postgres NOTIFY that the messaging bus picks up and fans out as an SSE event to connected portal clients. This requires a Postgres trigger or an application-level hook after successful insert.
+Fourth — the portal API endpoints. GET /api/portal/notifications (paginated inbox), GET /api/portal/notifications/unread-count, POST /api/portal/notifications/:id/read, POST /api/portal/notifications/read-all.
+Fifth — the portal UI. Notification bell with badge, slide-out inbox panel, mark-as-read interactions, deep link routing.
+Sixth — email delivery integration. Connect the notification service to the existing email infrastructure, with immediate vs digest routing based on priority and user preferences.
+Seventh — push notification integration. Expo push token storage, delivery via Expo's push service, token refresh handling.
+Eighth — preference management UI. Per-user settings for which events trigger which channels, with role-based defaults pre-populated.
+The core gap
+The messaging bus handles real-time delivery. The workflow builder handles trigger definition. The email system handles async delivery. The portal handles the user interface layer. The notification system is the persistence layer that connects all of them — the record that an event occurred, that it was intended for a specific user, and whether it has been seen.
+Without that persistence layer, the platform has real-time events that disappear if you're not watching, email digests that aren't connected to in-app state, and a workflow builder that can trigger notifications with no inbox to deliver them to. Adding the notifications table and the service layer around it completes a system that's mostly already built — it just lacks the connective tissue to make the pieces work together.
+

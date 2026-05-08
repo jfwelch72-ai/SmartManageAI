@@ -25,6 +25,20 @@ export type JobName =
   // Task #2576 — Background plan-set ingest (page count + sheet split).
   | "plan_set_ingest";
 
+// All known job queue names — used to pre-register queues in pgboss.queue
+// at startup so boss.send() never silently drops a job due to a missing
+// queue row (pg-boss v10's insertJob SQL does JOIN pgboss.queue and
+// returns null when the queue is not registered there).
+const ALL_JOB_NAMES: readonly JobName[] = [
+  "ai_takeoff_analyze",
+  "ai_document_analyze",
+  "ai_estimator_draft",
+  "pdf_tile_prerender",
+  "accounting_sync",
+  "bulk_export",
+  "plan_set_ingest",
+];
+
 export interface JobContext {
   jobId: string;
   jobName: JobName;
@@ -111,12 +125,55 @@ export function getBoss(): PgBoss {
 }
 
 /**
- * Boot the queue. Call from server boot (`withWorkers: false` for the
- * HTTP server, `true` for the dedicated worker entrypoint).
+ * Ensure a queue is registered in pgboss.queue so that boss.send() can
+ * insert jobs for it. pg-boss v10's insertJob SQL does:
+ *   INSERT ... FROM j JOIN pgboss.queue q ON j.name = q.name ...
+ * If the queue row is missing the JOIN returns nothing and send() silently
+ * returns null — the job is lost. boss.work() does NOT call createQueue(),
+ * so queues must be pre-registered explicitly.
  *
- * Idempotent — repeated calls with `withWorkers: true` register the
- * declared handlers exactly once.
+ * Safe to call repeatedly: boss.createQueue() uses ON CONFLICT DO NOTHING
+ * for the queue row, and skips table creation if it finds the row already
+ * exists. If the partition table already exists but the queue row was
+ * somehow deleted (e.g. after a pgboss.queue truncation), we fall back to
+ * a direct upsert-style INSERT so the existing partition stays usable.
  */
+async function ensureQueueRegistered(name: string, b: PgBoss): Promise<void> {
+  const schema = process.env.PGBOSS_SCHEMA || "pgboss";
+  try {
+    await b.createQueue(name);
+  } catch (err) {
+    // Partition table already exists — happens when pgboss.queue was
+    // cleared but partition tables survived. Just insert the queue row.
+    const errMsg = String(err);
+    if (
+      errMsg.includes("already exists") ||
+      errMsg.includes("duplicate") ||
+      errMsg.includes("42P07")   // PostgreSQL "duplicate_table" SQLSTATE
+    ) {
+      try {
+        const dbi = await b.getDb();
+        await dbi.executeSql(
+          `INSERT INTO ${schema}.queue (name, policy, partition_name)
+           VALUES ($1, 'standard', 'j' || encode(sha224($1::bytea), 'hex'))
+           ON CONFLICT (name) DO NOTHING`,
+          [name],
+        );
+      } catch (insertErr) {
+        logWarn("ensureQueueRegistered fallback INSERT failed", {
+          queue: name,
+          error: String(insertErr),
+        });
+      }
+    } else {
+      logWarn("ensureQueueRegistered createQueue failed", {
+        queue: name,
+        error: errMsg,
+      });
+    }
+  }
+}
+
 export async function startJobQueue(opts: { withWorkers: boolean }): Promise<void> {
   if (process.env.NODE_ENV === "test" && process.env.JOB_QUEUE_FORCE !== "1") {
     return;
@@ -130,6 +187,14 @@ export async function startJobQueue(opts: { withWorkers: boolean }): Promise<voi
     await b.start();
     started = true;
     logInfo("Job queue started");
+  }
+  // Pre-register all known queues so boss.send() never silently drops a job.
+  // Called unconditionally (both HTTP server and worker) so the server
+  // process can enqueue even if the worker hasn't run createQueue() yet.
+  // NOTE: must run sequentially — boss.createQueue() issues ALTER TABLE
+  // ATTACH PARTITION which takes an exclusive lock; concurrent calls deadlock.
+  for (const name of ALL_JOB_NAMES) {
+    await ensureQueueRegistered(name, b);
   }
   if (opts.withWorkers && !workersRegistered) {
     await registerHandlers();
