@@ -49,20 +49,24 @@ export async function listSessions(
 
 export async function deleteSession(
   organizationId: string,
-  userId: string,
   sessionId: string,
-): Promise<boolean> {
-  const result = await db
+): Promise<void> {
+  // Delete messages explicitly first so callers don't depend on the DB-level
+  // CASCADE being active in all migration states.
+  await db
+    .delete(aiEstimatorChatMessages)
+    .where(eq(aiEstimatorChatMessages.sessionId, sessionId));
+  // Delete the session. Org filter is the security boundary (RLS also enforces
+  // this). We don't filter by userId so a user can clear any session that
+  // belongs to their org — consistent with how listSessions works.
+  await db
     .delete(aiEstimatorChatSessions)
     .where(
       and(
         eq(aiEstimatorChatSessions.organizationId, organizationId),
-        eq(aiEstimatorChatSessions.userId, userId),
         eq(aiEstimatorChatSessions.id, sessionId),
       ),
-    )
-    .returning({ id: aiEstimatorChatSessions.id });
-  return result.length > 0;
+    );
 }
 
 export async function getSessionForUser(

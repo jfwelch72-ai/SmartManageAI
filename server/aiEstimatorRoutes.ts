@@ -994,12 +994,11 @@ router.delete(
   requireAuth,
   requireEstimatorAccess,
   async (req: AuthRequest, res: Response) => {
-    const deleted = await deleteSession(
+    await deleteSession(
       req.user!.organizationId!,
-      req.user!.id,
       req.params.id,
     );
-    if (!deleted) return res.status(404).json({ error: "Session not found" });
+    // Always 204 — idempotent: session already gone = desired state achieved.
     res.status(204).end();
   },
 );
