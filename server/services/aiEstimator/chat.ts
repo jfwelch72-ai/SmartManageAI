@@ -81,6 +81,12 @@ export interface ProposedAction {
   // Persisted server-side so cards survive a page refresh without re-applying.
   decision?: "applied" | "rejected";
   decisionAt?: string;
+  // Snapshot stored at apply time so the undo endpoint can reverse the change.
+  // Shape is action-dependent:
+  //   add    → { lineItemId: string }
+  //   edit   → { lineItemId: string; previousValues: Record<string, unknown> }
+  //   delete → { previousData: Record<string, unknown> }
+  undoSnapshot?: Record<string, unknown>;
 }
 
 // ── Anthropic tool definitions ───────────────────────────────────────────────

@@ -1142,12 +1142,14 @@ async function resolveEstimateIdForSession(
   return estRow?.id ?? null;
 }
 
-// Writes the decision ("applied" | "rejected") into the specific toolCallId entry
-// of the proposed_actions JSONB column. Non-throwing — logs on failure.
+// Writes the decision ("applied" | "rejected") and optional undoSnapshot into
+// the specific toolCallId entry of the proposed_actions JSONB column.
+// Non-throwing — logs on failure.
 async function persistActionDecision(
   messageId: string,
   toolCallId: string,
   decision: "applied" | "rejected",
+  undoSnapshot?: Record<string, unknown>,
 ): Promise<void> {
   try {
     const [row] = await db
@@ -1159,7 +1161,12 @@ async function persistActionDecision(
     const actions = (row.proposedActions ?? []) as ProposedAction[];
     const updated = actions.map((a) =>
       a.toolCallId === toolCallId
-        ? { ...a, decision, decisionAt: new Date().toISOString() }
+        ? {
+            ...a,
+            decision,
+            decisionAt: new Date().toISOString(),
+            ...(undoSnapshot !== undefined ? { undoSnapshot } : {}),
+          }
         : a,
     );
     await db
@@ -1168,6 +1175,34 @@ async function persistActionDecision(
       .where(eq(aiEstimatorChatMessages.id, messageId));
   } catch (err) {
     logError("persistActionDecision failed", { messageId, toolCallId, decision, error: String(err) });
+  }
+}
+
+// Clears the decision/undoSnapshot from an action so the card returns to idle.
+// Used by the undo endpoint after successfully reversing a change.
+async function resetActionDecision(
+  messageId: string,
+  toolCallId: string,
+): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
+      .from(aiEstimatorChatMessages)
+      .where(eq(aiEstimatorChatMessages.id, messageId))
+      .limit(1);
+    if (!row) return;
+    const actions = (row.proposedActions ?? []) as ProposedAction[];
+    const updated = actions.map((a) => {
+      if (a.toolCallId !== toolCallId) return a;
+      const { decision: _d, decisionAt: _da, undoSnapshot: _us, ...rest } = a as ProposedAction & { undoSnapshot?: unknown };
+      return rest;
+    });
+    await db
+      .update(aiEstimatorChatMessages)
+      .set({ proposedActions: updated })
+      .where(eq(aiEstimatorChatMessages.id, messageId));
+  } catch (err) {
+    logError("resetActionDecision failed", { messageId, toolCallId, error: String(err) });
   }
 }
 
@@ -1249,7 +1284,8 @@ router.post(
         matchVendorPricing([newItem], req.user!.organizationId!).catch(() => {});
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        // Store the new line item's ID so the undo endpoint can delete it.
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId: newItem.id });
         logCreate(req.user!.id, "estimate_line_item", newItem.id, {
           estimateId,
           source: "ai_estimator_chat_proposed_action",
@@ -1265,6 +1301,10 @@ router.post(
         const [existing] = await db
           .select({
             id: estimateLineItems.id,
+            description: estimateLineItems.description,
+            category: estimateLineItems.category,
+            unit: estimateLineItems.unit,
+            quantity: estimateLineItems.quantity,
             materialCost: estimateLineItems.materialCost,
             laborCost: estimateLineItems.laborCost,
             equipmentCost: estimateLineItems.equipmentCost,
@@ -1272,6 +1312,8 @@ router.post(
             consumablesCost: estimateLineItems.consumablesCost,
             overheadAllocation: estimateLineItems.overheadAllocation,
             profitAllocation: estimateLineItems.profitAllocation,
+            totalCost: estimateLineItems.totalCost,
+            notes: estimateLineItems.notes,
           })
           .from(estimateLineItems)
           .where(
@@ -1283,6 +1325,20 @@ router.post(
           )
           .limit(1);
         if (!existing) return res.status(404).json({ error: "Line item not found or not in your estimate" });
+
+        // Capture only the fields that will actually change for the undo snapshot.
+        const previousValues: Record<string, unknown> = {};
+        if (rest.description !== undefined) previousValues.description = existing.description;
+        if (rest.category !== undefined) previousValues.category = existing.category;
+        if (rest.unit !== undefined) previousValues.unit = existing.unit;
+        if (rest.quantity !== undefined) previousValues.quantity = existing.quantity;
+        if (rest.notes !== undefined) previousValues.notes = existing.notes;
+        if (rest.materialCost !== undefined) previousValues.materialCost = existing.materialCost;
+        if (rest.laborCost !== undefined) previousValues.laborCost = existing.laborCost;
+        if (rest.equipmentCost !== undefined) previousValues.equipmentCost = existing.equipmentCost;
+        if (rest.subcontractCost !== undefined) previousValues.subcontractCost = existing.subcontractCost;
+        // Always capture the original totalCost so undo can restore it.
+        previousValues.totalCost = existing.totalCost;
 
         const mat = rest.materialCost !== undefined ? Number(rest.materialCost) : Number(existing.materialCost ?? 0);
         const lab = rest.laborCost !== undefined ? Number(rest.laborCost) : Number(existing.laborCost ?? 0);
@@ -1310,7 +1366,7 @@ router.post(
         if (Object.keys(rawUpdates).length === 1) {
           // Only totalCost — nothing actually changed. Still stamp decision so
           // the card stays dismissed after a page refresh.
-          await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+          await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId, previousValues });
           return res.status(200).json({ message: "No fields to update" });
         }
 
@@ -1326,7 +1382,8 @@ router.post(
 
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        // Store previous values so the undo endpoint can restore them.
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId, previousValues });
         logUpdate(req.user!.id, "estimate_line_item", lineItemId, null, {
           source: "ai_estimator_chat_proposed_action",
           toolCallId: data.toolCallId,
@@ -1340,7 +1397,26 @@ router.post(
         const { lineItemId } = payload;
 
         const [existing] = await db
-          .select({ id: estimateLineItems.id })
+          .select({
+            id: estimateLineItems.id,
+            estimateId: estimateLineItems.estimateId,
+            category: estimateLineItems.category,
+            description: estimateLineItems.description,
+            quantity: estimateLineItems.quantity,
+            unit: estimateLineItems.unit,
+            source: estimateLineItems.source,
+            materialCost: estimateLineItems.materialCost,
+            laborCost: estimateLineItems.laborCost,
+            laborHours: estimateLineItems.laborHours,
+            equipmentCost: estimateLineItems.equipmentCost,
+            equipmentHours: estimateLineItems.equipmentHours,
+            consumablesCost: estimateLineItems.consumablesCost,
+            subcontractCost: estimateLineItems.subcontractCost,
+            overheadAllocation: estimateLineItems.overheadAllocation,
+            profitAllocation: estimateLineItems.profitAllocation,
+            totalCost: estimateLineItems.totalCost,
+            notes: estimateLineItems.notes,
+          })
           .from(estimateLineItems)
           .where(
             and(
@@ -1352,6 +1428,9 @@ router.post(
           .limit(1);
         if (!existing) return res.status(404).json({ error: "Line item not found or not in your estimate" });
 
+        // Capture the full row before deleting so undo can re-insert it.
+        const previousData = { ...existing };
+
         // Hard delete — matches the behaviour of DELETE /api/estimates/:id/line-items/:id.
         await db
           .delete(estimateLineItems)
@@ -1359,7 +1438,8 @@ router.post(
 
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        // Store the full row so the undo endpoint can re-insert it.
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { previousData });
         logDelete(req.user!.id, "estimate_line_item", lineItemId, {
           source: "ai_estimator_chat_proposed_action",
           toolCallId: data.toolCallId,
@@ -1422,6 +1502,147 @@ router.post(
     }
 
     return res.status(200).json({ rejected: true, toolCallId: data.toolCallId });
+  },
+);
+
+// =====================================================================
+// Task #2730 — Undo a previously applied proposed action.
+// Reverses the database change and resets the decision so the card
+// returns to idle (Accept / Reject) on the next page load.
+// =====================================================================
+router.post(
+  `${estimatorBase}/chat/sessions/:sid/messages/:mid/proposed-actions/undo`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(applyActionSchema, req.body, res);
+    if (!data) return;
+
+    const session = await getSessionForUser(
+      req.user!.organizationId!,
+      req.user!.id,
+      req.params.sid,
+    );
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const [msgRow] = await db
+      .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
+      .from(aiEstimatorChatMessages)
+      .where(
+        and(
+          eq(aiEstimatorChatMessages.id, req.params.mid),
+          eq(aiEstimatorChatMessages.sessionId, session.id),
+        ),
+      )
+      .limit(1);
+    if (!msgRow) return res.status(404).json({ error: "Message not found" });
+
+    const allActions = (msgRow.proposedActions ?? []) as ProposedAction[];
+    const action = allActions.find((a) => a.toolCallId === data.toolCallId);
+    if (!action) return res.status(404).json({ error: "Proposed action not found" });
+    if (action.decision !== "applied") {
+      return res.status(409).json({ error: "Action has not been applied — nothing to undo" });
+    }
+    const undoSnapshot = (action as ProposedAction & { undoSnapshot?: Record<string, unknown> }).undoSnapshot;
+    if (!undoSnapshot) {
+      return res.status(409).json({ error: "No undo snapshot available for this action" });
+    }
+
+    const estimateId = await resolveEstimateIdForSession(session);
+    if (!estimateId) {
+      return res.status(422).json({ error: "No estimate linked to this session" });
+    }
+    const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+    try {
+      if (action.action === "add") {
+        // Undo an add → delete the newly created line item.
+        const lineItemId = String(undoSnapshot.lineItemId ?? "");
+        if (!lineItemId) return res.status(422).json({ error: "Missing lineItemId in undo snapshot" });
+
+        await db
+          .delete(estimateLineItems)
+          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+        await resetActionDecision(req.params.mid, data.toolCallId);
+        logDelete(req.user!.id, "estimate_line_item", lineItemId, {
+          source: "ai_estimator_chat_undo",
+          toolCallId: data.toolCallId,
+        });
+        return res.status(200).json({ undone: true, toolCallId: data.toolCallId });
+      }
+
+      if (action.action === "edit") {
+        // Undo an edit → restore previous field values.
+        const lineItemId = String(undoSnapshot.lineItemId ?? "");
+        const previousValues = undoSnapshot.previousValues as Record<string, unknown> | undefined;
+        if (!lineItemId || !previousValues) {
+          return res.status(422).json({ error: "Incomplete undo snapshot for edit action" });
+        }
+
+        const rawRestore: Record<string, unknown> = {};
+        if (previousValues.description !== undefined) rawRestore.description = previousValues.description;
+        if (previousValues.category !== undefined) rawRestore.category = previousValues.category;
+        if (previousValues.unit !== undefined) rawRestore.unit = previousValues.unit;
+        if (previousValues.quantity !== undefined) rawRestore.quantity = previousValues.quantity;
+        if (previousValues.notes !== undefined) rawRestore.notes = previousValues.notes;
+        if (previousValues.materialCost !== undefined) rawRestore.materialCost = previousValues.materialCost;
+        if (previousValues.laborCost !== undefined) rawRestore.laborCost = previousValues.laborCost;
+        if (previousValues.equipmentCost !== undefined) rawRestore.equipmentCost = previousValues.equipmentCost;
+        if (previousValues.subcontractCost !== undefined) rawRestore.subcontractCost = previousValues.subcontractCost;
+
+        const normalizedRestore = normalizeLineItemData(rawRestore);
+        const restoreData = updateEstimateLineItemSchema.parse(normalizedRestore);
+
+        const [restored] = await db
+          .update(estimateLineItems)
+          .set({ ...restoreData, totalCost: String(previousValues.totalCost ?? 0), userAdjusted: true, updatedAt: new Date() })
+          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)))
+          .returning();
+        if (!restored) return res.status(404).json({ error: "Line item not found — cannot undo" });
+
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+        await resetActionDecision(req.params.mid, data.toolCallId);
+        logUpdate(req.user!.id, "estimate_line_item", lineItemId, null, {
+          source: "ai_estimator_chat_undo",
+          toolCallId: data.toolCallId,
+        });
+        return res.status(200).json({ undone: true, toolCallId: data.toolCallId, lineItem: restored });
+      }
+
+      if (action.action === "delete") {
+        // Undo a delete → re-insert the saved row data (new id).
+        const previousData = undoSnapshot.previousData as Record<string, unknown> | undefined;
+        if (!previousData) {
+          return res.status(422).json({ error: "Incomplete undo snapshot for delete action" });
+        }
+
+        const normalized = normalizeLineItemData({
+          ...previousData,
+          estimateId,
+          // id is intentionally omitted — a new uuid is generated.
+        });
+        const validatedData = insertEstimateLineItemSchema.parse(normalized);
+        const [reinserted] = await db.insert(estimateLineItems).values(validatedData).returning();
+
+        matchVendorPricing([reinserted], req.user!.organizationId!).catch(() => {});
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+        await resetActionDecision(req.params.mid, data.toolCallId);
+        logCreate(req.user!.id, "estimate_line_item", reinserted.id, {
+          estimateId,
+          source: "ai_estimator_chat_undo",
+          toolCallId: data.toolCallId,
+        });
+        return res.status(201).json({ undone: true, toolCallId: data.toolCallId, lineItem: reinserted });
+      }
+
+      return res.status(422).json({ error: "Unknown action type" });
+    } catch (err) {
+      logError("Proposed action undo failed", { error: String(err), toolCallId: data.toolCallId });
+      return res.status(500).json({ error: "Failed to undo change" });
+    }
   },
 );
 

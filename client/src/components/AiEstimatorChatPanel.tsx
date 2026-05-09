@@ -57,7 +57,7 @@ export interface ProposedAction {
   validationError?: string;
 }
 
-type ActionState = "idle" | "applying" | "rejecting" | "applied" | "rejected" | "error";
+type ActionState = "idle" | "applying" | "rejecting" | "applied" | "rejected" | "error" | "applied-undoable" | "undoing";
 
 interface ChatMessage {
   id: string;
@@ -140,6 +140,8 @@ function formatCurrency(n: unknown): string {
 
 // ── ProposedActionCard ─────────────────────────────────────────────────────
 
+const UNDO_WINDOW_SECONDS = 30;
+
 interface ProposedActionCardProps {
   action: ProposedAction;
   messageId: string;
@@ -147,8 +149,10 @@ interface ProposedActionCardProps {
   bidId?: string;
   state: ActionState;
   errorMessage?: string;
+  undoTimeLeft?: number;
   onApply: (toolCallId: string, messageId: string) => void;
   onReject: (toolCallId: string, messageId: string) => void;
+  onUndo: (toolCallId: string, messageId: string) => void;
 }
 
 function ProposedActionCard({
@@ -158,8 +162,10 @@ function ProposedActionCard({
   bidId,
   state,
   errorMessage,
+  undoTimeLeft,
   onApply,
   onReject,
+  onUndo,
 }: ProposedActionCardProps) {
   const p = action.payload as Record<string, unknown>;
   const isAdd = action.action === "add";
@@ -230,8 +236,12 @@ function ProposedActionCard({
   const newEstimateTotal = currentEstimateTotal + costDelta;
   // ── end cost-delta preview ─────────────────────────────────────────────────
 
-  const isSettled = state === "applied" || state === "rejected";
-  const isBusy = state === "applying" || state === "rejecting";
+  const isAppliedPermanently = state === "applied";
+  const isAppliedUndoable = state === "applied-undoable";
+  const isRejected = state === "rejected";
+  const isSettled = isAppliedPermanently || isRejected;
+  const isBusy = state === "applying" || state === "rejecting" || state === "undoing";
+  const showAcceptReject = !isSettled && !isAppliedUndoable && state !== "undoing";
 
   return (
     <div
@@ -241,7 +251,7 @@ function ProposedActionCard({
           : isEdit
             ? "border-amber-400/40 bg-amber-50 dark:bg-amber-950/20"
             : "border-primary/30 bg-primary/5"
-      } ${state === "applied" ? "opacity-70" : ""} ${state === "rejected" ? "opacity-50 line-through" : ""}`}
+      } ${isAppliedPermanently ? "opacity-70" : ""} ${isRejected ? "opacity-50 line-through" : ""}`}
       data-testid={`proposed-action-card-${action.toolCallId}`}
     >
       <div className="flex items-start gap-2 px-3 py-2">
@@ -339,8 +349,8 @@ function ProposedActionCard({
         </div>
       </div>
 
-      {/* Accept / Reject buttons — hidden once settled */}
-      {!isSettled && (
+      {/* Accept / Reject buttons — hidden once settled or undo window is open */}
+      {showAcceptReject && (
         <div className="flex gap-1.5 px-3 pb-2">
           <Button
             size="sm"
@@ -375,13 +385,35 @@ function ProposedActionCard({
         </div>
       )}
 
-      {/* Settled badge */}
+      {/* Applied with undo window — show applied badge + undo button + countdown */}
+      {(isAppliedUndoable || state === "undoing") && (
+        <div className="flex items-center gap-2 px-3 pb-2" data-testid={`action-undoable-${action.toolCallId}`}>
+          <span className="text-[11px] font-medium text-primary">✓ Applied</span>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-5 px-1.5 text-[11px] gap-1 text-muted-foreground hover:text-foreground"
+            disabled={state === "undoing"}
+            onClick={() => onUndo(action.toolCallId, messageId)}
+            data-testid={`button-undo-action-${action.toolCallId}`}
+          >
+            {state === "undoing" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3 w-3" />
+            )}
+            {state === "undoing" ? "Undoing…" : `Undo${undoTimeLeft != null && undoTimeLeft > 0 ? ` (${undoTimeLeft}s)` : ""}`}
+          </Button>
+        </div>
+      )}
+
+      {/* Permanently settled badge */}
       {isSettled && (
         <div
-          className={`px-3 pb-2 text-[11px] font-medium ${state === "applied" ? "text-primary" : "text-muted-foreground"}`}
+          className={`px-3 pb-2 text-[11px] font-medium ${isAppliedPermanently ? "text-primary" : "text-muted-foreground"}`}
           data-testid={`action-settled-${action.toolCallId}`}
         >
-          {state === "applied" ? "✓ Applied" : "✗ Rejected"}
+          {isAppliedPermanently ? "✓ Applied" : "✗ Rejected"}
         </div>
       )}
     </div>
@@ -413,6 +445,10 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
+  // Task #2730 — undo countdown tracking (seconds remaining per toolCallId).
+  const [undoCountdowns, setUndoCountdowns] = useState<Record<string, number>>({});
+  const undoTimerRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+
   function setActionState(toolCallId: string, state: ActionState) {
     setActionStates((prev) => ({ ...prev, [toolCallId]: state }));
   }
@@ -422,6 +458,44 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   function clearActionError(toolCallId: string) {
     setActionErrors((prev) => { const next = { ...prev }; delete next[toolCallId]; return next; });
   }
+
+  // Starts a UNDO_WINDOW_SECONDS countdown for the given toolCallId.
+  // Transitions from "applied-undoable" → "applied" when the window expires.
+  function startUndoCountdown(toolCallId: string) {
+    // Clear any existing timer for this id (shouldn't happen, but be safe).
+    if (undoTimerRefs.current[toolCallId]) {
+      clearInterval(undoTimerRefs.current[toolCallId]);
+    }
+    setUndoCountdowns((prev) => ({ ...prev, [toolCallId]: UNDO_WINDOW_SECONDS }));
+    const interval = setInterval(() => {
+      setUndoCountdowns((prev) => {
+        const next = (prev[toolCallId] ?? 0) - 1;
+        if (next <= 0) {
+          clearInterval(undoTimerRefs.current[toolCallId]);
+          delete undoTimerRefs.current[toolCallId];
+          // Transition to permanent "applied" — the undo window is closed.
+          setActionStates((s) => {
+            if (s[toolCallId] === "applied-undoable") {
+              return { ...s, [toolCallId]: "applied" };
+            }
+            return s;
+          });
+          return { ...prev, [toolCallId]: 0 };
+        }
+        return { ...prev, [toolCallId]: next };
+      });
+    }, 1000);
+    undoTimerRefs.current[toolCallId] = interval;
+  }
+
+  // Cleanup all undo timers on unmount.
+  useEffect(() => {
+    return () => {
+      for (const interval of Object.values(undoTimerRefs.current)) {
+        clearInterval(interval);
+      }
+    };
+  }, []);
 
   const sessionsQuery = useQuery<{ sessions: ChatSession[] }>({
     queryKey: ["/api/ai-estimator/chat/sessions"],
@@ -531,6 +605,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   });
 
   // Task #2729 — apply a proposed action from a Claude tool-use block.
+  // Task #2730 — after apply, opens the 30-second undo window.
   async function handleApplyAction(toolCallId: string, messageId: string) {
     if (!sessionId) return;
     clearActionError(toolCallId);
@@ -541,15 +616,48 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
         `/api/ai-estimator/chat/sessions/${sessionId}/messages/${messageId}/proposed-actions/apply`,
         { toolCallId },
       );
-      setActionState(toolCallId, "applied");
+      // Enter the undoable state and start the countdown.
+      setActionState(toolCallId, "applied-undoable");
+      startUndoCountdown(toolCallId);
       // Refresh the estimate workspace so the new/changed line item appears.
       if (bidId) {
         queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       }
-      toast({ title: "Change applied", description: "The estimate has been updated." });
+      toast({ title: "Change applied", description: "The estimate has been updated. You have 30 s to undo." });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not apply the change — please try again.";
       setActionState(toolCallId, "idle");
+      setActionError(toolCallId, msg);
+    }
+  }
+
+  // Task #2730 — undo a previously applied action.
+  async function handleUndoAction(toolCallId: string, messageId: string) {
+    if (!sessionId) return;
+    // Stop the countdown timer.
+    if (undoTimerRefs.current[toolCallId]) {
+      clearInterval(undoTimerRefs.current[toolCallId]);
+      delete undoTimerRefs.current[toolCallId];
+    }
+    setActionState(toolCallId, "undoing");
+    try {
+      await apiRequest(
+        "POST",
+        `/api/ai-estimator/chat/sessions/${sessionId}/messages/${messageId}/proposed-actions/undo`,
+        { toolCallId },
+      );
+      // Reset to idle so the user can re-accept or re-reject.
+      setActionState(toolCallId, "idle");
+      clearActionError(toolCallId);
+      // Refresh the estimate workspace to reflect the reversal.
+      if (bidId) {
+        queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      }
+      toast({ title: "Change undone", description: "The estimate has been restored." });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not undo the change.";
+      // On failure, transition back to the permanent applied state.
+      setActionState(toolCallId, "applied");
       setActionError(toolCallId, msg);
     }
   }
@@ -594,6 +702,12 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       setPending([]);
       setShowUpdateNotice(false);
       setActionStates({});
+      setUndoCountdowns({});
+      // Cancel all active undo timers.
+      for (const interval of Object.values(undoTimerRefs.current)) {
+        clearInterval(interval);
+      }
+      undoTimerRefs.current = {};
       hasAutoSentRef.current = false;
       prevRevisionRef.current = lineItemsRevision;
       prevMeasurementsRevisionRef.current = measurementsRevision;
@@ -1084,8 +1198,10 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
                               bidId={bidId}
                               state={actionStates[action.toolCallId] ?? "idle"}
                               errorMessage={actionErrors[action.toolCallId]}
+                              undoTimeLeft={undoCountdowns[action.toolCallId]}
                               onApply={handleApplyAction}
                               onReject={handleRejectAction}
+                              onUndo={handleUndoAction}
                             />
                           ))}
                         </div>
