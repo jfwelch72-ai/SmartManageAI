@@ -652,7 +652,7 @@ Do NOT use tools for general questions, analysis, or advice.`;
         systemPrompt: combinedSystemPrompt,
         messages: anthropicMessages,
         tools: LINE_ITEM_TOOLS as unknown as import("@anthropic-ai/sdk").Anthropic.Tool[],
-        maxTokens: 2048,
+        maxTokens: 4096,
       });
 
       // Build a synthetic AiChatResponse for the governance layer's metering.

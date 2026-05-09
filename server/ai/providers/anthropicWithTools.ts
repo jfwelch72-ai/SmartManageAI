@@ -71,7 +71,7 @@ export async function callAnthropicWithTools(
 
   const params: Anthropic.MessageCreateParamsNonStreaming = {
     model: ANTHROPIC_MODEL_SONNET_4_5,
-    max_tokens: req.maxTokens ?? 2048,
+    max_tokens: req.maxTokens ?? 4096,
     system: req.systemPrompt || undefined,
     messages: req.messages as Anthropic.MessageParam[],
     tools: req.tools,

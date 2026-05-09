@@ -1144,38 +1144,35 @@ async function resolveEstimateIdForSession(
 
 // Writes the decision ("applied" | "rejected") and optional undoSnapshot into
 // the specific toolCallId entry of the proposed_actions JSONB column.
-// Non-throwing — logs on failure.
+// Throws on failure — callers must handle or wrap in a transaction.
 async function persistActionDecision(
   messageId: string,
   toolCallId: string,
   decision: "applied" | "rejected",
   undoSnapshot?: Record<string, unknown>,
+  executor: typeof db = db,
 ): Promise<void> {
-  try {
-    const [row] = await db
-      .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
-      .from(aiEstimatorChatMessages)
-      .where(eq(aiEstimatorChatMessages.id, messageId))
-      .limit(1);
-    if (!row) return;
-    const actions = (row.proposedActions ?? []) as ProposedAction[];
-    const updated = actions.map((a) =>
-      a.toolCallId === toolCallId
-        ? {
-            ...a,
-            decision,
-            decisionAt: new Date().toISOString(),
-            ...(undoSnapshot !== undefined ? { undoSnapshot } : {}),
-          }
-        : a,
-    );
-    await db
-      .update(aiEstimatorChatMessages)
-      .set({ proposedActions: updated })
-      .where(eq(aiEstimatorChatMessages.id, messageId));
-  } catch (err) {
-    logError("persistActionDecision failed", { messageId, toolCallId, decision, error: String(err) });
-  }
+  const [row] = await executor
+    .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
+    .from(aiEstimatorChatMessages)
+    .where(eq(aiEstimatorChatMessages.id, messageId))
+    .limit(1);
+  if (!row) return;
+  const actions = (row.proposedActions ?? []) as ProposedAction[];
+  const updated = actions.map((a) =>
+    a.toolCallId === toolCallId
+      ? {
+          ...a,
+          decision,
+          decisionAt: new Date().toISOString(),
+          ...(undoSnapshot !== undefined ? { undoSnapshot } : {}),
+        }
+      : a,
+  );
+  await executor
+    .update(aiEstimatorChatMessages)
+    .set({ proposedActions: updated })
+    .where(eq(aiEstimatorChatMessages.id, messageId));
 }
 
 // Clears the decision/undoSnapshot from an action so the card returns to idle.
@@ -1278,14 +1275,20 @@ router.post(
             Number(rawPayload.subcontractCost ?? 0),
         });
         const validatedData = insertEstimateLineItemSchema.parse(normalized);
-        const [newItem] = await db.insert(estimateLineItems).values(validatedData).returning();
 
-        // Fire-and-forget vendor price matching — same as existing add route.
+        // Insert the new line item and stamp the decision atomically so the
+        // card never re-appears on page refresh even if the server crashes
+        // after the insert but before the JSONB write.
+        const newItem = await db.transaction(async (tx) => {
+          const [inserted] = await tx.insert(estimateLineItems).values(validatedData).returning();
+          await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId: inserted.id }, tx);
+          return inserted;
+        });
+
+        // Non-critical side-effects — run outside the transaction.
         matchVendorPricing([newItem], req.user!.organizationId!).catch(() => {});
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        // Store the new line item's ID so the undo endpoint can delete it.
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId: newItem.id });
         logCreate(req.user!.id, "estimate_line_item", newItem.id, {
           estimateId,
           source: "ai_estimator_chat_proposed_action",
@@ -1373,17 +1376,21 @@ router.post(
         const normalized = normalizeLineItemData(rawUpdates);
         const updateData = updateEstimateLineItemSchema.parse(normalized);
 
-        const [updated] = await db
-          .update(estimateLineItems)
-          .set({ ...updateData, totalCost: String(totalCost), userAdjusted: true, updatedAt: new Date() })
-          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)))
-          .returning();
-        if (!updated) return res.status(404).json({ error: "Line item not found" });
+        // Update the line item and stamp the decision atomically.
+        const updated = await db.transaction(async (tx) => {
+          const [u] = await tx
+            .update(estimateLineItems)
+            .set({ ...updateData, totalCost: String(totalCost), userAdjusted: true, updatedAt: new Date() })
+            .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)))
+            .returning();
+          if (!u) throw Object.assign(new Error("Line item not found"), { status: 404 });
+          await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId, previousValues }, tx);
+          return u;
+        });
 
+        // Non-critical side-effect — run outside the transaction.
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        // Store previous values so the undo endpoint can restore them.
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { lineItemId, previousValues });
         logUpdate(req.user!.id, "estimate_line_item", lineItemId, null, {
           source: "ai_estimator_chat_proposed_action",
           toolCallId: data.toolCallId,
@@ -1431,15 +1438,18 @@ router.post(
         // Capture the full row before deleting so undo can re-insert it.
         const previousData = { ...existing };
 
-        // Hard delete — matches the behaviour of DELETE /api/estimates/:id/line-items/:id.
-        await db
-          .delete(estimateLineItems)
-          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+        // Delete the line item and stamp the decision atomically so the
+        // card never re-appears on page refresh.
+        await db.transaction(async (tx) => {
+          await tx
+            .delete(estimateLineItems)
+            .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+          await persistActionDecision(req.params.mid, data.toolCallId, "applied", { previousData }, tx);
+        });
 
+        // Non-critical side-effect — run outside the transaction.
         try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
 
-        // Store the full row so the undo endpoint can re-insert it.
-        await persistActionDecision(req.params.mid, data.toolCallId, "applied", { previousData });
         logDelete(req.user!.id, "estimate_line_item", lineItemId, {
           source: "ai_estimator_chat_proposed_action",
           toolCallId: data.toolCallId,
@@ -1449,6 +1459,10 @@ router.post(
 
       return res.status(422).json({ error: "Unknown action type" });
     } catch (err) {
+      // Surface "line item not found" thrown from inside the transaction.
+      if (err instanceof Error && (err as Error & { status?: number }).status === 404) {
+        return res.status(404).json({ error: err.message });
+      }
       logError("Proposed action apply failed", { error: String(err), toolCallId: data.toolCallId });
       return res.status(500).json({ error: "Failed to apply change" });
     }

@@ -215,8 +215,10 @@ export function ProposedActionCard({
 
   // Derived live values — recalculated on every cache update.
   const liveTotalCost = Number(liveEstimate?.estimate?.totals?.totalCost ?? 0);
+  // Edit and delete payloads carry `lineItemId`; add payloads have no existing
+  // item to look up.  Fall back to `p.id` only as a safety net.
   const liveExistingItem = liveEstimate?.estimate?.lineItems?.find(
-    (li) => li.id === String(p.id ?? ""),
+    (li) => li.id === String(p.lineItemId ?? p.id ?? ""),
   );
   const liveExistingItemCost = liveExistingItem
     ? Number(liveExistingItem.materialCost ?? 0) +
