@@ -4,8 +4,24 @@ import {
   Loader2, RefreshCcw, Database, Sparkles, AlertTriangle,
   ChevronDown, ChevronRight, Download, X, Ban, RotateCcw,
   Info, AlertCircle, CheckCircle2, TrendingUp, Settings, Plus, Trash2,
-  HelpCircle, Layers, Pencil, BookOpen, Wand2, ArrowUp, ArrowDown
+  HelpCircle, Layers, Pencil, BookOpen, Wand2, GripVertical
 } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1412,11 +1428,117 @@ interface SkillSuggestion {
 
 // ─── Skills tab ─────────────────────────────────────────────────────────────
 
+interface SortableSkillRowProps {
+  skill: AiEstimatorSkill;
+  scopeLabel: (s: AiEstimatorSkill) => string;
+  onToggleActive: (checked: boolean) => void;
+  onEdit: () => void;
+  onDelete: () => void;
+  isDeletePending: boolean;
+  isReorderPending: boolean;
+}
+
+function SortableSkillRow({
+  skill,
+  scopeLabel,
+  onToggleActive,
+  onEdit,
+  onDelete,
+  isDeletePending,
+  isReorderPending,
+}: SortableSkillRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: skill.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 10 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-start gap-3 p-3 bg-background${isDragging ? " shadow-lg rounded-md" : ""}`}
+      data-testid={`row-skill-${skill.id}`}
+    >
+      <button
+        className="mt-0.5 text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing shrink-0 touch-none"
+        aria-label="Drag to reorder"
+        data-testid={`handle-skill-drag-${skill.id}`}
+        disabled={isReorderPending}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+      <Switch
+        checked={skill.isActive}
+        onCheckedChange={onToggleActive}
+        data-testid={`switch-skill-active-${skill.id}`}
+      />
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-medium text-sm" data-testid={`text-skill-name-${skill.id}`}>{skill.name}</span>
+          <Badge variant="outline" className="text-xs">{scopeLabel(skill)}</Badge>
+          <Badge variant="outline" className="text-xs">P{skill.priority}</Badge>
+          {skill.sourceType === "promoted_lesson" && (
+            <Badge variant="secondary" className="text-xs">From lesson</Badge>
+          )}
+          {!skill.isActive && (
+            <Badge variant="secondary" className="text-xs">Inactive</Badge>
+          )}
+        </div>
+        {skill.description && (
+          <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
+        )}
+        <div className="text-xs text-muted-foreground mt-1 font-mono whitespace-pre-wrap break-all">
+          {skill.ruleBody.length > 160 ? skill.ruleBody.slice(0, 157) + "…" : skill.ruleBody}
+        </div>
+      </div>
+      <div className="flex gap-1 shrink-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={onEdit}
+          data-testid={`button-skill-edit-${skill.id}`}
+        >
+          <Pencil className="h-3 w-3" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6 text-destructive"
+          onClick={onDelete}
+          disabled={isDeletePending}
+          data-testid={`button-skill-delete-${skill.id}`}
+        >
+          <Trash2 className="h-3 w-3" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function SkillsTab() {
   const { toast } = useToast();
   const [editingSkill, setEditingSkill] = useState<AiEstimatorSkill | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
   const [draft, setDraft] = useState<{
     name: string;
@@ -1519,18 +1641,18 @@ function SkillsTab() {
     return s.scopeValue ? `${labels[s.scope] ?? s.scope}: ${s.scopeValue}` : labels[s.scope] ?? s.scope;
   };
 
-  function moveSkill(skill: AiEstimatorSkill, direction: "up" | "down") {
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
     const sorted = [...orgOwned].sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
-    const idx = sorted.findIndex((s) => s.id === skill.id);
-    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
-    if (swapIdx < 0 || swapIdx >= sorted.length) return;
-    const swapped = sorted[swapIdx];
-    const newPriority = swapped.priority;
-    const swappedPriority = skill.priority;
-    reorderMutation.mutate([
-      { id: skill.id, priority: newPriority },
-      { id: swapped.id, priority: swappedPriority },
-    ]);
+    const oldIdx = sorted.findIndex((s) => s.id === active.id);
+    const newIdx = sorted.findIndex((s) => s.id === over.id);
+    if (oldIdx === -1 || newIdx === -1) return;
+    const reordered = [...sorted];
+    const [moved] = reordered.splice(oldIdx, 1);
+    reordered.splice(newIdx, 0, moved);
+    const items = reordered.map((s, i) => ({ id: s.id, priority: (i + 1) * 10 }));
+    reorderMutation.mutate(items);
   }
 
   function openCreate() {
@@ -1621,86 +1743,37 @@ function SkillsTab() {
             <div className="space-y-6">
               {orgOwned.length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Your firm's skills</div>
-                  <div className="divide-y rounded-md border">
-                    {[...orgOwned].sort((a, b) => a.priority - b.priority).map((skill, idx, arr) => (
-                      <div key={skill.id} className="flex items-start gap-3 p-3" data-testid={`row-skill-${skill.id}`}>
-                        <Switch
-                          checked={skill.isActive}
-                          onCheckedChange={(checked) =>
-                            updateMutation.mutate({ id: skill.id, data: { isActive: checked } })
-                          }
-                          data-testid={`switch-skill-active-${skill.id}`}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-medium text-sm" data-testid={`text-skill-name-${skill.id}`}>{skill.name}</span>
-                            <Badge variant="outline" className="text-xs">{scopeLabel(skill)}</Badge>
-                            <Badge variant="outline" className="text-xs">P{skill.priority}</Badge>
-                            {skill.sourceType === "promoted_lesson" && (
-                              <Badge variant="secondary" className="text-xs">From lesson</Badge>
-                            )}
-                            {!skill.isActive && (
-                              <Badge variant="secondary" className="text-xs">Inactive</Badge>
-                            )}
-                          </div>
-                          {skill.description && (
-                            <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
-                          )}
-                          <div className="text-xs text-muted-foreground mt-1 font-mono whitespace-pre-wrap break-all">
-                            {skill.ruleBody.length > 160 ? skill.ruleBody.slice(0, 157) + "…" : skill.ruleBody}
-                          </div>
-                        </div>
-                        <div className="flex flex-col gap-0.5 shrink-0">
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => moveSkill(skill, "up")}
-                              disabled={idx === 0 || reorderMutation.isPending}
-                              title="Move up"
-                              data-testid={`button-skill-up-${skill.id}`}
-                            >
-                              <ArrowUp className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => moveSkill(skill, "down")}
-                              disabled={idx === arr.length - 1 || reorderMutation.isPending}
-                              title="Move down"
-                              data-testid={`button-skill-down-${skill.id}`}
-                            >
-                              <ArrowDown className="h-3 w-3" />
-                            </Button>
-                          </div>
-                          <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6"
-                              onClick={() => openEdit(skill)}
-                              data-testid={`button-skill-edit-${skill.id}`}
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-destructive"
-                              onClick={() => deleteMutation.mutate(skill.id)}
-                              disabled={deleteMutation.isPending}
-                              data-testid={`button-skill-delete-${skill.id}`}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Your firm's skills
+                    <span className="ml-2 font-normal normal-case text-muted-foreground/70">— drag to reorder</span>
                   </div>
+                  <DndContext
+                    sensors={dndSensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={[...orgOwned].sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt)).map((s) => s.id)}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="divide-y rounded-md border">
+                        {[...orgOwned].sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt)).map((skill) => (
+                          <SortableSkillRow
+                            key={skill.id}
+                            skill={skill}
+                            scopeLabel={scopeLabel}
+                            onToggleActive={(checked) =>
+                              updateMutation.mutate({ id: skill.id, data: { isActive: checked } })
+                            }
+                            onEdit={() => openEdit(skill)}
+                            onDelete={() => deleteMutation.mutate(skill.id)}
+                            isDeletePending={deleteMutation.isPending}
+                            isReorderPending={reorderMutation.isPending}
+                          />
+                        ))}
+                      </div>
+                    </SortableContext>
+                  </DndContext>
                 </div>
               )}
 
