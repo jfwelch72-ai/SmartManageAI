@@ -164,6 +164,8 @@ export type GeneralFeatureKey =
   | "general.website.seo"
   | "general.website.blog_draft"
   | "general.social.post_draft"
+  // Scheduling
+  | "general.schedule.generate"
   // Onboarding
   | "general.onboarding.color_palette"
   | "general.onboarding.trade_research";

@@ -26,6 +26,7 @@ import OpenAI from "openai";
 import { requireAuth, requireRole, requireAnyFeaturePermission, getEffectivePermissions, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
+import { routedGeneralChatCompletion } from "./ai/providers";
 import { extractDocumentContent } from "./ai/documentExtractor";
 import {
   detectPromptInjection,
@@ -3400,14 +3401,17 @@ Generate a realistic schedule that:
       userId: req.user?.id || null,
       actionType: "schedule_generation",
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt }
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 4000,
+        const completion = await routedGeneralChatCompletion({
+          orgId: orgId,
+          featureKey: "general.schedule.generate",
+          request: {
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 4000,
+          },
         });
         const result = completion.choices[0]?.message?.content;
         return { result, completion };
