@@ -446,7 +446,8 @@ import {
   skillVerificationRequests, userCertifications, notifications,
   employeePerformanceProfiles, attendanceLogs, safetyIncidents,
   qualityIssues, performanceReviews, supervisorNotes,
-  ssoConfigurations, userSessions, activityLog
+  ssoConfigurations, userSessions, activityLog,
+  aiEstimatorUserAccess, aiEstimatorChatSessions, aiEstimatorChatMessages,
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken, invalidateAuthCache,
@@ -1409,6 +1410,90 @@ const upload = multer({
     clearTestEmailOutbox();
     res.status(204).end();
   });
+
+  // DEV ONLY (Task #2731): Seed an AI Estimator chat session with pre-built
+  // proposed actions so e2e tests can exercise the real apply/reject server
+  // routes without triggering a live Claude call.
+  // Also grants AI Estimator access to the authenticated user so that
+  // requireEstimatorAccess passes during the test without a separate setup step.
+  router.post(
+    "/api/dev/seed-ai-estimator-session",
+    requireDevSeed,
+    requireAuth,
+    async (req: AuthRequest, res, next) => {
+      try {
+        const { bidId, estimateId, proposedActions } = req.body as {
+          bidId?: string;
+          estimateId?: string;
+          proposedActions?: unknown[];
+        };
+        if (!bidId) {
+          res.status(400).json({ error: "bidId is required" });
+          return;
+        }
+        const orgId = req.user!.organizationId!;
+        const userId = req.user!.id;
+
+        // Grant AI Estimator access for this user — upsert so the endpoint is
+        // safe to call multiple times in the same test session.
+        await db
+          .insert(aiEstimatorUserAccess)
+          .values({
+            organizationId: orgId,
+            userId,
+            enabled: true,
+            canTrain: false,
+            enabledByUserId: userId,
+            enabledAt: new Date(),
+          })
+          .onConflictDoUpdate({
+            target: [
+              aiEstimatorUserAccess.organizationId,
+              aiEstimatorUserAccess.userId,
+            ],
+            set: { enabled: true, enabledAt: new Date() },
+          });
+
+        // Create the session linked to this bid + estimate.
+        const [session] = await db
+          .insert(aiEstimatorChatSessions)
+          .values({
+            organizationId: orgId,
+            userId,
+            bidId: bidId ?? null,
+            estimateId: estimateId ?? null,
+            title: "E2E seed session",
+          })
+          .returning();
+
+        // User turn — prevents the proactive-opener auto-send effect which
+        // fires only when messages.length === 0 on initial load.
+        await db.insert(aiEstimatorChatMessages).values({
+          sessionId: session.id,
+          role: "user",
+          content: "Can you suggest some changes?",
+        });
+
+        // Assistant message with the caller-supplied proposed actions.
+        const [message] = await db
+          .insert(aiEstimatorChatMessages)
+          .values({
+            sessionId: session.id,
+            role: "assistant",
+            content: "Here are my suggested changes to the estimate:",
+            proposedActions: proposedActions ?? [],
+          })
+          .returning();
+
+        logInfo("[DEV] Seeded AI estimator session for e2e test", {
+          orgId, userId, sessionId: session.id, messageId: message.id,
+        });
+        res.json({ sessionId: session.id, messageId: message.id });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post("/api/auth/change-password", requireAuth, async (req: AuthRequest, res, next) => {
     try {
