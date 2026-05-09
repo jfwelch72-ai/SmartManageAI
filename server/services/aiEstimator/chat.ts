@@ -4,7 +4,10 @@ import { db } from "../../db";
 import {
   aiEstimatorChatMessages,
   aiEstimatorChatSessions,
+  bids,
+  estimates,
   estimateLineItems,
+  projects,
   takeoffMeasurements,
   takeoffSheets,
   type AiEstimatorChatMessage,
@@ -127,44 +130,115 @@ export async function sendChatTurn(opts: {
     })
     .returning();
 
-  // Fetch live estimate lines so the AI knows what's already been estimated.
-  const lineItems = opts.session.estimateId
-    ? await db
-        .select({
-          description: estimateLineItems.description,
-          quantity: estimateLineItems.quantity,
-          unit: estimateLineItems.unit,
-          category: estimateLineItems.category,
-          materialCost: estimateLineItems.materialCost,
-          laborCost: estimateLineItems.laborCost,
-          totalCost: estimateLineItems.totalCost,
-        })
-        .from(estimateLineItems)
-        .where(
-          and(
-            eq(estimateLineItems.estimateId, opts.session.estimateId),
-            isNull(estimateLineItems.deletedAt),
-          ),
-        )
-        .limit(50)
-    : [];
+  // ── Live bid / project / estimate data ─────────────────────────────────────
+  // All fetched in parallel; each guard is the session FK that was already
+  // verified by assertBidInOrg / assertEstimateInOrg during session creation.
 
-  // Fetch live takeoff measurements (joined through sheets to get bid scope).
-  const measurements = opts.session.bidId
+  const [bidRow, projectRow] = await Promise.all([
+    opts.session.bidId
+      ? db
+          .select({
+            name: bids.name,
+            code: bids.code,
+            clientName: bids.clientName,
+            status: bids.status,
+            description: bids.description,
+            locationAddress: bids.locationAddress,
+            city: bids.city,
+            state: bids.state,
+            bidAmount: bids.bidAmount,
+            dueDate: bids.dueDate,
+          })
+          .from(bids)
+          .where(eq(bids.id, opts.session.bidId))
+          .limit(1)
+          .then((r) => r[0] ?? null)
+      : Promise.resolve(null),
+    opts.session.projectId
+      ? db
+          .select({
+            name: projects.name,
+            code: projects.code,
+            status: projects.status,
+            description: projects.description,
+            locationAddress: projects.locationAddress,
+            city: projects.city,
+            state: projects.state,
+            budget: projects.budget,
+            contractAmount: projects.contractAmount,
+          })
+          .from(projects)
+          .where(eq(projects.id, opts.session.projectId))
+          .limit(1)
+          .then((r) => r[0] ?? null)
+      : Promise.resolve(null),
+  ]);
+
+  // Resolve estimateId: use session value or discover it from the bid.
+  let resolvedEstimateId = opts.session.estimateId;
+  if (!resolvedEstimateId && opts.session.bidId) {
+    const estRow = await db
+      .select({ id: estimates.id, baseBidAmount: estimates.baseBidAmount, status: estimates.status })
+      .from(estimates)
+      .where(eq(estimates.bidId, opts.session.bidId))
+      .orderBy(desc(estimates.versionNumber))
+      .limit(1)
+      .then((r) => r[0] ?? null);
+    resolvedEstimateId = estRow?.id ?? null;
+  }
+
+  // Fetch estimate header (totals summary)
+  const estimateHeader = resolvedEstimateId
     ? await db
-        .select({
-          label: takeoffMeasurements.label,
-          type: takeoffMeasurements.type,
-          computedLengthFt: takeoffMeasurements.computedLengthFt,
-          computedAreaFt2: takeoffMeasurements.computedAreaFt2,
-          computedVolumeCy: takeoffMeasurements.computedVolumeCy,
-          count: takeoffMeasurements.count,
-        })
-        .from(takeoffMeasurements)
-        .innerJoin(takeoffSheets, eq(takeoffMeasurements.sheetId, takeoffSheets.id))
-        .where(eq(takeoffSheets.bidId, opts.session.bidId))
-        .limit(40)
-    : [];
+        .select({ baseBidAmount: estimates.baseBidAmount, status: estimates.status, versionNumber: estimates.versionNumber })
+        .from(estimates)
+        .where(eq(estimates.id, resolvedEstimateId))
+        .limit(1)
+        .then((r) => r[0] ?? null)
+    : null;
+
+  // Fetch live estimate lines so the AI knows what's already been estimated.
+  const [lineItems, measurements] = await Promise.all([
+    resolvedEstimateId
+      ? db
+          .select({
+            description: estimateLineItems.description,
+            quantity: estimateLineItems.quantity,
+            unit: estimateLineItems.unit,
+            category: estimateLineItems.category,
+            materialCost: estimateLineItems.materialCost,
+            laborCost: estimateLineItems.laborCost,
+            equipmentCost: estimateLineItems.equipmentCost,
+            subcontractCost: estimateLineItems.subcontractCost,
+            totalCost: estimateLineItems.totalCost,
+          })
+          .from(estimateLineItems)
+          .where(
+            and(
+              eq(estimateLineItems.estimateId, resolvedEstimateId),
+              isNull(estimateLineItems.deletedAt),
+            ),
+          )
+          .limit(60)
+      : Promise.resolve([]),
+
+    // Fetch live takeoff measurements (joined through sheets to get bid scope).
+    opts.session.bidId
+      ? db
+          .select({
+            label: takeoffMeasurements.label,
+            type: takeoffMeasurements.type,
+            computedLengthFt: takeoffMeasurements.computedLengthFt,
+            computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+            computedVolumeCy: takeoffMeasurements.computedVolumeCy,
+            count: takeoffMeasurements.count,
+          })
+          .from(takeoffMeasurements)
+          .innerJoin(takeoffSheets, eq(takeoffMeasurements.sheetId, takeoffSheets.id))
+          .where(eq(takeoffSheets.bidId, opts.session.bidId))
+          .limit(40)
+      : Promise.resolve([]),
+  ]);
 
   const contextRows = await retrieveContext({
     organizationId: opts.organizationId,
@@ -200,27 +274,77 @@ export async function sendChatTurn(opts: {
     .slice(-10)
     .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
 
-  const sysPrompt = `You are "Ask the Estimator", an assistant scoped strictly to this contractor's own AI Estimator workspace.
-Answer using ONLY the provided context (org's bids, estimates, takeoffs, learned rates) and prior chat turns.
-If the answer is not in the context, say so plainly. Never invent costs that aren't in the rates table.
-Cite the source rows you used by their id when relevant. Reply in plain prose with short bullet points.`;
+  const sysPrompt = `You are "Ask the Estimator", an assistant with full visibility into this contractor's active bid and project data.
+You are provided the LIVE state of the current bid, project, estimate line items, and takeoff measurements below — use them directly.
+Answer using the provided live data, learned rates, and prior context. Never invent costs not in the rates table.
+Cite source rows by id when relevant. Reply in plain prose with short bullet points.`;
 
-  // Build a structured block of the live estimate state so the AI can see
-  // exactly what has already been estimated and measured for this bid.
-  const lineItemsSection =
-    lineItems.length > 0
-      ? `Current estimate line items (${lineItems.length} items):\n` +
+  // ── Build the live-context block injected before every turn ──────────────
+  const parts: string[] = [];
+
+  if (bidRow) {
+    const loc = [bidRow.locationAddress, bidRow.city, bidRow.state].filter(Boolean).join(", ");
+    const due = bidRow.dueDate ? new Date(bidRow.dueDate).toLocaleDateString() : null;
+    parts.push(
+      `ACTIVE BID:\n` +
+        `  Name: ${bidRow.name}\n` +
+        `  Code: ${bidRow.code}\n` +
+        `  Client: ${bidRow.clientName}\n` +
+        `  Status: ${bidRow.status}\n` +
+        (loc ? `  Location: ${loc}\n` : "") +
+        (bidRow.bidAmount ? `  Bid amount: $${Number(bidRow.bidAmount).toLocaleString()}\n` : "") +
+        (due ? `  Due: ${due}\n` : "") +
+        (bidRow.description ? `  Scope: ${bidRow.description.slice(0, 400)}\n` : ""),
+    );
+  }
+
+  if (projectRow) {
+    const loc = [projectRow.locationAddress, projectRow.city, projectRow.state].filter(Boolean).join(", ");
+    parts.push(
+      `LINKED PROJECT:\n` +
+        `  Name: ${projectRow.name}\n` +
+        `  Code: ${projectRow.code}\n` +
+        `  Status: ${projectRow.status}\n` +
+        (loc ? `  Location: ${loc}\n` : "") +
+        (projectRow.contractAmount ? `  Contract: $${Number(projectRow.contractAmount).toLocaleString()}\n` : "") +
+        (projectRow.budget ? `  Budget: $${Number(projectRow.budget).toLocaleString()}\n` : "") +
+        (projectRow.description ? `  Description: ${projectRow.description.slice(0, 300)}\n` : ""),
+    );
+  }
+
+  if (estimateHeader) {
+    parts.push(
+      `ESTIMATE SUMMARY:\n` +
+        `  Version: v${estimateHeader.versionNumber}  Status: ${estimateHeader.status}\n` +
+        (estimateHeader.baseBidAmount
+          ? `  Base bid amount: $${Number(estimateHeader.baseBidAmount).toLocaleString()}\n`
+          : ""),
+    );
+  }
+
+  if (lineItems.length > 0) {
+    const totalCostSum = lineItems.reduce((s, li) => s + Number(li.totalCost ?? 0), 0);
+    parts.push(
+      `ESTIMATE LINE ITEMS (${lineItems.length} items, subtotal $${totalCostSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}):\n` +
         lineItems
           .map(
             (li) =>
-              `- [${li.category}] ${li.description}: qty=${li.quantity} ${li.unit} | mat=$${Number(li.materialCost ?? 0).toFixed(2)} labor=$${Number(li.laborCost ?? 0).toFixed(2)} total=$${Number(li.totalCost).toFixed(2)}`,
+              `  - [${li.category}] ${li.description}: qty=${li.quantity} ${li.unit}` +
+              ` | mat=$${Number(li.materialCost ?? 0).toFixed(2)}` +
+              ` labor=$${Number(li.laborCost ?? 0).toFixed(2)}` +
+              (Number(li.equipmentCost ?? 0) > 0 ? ` equip=$${Number(li.equipmentCost).toFixed(2)}` : "") +
+              (Number(li.subcontractCost ?? 0) > 0 ? ` sub=$${Number(li.subcontractCost).toFixed(2)}` : "") +
+              ` total=$${Number(li.totalCost).toFixed(2)}`,
           )
-          .join("\n")
-      : "No estimate line items have been added yet.";
+          .join("\n"),
+    );
+  } else {
+    parts.push("ESTIMATE LINE ITEMS: None added yet.");
+  }
 
-  const measurementsSection =
-    measurements.length > 0
-      ? `\n\nCurrent takeoff measurements (${measurements.length} items):\n` +
+  if (measurements.length > 0) {
+    parts.push(
+      `TAKEOFF MEASUREMENTS (${measurements.length} items):\n` +
         measurements
           .map((m) => {
             const qty =
@@ -233,12 +357,15 @@ Cite the source rows you used by their id when relevant. Reply in plain prose wi
                     : m.type === "COUNT"
                       ? `count=${m.count ?? "?"}`
                       : "";
-            return `- [${m.type}] ${m.label}: ${qty}`;
+            return `  - [${m.type}] ${m.label}: ${qty}`;
           })
-          .join("\n")
-      : "\n\nNo takeoff measurements recorded yet.";
+          .join("\n"),
+    );
+  } else {
+    parts.push("TAKEOFF MEASUREMENTS: None recorded yet.");
+  }
 
-  const liveEstimateBlock = `Live estimate state for this bid:\n${lineItemsSection}${measurementsSection}`;
+  const liveEstimateBlock = parts.join("\n\n");
 
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
   const contextBlock = `Context:\n` +
