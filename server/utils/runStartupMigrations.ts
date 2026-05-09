@@ -45,6 +45,7 @@ import { ensureTakeoffStylusTelemetryEventsTable } from "./ensureTakeoffStylusTe
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensureCloseoutPackagesAtomicColumns } from "./ensureCloseoutPackagesAtomicColumns";
+import { ensureAiEstimatorChatAttachmentsColumn } from "./ensureAiEstimatorChatAttachmentsColumn";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
@@ -544,6 +545,10 @@ const migrations: MigrationStep[] = [
   { name: "mobile_sync_events_table", category: "CREATE_TABLE", fn: ensureMobileSyncEventsTable },
   // Task #2703 — seed read-only trade-pack skills (idempotent; skips existing rows).
   { name: "ai_estimator_skills_seed", category: "CREATE_TABLE", fn: seedTradePackSkills },
+  // AI Estimator chat attachments — adds the `attachments` JSONB column the
+  // chat panel uses to ship file uploads, screenshot pastes and voice notes
+  // alongside the prompt. Migration 0112; mirrored here so fresh DBs converge.
+  { name: "ai_estimator_chat_attachments", category: "ADD_COLUMN", fn: ensureAiEstimatorChatAttachmentsColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

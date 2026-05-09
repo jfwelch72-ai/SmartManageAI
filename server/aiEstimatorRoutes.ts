@@ -1004,7 +1004,27 @@ router.get(
   },
 );
 
-const chatTurnSchema = z.object({ prompt: z.string().min(1).max(4000) });
+const chatTurnSchema = z
+  .object({
+    prompt: z.string().max(4000).optional().default(""),
+    attachments: z
+      .array(
+        z.object({
+          kind: z.enum(["image", "document", "audio"]),
+          objectPath: z.string().min(1).startsWith("/objects/"),
+          contentType: z.string().min(1).max(200),
+          fileName: z.string().min(1).max(300),
+          sizeBytes: z.number().int().min(0).max(500 * 1024 * 1024),
+        }),
+      )
+      .max(8)
+      .optional()
+      .default([]),
+  })
+  .refine((d) => d.prompt.trim().length > 0 || d.attachments.length > 0, {
+    message: "Either prompt or attachments must be provided",
+    path: ["prompt"],
+  });
 router.post(
   `${estimatorBase}/chat/sessions/:id/messages`,
   requireAuth,
@@ -1024,7 +1044,8 @@ router.post(
         organizationId: req.user!.organizationId!,
         userId: req.user!.id,
         session,
-        prompt: data.prompt,
+        prompt: data.prompt ?? "",
+        attachments: data.attachments,
       });
       if ("blocked" in out && out.blocked) return blockedResponse(res, out.reason);
       res.json(out);

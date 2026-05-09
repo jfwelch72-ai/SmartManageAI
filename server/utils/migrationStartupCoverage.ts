@@ -434,6 +434,13 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // Renumbered 0106 -> 0107 during rebase to avoid filename collision with
   // Task #2689's 0106_closeout_packages_atomic_columns.sql, which landed
   // concurrently.
+  // AI Estimator chat attachments — adds `attachments` JSONB column to
+  // ai_estimator_chat_messages so the chat panel can ship files, screenshot
+  // pastes and voice notes alongside the prompt. Mirrored at boot by
+  // ensureAiEstimatorChatAttachmentsColumn.
+  "0112_ai_estimator_chat_attachments.sql": {
+    helper: "ensureAiEstimatorChatAttachmentsColumn",
+  },
   "0107_equipment_repairs_pm_idempotency.sql": {
     helper: "ensureEquipmentRepairsPmIdempotency",
     note: "Task #2690 — FK + partial unique index for PM-cycle idempotency, plus a one-shot backfill of historical [PM:<id>] tagged rows.",

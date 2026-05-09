@@ -23,6 +23,7 @@ import {
   retrieveLessons,
 } from "./retrieval";
 import { listLearnedRatesForOrgRanked, summarizeRate } from "./learnedRates";
+import { processChatAttachments, type ChatAttachmentInput } from "./chatAttachments";
 import {
   assertBidInOrg,
   assertEstimateInOrg,
@@ -116,17 +117,40 @@ export async function sendChatTurn(opts: {
   userId: string;
   session: AiEstimatorChatSession;
   prompt: string;
+  attachments?: ChatAttachmentInput[];
 }): Promise<ChatTurnResult | { blocked: true; reason?: string }> {
   const trimmed = opts.prompt.trim();
-  if (!trimmed) throw new Error("Empty prompt");
+  const incomingAttachments = opts.attachments ?? [];
+  if (!trimmed && incomingAttachments.length === 0) throw new Error("Empty prompt");
+
+  // Process attachments up-front (Whisper for audio, document extractor for
+  // images/PDFs). Each objectPath is ACL-checked against the caller's
+  // userId+organizationId before any download/extract/transcribe runs, so a
+  // crafted /objects/<id> for another tenant's file is dropped at the gate.
+  // All extracted text is wrapped in quarantineUserText so a hostile
+  // filename/body can't escape the user envelope.
+  const { stored: storedAttachments, promptBlock: attachmentPromptBlock } =
+    await processChatAttachments(incomingAttachments, {
+      userId: opts.userId,
+      organizationId: opts.organizationId,
+    });
+
+  // If the user only attached files (no typed text), give the assistant a
+  // sensible default prompt so it has something to react to.
+  const effectivePrompt = trimmed
+    ? trimmed
+    : storedAttachments.length > 0
+      ? "Please review the attached file(s) in the context of this estimate and tell me what's relevant, what's missing, or what I should do next."
+      : trimmed;
 
   const [userMsg] = await db
     .insert(aiEstimatorChatMessages)
     .values({
       sessionId: opts.session.id,
       role: "user",
-      content: trimmed,
+      content: effectivePrompt,
       citations: null,
+      attachments: storedAttachments.length > 0 ? storedAttachments : null,
     })
     .returning();
 
@@ -296,9 +320,18 @@ export async function sendChatTurn(opts: {
   }));
 
   const history = await listMessages(opts.session.id);
+  // Drop the just-inserted user row from the history slice — we splice it back
+  // in below as the final `user` turn (with the attachment block appended).
   const historyTurns = history
+    .filter((m) => m.id !== userMsg.id)
     .slice(-10)
     .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
+
+  // Compose the final user turn: the typed prompt + a labeled block per
+  // attachment (already quarantined in chatAttachments.ts).
+  const finalUserContent = attachmentPromptBlock
+    ? `${effectivePrompt}\n\n${attachmentPromptBlock}`
+    : effectivePrompt;
 
   const sysPrompt = `You are "Ask the Estimator", an assistant with full visibility into this contractor's active bid and project data.
 You are provided the LIVE state of the current bid, project, estimate line items, and takeoff measurements below — use them directly.
@@ -440,7 +473,7 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
               : []),
             { role: "system", content: contextBlock },
             ...historyTurns,
-            { role: "user", content: trimmed },
+            { role: "user", content: finalUserContent },
           ],
           max_completion_tokens: 1500,
         },

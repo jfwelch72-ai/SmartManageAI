@@ -246,6 +246,11 @@ export const aiEstimatorChatMessages = pgTable("ai_estimator_chat_messages", {
   content: text("content").notNull(),
   // Citations: array of { type: 'org' | 'web', sourceType?, sourceId?, title?, url? }
   citations: jsonb("citations"),
+  // Attachments uploaded with this user turn. Array of:
+  //   { kind: 'image'|'document'|'audio', objectPath, contentType, fileName,
+  //     sizeBytes, transcript?, extractedText? }
+  // null on assistant/system rows and on legacy user rows.
+  attachments: jsonb("attachments"),
   feedbackOutcome: text("feedback_outcome"), // null | 'THUMBS_UP' | 'THUMBS_DOWN'
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
