@@ -33,10 +33,15 @@ interface Props {
   enabled: boolean;
 }
 
+const PROACTIVE_OPENER =
+  "Please review the existing estimate lines and takeoff measurements for this bid, then suggest what might be missing, under-estimated, or needs attention based on our historical rates.";
+
 export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled }: Props) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Guard so the proactive opener is only fired once per panel mount.
+  const hasAutoSentRef = useRef(false);
 
   const sessionsQuery = useQuery<{ sessions: ChatSession[] }>({
     queryKey: ["/api/ai-estimator/chat/sessions"],
@@ -97,16 +102,39 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     },
   });
 
+  // Auto-find an existing session for this bid/estimate, or create one.
   useEffect(() => {
     if (!enabled) return;
     if (sessionId) return;
-    // Auto-pick newest session for this bid/estimate, otherwise create one.
+    if (sessionsQuery.isLoading) return;
     const sessions = sessionsQuery.data?.sessions ?? [];
     const match = sessions.find(
       (s) => (bidId ? s.bidId === bidId : true) && (estimateId ? s.estimateId === estimateId : true),
     );
-    if (match) setSessionId(match.id);
-  }, [enabled, sessionsQuery.data, bidId, estimateId, sessionId]);
+    if (match) {
+      setSessionId(match.id);
+    } else if (!createSession.isPending) {
+      // Auto-create so the user doesn't need to click "Start a conversation".
+      createSession.mutate();
+    }
+  }, [enabled, sessionsQuery.data, sessionsQuery.isLoading, bidId, estimateId, sessionId]);
+
+  // After the session loads with no prior messages, fire a proactive opener
+  // so the AI analyses what's already in the estimate and suggests improvements.
+  useEffect(() => {
+    if (!sessionId) return;
+    if (hasAutoSentRef.current) return;
+    if (messagesQuery.isLoading || !messagesQuery.data) return;
+    const msgs = messagesQuery.data.messages ?? [];
+    // Mark handled immediately to prevent double-fire on re-renders.
+    hasAutoSentRef.current = true;
+    if (msgs.length > 0) return;
+    // Small delay so the chat UI is visible before the spinner appears.
+    const timer = setTimeout(() => {
+      sendTurn.mutate(PROACTIVE_OPENER);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [sessionId, messagesQuery.data, messagesQuery.isLoading]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
@@ -115,6 +143,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   if (!enabled) return null;
 
   const messages = messagesQuery.data?.messages ?? [];
+  const isStarting = sessionsQuery.isLoading || createSession.isPending;
 
   return (
     <Card className="flex flex-col h-full" data-testid="ai-estimator-chat-panel">
@@ -124,89 +153,86 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 min-h-0">
-        {!sessionId ? (
-          <div className="flex flex-col items-center justify-center py-6 gap-3">
-            <p className="text-sm text-muted-foreground text-center">
-              Ask questions grounded in your bids, estimates, takeoffs and learned cost rates.
-            </p>
-            <Button onClick={() => createSession.mutate()} disabled={createSession.isPending} data-testid="button-start-chat">
-              {createSession.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              Start a conversation
-            </Button>
+        {isStarting ? (
+          <div className="flex flex-col items-center justify-center py-6 gap-2">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Analyzing your estimate…</p>
           </div>
         ) : (
           <>
             <ScrollArea className="flex-1">
               <div ref={scrollRef} className="space-y-3 pr-2">
-                {messagesQuery.isLoading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  messages.map((m) => (
-                    <div
-                      key={m.id}
-                      className={`rounded-md p-3 text-sm ${m.role === "user" ? "bg-muted ml-6" : "bg-primary/5 mr-6"}`}
-                      data-testid={`chat-message-${m.id}`}
-                    >
-                      <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{m.role}</div>
-                      <div className="whitespace-pre-wrap">{m.content}</div>
-                      {m.citations && m.citations.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                          <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Sources</div>
-                          {m.citations.map((c) => {
-                            // Task #2453 — friendly label + click-through for
-                            // standalone-takeoff sources. The retrieval layer
-                            // already prefixes the title with
-                            // "Standalone takeoff: …", so we strip the raw
-                            // sourceType to avoid double-labelling.
-                            if (c.sourceType === "standalone_takeoff") {
-                              return (
-                                <a
-                                  key={c.id}
-                                  href={`/takeoff/standalone/${c.sourceId}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="inline-block mr-1"
-                                  data-testid={`citation-standalone-takeoff-${c.sourceId}`}
-                                >
-                                  <Badge variant="outline" className="text-[10px] hover:bg-muted">
-                                    {c.title.startsWith("Standalone takeoff:") ? c.title : `Standalone takeoff: ${c.title}`}
-                                  </Badge>
-                                </a>
-                              );
-                            }
+                {messagesQuery.isLoading || sendTurn.isPending ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {sendTurn.isPending && messages.length === 0 ? "Analyzing estimate…" : "Thinking…"}
+                  </div>
+                ) : null}
+                {messages.map((m) => (
+                  <div
+                    key={m.id}
+                    className={`rounded-md p-3 text-sm ${m.role === "user" ? "bg-muted ml-6" : "bg-primary/5 mr-6"}`}
+                    data-testid={`chat-message-${m.id}`}
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">{m.role}</div>
+                    <div className="whitespace-pre-wrap">{m.content}</div>
+                    {m.citations && m.citations.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Sources</div>
+                        {m.citations.map((c) => {
+                          // Task #2453 — friendly label + click-through for
+                          // standalone-takeoff sources. The retrieval layer
+                          // already prefixes the title with
+                          // "Standalone takeoff: …", so we strip the raw
+                          // sourceType to avoid double-labelling.
+                          if (c.sourceType === "standalone_takeoff") {
                             return (
-                              <Badge key={c.id} variant="outline" className="text-[10px] mr-1">
-                                {c.sourceType}: {c.title}
-                              </Badge>
+                              <a
+                                key={c.id}
+                                href={`/takeoff/standalone/${c.sourceId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-block mr-1"
+                                data-testid={`citation-standalone-takeoff-${c.sourceId}`}
+                              >
+                                <Badge variant="outline" className="text-[10px] hover:bg-muted">
+                                  {c.title.startsWith("Standalone takeoff:") ? c.title : `Standalone takeoff: ${c.title}`}
+                                </Badge>
+                              </a>
                             );
-                          })}
-                        </div>
-                      )}
-                      {m.role === "assistant" && (
-                        <div className="mt-2 flex gap-1">
-                          <Button
-                            size="icon"
-                            variant={m.feedbackOutcome === "THUMBS_UP" ? "default" : "ghost"}
-                            className="h-6 w-6"
-                            onClick={() => sendFeedback.mutate({ messageId: m.id, outcome: "THUMBS_UP" })}
-                            data-testid={`button-thumbs-up-${m.id}`}
-                          >
-                            <ThumbsUp className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant={m.feedbackOutcome === "THUMBS_DOWN" ? "destructive" : "ghost"}
-                            className="h-6 w-6"
-                            onClick={() => sendFeedback.mutate({ messageId: m.id, outcome: "THUMBS_DOWN" })}
-                            data-testid={`button-thumbs-down-${m.id}`}
-                          >
-                            <ThumbsDown className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  ))
-                )}
+                          }
+                          return (
+                            <Badge key={c.id} variant="outline" className="text-[10px] mr-1">
+                              {c.sourceType}: {c.title}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {m.role === "assistant" && (
+                      <div className="mt-2 flex gap-1">
+                        <Button
+                          size="icon"
+                          variant={m.feedbackOutcome === "THUMBS_UP" ? "default" : "ghost"}
+                          className="h-6 w-6"
+                          onClick={() => sendFeedback.mutate({ messageId: m.id, outcome: "THUMBS_UP" })}
+                          data-testid={`button-thumbs-up-${m.id}`}
+                        >
+                          <ThumbsUp className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant={m.feedbackOutcome === "THUMBS_DOWN" ? "destructive" : "ghost"}
+                          className="h-6 w-6"
+                          onClick={() => sendFeedback.mutate({ messageId: m.id, outcome: "THUMBS_DOWN" })}
+                          data-testid={`button-thumbs-down-${m.id}`}
+                        >
+                          <ThumbsDown className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
             </ScrollArea>
             <div className="flex gap-2 pt-2 border-t">

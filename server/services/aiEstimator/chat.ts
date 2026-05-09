@@ -1,9 +1,12 @@
 // prompt-injection-guard: in-app estimator chat — message history is authenticated tenant authors; existing module flow extractDocumentContent → quarantineDocumentBlocks happens upstream in sheetIndex
-import { and, asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorChatMessages,
   aiEstimatorChatSessions,
+  estimateLineItems,
+  takeoffMeasurements,
+  takeoffSheets,
   type AiEstimatorChatMessage,
   type AiEstimatorChatSession,
 } from "@shared/schema";
@@ -124,6 +127,45 @@ export async function sendChatTurn(opts: {
     })
     .returning();
 
+  // Fetch live estimate lines so the AI knows what's already been estimated.
+  const lineItems = opts.session.estimateId
+    ? await db
+        .select({
+          description: estimateLineItems.description,
+          quantity: estimateLineItems.quantity,
+          unit: estimateLineItems.unit,
+          category: estimateLineItems.category,
+          materialCost: estimateLineItems.materialCost,
+          laborCost: estimateLineItems.laborCost,
+          totalCost: estimateLineItems.totalCost,
+        })
+        .from(estimateLineItems)
+        .where(
+          and(
+            eq(estimateLineItems.estimateId, opts.session.estimateId),
+            isNull(estimateLineItems.deletedAt),
+          ),
+        )
+        .limit(50)
+    : [];
+
+  // Fetch live takeoff measurements (joined through sheets to get bid scope).
+  const measurements = opts.session.bidId
+    ? await db
+        .select({
+          label: takeoffMeasurements.label,
+          type: takeoffMeasurements.type,
+          computedLengthFt: takeoffMeasurements.computedLengthFt,
+          computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+          computedVolumeCy: takeoffMeasurements.computedVolumeCy,
+          count: takeoffMeasurements.count,
+        })
+        .from(takeoffMeasurements)
+        .innerJoin(takeoffSheets, eq(takeoffMeasurements.sheetId, takeoffSheets.id))
+        .where(eq(takeoffSheets.bidId, opts.session.bidId))
+        .limit(40)
+    : [];
+
   const contextRows = await retrieveContext({
     organizationId: opts.organizationId,
     query: trimmed,
@@ -162,6 +204,42 @@ export async function sendChatTurn(opts: {
 Answer using ONLY the provided context (org's bids, estimates, takeoffs, learned rates) and prior chat turns.
 If the answer is not in the context, say so plainly. Never invent costs that aren't in the rates table.
 Cite the source rows you used by their id when relevant. Reply in plain prose with short bullet points.`;
+
+  // Build a structured block of the live estimate state so the AI can see
+  // exactly what has already been estimated and measured for this bid.
+  const lineItemsSection =
+    lineItems.length > 0
+      ? `Current estimate line items (${lineItems.length} items):\n` +
+        lineItems
+          .map(
+            (li) =>
+              `- [${li.category}] ${li.description}: qty=${li.quantity} ${li.unit} | mat=$${Number(li.materialCost ?? 0).toFixed(2)} labor=$${Number(li.laborCost ?? 0).toFixed(2)} total=$${Number(li.totalCost).toFixed(2)}`,
+          )
+          .join("\n")
+      : "No estimate line items have been added yet.";
+
+  const measurementsSection =
+    measurements.length > 0
+      ? `\n\nCurrent takeoff measurements (${measurements.length} items):\n` +
+        measurements
+          .map((m) => {
+            const qty =
+              m.type === "LINEAR"
+                ? `${(m.computedLengthFt ?? 0).toFixed(1)} LF`
+                : m.type === "AREA"
+                  ? `${(m.computedAreaFt2 ?? 0).toFixed(1)} SF`
+                  : m.type === "VOLUME"
+                    ? `${(m.computedVolumeCy ?? 0).toFixed(1)} CY`
+                    : m.type === "COUNT"
+                      ? `count=${m.count ?? "?"}`
+                      : "";
+            return `- [${m.type}] ${m.label}: ${qty}`;
+          })
+          .join("\n")
+      : "\n\nNo takeoff measurements recorded yet.";
+
+  const liveEstimateBlock = `Live estimate state for this bid:\n${lineItemsSection}${measurementsSection}`;
+
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
   const contextBlock = `Context:\n` +
     contextRows
@@ -194,6 +272,7 @@ Cite the source rows you used by their id when relevant. Reply in plain prose wi
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            { role: "system", content: liveEstimateBlock },
             ...(lessonsBlock
               ? ([{ role: "system", content: lessonsBlock }] as const)
               : []),
