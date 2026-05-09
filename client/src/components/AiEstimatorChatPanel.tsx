@@ -3,6 +3,9 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowDown,
   CheckCircle,
+  ChevronDown,
+  ChevronUp,
+  Clock,
   FileText,
   Image as ImageIcon,
   Info,
@@ -445,6 +448,9 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
 
+  // Task #2736 — change history panel toggle.
+  const [showHistory, setShowHistory] = useState(false);
+
   // Task #2730 — undo countdown tracking (seconds remaining per toolCallId).
   const [undoCountdowns, setUndoCountdowns] = useState<Record<string, number>>({});
   const undoTimerRefs = useRef<Record<string, ReturnType<typeof setInterval>>>({});
@@ -659,6 +665,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       // On failure, transition back to the permanent applied state.
       setActionState(toolCallId, "applied");
       setActionError(toolCallId, msg);
+      toast({ title: "Could not undo change", description: msg, variant: "destructive" });
     }
   }
 
@@ -701,6 +708,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       setDraft("");
       setPending([]);
       setShowUpdateNotice(false);
+      setShowHistory(false);
       setActionStates({});
       setUndoCountdowns({});
       // Cancel all active undo timers.
@@ -960,6 +968,38 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const messages = messagesQuery.data?.messages ?? [];
   const isStarting = sessionsQuery.isLoading || createSession.isPending;
 
+  // Task #2736 — derive the persistent change history from loaded messages.
+  // An action counts as "in history" when the server-persisted decision is
+  // "applied" AND the current in-memory state is not "idle" (i.e. it hasn't
+  // been undone in this session) and not "rejected".
+  interface HistoryItem {
+    toolCallId: string;
+    messageId: string;
+    action: "add" | "edit" | "delete";
+    payload: Record<string, unknown>;
+    decisionAt?: string;
+  }
+  const appliedHistoryItems: HistoryItem[] = [];
+  for (const msg of messages) {
+    if (!msg.proposedActions) continue;
+    for (const a of msg.proposedActions as Array<ProposedAction & { decision?: string; decisionAt?: string }>) {
+      const liveState = actionStates[a.toolCallId];
+      // Include when server says "applied" and local state is either applied,
+      // applied-undoable, or not yet seeded (undefined — trust server).
+      const serverApplied = a.decision === "applied";
+      const locallyReverted = liveState === "idle" || liveState === "rejected";
+      if (serverApplied && !locallyReverted) {
+        appliedHistoryItems.push({
+          toolCallId: a.toolCallId,
+          messageId: msg.id,
+          action: a.action,
+          payload: a.payload,
+          decisionAt: a.decisionAt,
+        });
+      }
+    }
+  }
+
   const readyAttachments = pending
     .filter((p) => p.status === "ready" && p.objectPath)
     .map<ChatAttachment>((p) => ({
@@ -1016,22 +1056,42 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
         <CardTitle className="text-sm flex items-center gap-2">
           <Sparkles className="h-4 w-4 text-primary" />
           <span>Ask the Estimator</span>
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="ml-auto h-6 w-6 text-muted-foreground hover:text-destructive"
-            onClick={() => clearChat.mutate()}
-            disabled={!sessionId || clearChat.isPending}
-            title="Clear chat and start fresh"
-            data-testid="button-clear-chat"
-          >
-            {clearChat.isPending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <RotateCcw className="h-3.5 w-3.5" />
+          <div className="ml-auto flex items-center gap-1">
+            {appliedHistoryItems.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant={showHistory ? "secondary" : "ghost"}
+                className="h-6 px-2 text-[11px] gap-1 text-muted-foreground"
+                onClick={() => setShowHistory((v) => !v)}
+                title="View change history"
+                data-testid="button-toggle-history"
+              >
+                <Clock className="h-3 w-3" />
+                History
+                <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-0.5">
+                  {appliedHistoryItems.length}
+                </Badge>
+                {showHistory ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+              </Button>
             )}
-          </Button>
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 text-muted-foreground hover:text-destructive"
+              onClick={() => clearChat.mutate()}
+              disabled={!sessionId || clearChat.isPending}
+              title="Clear chat and start fresh"
+              data-testid="button-clear-chat"
+            >
+              {clearChat.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RotateCcw className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 min-h-0">
@@ -1042,6 +1102,84 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
           >
             <span className="font-medium">Error:</span>
             <span>{panelError}</span>
+          </div>
+        )}
+
+        {/* Task #2736 — Change history panel */}
+        {showHistory && appliedHistoryItems.length > 0 && (
+          <div
+            className="rounded-md border bg-muted/30 text-xs"
+            data-testid="change-history-panel"
+          >
+            <div className="flex items-center gap-2 px-3 py-2 border-b">
+              <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <span className="font-medium text-foreground">Accepted changes this session</span>
+              <span className="text-muted-foreground ml-auto">{appliedHistoryItems.length} item{appliedHistoryItems.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div className="divide-y max-h-56 overflow-y-auto">
+              {appliedHistoryItems.map((item) => {
+                const p = item.payload;
+                const isAdd = item.action === "add";
+                const isEdit = item.action === "edit";
+                const isDelete = item.action === "delete";
+                const liveState = actionStates[item.toolCallId] ?? "applied";
+                const isUndoing = liveState === "undoing";
+
+                const label = isDelete
+                  ? `Removed: ${String(p.description ?? "(line item)")}`
+                  : isEdit
+                    ? `Edited: ${String(p.description ?? "line item")}`
+                    : `Added: ${String(p.description ?? "(new item)")}`;
+
+                const acceptedAt = item.decisionAt
+                  ? new Date(item.decisionAt).toLocaleString(undefined, {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : null;
+
+                return (
+                  <div
+                    key={item.toolCallId}
+                    className="flex items-center gap-2 px-3 py-2"
+                    data-testid={`history-item-${item.toolCallId}`}
+                  >
+                    <div className="shrink-0">
+                      {isDelete ? (
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      ) : isEdit ? (
+                        <Pencil className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                      ) : (
+                        <Plus className="h-3.5 w-3.5 text-primary" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="truncate font-medium text-foreground">{label}</div>
+                      {acceptedAt && (
+                        <div className="text-[10px] text-muted-foreground">{acceptedAt}</div>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-6 px-2 text-[11px] gap-1 shrink-0 text-muted-foreground hover:text-foreground"
+                      disabled={isUndoing}
+                      onClick={() => handleUndoAction(item.toolCallId, item.messageId)}
+                      data-testid={`button-history-undo-${item.toolCallId}`}
+                    >
+                      {isUndoing ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3 w-3" />
+                      )}
+                      {isUndoing ? "Undoing…" : "Undo"}
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
         {isStarting ? (
