@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import {
   ArrowDown,
   CheckCircle,
@@ -181,8 +181,12 @@ export function ProposedActionCard({
     Number(p.equipmentCost ?? 0) +
     Number(p.subcontractCost ?? 0);
 
-  // ── Cost-delta preview (Task #2732) ────────────────────────────────────────
-  // Read the already-cached bid estimate — no extra API call.
+  // ── Cost-delta preview (Task #2732 / Task #2733) ───────────────────────────
+  // Subscribe to the bid estimate cache reactively so that when a sibling card
+  // is accepted and the cache is invalidated/refetched, this card re-renders
+  // with the updated baseline.  We never trigger additional network requests
+  // from within the card itself — staleTime:Infinity + refetchOnMount:false
+  // mean we only update when the parent (handleApplyAction) calls invalidate.
   type CachedLineItem = {
     id: string;
     materialCost: string | number | null;
@@ -197,54 +201,86 @@ export function ProposedActionCard({
     } | null;
   };
 
-  const cachedEstimate = bidId
-    ? queryClient.getQueryData<CachedEstimate>(bidEstimateKey(bidId))
-    : undefined;
+  const { data: liveEstimate } = useQuery<CachedEstimate>({
+    queryKey: bidEstimateKey(bidId ?? ""),
+    enabled: !!bidId,
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+  });
 
-  const currentEstimateTotal = Number(
-    cachedEstimate?.estimate?.totals?.totalCost ?? 0,
-  );
-
-  const existingItem = cachedEstimate?.estimate?.lineItems?.find(
+  // Derived live values — recalculated on every cache update.
+  const liveTotalCost = Number(liveEstimate?.estimate?.totals?.totalCost ?? 0);
+  const liveExistingItem = liveEstimate?.estimate?.lineItems?.find(
     (li) => li.id === String(p.id ?? ""),
   );
-  const existingItemCost = existingItem
-    ? Number(existingItem.materialCost ?? 0) +
-      Number(existingItem.laborCost ?? 0) +
-      Number(existingItem.equipmentCost ?? 0) +
-      Number(existingItem.subcontractCost ?? 0)
+  const liveExistingItemCost = liveExistingItem
+    ? Number(liveExistingItem.materialCost ?? 0) +
+      Number(liveExistingItem.laborCost ?? 0) +
+      Number(liveExistingItem.equipmentCost ?? 0) +
+      Number(liveExistingItem.subcontractCost ?? 0)
     : 0;
-
-  // For edit, proposed total uses payload value where provided, otherwise
-  // falls back to the existing line item value so partial edits work correctly.
-  const proposedEditTotal = existingItem
-    ? (p.materialCost !== undefined ? Number(p.materialCost) : Number(existingItem.materialCost ?? 0)) +
-      (p.laborCost !== undefined ? Number(p.laborCost) : Number(existingItem.laborCost ?? 0)) +
-      (p.equipmentCost !== undefined ? Number(p.equipmentCost) : Number(existingItem.equipmentCost ?? 0)) +
-      (p.subcontractCost !== undefined ? Number(p.subcontractCost) : Number(existingItem.subcontractCost ?? 0))
+  const liveProposedEditTotal = liveExistingItem
+    ? (p.materialCost !== undefined ? Number(p.materialCost) : Number(liveExistingItem.materialCost ?? 0)) +
+      (p.laborCost !== undefined ? Number(p.laborCost) : Number(liveExistingItem.laborCost ?? 0)) +
+      (p.equipmentCost !== undefined ? Number(p.equipmentCost) : Number(liveExistingItem.equipmentCost ?? 0)) +
+      (p.subcontractCost !== undefined ? Number(p.subcontractCost) : Number(liveExistingItem.subcontractCost ?? 0))
     : totalCost;
-
-  const costDelta = isAdd
+  const liveCostDelta = isAdd
     ? totalCost
     : isEdit
-      ? proposedEditTotal - existingItemCost
+      ? liveProposedEditTotal - liveExistingItemCost
       : isDelete
-        ? -existingItemCost
+        ? -liveExistingItemCost
         : 0;
+  const liveShowDeltaPreview =
+    !!liveEstimate?.estimate &&
+    (isAdd ? totalCost > 0 : isEdit ? liveExistingItem !== undefined : isDelete ? liveExistingItemCost > 0 : false);
+  const liveNewEstimateTotal = liveTotalCost + liveCostDelta;
 
-  const showDeltaPreview =
-    !!cachedEstimate?.estimate &&
-    (isAdd ? totalCost > 0 : isEdit ? existingItem !== undefined : isDelete ? existingItemCost > 0 : false);
-
-  const newEstimateTotal = currentEstimateTotal + costDelta;
-  // ── end cost-delta preview ─────────────────────────────────────────────────
-
+  // isSettled and related booleans must be declared before the freeze effect
+  // that depends on isSettled (Task #2733). The full undo-aware state set is
+  // from Task #2734; showDeltaPreview/newEstimateTotal are computed reactively
+  // via live/frozen values below, so the stale non-reactive versions are dropped.
   const isAppliedPermanently = state === "applied";
   const isAppliedUndoable = state === "applied-undoable";
   const isRejected = state === "rejected";
   const isSettled = isAppliedPermanently || isRejected;
   const isBusy = state === "applying" || state === "rejecting" || state === "undoing";
   const showAcceptReject = !isSettled && !isAppliedUndoable && state !== "undoing";
+
+  // Freeze: once a card is settled (applied / rejected) we capture the
+  // last-seen live values so the card becomes a historical record and no
+  // longer shifts as other cards are accepted.
+  type FrozenPreview = {
+    currentEstimateTotal: number;
+    newEstimateTotal: number;
+    costDelta: number;
+    existingItemCost: number;
+    showDeltaPreview: boolean;
+  };
+  const [frozenPreview, setFrozenPreview] = useState<FrozenPreview | null>(null);
+  const wasSettledRef = useRef(false);
+  useEffect(() => {
+    if (!wasSettledRef.current && isSettled) {
+      wasSettledRef.current = true;
+      setFrozenPreview({
+        currentEstimateTotal: liveTotalCost,
+        newEstimateTotal: liveNewEstimateTotal,
+        costDelta: liveCostDelta,
+        existingItemCost: liveExistingItemCost,
+        showDeltaPreview: liveShowDeltaPreview,
+      });
+    }
+  }, [isSettled, liveTotalCost, liveNewEstimateTotal, liveCostDelta, liveExistingItemCost, liveShowDeltaPreview]);
+
+  // Use frozen values for settled cards, live values for pending ones.
+  const currentEstimateTotal = frozenPreview?.currentEstimateTotal ?? liveTotalCost;
+  const newEstimateTotal = frozenPreview?.newEstimateTotal ?? liveNewEstimateTotal;
+  const costDelta = frozenPreview?.costDelta ?? liveCostDelta;
+  const existingItemCost = frozenPreview?.existingItemCost ?? liveExistingItemCost;
+  const showDeltaPreview = frozenPreview?.showDeltaPreview ?? liveShowDeltaPreview;
+  // ── end cost-delta preview ─────────────────────────────────────────────────
 
   return (
     <div
