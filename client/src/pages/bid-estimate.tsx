@@ -1,6 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useRoute, useLocation } from "wouter";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +71,37 @@ export default function BidEstimate() {
   // Incremented on every successful line-item add/edit/delete so the chat
   // panel can surface an "Estimate updated" notice to the user.
   const [lineItemsMutationCount, setLineItemsMutationCount] = useState(0);
+  // Incremented when takeoff measurements for this bid are updated so the
+  // chat panel can surface the same "Estimate updated" notice.
+  const [measurementsMutationCount, setMeasurementsMutationCount] = useState(0);
+  // Tracks the last-seen serialised measurements payload so passive refetches
+  // that return identical data do not trigger the "Estimate updated" banner.
+  const prevMeasurementsDataRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!bidId) return;
+    const allMeasurementsQueryKey = `/api/bids/${bidId}/takeoff/all-measurements`;
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (
+        event.type === "updated" &&
+        // Only fire when a fetch resolved successfully — not on fetch-start,
+        // invalidation, option changes, or other state transitions.
+        (event as { type: string; action?: { type: string } }).action?.type === "success" &&
+        Array.isArray(event.query.queryKey) &&
+        event.query.queryKey[0] === allMeasurementsQueryKey
+      ) {
+        const serialised = JSON.stringify(event.query.state.data);
+        if (
+          prevMeasurementsDataRef.current !== null &&
+          serialised !== prevMeasurementsDataRef.current
+        ) {
+          setMeasurementsMutationCount((c) => c + 1);
+        }
+        prevMeasurementsDataRef.current = serialised;
+      }
+    });
+  }, [bidId]);
+
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [assemblyInsertOpen, setAssemblyInsertOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
@@ -895,6 +926,7 @@ export default function BidEstimate() {
               projectId={bid.convertedToProjectId ?? undefined}
               enabled
               lineItemsRevision={lineItemsMutationCount}
+              measurementsRevision={measurementsMutationCount}
             />
           </div>
         </div>

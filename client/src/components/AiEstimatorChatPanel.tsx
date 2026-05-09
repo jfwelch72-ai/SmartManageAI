@@ -74,6 +74,9 @@ interface Props {
   /** Increments whenever a line item is added/edited/deleted so the panel
    *  can notify the user that the AI context will be refreshed on the next turn. */
   lineItemsRevision?: number;
+  /** Increments whenever a takeoff measurement is added/edited/deleted so the
+   *  panel can notify the user that the AI context will be refreshed on the next turn. */
+  measurementsRevision?: number;
 }
 
 const PROACTIVE_OPENER =
@@ -112,7 +115,7 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled, lineItemsRevision }: Props) {
+export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled, lineItemsRevision, measurementsRevision }: Props) {
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -127,8 +130,9 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const hasAutoSentRef = useRef(false);
   // Track whether we should show the "estimate updated" notice.
   const [showUpdateNotice, setShowUpdateNotice] = useState(false);
-  // Remember the last revision we've seen so we can detect changes.
+  // Remember the last revisions we've seen so we can detect changes.
   const prevRevisionRef = useRef<number | undefined>(undefined);
+  const prevMeasurementsRevisionRef = useRef<number | undefined>(undefined);
 
   const sessionsQuery = useQuery<{ sessions: ChatSession[] }>({
     queryKey: ["/api/ai-estimator/chat/sessions"],
@@ -389,6 +393,20 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       setShowUpdateNotice(true);
     }
   }, [lineItemsRevision]);
+
+  // Show a notice whenever takeoff measurements change after the panel has mounted.
+  // prevMeasurementsRevisionRef starts as undefined so the very first value doesn't trigger a banner.
+  useEffect(() => {
+    if (measurementsRevision === undefined) return;
+    if (prevMeasurementsRevisionRef.current === undefined) {
+      prevMeasurementsRevisionRef.current = measurementsRevision;
+      return;
+    }
+    if (measurementsRevision !== prevMeasurementsRevisionRef.current) {
+      prevMeasurementsRevisionRef.current = measurementsRevision;
+      setShowUpdateNotice(true);
+    }
+  }, [measurementsRevision]);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
