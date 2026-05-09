@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Check } from "lucide-react";
+import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { pollJobUntilDone } from "@/lib/jobs";
 import { useToast } from "@/hooks/use-toast";
@@ -47,6 +47,7 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
   const [open, setOpen] = useState(false);
   const [scopeNotes, setScopeNotes] = useState("");
   const [draft, setDraft] = useState<DraftResult | null>(null);
+  const [skillsExpanded, setSkillsExpanded] = useState(false);
 
   // Task #2517 — POST enqueues an `ai_estimator_draft` job and returns
   // `{ jobId }`. Poll `/api/jobs/:id` until terminal then unwrap the
@@ -162,19 +163,52 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                   </table>
                 </div>
                 {draft.skillsApplied && draft.skillsApplied.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1">
-                      <Check className="h-3 w-3" />
-                      Skills applied ({draft.skillsApplied.length})
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {draft.skillsApplied.map((s) => (
-                        <Badge key={s.id} variant="secondary" className="text-[10px]" title={s.name}>
-                          {s.scope === "global" ? "🌐" : s.scope === "trade" ? "🔧" : "📋"} {s.name}
-                          {s.scopeValue ? ` (${s.scopeValue})` : ""}
-                        </Badge>
-                      ))}
-                    </div>
+                  <div className="border rounded-md overflow-hidden" data-testid="section-skills-applied">
+                    <button
+                      type="button"
+                      onClick={() => setSkillsExpanded((v) => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium bg-muted/50 hover:bg-muted transition-colors"
+                      data-testid="button-toggle-skills-applied"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Check className="h-3 w-3 text-primary" />
+                        Skills applied ({draft.skillsApplied.length})
+                      </span>
+                      {skillsExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {skillsExpanded && (
+                      <ul className="divide-y text-xs" data-testid="list-skills-applied">
+                        {draft.skillsApplied.map((s) => (
+                          <li key={s.id} className="flex items-center px-3 py-2 gap-2" data-testid={`item-skill-${s.id}`}>
+                            <span
+                              className="shrink-0"
+                              aria-label={s.scope === "global" ? "Global scope" : s.scope === "trade" ? "Trade scope" : "Project scope"}
+                              title={s.scope === "global" ? "Global scope" : s.scope === "trade" ? "Trade scope" : "Project scope"}
+                            >
+                              {s.scope === "global" ? "🌐" : s.scope === "trade" ? "🔧" : "📋"}
+                            </span>
+                            <a
+                              href="/ai-estimator/admin?tab=skills"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="truncate font-medium hover:text-primary hover:underline transition-colors flex items-center gap-1"
+                              title="View in AI Estimator Admin → Skills"
+                              data-testid={`link-skill-admin-${s.id}`}
+                            >
+                              {s.name}
+                              <ExternalLink className="h-3 w-3 shrink-0 opacity-50" />
+                            </a>
+                            {s.scopeValue && (
+                              <Badge variant="outline" className="text-[10px] shrink-0 ml-auto">{s.scopeValue}</Badge>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 )}
                 {draft.citations && draft.citations.length > 0 && (

@@ -1903,7 +1903,12 @@ function SkillsTab() {
 
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();
-  const [tab, setTab] = useState("access");
+  const [tab, setTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    const valid = ["access", "ingest", "rates", "feedback", "sessions", "assemblies", "skills", "settings", "spend"];
+    return t && valid.includes(t) ? t : "access";
+  });
 
   const statusQuery = useQuery<StatusResponse>({ queryKey: ["/api/ai-estimator/status"], staleTime: 60_000 });
   const accessQuery = useQuery<{ users: AccessRow[] }>({ queryKey: ["/api/ai-estimator/admin/access"] });
