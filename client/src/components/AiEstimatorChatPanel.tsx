@@ -158,7 +158,7 @@ interface ProposedActionCardProps {
   onUndo: (toolCallId: string, messageId: string) => void;
 }
 
-function ProposedActionCard({
+export function ProposedActionCard({
   action,
   messageId,
   sessionId,
