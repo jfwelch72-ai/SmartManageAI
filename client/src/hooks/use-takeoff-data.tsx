@@ -84,6 +84,14 @@ export function useTakeoffData({
   // an old highlight never lingers from a previous gesture.
   const [failedMarkupIds, setFailedMarkupIdsState] = useState<Set<string>>(() => new Set());
   const failedMarkupIdsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Task #2723 — Incremented on every successful measurement create /
+  // update / delete so the AI Takeoff panel can surface an "Estimate
+  // updated" notice telling the user the AI context will be refreshed
+  // on the next turn. Using a counter (not a boolean) lets the panel
+  // detect consecutive changes that land while the panel is already
+  // showing the notice.
+  const [measurementsRevision, setMeasurementsRevision] = useState(0);
   const flashFailedMarkupIds = useCallback((ids: string[]) => {
     if (failedMarkupIdsTimerRef.current) {
       clearTimeout(failedMarkupIdsTimerRef.current);
@@ -557,6 +565,7 @@ export function useTakeoffData({
         takeoffHistory.pushAction("CREATE", data, selectedSheet);
         onCollabBroadcast?.("MEASUREMENT_CREATED", { sheetId: selectedSheet, measurementId: data.id });
       }
+      setMeasurementsRevision((r) => r + 1);
       toast({ title: "Success", description: "Measurement saved" });
 
       if (autoImportEnabled && data.id) {
@@ -642,6 +651,7 @@ export function useTakeoffData({
       if (selectedSheet) {
         onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });
       }
+      setMeasurementsRevision((r) => r + 1);
       // Task #1843 — single-edit history push. Mirrors the per-field
       // diff in `updateMarkupMutation.onSuccess` (#1758): only fields
       // present on BOTH `variables` (the new value) and `previous` (the
@@ -1184,6 +1194,7 @@ export function useTakeoffData({
         takeoffHistory.pushAction("DELETE", deleted, selectedSheet);
         onCollabBroadcast?.("MEASUREMENT_DELETED", { sheetId: selectedSheet, measurementId: deleted.id });
       }
+      setMeasurementsRevision((r) => r + 1);
       toast({ title: "Success", description: "Measurement deleted" });
     },
     onError: (error: unknown, measurement) => {
@@ -1262,6 +1273,7 @@ export function useTakeoffData({
           onCollabBroadcast?.("MEASUREMENT_DELETED", { sheetId: selectedSheet, measurementId: m.id });
         }
       }
+      if (deleted.length > 0) setMeasurementsRevision((r) => r + 1);
       const count = deleted.length;
       if (count > 0 && selectedSheet) {
         bulkDeleteMeasurementsToastRef.current?.dismiss();
@@ -2219,5 +2231,9 @@ export function useTakeoffData({
     // by handing the workspace a setter it can call from its
     // `onMeasurementConflict` adapter.
     setMeasurementConflict,
+    // Task #2723 — Counter that increments on every successful
+    // measurement create / update / delete. Consumed by the AI
+    // Takeoff panel to show an "Estimate updated" notice.
+    measurementsRevision,
   };
 }

@@ -1054,6 +1054,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // glow on each rejected markup so a 50-markup batch failure
     // points the user at exactly which siblings to fix.
     failedMarkupIds,
+    // Task #2723 — Measurement revision counter wired into the AI panel.
+    measurementsRevision,
   } = data;
 
   // Task #2653 — Once `data` is realized, point the bridge ref at
@@ -5309,6 +5311,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onDetectedItemsChanged: (items: DetectedItem[]) => setPreImportDetectedItems(items),
         showOverlays: showAiOverlays,
         onToggleOverlays: setShowAiOverlays,
+        // Task #2723 — Let the AI panel know when measurements change
+        // so it can show the "Measurements updated" notice.
+        measurementsRevision,
         // Task #2630 — Wire the apply-toast "Review batch" action so
         // a one-click jump from the map-reduce dialog: (1) selects
         // the sheet the new group lives on, (2) opens the bottom

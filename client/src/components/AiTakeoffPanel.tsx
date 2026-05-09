@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
@@ -133,6 +133,14 @@ interface AiTakeoffPanelProps {
    * without the action affordance.
    */
   onReviewMapReduceBatch?: (target: ReviewBatchTarget) => void;
+  /**
+   * Task #2723 — Increments on every successful measurement
+   * create / update / delete (sourced from `useTakeoffData`
+   * mutation onSuccess callbacks). When it changes the panel
+   * shows a dismissible "Measurements updated" notice so the
+   * user knows the AI context will be refreshed on the next turn.
+   */
+  measurementsRevision?: number;
 }
 
 // Reject-reason codes — must stay in sync with `aiTakeoffRejectReasonEnum`
@@ -226,7 +234,7 @@ const TRADE_TYPE_OPTIONS = [
   { value: "OTHER", label: "Other" },
 ];
 
-export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays, onReviewMapReduceBatch }: AiTakeoffPanelProps) {
+export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, sheetId, onItemsImported, onClose, onHighlightItem, onDetectedItemsChanged, showOverlays, onToggleOverlays, onReviewMapReduceBatch, measurementsRevision }: AiTakeoffPanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisId, setAnalysisId] = useState<string | null>(null);
   const [analysisJobId, setAnalysisJobId] = useState<string | null>(null);
@@ -239,6 +247,20 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
   const [selectedTradeType, setSelectedTradeType] = useState("AUTO_DETECT");
   const [compareRunId, setCompareRunId] = useState<string | null>(null);
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+
+  // Task #2723 — "Estimate updated" notice. Show when
+  // `measurementsRevision` increments (a measurement was created,
+  // edited, or deleted) so the user knows the AI context will be
+  // refreshed on the next turn. Dismissed manually by the user.
+  const [showMeasurementsNotice, setShowMeasurementsNotice] = useState(false);
+  const prevMeasurementsRevisionRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (measurementsRevision === undefined) return;
+    if (prevMeasurementsRevisionRef.current !== undefined && measurementsRevision !== prevMeasurementsRevisionRef.current) {
+      setShowMeasurementsNotice(true);
+    }
+    prevMeasurementsRevisionRef.current = measurementsRevision;
+  }, [measurementsRevision]);
 
   // Task #2323 — closed-loop feedback state. `localEdits` and
   // `localRejections` are keyed by detected-item id (e.g. "item-3").
@@ -748,6 +770,23 @@ export default function AiTakeoffPanel({ projectId, bidId, standaloneTakeoffId, 
           </div>
         </div>
         <AiEstimatorIntroCallout surface="ai-takeoff" className="mb-4" />
+        {showMeasurementsNotice && (
+          <div
+            className="flex items-center justify-between gap-2 px-3 py-2 mb-3 rounded-md bg-primary/10 border border-primary/30 text-xs text-primary"
+            data-testid="banner-measurements-updated"
+          >
+            <span>Estimate updated — the AI will use the latest measurements on the next analysis.</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 shrink-0 -mr-1 text-primary hover:text-primary"
+              onClick={() => setShowMeasurementsNotice(false)}
+              data-testid="button-dismiss-measurements-notice"
+            >
+              <X className="h-3 w-3" />
+            </Button>
+          </div>
+        )}
         
         {!isAnalyzing && !isComplete && (
           <div className="space-y-3">
