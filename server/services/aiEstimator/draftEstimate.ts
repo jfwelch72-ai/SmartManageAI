@@ -1,7 +1,7 @@
 // prompt-injection-guard: draft estimate operates on validated takeoff line items (label/type/unit/cost-code) — no free-text from third parties
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
-import { organizations, takeoffMeasurements, takeoffSheets } from "@shared/schema";
+import { bids, organizations, projects, takeoffMeasurements, takeoffSheets } from "@shared/schema";
 import { governedAiCall } from "../aiGovernance";
 // Task #2413 — Routed through provider abstraction so this draft path runs on
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
@@ -181,19 +181,43 @@ export async function generateDraftEstimate(opts: {
   }
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
-  // Task #2703 — pull active skills (firm methodology) for this org.
-  // Pass the org's tradeType so trade-scoped seed skills fire correctly.
+  // Task #2703 / #2708 — pull active skills (firm methodology) for this org.
+  // Scope filters are resolved from the bid and its linked project so that
+  // trade-scoped seed skills (e.g. CONCRETE, MASONRY, MEP) fire correctly
+  // for the specific work being estimated rather than just the org's primary
+  // trade. Resolution order:
+  //   1. bid.convertedToProjectId → projects.primaryTradeType  (most specific)
+  //   2. organizations.tradeType                                (org-level fallback)
   // Best-effort; never fails the draft.
   let activeSkills: Awaited<ReturnType<typeof retrieveSkillsForEstimate>> = [];
   try {
-    const [orgRow] = await db
-      .select({ tradeType: organizations.tradeType })
-      .from(organizations)
-      .where(eq(organizations.id, opts.organizationId))
+    // Step 1: try to get the trade type from the bid's linked project.
+    let tradeType: string | null = null;
+    const [bidRow] = await db
+      .select({ convertedToProjectId: bids.convertedToProjectId })
+      .from(bids)
+      .where(eq(bids.id, opts.bidId))
       .limit(1);
+    if (bidRow?.convertedToProjectId) {
+      const [projectRow] = await db
+        .select({ primaryTradeType: projects.primaryTradeType })
+        .from(projects)
+        .where(eq(projects.id, bidRow.convertedToProjectId))
+        .limit(1);
+      tradeType = projectRow?.primaryTradeType ?? null;
+    }
+    // Step 2: fall back to org-level trade type.
+    if (!tradeType) {
+      const [orgRow] = await db
+        .select({ tradeType: organizations.tradeType })
+        .from(organizations)
+        .where(eq(organizations.id, opts.organizationId))
+        .limit(1);
+      tradeType = orgRow?.tradeType ?? null;
+    }
     activeSkills = await retrieveSkillsForEstimate({
       organizationId: opts.organizationId,
-      tradeType: orgRow?.tradeType ?? null,
+      tradeType,
     });
   } catch {
     activeSkills = [];
