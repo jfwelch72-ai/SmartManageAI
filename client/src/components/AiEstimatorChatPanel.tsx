@@ -172,6 +172,64 @@ function ProposedActionCard({
     Number(p.equipmentCost ?? 0) +
     Number(p.subcontractCost ?? 0);
 
+  // ── Cost-delta preview (Task #2732) ────────────────────────────────────────
+  // Read the already-cached bid estimate — no extra API call.
+  type CachedLineItem = {
+    id: string;
+    materialCost: string | number | null;
+    laborCost: string | number | null;
+    equipmentCost: string | number | null;
+    subcontractCost: string | number | null;
+  };
+  type CachedEstimate = {
+    estimate: {
+      lineItems: CachedLineItem[];
+      totals: { totalCost: string | number };
+    } | null;
+  };
+
+  const cachedEstimate = bidId
+    ? queryClient.getQueryData<CachedEstimate>(bidEstimateKey(bidId))
+    : undefined;
+
+  const currentEstimateTotal = Number(
+    cachedEstimate?.estimate?.totals?.totalCost ?? 0,
+  );
+
+  const existingItem = cachedEstimate?.estimate?.lineItems?.find(
+    (li) => li.id === String(p.id ?? ""),
+  );
+  const existingItemCost = existingItem
+    ? Number(existingItem.materialCost ?? 0) +
+      Number(existingItem.laborCost ?? 0) +
+      Number(existingItem.equipmentCost ?? 0) +
+      Number(existingItem.subcontractCost ?? 0)
+    : 0;
+
+  // For edit, proposed total uses payload value where provided, otherwise
+  // falls back to the existing line item value so partial edits work correctly.
+  const proposedEditTotal = existingItem
+    ? (p.materialCost !== undefined ? Number(p.materialCost) : Number(existingItem.materialCost ?? 0)) +
+      (p.laborCost !== undefined ? Number(p.laborCost) : Number(existingItem.laborCost ?? 0)) +
+      (p.equipmentCost !== undefined ? Number(p.equipmentCost) : Number(existingItem.equipmentCost ?? 0)) +
+      (p.subcontractCost !== undefined ? Number(p.subcontractCost) : Number(existingItem.subcontractCost ?? 0))
+    : totalCost;
+
+  const costDelta = isAdd
+    ? totalCost
+    : isEdit
+      ? proposedEditTotal - existingItemCost
+      : isDelete
+        ? -existingItemCost
+        : 0;
+
+  const showDeltaPreview =
+    !!cachedEstimate?.estimate &&
+    (isAdd ? totalCost > 0 : isEdit ? existingItem !== undefined : isDelete ? existingItemCost > 0 : false);
+
+  const newEstimateTotal = currentEstimateTotal + costDelta;
+  // ── end cost-delta preview ─────────────────────────────────────────────────
+
   const isSettled = state === "applied" || state === "rejected";
   const isBusy = state === "applying" || state === "rejecting";
 
@@ -240,6 +298,34 @@ function ProposedActionCard({
           {isDelete && p.reason != null && (
             <div className="mt-0.5 text-muted-foreground italic">{String(p.reason)}</div>
           )}
+
+          {/* ── Cost-delta preview (Task #2732) ── */}
+          {showDeltaPreview && !isDelete && (
+            <div
+              className="mt-1.5 rounded bg-muted/60 px-2 py-1 text-[11px] font-medium tabular-nums"
+              data-testid={`cost-delta-preview-${action.toolCallId}`}
+            >
+              <span className="text-muted-foreground">Estimate total: </span>
+              <span>{formatCurrency(currentEstimateTotal)}</span>
+              <span className="text-muted-foreground"> → </span>
+              <span className="text-foreground">{formatCurrency(newEstimateTotal)}</span>
+              <span
+                className={`ml-1 ${costDelta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-destructive"}`}
+              >
+                ({costDelta >= 0 ? "+" : ""}{formatCurrency(costDelta)})
+              </span>
+            </div>
+          )}
+          {showDeltaPreview && isDelete && (
+            <div
+              className="mt-1.5 rounded bg-destructive/10 px-2 py-1 text-[11px] font-medium tabular-nums text-destructive"
+              data-testid={`cost-delta-preview-${action.toolCallId}`}
+            >
+              Removes {formatCurrency(existingItemCost)} from estimate
+            </div>
+          )}
+          {/* ── end cost-delta preview ── */}
+
           {action.validationError && (
             <div className="mt-1 text-destructive text-[11px]">
               ⚠ Cannot apply: {action.validationError}
