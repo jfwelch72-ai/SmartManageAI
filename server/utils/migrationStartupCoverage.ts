@@ -441,6 +441,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0112_ai_estimator_chat_attachments.sql": {
     helper: "ensureAiEstimatorChatAttachmentsColumn",
   },
+  // Task #2729 — proposed_actions jsonb column on ai_estimator_chat_messages
+  // so Claude tool-use proposals (add/edit/delete line items) persist across
+  // page refreshes as interactive Accept/Reject cards. Auto-applied by the
+  // schema-drift reconciler on dev; migration guards prod.
+  "0113_ai_estimator_chat_proposed_actions.sql": {
+    helper: "reconcileSchemaDrift",
+    note: "Task #2729 — ADD COLUMN proposed_actions jsonb on ai_estimator_chat_messages.",
+  },
   "0107_equipment_repairs_pm_idempotency.sql": {
     helper: "ensureEquipmentRepairsPmIdempotency",
     note: "Task #2690 — FK + partial unique index for PM-cycle idempotency, plus a one-shot backfill of historical [PM:<id>] tagged rows.",

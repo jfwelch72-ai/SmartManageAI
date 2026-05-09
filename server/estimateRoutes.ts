@@ -127,7 +127,7 @@ function tokenOverlapScore(a: string, b: string): number {
   return overlap / Math.max(tokensA.size, tokensB.size);
 }
 
-async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId: string): Promise<void> {
+export async function matchVendorPricing(lineItems: EstimateLineItem[], organizationId: string): Promise<void> {
   try {
     const catalogItems = await db
       .select({
@@ -242,7 +242,7 @@ function hasManagementAccess(role: string): boolean {
 
 // Create a snapshot of current estimate line items and store in estimate_versions
 // Throws on failure so callers can handle or log appropriately
-async function createEstimateSnapshot(estimateId: string, savedByUserId: string): Promise<void> {
+export async function createEstimateSnapshot(estimateId: string, savedByUserId: string): Promise<void> {
   const lineItems = await db.select().from(estimateLineItems).where(eq(estimateLineItems.estimateId, estimateId));
   const totalCost = lineItems.reduce((sum, item) => sum + Number(item.totalCost || 0), 0);
   // Enrich each line item with a deterministic unitCost for comparison purposes
@@ -332,7 +332,7 @@ import { validateDotPayItemLink as _validateDotPayItemLink } from "./utils/dotPa
 import { parseOrRespond } from "./utils/validation";
 const validateDotPayItemLink = _validateDotPayItemLink;
 
-function normalizeLineItemData(data: any): any {
+export function normalizeLineItemData(data: any): any {
   const { subcontractorAssignments, ...rest } = data;
   return {
     ...rest,
@@ -356,7 +356,7 @@ const router = Router();
 // SUPER_ADMIN callers (no `organizationId` on the user record) bypass the
 // org check intentionally.
 // ---------------------------------------------------------------------------
-const verifyEstimateOrgAccess = async (estimateId: string, user: AuthRequest["user"]) => {
+export const verifyEstimateOrgAccess = async (estimateId: string, user: AuthRequest["user"]) => {
   const estimate = await db.query.estimates.findFirst({
     where: eq(estimates.id, estimateId),
   });

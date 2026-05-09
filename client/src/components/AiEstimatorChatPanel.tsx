@@ -2,21 +2,26 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowDown,
+  CheckCircle,
   FileText,
   Image as ImageIcon,
   Info,
   Loader2,
   Mic,
   Paperclip,
+  Pencil,
+  Plus,
   RotateCcw,
   Send,
   Sparkles,
   Square,
   ThumbsDown,
   ThumbsUp,
+  Trash2,
   X,
+  XCircle,
 } from "lucide-react";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -44,6 +49,16 @@ interface ChatSession {
   updatedAt: string;
 }
 
+// Task #2729 — Proposed line-item action from Claude tool-use.
+export interface ProposedAction {
+  toolCallId: string;
+  action: "add" | "edit" | "delete";
+  payload: Record<string, unknown>;
+  validationError?: string;
+}
+
+type ActionState = "idle" | "applying" | "rejecting" | "applied" | "rejected" | "error";
+
 interface ChatMessage {
   id: string;
   sessionId: string;
@@ -52,6 +67,7 @@ interface ChatMessage {
   citations: Array<{ id: string; sourceType: string; sourceId: string; title: string; snippet: string }> | null;
   attachments: ChatAttachment[] | null;
   feedbackOutcome: "THUMBS_UP" | "THUMBS_DOWN" | null;
+  proposedActions: ProposedAction[] | null;
   createdAt: string;
 }
 
@@ -117,6 +133,177 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function formatCurrency(n: unknown): string {
+  const num = Number(n ?? 0);
+  return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// ── ProposedActionCard ─────────────────────────────────────────────────────
+
+interface ProposedActionCardProps {
+  action: ProposedAction;
+  messageId: string;
+  sessionId: string;
+  bidId?: string;
+  state: ActionState;
+  errorMessage?: string;
+  onApply: (toolCallId: string, messageId: string) => void;
+  onReject: (toolCallId: string, messageId: string) => void;
+}
+
+function ProposedActionCard({
+  action,
+  messageId,
+  sessionId,
+  bidId,
+  state,
+  errorMessage,
+  onApply,
+  onReject,
+}: ProposedActionCardProps) {
+  const p = action.payload as Record<string, unknown>;
+  const isAdd = action.action === "add";
+  const isEdit = action.action === "edit";
+  const isDelete = action.action === "delete";
+
+  const totalCost =
+    Number(p.materialCost ?? 0) +
+    Number(p.laborCost ?? 0) +
+    Number(p.equipmentCost ?? 0) +
+    Number(p.subcontractCost ?? 0);
+
+  const isSettled = state === "applied" || state === "rejected";
+  const isBusy = state === "applying" || state === "rejecting";
+
+  return (
+    <div
+      className={`mt-2 rounded-md border text-xs ${
+        isDelete
+          ? "border-destructive/30 bg-destructive/5"
+          : isEdit
+            ? "border-amber-400/40 bg-amber-50 dark:bg-amber-950/20"
+            : "border-primary/30 bg-primary/5"
+      } ${state === "applied" ? "opacity-70" : ""} ${state === "rejected" ? "opacity-50 line-through" : ""}`}
+      data-testid={`proposed-action-card-${action.toolCallId}`}
+    >
+      <div className="flex items-start gap-2 px-3 py-2">
+        <div className="mt-0.5 shrink-0">
+          {isDelete ? (
+            <Trash2 className="h-3.5 w-3.5 text-destructive" />
+          ) : isEdit ? (
+            <Pencil className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+          ) : (
+            <Plus className="h-3.5 w-3.5 text-primary" />
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-foreground truncate">
+            {isDelete
+              ? `Remove: ${String(p.description ?? "(line item)")}`
+              : isEdit
+                ? `Edit line item`
+                : `Add: ${String(p.description ?? "(new item)")}`}
+          </div>
+          {!isDelete && (
+            <div className="mt-0.5 text-muted-foreground space-y-0.5">
+              {isAdd && (
+                <>
+                  <div>
+                    <span className="font-medium">Category:</span> {String(p.category ?? "—")}
+                    {" · "}
+                    <span className="font-medium">Qty:</span> {String(p.quantity ?? "—")} {String(p.unit ?? "")}
+                  </div>
+                </>
+              )}
+              {isEdit && p.description != null && (
+                <div><span className="font-medium">Description:</span> {String(p.description)}</div>
+              )}
+              {isEdit && p.quantity !== undefined && (
+                <div>
+                  <span className="font-medium">Qty:</span> {String(p.quantity)} {String(p.unit ?? "")}
+                </div>
+              )}
+              {(isAdd || p.materialCost !== undefined || p.laborCost !== undefined || p.equipmentCost !== undefined || p.subcontractCost !== undefined) && (
+                <div>
+                  {Number(p.materialCost ?? 0) > 0 && <span>Mat {formatCurrency(p.materialCost)} </span>}
+                  {Number(p.laborCost ?? 0) > 0 && <span>Lab {formatCurrency(p.laborCost)} </span>}
+                  {Number(p.equipmentCost ?? 0) > 0 && <span>Equip {formatCurrency(p.equipmentCost)} </span>}
+                  {Number(p.subcontractCost ?? 0) > 0 && <span>Sub {formatCurrency(p.subcontractCost)} </span>}
+                  {(isAdd || totalCost > 0) && (
+                    <span className="font-semibold">= {formatCurrency(totalCost)}</span>
+                  )}
+                </div>
+              )}
+              {p.notes != null && <div className="italic text-[11px]">{String(p.notes)}</div>}
+            </div>
+          )}
+          {isDelete && p.reason != null && (
+            <div className="mt-0.5 text-muted-foreground italic">{String(p.reason)}</div>
+          )}
+          {action.validationError && (
+            <div className="mt-1 text-destructive text-[11px]">
+              ⚠ Cannot apply: {action.validationError}
+            </div>
+          )}
+          {errorMessage && !action.validationError && (
+            <div className="mt-1 text-destructive text-[11px]" data-testid={`action-error-${action.toolCallId}`}>
+              ⚠ {errorMessage}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Accept / Reject buttons — hidden once settled */}
+      {!isSettled && (
+        <div className="flex gap-1.5 px-3 pb-2">
+          <Button
+            size="sm"
+            variant="default"
+            className="h-6 px-2 text-[11px] gap-1"
+            disabled={isBusy || !!action.validationError}
+            onClick={() => onApply(action.toolCallId, messageId)}
+            data-testid={`button-accept-action-${action.toolCallId}`}
+          >
+            {state === "applying" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <CheckCircle className="h-3 w-3" />
+            )}
+            Accept
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[11px] gap-1 text-muted-foreground hover:text-destructive"
+            disabled={isBusy}
+            onClick={() => onReject(action.toolCallId, messageId)}
+            data-testid={`button-reject-action-${action.toolCallId}`}
+          >
+            {state === "rejecting" ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <XCircle className="h-3 w-3" />
+            )}
+            Reject
+          </Button>
+        </div>
+      )}
+
+      {/* Settled badge */}
+      {isSettled && (
+        <div
+          className={`px-3 pb-2 text-[11px] font-medium ${state === "applied" ? "text-primary" : "text-muted-foreground"}`}
+          data-testid={`action-settled-${action.toolCallId}`}
+        >
+          {state === "applied" ? "✓ Applied" : "✗ Rejected"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled, lineItemsRevision, measurementsRevision }: Props) {
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -136,6 +323,20 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const prevRevisionRef = useRef<number | undefined>(undefined);
   const prevMeasurementsRevisionRef = useRef<number | undefined>(undefined);
 
+  // Task #2729 — per-toolCallId state for proposed action cards.
+  const [actionStates, setActionStates] = useState<Record<string, ActionState>>({});
+  const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
+
+  function setActionState(toolCallId: string, state: ActionState) {
+    setActionStates((prev) => ({ ...prev, [toolCallId]: state }));
+  }
+  function setActionError(toolCallId: string, msg: string) {
+    setActionErrors((prev) => ({ ...prev, [toolCallId]: msg }));
+  }
+  function clearActionError(toolCallId: string) {
+    setActionErrors((prev) => { const next = { ...prev }; delete next[toolCallId]; return next; });
+  }
+
   const sessionsQuery = useQuery<{ sessions: ChatSession[] }>({
     queryKey: ["/api/ai-estimator/chat/sessions"],
     enabled,
@@ -149,6 +350,30 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       return r.json();
     },
   });
+
+  // Seed actionStates from server-persisted decision fields whenever messages load.
+  // This ensures that after a page refresh, cards that were previously accepted or
+  // rejected stay in that state without triggering a re-apply.
+  const loadedMessages = messagesQuery.data?.messages;
+  useEffect(() => {
+    if (!loadedMessages) return;
+    setActionStates((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const msg of loadedMessages) {
+        if (!msg.proposedActions) continue;
+        for (const action of msg.proposedActions as Array<{ toolCallId: string; decision?: string }>) {
+          if (action.decision === "applied" || action.decision === "rejected") {
+            if (next[action.toolCallId] !== action.decision) {
+              next[action.toolCallId] = action.decision as ActionState;
+              changed = true;
+            }
+          }
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [loadedMessages]);
 
   const [panelError, setPanelError] = useState<string | null>(null);
   // "Scroll to bottom" button — shows when the user has scrolled up.
@@ -219,6 +444,58 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     },
   });
 
+  // Task #2729 — apply a proposed action from a Claude tool-use block.
+  async function handleApplyAction(toolCallId: string, messageId: string) {
+    if (!sessionId) return;
+    clearActionError(toolCallId);
+    setActionState(toolCallId, "applying");
+    try {
+      await apiRequest(
+        "POST",
+        `/api/ai-estimator/chat/sessions/${sessionId}/messages/${messageId}/proposed-actions/apply`,
+        { toolCallId },
+      );
+      setActionState(toolCallId, "applied");
+      // Refresh the estimate workspace so the new/changed line item appears.
+      if (bidId) {
+        queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      }
+      toast({ title: "Change applied", description: "The estimate has been updated." });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not apply the change — please try again.";
+      setActionState(toolCallId, "idle");
+      setActionError(toolCallId, msg);
+    }
+  }
+
+  async function handleRejectAction(toolCallId: string, messageId: string) {
+    if (!sessionId) return;
+    clearActionError(toolCallId);
+    setActionState(toolCallId, "rejecting");
+    try {
+      await apiRequest(
+        "POST",
+        `/api/ai-estimator/chat/sessions/${sessionId}/messages/${messageId}/proposed-actions/reject`,
+        { toolCallId },
+      );
+      setActionState(toolCallId, "rejected");
+    } catch {
+      // Even if recording fails, mark as rejected so the card goes away.
+      setActionState(toolCallId, "rejected");
+    }
+  }
+
+  // Task #2729 — bulk Accept/Reject helpers.
+  async function handleAcceptAll(messageId: string, actions: ProposedAction[]) {
+    const pending = actions.filter((a) => !a.validationError && (actionStates[a.toolCallId] ?? "idle") === "idle");
+    await Promise.allSettled(pending.map((a) => handleApplyAction(a.toolCallId, messageId)));
+  }
+
+  async function handleRejectAll(messageId: string, actions: ProposedAction[]) {
+    const pending = actions.filter((a) => (actionStates[a.toolCallId] ?? "idle") === "idle");
+    await Promise.allSettled(pending.map((a) => handleRejectAction(a.toolCallId, messageId)));
+  }
+
   const clearChat = useMutation({
     mutationFn: async () => {
       if (!sessionId) return;
@@ -230,6 +507,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       setDraft("");
       setPending([]);
       setShowUpdateNotice(false);
+      setActionStates({});
       hasAutoSentRef.current = false;
       prevRevisionRef.current = lineItemsRevision;
       prevMeasurementsRevisionRef.current = measurementsRevision;
@@ -666,6 +944,68 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
                         })}
                       </div>
                     )}
+
+                    {/* Task #2729 — proposed action cards for Claude tool-use */}
+                    {m.role === "assistant" && m.proposedActions && m.proposedActions.length > 0 && (() => {
+                      const pendingIds = m.proposedActions.filter(
+                        (a) => !a.validationError && (actionStates[a.toolCallId] ?? "idle") === "idle",
+                      );
+                      const pendingAnyIds = m.proposedActions.filter(
+                        (a) => (actionStates[a.toolCallId] ?? "idle") === "idle",
+                      );
+                      const hasBulk = pendingIds.length > 1 || pendingAnyIds.length > 1;
+                      return (
+                        <div className="mt-3 space-y-2" data-testid={`proposed-actions-${m.id}`}>
+                          <div className="flex items-center gap-2">
+                            <div className="text-[10px] text-muted-foreground uppercase tracking-wider flex-1">
+                              Proposed changes — review and accept or reject each
+                            </div>
+                            {hasBulk && (
+                              <div className="flex gap-1 shrink-0">
+                                {pendingIds.length > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-5 px-2 text-[10px] gap-1"
+                                    onClick={() => handleAcceptAll(m.id, m.proposedActions!)}
+                                    data-testid={`button-accept-all-${m.id}`}
+                                  >
+                                    <CheckCircle className="h-2.5 w-2.5" />
+                                    Accept all
+                                  </Button>
+                                )}
+                                {pendingAnyIds.length > 0 && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-5 px-2 text-[10px] gap-1 text-muted-foreground hover:text-destructive"
+                                    onClick={() => handleRejectAll(m.id, m.proposedActions!)}
+                                    data-testid={`button-reject-all-${m.id}`}
+                                  >
+                                    <XCircle className="h-2.5 w-2.5" />
+                                    Reject all
+                                  </Button>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {m.proposedActions.map((action) => (
+                            <ProposedActionCard
+                              key={action.toolCallId}
+                              action={action}
+                              messageId={m.id}
+                              sessionId={sessionId ?? ""}
+                              bidId={bidId}
+                              state={actionStates[action.toolCallId] ?? "idle"}
+                              errorMessage={actionErrors[action.toolCallId]}
+                              onApply={handleApplyAction}
+                              onReject={handleRejectAction}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })()}
+
                     {m.role === "assistant" && (
                       <div className="mt-2 flex gap-1">
                         <Button

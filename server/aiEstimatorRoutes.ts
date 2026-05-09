@@ -13,6 +13,7 @@ import {
   aiEstimatorLearnedRates,
   aiEstimatorIngestRuns,
   aiEstimatorChatSessions,
+  aiEstimatorChatMessages,
   takeoffMeasurements,
   takeoffMeasurementGroups,
   takeoffSheets,
@@ -57,6 +58,16 @@ import {
   runIngestion,
 } from "./services/aiEstimator/ingestion";
 import { logCreate, logDelete, logUpdate } from "./auditLogger";
+import {
+  normalizeLineItemData,
+  createEstimateSnapshot,
+  matchVendorPricing,
+  verifyEstimateOrgAccess,
+} from "./estimateRoutes";
+import {
+  insertEstimateLineItemSchema,
+  updateEstimateLineItemSchema,
+} from "@shared/schema";
 import { suggestInline } from "./services/aiEstimator/inlineSuggest";
 import {
   createSession,
@@ -66,6 +77,10 @@ import {
   listSessions,
   sendChatTurn,
   setMessageFeedback,
+  addLineItemPayloadSchema,
+  editLineItemPayloadSchema,
+  deleteLineItemPayloadSchema,
+  type ProposedAction,
 } from "./services/aiEstimator/chat";
 import {
   fetchAllowed,
@@ -1089,6 +1104,324 @@ router.put(
     if (!session) return res.status(404).json({ error: "Session not found" });
     await setMessageFeedback(session.id, req.params.mid, data.outcome);
     res.status(204).end();
+  },
+);
+
+// =====================================================================
+// Task #2729 — Proposed-action apply / reject endpoints.
+// Each proposed action lives in the ai_estimator_chat_messages.proposed_actions
+// jsonb column. The frontend calls these endpoints when the user clicks Accept
+// or Reject on a proposed line-item change card.
+//
+// Apply delegates to the same helpers used by the existing estimate line-item
+// CRUD routes (normalizeLineItemData, createEstimateSnapshot, matchVendorPricing,
+// verifyEstimateOrgAccess, insertEstimateLineItemSchema, updateEstimateLineItemSchema)
+// so business logic (category normalization, totalCost calc, snapshots, vendor
+// pricing) stays in one place.
+//
+// Decision state ("applied"/"rejected") is persisted back into the JSONB so
+// cards reflect their final state across page refreshes without the risk of
+// re-applying the same change twice.
+// =====================================================================
+
+const applyActionSchema = z.object({
+  toolCallId: z.string().min(1),
+});
+
+async function resolveEstimateIdForSession(
+  session: { estimateId: string | null; bidId: string | null },
+): Promise<string | null> {
+  if (session.estimateId) return session.estimateId;
+  if (!session.bidId) return null;
+  const [estRow] = await db
+    .select({ id: estimates.id })
+    .from(estimates)
+    .where(eq(estimates.bidId, session.bidId))
+    .orderBy(desc(estimates.versionNumber))
+    .limit(1);
+  return estRow?.id ?? null;
+}
+
+// Writes the decision ("applied" | "rejected") into the specific toolCallId entry
+// of the proposed_actions JSONB column. Non-throwing — logs on failure.
+async function persistActionDecision(
+  messageId: string,
+  toolCallId: string,
+  decision: "applied" | "rejected",
+): Promise<void> {
+  try {
+    const [row] = await db
+      .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
+      .from(aiEstimatorChatMessages)
+      .where(eq(aiEstimatorChatMessages.id, messageId))
+      .limit(1);
+    if (!row) return;
+    const actions = (row.proposedActions ?? []) as ProposedAction[];
+    const updated = actions.map((a) =>
+      a.toolCallId === toolCallId
+        ? { ...a, decision, decisionAt: new Date().toISOString() }
+        : a,
+    );
+    await db
+      .update(aiEstimatorChatMessages)
+      .set({ proposedActions: updated })
+      .where(eq(aiEstimatorChatMessages.id, messageId));
+  } catch (err) {
+    logError("persistActionDecision failed", { messageId, toolCallId, decision, error: String(err) });
+  }
+}
+
+router.post(
+  `${estimatorBase}/chat/sessions/:sid/messages/:mid/proposed-actions/apply`,
+  requireAuth,
+  requireEstimatorAccess,
+  sensitiveLimiter,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(applyActionSchema, req.body, res);
+    if (!data) return;
+
+    const session = await getSessionForUser(
+      req.user!.organizationId!,
+      req.user!.id,
+      req.params.sid,
+    );
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const [msgRow] = await db
+      .select({ proposedActions: aiEstimatorChatMessages.proposedActions })
+      .from(aiEstimatorChatMessages)
+      .where(
+        and(
+          eq(aiEstimatorChatMessages.id, req.params.mid),
+          eq(aiEstimatorChatMessages.sessionId, session.id),
+        ),
+      )
+      .limit(1);
+    if (!msgRow) return res.status(404).json({ error: "Message not found" });
+
+    const allActions = (msgRow.proposedActions ?? []) as ProposedAction[];
+    const action = allActions.find((a) => a.toolCallId === data.toolCallId);
+    if (!action) return res.status(404).json({ error: "Proposed action not found" });
+    if (action.validationError) {
+      return res.status(422).json({ error: `Cannot apply invalid action: ${action.validationError}` });
+    }
+    // Idempotency — if already applied, return success without re-applying.
+    if (action.decision === "applied") {
+      return res.status(200).json({ alreadyApplied: true, toolCallId: data.toolCallId });
+    }
+    if (action.decision === "rejected") {
+      return res.status(409).json({ error: "This change was already rejected" });
+    }
+
+    const estimateId = await resolveEstimateIdForSession(session);
+    if (!estimateId) {
+      return res.status(422).json({ error: "No estimate linked to this session — cannot apply line item changes." });
+    }
+
+    // Verify estimate belongs to this org using the same helper as the existing CRUD routes.
+    const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+    try {
+      if (action.action === "add") {
+        const rawPayload = action.payload as Record<string, unknown>;
+        // normalizeLineItemData handles category normalisation (e.g. casing fixes)
+        // and strips non-schema fields — same path as POST /api/estimates/:id/line-items.
+        const normalized = normalizeLineItemData({
+          ...rawPayload,
+          estimateId,
+          source: "MANUAL",
+          laborHours: 0,
+          equipmentHours: 0,
+          consumablesCost: 0,
+          overheadAllocation: 0,
+          profitAllocation: 0,
+          totalCost:
+            Number(rawPayload.materialCost ?? 0) +
+            Number(rawPayload.laborCost ?? 0) +
+            Number(rawPayload.equipmentCost ?? 0) +
+            Number(rawPayload.subcontractCost ?? 0),
+        });
+        const validatedData = insertEstimateLineItemSchema.parse(normalized);
+        const [newItem] = await db.insert(estimateLineItems).values(validatedData).returning();
+
+        // Fire-and-forget vendor price matching — same as existing add route.
+        matchVendorPricing([newItem], req.user!.organizationId!).catch(() => {});
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        logCreate(req.user!.id, "estimate_line_item", newItem.id, {
+          estimateId,
+          source: "ai_estimator_chat_proposed_action",
+          toolCallId: data.toolCallId,
+        });
+        return res.status(201).json({ lineItem: newItem });
+      }
+
+      if (action.action === "edit") {
+        const payload = editLineItemPayloadSchema.parse(action.payload);
+        const { lineItemId, ...rest } = payload;
+
+        const [existing] = await db
+          .select({
+            id: estimateLineItems.id,
+            materialCost: estimateLineItems.materialCost,
+            laborCost: estimateLineItems.laborCost,
+            equipmentCost: estimateLineItems.equipmentCost,
+            subcontractCost: estimateLineItems.subcontractCost,
+            consumablesCost: estimateLineItems.consumablesCost,
+            overheadAllocation: estimateLineItems.overheadAllocation,
+            profitAllocation: estimateLineItems.profitAllocation,
+          })
+          .from(estimateLineItems)
+          .where(
+            and(
+              eq(estimateLineItems.id, lineItemId),
+              eq(estimateLineItems.estimateId, estimateId),
+              isNull(estimateLineItems.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!existing) return res.status(404).json({ error: "Line item not found or not in your estimate" });
+
+        const mat = rest.materialCost !== undefined ? Number(rest.materialCost) : Number(existing.materialCost ?? 0);
+        const lab = rest.laborCost !== undefined ? Number(rest.laborCost) : Number(existing.laborCost ?? 0);
+        const equip = rest.equipmentCost !== undefined ? Number(rest.equipmentCost) : Number(existing.equipmentCost ?? 0);
+        const sub = rest.subcontractCost !== undefined ? Number(rest.subcontractCost) : Number(existing.subcontractCost ?? 0);
+        const con = Number(existing.consumablesCost ?? 0);
+        const oh = Number(existing.overheadAllocation ?? 0);
+        const prof = Number(existing.profitAllocation ?? 0);
+        const totalCost = mat + lab + equip + sub + con + oh + prof;
+
+        // Build the raw update object, then run through normalizeLineItemData
+        // (category normalisation) and validate with the update schema.
+        const rawUpdates: Record<string, unknown> = {};
+        if (rest.description !== undefined) rawUpdates.description = rest.description;
+        if (rest.category !== undefined) rawUpdates.category = rest.category;
+        if (rest.unit !== undefined) rawUpdates.unit = rest.unit;
+        if (rest.quantity !== undefined) rawUpdates.quantity = rest.quantity;
+        if (rest.notes !== undefined) rawUpdates.notes = rest.notes;
+        if (rest.materialCost !== undefined) rawUpdates.materialCost = mat;
+        if (rest.laborCost !== undefined) rawUpdates.laborCost = lab;
+        if (rest.equipmentCost !== undefined) rawUpdates.equipmentCost = equip;
+        if (rest.subcontractCost !== undefined) rawUpdates.subcontractCost = sub;
+        rawUpdates.totalCost = totalCost;
+
+        if (Object.keys(rawUpdates).length === 1) {
+          // Only totalCost — nothing actually changed. Still stamp decision so
+          // the card stays dismissed after a page refresh.
+          await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+          return res.status(200).json({ message: "No fields to update" });
+        }
+
+        const normalized = normalizeLineItemData(rawUpdates);
+        const updateData = updateEstimateLineItemSchema.parse(normalized);
+
+        const [updated] = await db
+          .update(estimateLineItems)
+          .set({ ...updateData, totalCost: String(totalCost), userAdjusted: true, updatedAt: new Date() })
+          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)))
+          .returning();
+        if (!updated) return res.status(404).json({ error: "Line item not found" });
+
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        logUpdate(req.user!.id, "estimate_line_item", lineItemId, null, {
+          source: "ai_estimator_chat_proposed_action",
+          toolCallId: data.toolCallId,
+          changes: Object.keys(rawUpdates).filter((k) => k !== "totalCost"),
+        });
+        return res.status(200).json({ lineItem: updated });
+      }
+
+      if (action.action === "delete") {
+        const payload = deleteLineItemPayloadSchema.parse(action.payload);
+        const { lineItemId } = payload;
+
+        const [existing] = await db
+          .select({ id: estimateLineItems.id })
+          .from(estimateLineItems)
+          .where(
+            and(
+              eq(estimateLineItems.id, lineItemId),
+              eq(estimateLineItems.estimateId, estimateId),
+              isNull(estimateLineItems.deletedAt),
+            ),
+          )
+          .limit(1);
+        if (!existing) return res.status(404).json({ error: "Line item not found or not in your estimate" });
+
+        // Hard delete — matches the behaviour of DELETE /api/estimates/:id/line-items/:id.
+        await db
+          .delete(estimateLineItems)
+          .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+
+        try { await createEstimateSnapshot(estimateId, req.user!.id); } catch {}
+
+        await persistActionDecision(req.params.mid, data.toolCallId, "applied");
+        logDelete(req.user!.id, "estimate_line_item", lineItemId, {
+          source: "ai_estimator_chat_proposed_action",
+          toolCallId: data.toolCallId,
+        });
+        return res.status(200).json({ deleted: true, lineItemId });
+      }
+
+      return res.status(422).json({ error: "Unknown action type" });
+    } catch (err) {
+      logError("Proposed action apply failed", { error: String(err), toolCallId: data.toolCallId });
+      return res.status(500).json({ error: "Failed to apply change" });
+    }
+  },
+);
+
+router.post(
+  `${estimatorBase}/chat/sessions/:sid/messages/:mid/proposed-actions/reject`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(applyActionSchema, req.body, res);
+    if (!data) return;
+
+    const session = await getSessionForUser(
+      req.user!.organizationId!,
+      req.user!.id,
+      req.params.sid,
+    );
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    const [msgRow] = await db
+      .select({ id: aiEstimatorChatMessages.id })
+      .from(aiEstimatorChatMessages)
+      .where(
+        and(
+          eq(aiEstimatorChatMessages.id, req.params.mid),
+          eq(aiEstimatorChatMessages.sessionId, session.id),
+        ),
+      )
+      .limit(1);
+    if (!msgRow) return res.status(404).json({ error: "Message not found" });
+
+    // Persist the rejection decision so the card stays dismissed after refresh.
+    await persistActionDecision(req.params.mid, data.toolCallId, "rejected");
+
+    // Best-effort feedback recording — non-fatal.
+    try {
+      await recordFeedback({
+        organizationId: req.user!.organizationId!,
+        userId: req.user!.id,
+        surface: "line_item_mutation" as FeedbackSurface,
+        outcome: "THUMBS_DOWN",
+        targetType: "chat_proposed_action",
+        targetId: data.toolCallId,
+        bidId: session.bidId ?? undefined,
+        estimateId: session.estimateId ?? undefined,
+      });
+    } catch {
+      // Non-fatal — rejection is still acknowledged.
+    }
+
+    return res.status(200).json({ rejected: true, toolCallId: data.toolCallId });
   },
 );
 

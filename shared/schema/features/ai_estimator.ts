@@ -252,6 +252,9 @@ export const aiEstimatorChatMessages = pgTable("ai_estimator_chat_messages", {
   // null on assistant/system rows and on legacy user rows.
   attachments: jsonb("attachments"),
   feedbackOutcome: text("feedback_outcome"), // null | 'THUMBS_UP' | 'THUMBS_DOWN'
+  // Task #2729 — Claude tool-use proposals stored so Accept/Reject cards survive page refresh.
+  // Array of ProposedAction: { toolCallId, action: 'add'|'edit'|'delete', payload, validationError? }
+  proposedActions: jsonb("proposed_actions"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   sessionIdx: index("ai_estimator_chat_messages_session_idx").on(table.sessionId),

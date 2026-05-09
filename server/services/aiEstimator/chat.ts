@@ -1,4 +1,5 @@
 // prompt-injection-guard: in-app estimator chat — message history is authenticated tenant authors; existing module flow extractDocumentContent → quarantineDocumentBlocks happens upstream in sheetIndex
+// ai-router-bypass: ai-estimator-chat-claude-only-tool-use — chat uses callAnthropicWithTools directly; no OpenAI fallback by design (Task #2729)
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
@@ -14,8 +15,8 @@ import {
   type AiEstimatorChatSession,
 } from "@shared/schema";
 import { governedAiCall } from "../aiGovernance";
-// Task #2410 — Estimator chat is part of the Takeoff family routing decision.
-import { routedChatCompletion } from "../../ai/providers";
+import type { AiChatResponse } from "../../ai/providers";
+import { callAnthropicWithTools } from "../../ai/providers/anthropicWithTools";
 import {
   citationsFromRows,
   formatLessonsForPrompt,
@@ -29,6 +30,131 @@ import {
   assertEstimateInOrg,
   assertProjectInOrg,
 } from "./access";
+import { z } from "zod";
+import { logWarn } from "../../utils/logger";
+
+// ── Tool schemas for line-item mutations ─────────────────────────────────────
+// Zod schemas used to validate Claude's tool inputs before packaging as
+// proposed actions. Claude sees the corresponding JSON Schema in the tool
+// definitions array passed on every chat turn.
+
+export const addLineItemPayloadSchema = z.object({
+  description: z.string().min(1),
+  category: z.string().min(1),
+  unit: z.string().min(1),
+  quantity: z.number().positive(),
+  materialCost: z.number().min(0).optional().default(0),
+  laborCost: z.number().min(0).optional().default(0),
+  equipmentCost: z.number().min(0).optional().default(0),
+  subcontractCost: z.number().min(0).optional().default(0),
+  notes: z.string().optional(),
+});
+
+export const editLineItemPayloadSchema = z.object({
+  lineItemId: z.string().min(1),
+  description: z.string().optional(),
+  category: z.string().optional(),
+  unit: z.string().optional(),
+  quantity: z.number().positive().optional(),
+  materialCost: z.number().min(0).optional(),
+  laborCost: z.number().min(0).optional(),
+  equipmentCost: z.number().min(0).optional(),
+  subcontractCost: z.number().min(0).optional(),
+  notes: z.string().optional(),
+});
+
+export const deleteLineItemPayloadSchema = z.object({
+  lineItemId: z.string().min(1),
+  description: z.string().optional(),
+  reason: z.string().optional(),
+});
+
+export type AddLineItemPayload = z.infer<typeof addLineItemPayloadSchema>;
+export type EditLineItemPayload = z.infer<typeof editLineItemPayloadSchema>;
+export type DeleteLineItemPayload = z.infer<typeof deleteLineItemPayloadSchema>;
+
+export interface ProposedAction {
+  toolCallId: string;
+  action: "add" | "edit" | "delete";
+  payload: AddLineItemPayload | EditLineItemPayload | DeleteLineItemPayload;
+  validationError?: string;
+  // Persisted server-side so cards survive a page refresh without re-applying.
+  decision?: "applied" | "rejected";
+  decisionAt?: string;
+}
+
+// ── Anthropic tool definitions ───────────────────────────────────────────────
+
+// Must match the `estimateItemCategoryEnum` in shared/schema/enums.ts exactly.
+// normalizeLineItemData() in estimateRoutes.ts maps any unrecognised value to "GENERAL".
+const ESTIMATE_ITEM_CATEGORIES = [
+  "CONCRETE", "EXCAVATION", "PAVERS", "BOLLARDS", "GC", "OVERHEAD", "PROFIT", "GENERAL",
+  "PLUMBING", "HVAC", "ROOFING", "STRUCTURAL_STEEL", "MASONRY", "DRYWALL", "PAINTING",
+  "FLOORING", "FIRE_PROTECTION", "DEMOLITION", "CARPENTRY", "INSULATION", "WINDOWS_DOORS",
+  "ELEVATOR", "GRADING", "PAVING", "SITEWORK", "WATERPROOFING", "MECHANICAL", "FRAMING",
+  "STRIPING", "SIGNAGE", "LANDSCAPING", "ELECTRICAL", "OTHER", "METALS", "FINISHES",
+];
+
+const LINE_ITEM_TOOLS = [
+  {
+    name: "add_line_item",
+    description:
+      "Propose adding a new line item to the estimate. Use ONLY when the user clearly wants to add a new cost item. " +
+      "Always accompany tool calls with a plain-text explanation of your reasoning.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        description: { type: "string", description: "Brief description of the work item (e.g. 'Concrete footing 18\" deep')" },
+        category: { type: "string", enum: ESTIMATE_ITEM_CATEGORIES, description: "Work category" },
+        unit: { type: "string", description: "Unit of measure (SF, LF, CY, EA, LS, HR, etc.)" },
+        quantity: { type: "number", description: "Quantity in the stated unit (must be positive)" },
+        materialCost: { type: "number", description: "Total material cost in dollars (default 0)" },
+        laborCost: { type: "number", description: "Total labor cost in dollars (default 0)" },
+        equipmentCost: { type: "number", description: "Total equipment cost in dollars (default 0)" },
+        subcontractCost: { type: "number", description: "Total subcontract cost in dollars (default 0)" },
+        notes: { type: "string", description: "Optional notes explaining the cost breakdown" },
+      },
+      required: ["description", "category", "unit", "quantity"],
+    },
+  },
+  {
+    name: "edit_line_item",
+    description:
+      "Propose editing an existing line item. Use ONLY when the user wants to change an existing item " +
+      "AND you can see its id in the ESTIMATE LINE ITEMS list. Only include fields you want to change.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        lineItemId: { type: "string", description: "The id of the existing line item (from the [id:...] shown in ESTIMATE LINE ITEMS)" },
+        description: { type: "string", description: "New description (omit to keep current)" },
+        category: { type: "string", enum: ESTIMATE_ITEM_CATEGORIES, description: "New category (omit to keep current)" },
+        unit: { type: "string", description: "New unit of measure (omit to keep current)" },
+        quantity: { type: "number", description: "New quantity (omit to keep current)" },
+        materialCost: { type: "number", description: "New material cost in dollars (omit to keep current)" },
+        laborCost: { type: "number", description: "New labor cost in dollars (omit to keep current)" },
+        equipmentCost: { type: "number", description: "New equipment cost in dollars (omit to keep current)" },
+        subcontractCost: { type: "number", description: "New subcontract cost in dollars (omit to keep current)" },
+        notes: { type: "string", description: "Notes explaining the change" },
+      },
+      required: ["lineItemId"],
+    },
+  },
+  {
+    name: "delete_line_item",
+    description:
+      "Propose deleting an existing line item. Use ONLY when the user clearly wants to remove an item " +
+      "AND you can see its id in the ESTIMATE LINE ITEMS list.",
+    input_schema: {
+      type: "object" as const,
+      properties: {
+        lineItemId: { type: "string", description: "The id of the line item to delete (from the [id:...] shown in ESTIMATE LINE ITEMS)" },
+        description: { type: "string", description: "Description of the item being deleted (for display)" },
+        reason: { type: "string", description: "Reason for deletion" },
+      },
+      required: ["lineItemId"],
+    },
+  },
+] as const;
 
 export async function listSessions(
   organizationId: string,
@@ -130,6 +256,7 @@ export async function listMessages(
 export interface ChatTurnResult {
   userMessage: AiEstimatorChatMessage;
   assistantMessage: AiEstimatorChatMessage;
+  proposedActions: ProposedAction[];
   blocked?: boolean;
   reason?: string;
 }
@@ -244,13 +371,13 @@ export async function sendChatTurn(opts: {
     : null;
 
   // Fetch live estimate lines so the AI knows what's already been estimated.
-  // Also compute the true DB total to avoid in-memory sum inaccuracy when
-  // there are more than 60 line items (the truncated list would under-count).
+  // Include the id so Claude can reference it in edit/delete tool calls.
   const LINE_ITEM_CAP = 60;
   const [lineItems, [lineItemTotal, lineItemTotalCount], measurements] = await Promise.all([
     resolvedEstimateId
       ? db
           .select({
+            id: estimateLineItems.id,
             description: estimateLineItems.description,
             quantity: estimateLineItems.quantity,
             unit: estimateLineItems.unit,
@@ -347,7 +474,7 @@ export async function sendChatTurn(opts: {
   const historyTurns = history
     .filter((m) => m.id !== userMsg.id)
     .slice(-10)
-    .map((m) => ({ role: m.role as "user" | "assistant" | "system", content: m.content }));
+    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
 
   // Compose the final user turn: the typed prompt + a labeled block per
   // attachment (already quarantined in chatAttachments.ts).
@@ -358,7 +485,15 @@ export async function sendChatTurn(opts: {
   const sysPrompt = `You are "Ask the Estimator", an assistant with full visibility into this contractor's active bid and project data.
 You are provided the LIVE state of the current bid, project, estimate line items, and takeoff measurements below — use them directly.
 Answer using the provided live data, learned rates, and prior context. Never invent costs not in the rates table.
-Cite source rows by id when relevant. Reply in plain prose with short bullet points.`;
+Cite source rows by id when relevant. Reply in plain prose with short bullet points.
+
+LINE ITEM MUTATION TOOLS:
+You have three tools: add_line_item, edit_line_item, and delete_line_item.
+Use them ONLY when the user's intent is clearly to add, change, or remove an estimate line item.
+Always write a plain-text explanation of your reasoning alongside any tool calls.
+For edit and delete, use the [id:...] values shown in the ESTIMATE LINE ITEMS list.
+If you're unsure what the user wants, ask a clarifying question instead of using a tool.
+Do NOT use tools for general questions, analysis, or advice.`;
 
   // ── Build the live-context block injected before every turn ──────────────
   const parts: string[] = [];
@@ -413,7 +548,7 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
         lineItems
           .map(
             (li) =>
-              `  - [${li.category}] ${li.description}: qty=${li.quantity} ${li.unit}` +
+              `  - [id:${li.id}] [${li.category}] ${li.description}: qty=${li.quantity} ${li.unit}` +
               ` | mat=$${Number(li.materialCost ?? 0).toFixed(2)}` +
               ` labor=$${Number(li.laborCost ?? 0).toFixed(2)}` +
               (Number(li.equipmentCost ?? 0) > 0 ? ` equip=$${Number(li.equipmentCost).toFixed(2)}` : "") +
@@ -457,10 +592,6 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
     ? contextRows
         .map(
           (r) =>
-            // Task #2414 — surface the Claude-written narrative when the
-            // enrichment pass produced one; fall back to the mechanical
-            // snippet so orgs without AI_PROVIDER_TAKEOFF (or rows whose
-            // enrichment hasn't run yet) keep the prior behaviour.
             `- [${r.sourceType}#${r.sourceId.slice(0, 8)}] ${r.title}\n  ${(r.enrichedSummary ?? r.contentSnippet).slice(0, 280)}`,
         )
         .join("\n")
@@ -477,30 +608,79 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
 
   const contextBlock = `Context:\n${contextSection}\n\nLearned rates (most-relevant 30):\n${rateSection}`;
 
-  const gov = await governedAiCall<string | null>({
+  // Combine system content sections into a single system prompt string.
+  const combinedSystemPrompt = [
+    sysPrompt,
+    liveEstimateBlock,
+    ...(lessonsBlock ? [lessonsBlock] : []),
+    contextBlock,
+  ].join("\n\n---\n\n");
+
+  // Build the Anthropic messages array (user/assistant turns only; system
+  // content goes in the top-level system field).
+  const anthropicMessages: Array<{ role: "user" | "assistant"; content: string }> = [
+    ...historyTurns,
+    { role: "user", content: finalUserContent },
+  ];
+
+  // Ensure we start with a user turn (Anthropic requirement).
+  if (anthropicMessages.length === 0 || anthropicMessages[0].role !== "user") {
+    anthropicMessages.unshift({ role: "user", content: "Proceed." });
+  }
+
+  // ── Governance wrapper (quota check + audit) ────────────────────────────
+  interface GovResult {
+    textContent: string;
+    proposedActionsRaw: Array<{ toolCallId: string; name: string; input: Record<string, unknown> }>;
+    usage: { inputTokens: number; outputTokens: number };
+    model: string;
+  }
+
+  const gov = await governedAiCall<GovResult | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
     actionType: "ai_estimator.chat",
     inputRefs: { sessionId: opts.session.id, contextRowCount: contextRows.length },
     fn: async () => {
-      const completion = await routedChatCompletion({
-        orgId: opts.organizationId,
-        featureKey: "ai_estimator.chat",
-        request: {
-          messages: [
-            { role: "system", content: sysPrompt },
-            { role: "system", content: liveEstimateBlock },
-            ...(lessonsBlock
-              ? ([{ role: "system", content: lessonsBlock }] as const)
-              : []),
-            { role: "system", content: contextBlock },
-            ...historyTurns,
-            { role: "user", content: finalUserContent },
-          ],
-          max_completion_tokens: 1500,
-        },
+      const anthropicResult = await callAnthropicWithTools({
+        systemPrompt: combinedSystemPrompt,
+        messages: anthropicMessages,
+        tools: LINE_ITEM_TOOLS as unknown as import("@anthropic-ai/sdk").Anthropic.Tool[],
+        maxTokens: 2048,
       });
-      return { result: completion.choices[0]?.message?.content ?? null, completion };
+
+      // Build a synthetic AiChatResponse for the governance layer's metering.
+      const syntheticCompletion: AiChatResponse = {
+        choices: [
+          {
+            index: 0,
+            message: { role: "assistant", content: anthropicResult.textContent || null },
+            finish_reason: null,
+          },
+        ],
+        usage: {
+          prompt_tokens: anthropicResult.usage.inputTokens,
+          completion_tokens: anthropicResult.usage.outputTokens,
+        },
+        model: anthropicResult.model,
+        provider: "anthropic",
+        fallbackUsed: false,
+        latencyMs: anthropicResult.latencyMs,
+      };
+
+      return {
+        result: {
+          textContent: anthropicResult.textContent,
+          proposedActionsRaw: anthropicResult.toolUseBlocks.map((b) => ({
+            toolCallId: b.id,
+            name: b.name,
+            input: b.input,
+          })),
+          usage: anthropicResult.usage,
+          model: anthropicResult.model,
+        },
+        completion: syntheticCompletion,
+      };
     },
   });
 
@@ -508,21 +688,78 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
     return { blocked: true, reason: gov.reason };
   }
 
-  const answer = gov.result?.trim() || "I don't have enough information from your data to answer that yet.";
+  const govResult = gov.result;
+  const textContent = govResult?.textContent?.trim() || "I don't have enough information from your data to answer that yet.";
+
+  // ── Parse and validate proposed actions from tool-use blocks ──────────────
+  const proposedActions: ProposedAction[] = [];
+  for (const raw of govResult?.proposedActionsRaw ?? []) {
+    if (raw.name === "add_line_item") {
+      const parsed = addLineItemPayloadSchema.safeParse(raw.input);
+      if (parsed.success) {
+        proposedActions.push({ toolCallId: raw.toolCallId, action: "add", payload: parsed.data });
+      } else {
+        logWarn("AI Estimator chat: add_line_item tool input failed validation", {
+          toolCallId: raw.toolCallId,
+          issues: parsed.error.issues,
+        });
+        proposedActions.push({
+          toolCallId: raw.toolCallId,
+          action: "add",
+          payload: raw.input as AddLineItemPayload,
+          validationError: parsed.error.issues.map((i) => i.message).join("; "),
+        });
+      }
+    } else if (raw.name === "edit_line_item") {
+      const parsed = editLineItemPayloadSchema.safeParse(raw.input);
+      if (parsed.success) {
+        proposedActions.push({ toolCallId: raw.toolCallId, action: "edit", payload: parsed.data });
+      } else {
+        logWarn("AI Estimator chat: edit_line_item tool input failed validation", {
+          toolCallId: raw.toolCallId,
+          issues: parsed.error.issues,
+        });
+        proposedActions.push({
+          toolCallId: raw.toolCallId,
+          action: "edit",
+          payload: raw.input as EditLineItemPayload,
+          validationError: parsed.error.issues.map((i) => i.message).join("; "),
+        });
+      }
+    } else if (raw.name === "delete_line_item") {
+      const parsed = deleteLineItemPayloadSchema.safeParse(raw.input);
+      if (parsed.success) {
+        proposedActions.push({ toolCallId: raw.toolCallId, action: "delete", payload: parsed.data });
+      } else {
+        logWarn("AI Estimator chat: delete_line_item tool input failed validation", {
+          toolCallId: raw.toolCallId,
+          issues: parsed.error.issues,
+        });
+        proposedActions.push({
+          toolCallId: raw.toolCallId,
+          action: "delete",
+          payload: raw.input as DeleteLineItemPayload,
+          validationError: parsed.error.issues.map((i) => i.message).join("; "),
+        });
+      }
+    }
+  }
+
   const [assistantMsg] = await db
     .insert(aiEstimatorChatMessages)
     .values({
       sessionId: opts.session.id,
       role: "assistant",
-      content: answer,
+      content: textContent,
       citations: citationsFromRows(contextRows),
+      proposedActions: proposedActions.length > 0 ? proposedActions : null,
     })
     .returning();
   await db
     .update(aiEstimatorChatSessions)
     .set({ updatedAt: new Date() })
     .where(eq(aiEstimatorChatSessions.id, opts.session.id));
-  return { userMessage: userMsg, assistantMessage: assistantMsg };
+  return { userMessage: userMsg, assistantMessage: assistantMsg, proposedActions };
 }
 
 export async function setMessageFeedback(
