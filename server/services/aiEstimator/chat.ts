@@ -22,7 +22,7 @@ import {
   retrieveContext,
   retrieveLessons,
 } from "./retrieval";
-import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
+import { listLearnedRatesForOrgRanked, summarizeRate } from "./learnedRates";
 import {
   assertBidInOrg,
   assertEstimateInOrg,
@@ -198,7 +198,10 @@ export async function sendChatTurn(opts: {
     : null;
 
   // Fetch live estimate lines so the AI knows what's already been estimated.
-  const [lineItems, measurements] = await Promise.all([
+  // Also compute the true DB total to avoid in-memory sum inaccuracy when
+  // there are more than 60 line items (the truncated list would under-count).
+  const LINE_ITEM_CAP = 60;
+  const [lineItems, [lineItemTotal, lineItemTotalCount], measurements] = await Promise.all([
     resolvedEstimateId
       ? db
           .select({
@@ -206,6 +209,7 @@ export async function sendChatTurn(opts: {
             quantity: estimateLineItems.quantity,
             unit: estimateLineItems.unit,
             category: estimateLineItems.category,
+            workTypeCode: estimateLineItems.workTypeCode,
             materialCost: estimateLineItems.materialCost,
             laborCost: estimateLineItems.laborCost,
             equipmentCost: estimateLineItems.equipmentCost,
@@ -219,8 +223,25 @@ export async function sendChatTurn(opts: {
               isNull(estimateLineItems.deletedAt),
             ),
           )
-          .limit(60)
+          .limit(LINE_ITEM_CAP)
       : Promise.resolve([]),
+
+    // DB aggregates: true subtotal + full count (both in one query to save a round-trip).
+    resolvedEstimateId
+      ? db
+          .select({
+            total: sql<string>`COALESCE(SUM(total_cost),0)`,
+            count: sql<number>`COUNT(*)::int`,
+          })
+          .from(estimateLineItems)
+          .where(
+            and(
+              eq(estimateLineItems.estimateId, resolvedEstimateId),
+              isNull(estimateLineItems.deletedAt),
+            ),
+          )
+          .then((r) => [Number(r[0]?.total ?? 0), r[0]?.count ?? 0] as const)
+      : Promise.resolve([0, 0] as const),
 
     // Fetch live takeoff measurements (joined through sheets to get bid scope).
     opts.session.bidId
@@ -261,7 +282,12 @@ export async function sendChatTurn(opts: {
     lessonRows = [];
   }
 
-  const rates = await listLearnedRatesForOrg(opts.organizationId);
+  // Rank learned rates so codes matching the current estimate's line items
+  // surface first; fill remaining slots alphabetically.
+  const activeCostCodes = lineItems
+    .map((li) => li.workTypeCode)
+    .filter((c): c is string => typeof c === "string" && c.length > 0);
+  const rates = await listLearnedRatesForOrgRanked(opts.organizationId, activeCostCodes);
   const rateSummary = rates.slice(0, 30).map((r) => ({
     costCode: r.costCode,
     metric: r.metric,
@@ -323,9 +349,12 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
   }
 
   if (lineItems.length > 0) {
-    const totalCostSum = lineItems.reduce((s, li) => s + Number(li.totalCost ?? 0), 0);
+    const truncated = lineItems.length === LINE_ITEM_CAP && lineItemTotalCount > LINE_ITEM_CAP;
+    const header = truncated
+      ? `ESTIMATE LINE ITEMS (showing ${LINE_ITEM_CAP} of ${lineItemTotalCount} items — list truncated, true subtotal $${lineItemTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })} reflects all items in DB):`
+      : `ESTIMATE LINE ITEMS (${lineItems.length} items, subtotal $${lineItemTotal.toLocaleString(undefined, { maximumFractionDigits: 2 })}):`;
     parts.push(
-      `ESTIMATE LINE ITEMS (${lineItems.length} items, subtotal $${totalCostSum.toLocaleString(undefined, { maximumFractionDigits: 2 })}):\n` +
+      `${header}\n` +
         lineItems
           .map(
             (li) =>
@@ -368,24 +397,30 @@ Cite source rows by id when relevant. Reply in plain prose with short bullet poi
   const liveEstimateBlock = parts.join("\n\n");
 
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
-  const contextBlock = `Context:\n` +
-    contextRows
-      .map(
-        (r) =>
-          // Task #2414 — surface the Claude-written narrative when the
-          // enrichment pass produced one; fall back to the mechanical
-          // snippet so orgs without AI_PROVIDER_TAKEOFF (or rows whose
-          // enrichment hasn't run yet) keep the prior behaviour.
-          `- [${r.sourceType}#${r.sourceId.slice(0, 8)}] ${r.title}\n  ${(r.enrichedSummary ?? r.contentSnippet).slice(0, 280)}`,
-      )
-      .join("\n") +
-    `\n\nLearned rates (most-relevant 30):\n` +
-    rateSummary
-      .map(
-        (r) =>
-          `- ${r.costCode} (${r.metric}, ${r.unit}): point=${r.point ?? "?"} range=${r.range.low ?? "?"}-${r.range.high ?? "?"} n=${r.n}`,
-      )
-      .join("\n");
+
+  const contextSection = contextRows.length > 0
+    ? contextRows
+        .map(
+          (r) =>
+            // Task #2414 — surface the Claude-written narrative when the
+            // enrichment pass produced one; fall back to the mechanical
+            // snippet so orgs without AI_PROVIDER_TAKEOFF (or rows whose
+            // enrichment hasn't run yet) keep the prior behaviour.
+            `- [${r.sourceType}#${r.sourceId.slice(0, 8)}] ${r.title}\n  ${(r.enrichedSummary ?? r.contentSnippet).slice(0, 280)}`,
+        )
+        .join("\n")
+    : "No prior bid history found in the knowledge index.";
+
+  const rateSection = rateSummary.length > 0
+    ? rateSummary
+        .map(
+          (r) =>
+            `- ${r.costCode} (${r.metric}, ${r.unit}): point=${r.point ?? "?"} range=${r.range.low ?? "?"}-${r.range.high ?? "?"} n=${r.n}`,
+        )
+        .join("\n")
+    : "No learned rates on file for this organization.";
+
+  const contextBlock = `Context:\n${contextSection}\n\nLearned rates (most-relevant 30):\n${rateSection}`;
 
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Loader2, RefreshCcw, Database, Sparkles, AlertTriangle,
@@ -1145,10 +1145,247 @@ function CalibrationFeedbackLoopCard() {
   );
 }
 
+// ─── Chat Sessions diagnostic tab ───────────────────────────────────────────
+
+interface AdminSession {
+  id: string;
+  userId: string;
+  bidId: string | null;
+  estimateId: string | null;
+  projectId: string | null;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface SessionContextPreview {
+  sessionId: string;
+  bidId: string | null;
+  estimateId: string | null;
+  projectId: string | null;
+  lineItemCount: number;
+  lineItemTotalCost: number;
+  measurementCount: number;
+  knowledgeIndexRowCount: number;
+  learnedRateCount: number;
+  notes: string[];
+}
+
+function SessionsTab() {
+  const sessionsQuery = useQuery<{ sessions: AdminSession[] }>({
+    queryKey: ["/api/ai-estimator/admin/sessions"],
+  });
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [previews, setPreviews] = useState<Record<string, SessionContextPreview | "loading" | "error">>({});
+
+  async function loadPreview(sessionId: string) {
+    if (previews[sessionId]) return;
+    setPreviews((p) => ({ ...p, [sessionId]: "loading" }));
+    try {
+      const r = await apiRequest("GET", `/api/ai-estimator/admin/session-preview/${sessionId}`);
+      const data = await r.json();
+      setPreviews((p) => ({ ...p, [sessionId]: data }));
+    } catch {
+      setPreviews((p) => ({ ...p, [sessionId]: "error" }));
+    }
+  }
+
+  function toggleRow(id: string) {
+    if (expandedId === id) {
+      setExpandedId(null);
+    } else {
+      setExpandedId(id);
+      loadPreview(id);
+    }
+  }
+
+  const sessions = sessionsQuery.data?.sessions ?? [];
+
+  return (
+    <Card data-testid="card-chat-sessions">
+      <CardHeader>
+        <CardTitle>Recent chat sessions</CardTitle>
+        <CardDescription>
+          Inspect the data each session had access to. Click "Debug context" on any row to see how many line items, learned rates, and knowledge index entries were available when the AI responded.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {sessionsQuery.isLoading ? (
+          <Loader2 className="animate-spin h-5 w-5" />
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground" data-testid="text-no-sessions">
+            No chat sessions yet. Sessions are created when a user opens the AI estimator chat panel on a bid.
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Session</TableHead>
+                <TableHead>Bid / Estimate</TableHead>
+                <TableHead>Last active</TableHead>
+                <TableHead></TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {sessions.map((s) => {
+                const preview = previews[s.id];
+                const isOpen = expandedId === s.id;
+                return (
+                  <Fragment key={s.id}>
+                    <TableRow data-testid={`row-session-${s.id}`}>
+                      <TableCell>
+                        <div className="text-xs font-mono text-muted-foreground">{s.id.slice(0, 8)}</div>
+                        {s.title && <div className="text-sm">{s.title}</div>}
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-0.5 text-xs text-muted-foreground">
+                          {s.bidId && <div>bid: <span className="font-mono">{s.bidId.slice(0, 8)}</span></div>}
+                          {s.estimateId && <div>est: <span className="font-mono">{s.estimateId.slice(0, 8)}</span></div>}
+                          {s.projectId && <div>proj: <span className="font-mono">{s.projectId.slice(0, 8)}</span></div>}
+                          {!s.bidId && !s.estimateId && !s.projectId && <span className="italic">no links</span>}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(s.updatedAt).toLocaleString()}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => toggleRow(s.id)}
+                          data-testid={`button-debug-session-${s.id}`}
+                        >
+                          {isOpen ? <ChevronDown className="h-3 w-3 mr-1" /> : <ChevronRight className="h-3 w-3 mr-1" />}
+                          Debug context
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                    {isOpen && (
+                      <TableRow key={`${s.id}-preview`} data-testid={`row-session-preview-${s.id}`}>
+                        <TableCell colSpan={4} className="bg-muted/20 p-4">
+                          {preview === "loading" ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" /> Loading context snapshot…
+                            </div>
+                          ) : preview === "error" ? (
+                            <div className="flex items-center gap-2 text-sm text-destructive">
+                              <AlertCircle className="h-4 w-4" /> Failed to load context preview.
+                            </div>
+                          ) : preview ? (
+                            <div className="space-y-3">
+                              <div className="grid grid-cols-2 gap-2 sm:grid-cols-5 text-sm">
+                                {[
+                                  { label: "Line items", value: preview.lineItemCount, testId: "preview-line-items" },
+                                  { label: "Total cost", value: `$${preview.lineItemTotalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, testId: "preview-total-cost" },
+                                  { label: "Measurements", value: preview.measurementCount, testId: "preview-measurements" },
+                                  { label: "Knowledge rows", value: preview.knowledgeIndexRowCount, testId: "preview-knowledge" },
+                                  { label: "Learned rates", value: preview.learnedRateCount, testId: "preview-rates" },
+                                ].map((c) => (
+                                  <div key={c.label} className="rounded border bg-background px-3 py-2" data-testid={c.testId}>
+                                    <div className="text-xs text-muted-foreground">{c.label}</div>
+                                    <div className="font-semibold tabular-nums">{c.value}</div>
+                                  </div>
+                                ))}
+                              </div>
+                              {preview.notes.length > 0 && (
+                                <div className="space-y-1">
+                                  {preview.notes.map((note, i) => (
+                                    <div
+                                      key={i}
+                                      className="flex items-start gap-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800"
+                                      data-testid={`preview-note-${i}`}
+                                    >
+                                      <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                                      {note}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              {preview.notes.length === 0 && (
+                                <div className="flex items-center gap-2 text-xs text-green-700" data-testid="preview-ok">
+                                  <CheckCircle2 className="h-3.5 w-3.5" /> Context looks complete — no missing data detected.
+                                </div>
+                              )}
+                            </div>
+                          ) : null}
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Ingestion status banner + page-level types ──────────────────────────────
+
+interface IngestionStatus {
+  lastSuccessAt: string | null;
+  knowledgeIndexRows: number;
+  learnedRateRows: number;
+  neverRun: boolean;
+}
+
+interface StatusResponse {
+  enabled: boolean;
+  canTrain: boolean;
+  canManage: boolean;
+  featureFlagOn: boolean;
+  reason: string;
+  ingestion: IngestionStatus;
+}
+
+function IngestionStatusBanner({ status }: { status: IngestionStatus | undefined }) {
+  if (!status) return null;
+  if (!status.neverRun) {
+    return (
+      <div
+        className="flex flex-wrap items-center gap-4 rounded-md border bg-muted/30 px-4 py-3 text-sm"
+        data-testid="banner-ingestion-status"
+      >
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 text-green-600" />
+          <span>
+            Last ingestion:{" "}
+            <strong>{status.lastSuccessAt ? new Date(status.lastSuccessAt).toLocaleString() : "unknown"}</strong>
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Database className="h-3.5 w-3.5" />
+          <span>{status.knowledgeIndexRows.toLocaleString()} knowledge rows</span>
+          <span>·</span>
+          <span>{status.learnedRateRows.toLocaleString()} learned rates</span>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div
+      className="flex items-start gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+      data-testid="banner-ingestion-never-run"
+    >
+      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+      <div>
+        <strong>Ingestion has never run for this organization.</strong>{" "}
+        The AI chat panel will have no learned rates or prior bid context until you run ingestion. Click
+        "Re-train from history" above to start a manual run.
+      </div>
+    </div>
+  );
+}
+
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState("access");
 
+  const statusQuery = useQuery<StatusResponse>({ queryKey: ["/api/ai-estimator/status"], staleTime: 60_000 });
   const accessQuery = useQuery<{ users: AccessRow[] }>({ queryKey: ["/api/ai-estimator/admin/access"] });
   const runsQuery = useQuery<{ runs: IngestRun[] }>({ queryKey: ["/api/ai-estimator/admin/ingest-runs"] });
   const ratesQuery = useQuery<{ rates: LearnedRate[] }>({ queryKey: ["/api/ai-estimator/admin/learned-rates"] });
@@ -1283,12 +1520,15 @@ export default function AiEstimatorAdminPage() {
         </Button>
       </div>
 
+      <IngestionStatusBanner status={statusQuery.data?.ingestion} />
+
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>
           <TabsTrigger value="access" data-testid="tab-access">User access</TabsTrigger>
           <TabsTrigger value="ingest" data-testid="tab-ingest">Training runs</TabsTrigger>
           <TabsTrigger value="rates" data-testid="tab-rates">Learned rates</TabsTrigger>
           <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
+          <TabsTrigger value="sessions" data-testid="tab-sessions">Chat sessions</TabsTrigger>
           <TabsTrigger value="assemblies" data-testid="tab-assemblies">Assemblies</TabsTrigger>
           <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
           <TabsTrigger value="spend" data-testid="tab-spend">AI spend</TabsTrigger>
@@ -1884,6 +2124,10 @@ export default function AiEstimatorAdminPage() {
         <TabsContent value="settings" className="space-y-4">
           <SettingsTab />
           <OrgFactorsCapCard />
+        </TabsContent>
+
+        <TabsContent value="sessions" className="space-y-4">
+          <SessionsTab />
         </TabsContent>
 
         <TabsContent value="spend" className="space-y-4">

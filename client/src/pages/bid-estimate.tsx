@@ -879,7 +879,12 @@ export default function BidEstimate() {
         <div className="space-y-2">
           <AiEstimatorIntroCallout surface="bid-estimate" />
           <div className="h-[420px]">
-            <AiEstimatorChatPanel bidId={bid.id} estimateId={estimate.id} enabled />
+            <AiEstimatorChatPanel
+              bidId={bid.id}
+              estimateId={estimate.id}
+              projectId={bid.convertedToProjectId ?? undefined}
+              enabled
+            />
           </div>
         </div>
       </main>

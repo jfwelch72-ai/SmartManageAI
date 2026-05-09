@@ -69,6 +69,29 @@ export async function listLearnedRatesForOrg(
     .orderBy(aiEstimatorLearnedRates.costCode);
 }
 
+/**
+ * Like `listLearnedRatesForOrg` but re-ranks results so that rates whose
+ * `costCode` appears in `priorityCostCodes` surface first. Within each
+ * bucket (priority vs. rest) rows remain alphabetically ordered by
+ * costCode so the prompt section stays readable. If `priorityCostCodes`
+ * is empty the result is identical to `listLearnedRatesForOrg`.
+ */
+export async function listLearnedRatesForOrgRanked(
+  organizationId: string,
+  priorityCostCodes: string[],
+): Promise<AiEstimatorLearnedRate[]> {
+  const all = await listLearnedRatesForOrg(organizationId);
+  if (priorityCostCodes.length === 0) return all;
+  const codeSet = new Set(priorityCostCodes);
+  const priority: AiEstimatorLearnedRate[] = [];
+  const rest: AiEstimatorLearnedRate[] = [];
+  for (const r of all) {
+    if (codeSet.has(r.costCode)) priority.push(r);
+    else rest.push(r);
+  }
+  return [...priority, ...rest];
+}
+
 function percentile(sortedAsc: number[], q: number): number | null {
   if (sortedAsc.length === 0) return null;
   if (sortedAsc.length === 1) return sortedAsc[0];

@@ -1,12 +1,18 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   users,
   bids,
   projects,
+  estimates,
+  estimateLineItems,
   aiEstimatorRateSamples,
+  aiEstimatorKnowledgeIndex,
+  aiEstimatorLearnedRates,
+  aiEstimatorIngestRuns,
+  aiEstimatorChatSessions,
   takeoffMeasurements,
   takeoffMeasurementGroups,
   takeoffSheets,
@@ -189,10 +195,41 @@ router.get(`${estimatorBase}/status`, requireAuth, async (req: AuthRequest, res:
   if (!req.user?.organizationId) {
     return res.json({ enabled: false, reason: "FEATURE_FLAG_OFF", featureFlagOn: false, canTrain: false, canManage: false });
   }
-  const flagOn = await isFeatureEnabled(req.user.organizationId, "AI_ESTIMATOR");
-  const status = await getAccessStatus(req.user.organizationId, req.user.id);
+  const orgId = req.user.organizationId;
+  const flagOn = await isFeatureEnabled(orgId, "AI_ESTIMATOR");
+  const status = await getAccessStatus(orgId, req.user.id);
   const effectiveRole = req.user.effectiveRole || req.user.role;
-  const perms = await getEffectivePermissions(req.user.id, req.user.organizationId, effectiveRole);
+  const perms = await getEffectivePermissions(req.user.id, orgId, effectiveRole);
+
+  // Ingestion status — last successful run + index/rate row counts for
+  // the admin panel "hasn't run yet" empty-state banner.
+  const [lastIngestRow, knowledgeCountRow, rateCountRow] = await Promise.all([
+    db
+      .select({
+        completedAt: aiEstimatorIngestRuns.completedAt,
+        status: aiEstimatorIngestRuns.status,
+        startedAt: aiEstimatorIngestRuns.startedAt,
+      })
+      .from(aiEstimatorIngestRuns)
+      .where(and(
+        eq(aiEstimatorIngestRuns.organizationId, orgId),
+        eq(aiEstimatorIngestRuns.status, "SUCCEEDED"),
+      ))
+      .orderBy(desc(aiEstimatorIngestRuns.startedAt))
+      .limit(1)
+      .then((r) => r[0] ?? null),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiEstimatorKnowledgeIndex)
+      .where(eq(aiEstimatorKnowledgeIndex.organizationId, orgId))
+      .then((r) => r[0]?.count ?? 0),
+    db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(aiEstimatorLearnedRates)
+      .where(eq(aiEstimatorLearnedRates.organizationId, orgId))
+      .then((r) => r[0]?.count ?? 0),
+  ]);
+
   res.json({
     enabled: status.enabled,
     canTrain: status.canTrain,
@@ -202,6 +239,12 @@ router.get(`${estimatorBase}/status`, requireAuth, async (req: AuthRequest, res:
       req.user.role === "SUPER_ADMIN",
     featureFlagOn: flagOn,
     reason: status.reason,
+    ingestion: {
+      lastSuccessAt: lastIngestRow?.completedAt ?? null,
+      knowledgeIndexRows: knowledgeCountRow,
+      learnedRateRows: rateCountRow,
+      neverRun: lastIngestRow === null,
+    },
   });
 });
 
@@ -1010,6 +1053,135 @@ router.put(
     if (!session) return res.status(404).json({ error: "Session not found" });
     await setMessageFeedback(session.id, req.params.mid, data.outcome);
     res.status(204).end();
+  },
+);
+
+// =====================================================================
+// Admin: list recent chat sessions for the org (most recent first).
+// =====================================================================
+router.get(
+  `${estimatorBase}/admin/sessions`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const sessions = await db
+      .select({
+        id: aiEstimatorChatSessions.id,
+        userId: aiEstimatorChatSessions.userId,
+        bidId: aiEstimatorChatSessions.bidId,
+        estimateId: aiEstimatorChatSessions.estimateId,
+        projectId: aiEstimatorChatSessions.projectId,
+        title: aiEstimatorChatSessions.title,
+        createdAt: aiEstimatorChatSessions.createdAt,
+        updatedAt: aiEstimatorChatSessions.updatedAt,
+      })
+      .from(aiEstimatorChatSessions)
+      .where(eq(aiEstimatorChatSessions.organizationId, orgId))
+      .orderBy(desc(aiEstimatorChatSessions.updatedAt))
+      .limit(limit);
+    res.json({ sessions });
+  },
+);
+
+// =====================================================================
+// Admin: session data-preview — returns the context that would be
+// assembled for a given session without calling the LLM. Useful for
+// debugging why the AI is missing data for a specific bid/estimate.
+// =====================================================================
+router.get(
+  `${estimatorBase}/admin/session-preview/:sessionId`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const { sessionId } = req.params;
+
+    // Load the session — admins can preview any session in their org.
+    const [session] = await db
+      .select()
+      .from(aiEstimatorChatSessions)
+      .where(and(
+        eq(aiEstimatorChatSessions.id, sessionId),
+        eq(aiEstimatorChatSessions.organizationId, orgId),
+      ))
+      .limit(1);
+
+    if (!session) return res.status(404).json({ error: "Session not found" });
+
+    // Resolve estimateId from bidId if not stored on session.
+    let resolvedEstimateId = session.estimateId;
+    if (!resolvedEstimateId && session.bidId) {
+      const estRow = await db
+        .select({ id: estimates.id })
+        .from(estimates)
+        .where(eq(estimates.bidId, session.bidId))
+        .orderBy(desc(estimates.versionNumber))
+        .limit(1)
+        .then((r) => r[0] ?? null);
+      resolvedEstimateId = estRow?.id ?? null;
+    }
+
+    const [lineItemCount, totalCost, measurementCount, contextRowCount, rateCount] =
+      await Promise.all([
+        resolvedEstimateId
+          ? db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(estimateLineItems)
+              .where(and(
+                eq(estimateLineItems.estimateId, resolvedEstimateId),
+                isNull(estimateLineItems.deletedAt),
+              ))
+              .then((r) => r[0]?.count ?? 0)
+          : Promise.resolve(0),
+        resolvedEstimateId
+          ? db
+              .select({ total: sql<string>`COALESCE(SUM(total_cost),0)` })
+              .from(estimateLineItems)
+              .where(and(
+                eq(estimateLineItems.estimateId, resolvedEstimateId),
+                isNull(estimateLineItems.deletedAt),
+              ))
+              .then((r) => Number(r[0]?.total ?? 0))
+          : Promise.resolve(0),
+        session.bidId
+          ? db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(takeoffMeasurements)
+              .innerJoin(takeoffSheets, eq(takeoffMeasurements.sheetId, takeoffSheets.id))
+              .where(eq(takeoffSheets.bidId, session.bidId))
+              .then((r) => r[0]?.count ?? 0)
+          : Promise.resolve(0),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(aiEstimatorKnowledgeIndex)
+          .where(eq(aiEstimatorKnowledgeIndex.organizationId, orgId))
+          .then((r) => r[0]?.count ?? 0),
+        db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(aiEstimatorLearnedRates)
+          .where(eq(aiEstimatorLearnedRates.organizationId, orgId))
+          .then((r) => r[0]?.count ?? 0),
+      ]);
+
+    res.json({
+      sessionId: session.id,
+      bidId: session.bidId,
+      estimateId: resolvedEstimateId,
+      projectId: session.projectId,
+      lineItemCount,
+      lineItemTotalCost: totalCost,
+      measurementCount,
+      knowledgeIndexRowCount: contextRowCount,
+      learnedRateCount: rateCount,
+      notes: [
+        resolvedEstimateId ? null : "No estimate linked — check that the bid has an estimate.",
+        lineItemCount === 0 ? "No line items found — AI will say estimate is empty." : null,
+        rateCount === 0 ? "No learned rates — run ingestion to populate rate data." : null,
+        contextRowCount === 0 ? "No knowledge index rows — run ingestion to build context." : null,
+      ].filter(Boolean),
+    });
   },
 );
 

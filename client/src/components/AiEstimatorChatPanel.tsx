@@ -57,6 +57,8 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     },
   });
 
+  const [panelError, setPanelError] = useState<string | null>(null);
+
   const createSession = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("POST", "/api/ai-estimator/chat/sessions", {
@@ -68,8 +70,12 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       return r.json();
     },
     onSuccess: (s: ChatSession) => {
+      setPanelError(null);
       queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/chat/sessions"] });
       setSessionId(s.id);
+    },
+    onError: () => {
+      setPanelError("Could not load estimate data — please refresh or contact support.");
     },
   });
 
@@ -79,8 +85,12 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
       return r.json();
     },
     onSuccess: () => {
+      setPanelError(null);
       queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/chat/sessions", sessionId, "messages"] });
       setDraft("");
+    },
+    onError: () => {
+      setPanelError("Failed to get a response — please try again or refresh the page.");
     },
   });
 
@@ -153,6 +163,15 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 min-h-0">
+        {panelError && (
+          <div
+            className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive"
+            data-testid="chat-panel-error"
+          >
+            <span className="font-medium">Error:</span>
+            <span>{panelError}</span>
+          </div>
+        )}
         {isStarting ? (
           <div className="flex flex-col items-center justify-center py-6 gap-2">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
