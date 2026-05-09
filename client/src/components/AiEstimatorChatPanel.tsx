@@ -181,12 +181,13 @@ export function ProposedActionCard({
     Number(p.equipmentCost ?? 0) +
     Number(p.subcontractCost ?? 0);
 
-  // ── Cost-delta preview (Task #2732 / Task #2733) ───────────────────────────
-  // Subscribe to the bid estimate cache reactively so that when a sibling card
-  // is accepted and the cache is invalidated/refetched, this card re-renders
-  // with the updated baseline.  We never trigger additional network requests
-  // from within the card itself — staleTime:Infinity + refetchOnMount:false
-  // mean we only update when the parent (handleApplyAction) calls invalidate.
+  // ── Cost-delta preview (Task #2732 / Task #2733 / Task #2739) ──────────────
+  // Subscribe to the bid estimate cache reactively so the preview updates when:
+  // (a) a sibling card is accepted and the cache is invalidated/refetched, or
+  // (b) the user edits a cost field elsewhere and the cache entry changes.
+  // We never trigger additional network requests from within the card itself —
+  // staleTime:Infinity + refetchOnMount/WindowFocus/Reconnect:false + no
+  // interval mean we only re-render when the cache is updated externally.
   type CachedLineItem = {
     id: string;
     materialCost: string | number | null;
@@ -207,6 +208,8 @@ export function ProposedActionCard({
     staleTime: Infinity,
     refetchOnMount: false,
     refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: false,
   });
 
   // Derived live values — recalculated on every cache update.
