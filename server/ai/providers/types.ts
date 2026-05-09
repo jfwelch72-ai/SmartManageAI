@@ -116,7 +116,9 @@ export type TakeoffFeatureKey =
   | "estimation.module_analyze.costs"
   | "estimation.module_analyze.equipment"
   | "estimation.module_analyze.vendor_pricing"
-  | "estimation.module_analyze.project_health";
+  | "estimation.module_analyze.project_health"
+  // Task #2703 — AI-generated skill suggestions from lessons.
+  | "ai_estimator.skill_suggestions";
 
 /**
  * Task #2684 — Logical labels for every non-Takeoff call site that goes

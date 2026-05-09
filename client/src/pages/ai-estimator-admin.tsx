@@ -4,7 +4,7 @@ import {
   Loader2, RefreshCcw, Database, Sparkles, AlertTriangle,
   ChevronDown, ChevronRight, Download, X, Ban, RotateCcw,
   Info, AlertCircle, CheckCircle2, TrendingUp, Settings, Plus, Trash2,
-  HelpCircle, Layers, Pencil
+  HelpCircle, Layers, Pencil, BookOpen, Wand2, ArrowUp, ArrowDown
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -1158,6 +1158,26 @@ interface AdminSession {
   updatedAt: string;
 }
 
+// ─── Skills types ──────────────────────────────────────────────────────────
+
+interface AiEstimatorSkill {
+  id: string;
+  organizationId: string | null;
+  name: string;
+  description: string | null;
+  ruleBody: string;
+  scope: "global" | "trade" | "csi_division" | "project_type";
+  scopeValue: string | null;
+  priority: number;
+  isActive: boolean;
+  isReadOnly: boolean;
+  sourceType: "user_authored" | "promoted_lesson" | "seeded";
+  sourceLessonId: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 interface SessionContextPreview {
   sessionId: string;
   bidId: string | null;
@@ -1381,6 +1401,506 @@ function IngestionStatusBanner({ status }: { status: IngestionStatus | undefined
   );
 }
 
+interface SkillSuggestion {
+  name: string;
+  description: string;
+  ruleBody: string;
+  scope: "global" | "trade" | "csi_division" | "project_type";
+  scopeValue: string | null;
+  rationale: string;
+}
+
+// ─── Skills tab ─────────────────────────────────────────────────────────────
+
+function SkillsTab() {
+  const { toast } = useToast();
+  const [editingSkill, setEditingSkill] = useState<AiEstimatorSkill | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const [draft, setDraft] = useState<{
+    name: string;
+    description: string;
+    ruleBody: string;
+    scope: "global" | "trade" | "csi_division" | "project_type";
+    scopeValue: string;
+    priority: string;
+  }>({
+    name: "",
+    description: "",
+    ruleBody: "",
+    scope: "global",
+    scopeValue: "",
+    priority: "100",
+  });
+
+  const skillsQuery = useQuery<{ skills: AiEstimatorSkill[] }>({
+    queryKey: ["/api/ai-estimator/skills"],
+  });
+
+  const suggestionsQuery = useQuery<{ suggestions: SkillSuggestion[] }>({
+    queryKey: ["/api/ai-estimator/skills/suggestions"],
+    enabled: showSuggestions,
+    staleTime: 0,
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: typeof draft) =>
+      apiRequest("POST", "/api/ai-estimator/skills", {
+        name: data.name,
+        description: data.description || null,
+        ruleBody: data.ruleBody,
+        scope: data.scope,
+        scopeValue: data.scopeValue || null,
+        priority: parseInt(data.priority) || 100,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/skills"] });
+      toast({ title: "Skill created" });
+      setShowCreate(false);
+      setDraft({ name: "", description: "", ruleBody: "", scope: "global", scopeValue: "", priority: "100" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to create skill", description: err.message, variant: "destructive" }),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<AiEstimatorSkill> }) =>
+      apiRequest("PATCH", `/api/ai-estimator/skills/${id}`, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/skills"] });
+      toast({ title: "Skill updated" });
+      setEditingSkill(null);
+    },
+    onError: (err: Error) => toast({ title: "Failed to update skill", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => apiRequest("DELETE", `/api/ai-estimator/skills/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/skills"] });
+      toast({ title: "Skill deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to delete skill", description: err.message, variant: "destructive" }),
+  });
+
+  const reorderMutation = useMutation({
+    mutationFn: async (items: Array<{ id: string; priority: number }>) =>
+      apiRequest("POST", "/api/ai-estimator/skills/reorder", { items }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/skills"] });
+    },
+    onError: (err: Error) => toast({ title: "Reorder failed", description: err.message, variant: "destructive" }),
+  });
+
+  const promoteMutation = useMutation({
+    mutationFn: async (suggestion: SkillSuggestion) =>
+      apiRequest("POST", "/api/ai-estimator/skills", {
+        name: suggestion.name,
+        description: suggestion.description,
+        ruleBody: suggestion.ruleBody,
+        scope: suggestion.scope,
+        scopeValue: suggestion.scopeValue || null,
+        priority: 100,
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/skills"] });
+      toast({ title: "Suggestion added as skill" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to add suggestion", description: err.message, variant: "destructive" }),
+  });
+
+  const skills = skillsQuery.data?.skills ?? [];
+  const seeded = skills.filter((s) => s.sourceType === "seeded");
+  const orgOwned = skills.filter((s) => s.sourceType !== "seeded");
+
+  const scopeLabel = (s: AiEstimatorSkill) => {
+    if (s.scope === "global") return "Global";
+    const labels: Record<string, string> = { trade: "Trade", csi_division: "CSI Division", project_type: "Project Type" };
+    return s.scopeValue ? `${labels[s.scope] ?? s.scope}: ${s.scopeValue}` : labels[s.scope] ?? s.scope;
+  };
+
+  function moveSkill(skill: AiEstimatorSkill, direction: "up" | "down") {
+    const sorted = [...orgOwned].sort((a, b) => a.priority - b.priority || a.createdAt.localeCompare(b.createdAt));
+    const idx = sorted.findIndex((s) => s.id === skill.id);
+    const swapIdx = direction === "up" ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= sorted.length) return;
+    const swapped = sorted[swapIdx];
+    const newPriority = swapped.priority;
+    const swappedPriority = skill.priority;
+    reorderMutation.mutate([
+      { id: skill.id, priority: newPriority },
+      { id: swapped.id, priority: swappedPriority },
+    ]);
+  }
+
+  function openCreate() {
+    setDraft({ name: "", description: "", ruleBody: "", scope: "global", scopeValue: "", priority: "100" });
+    setEditingSkill(null);
+    setShowCreate(true);
+  }
+
+  function openEdit(skill: AiEstimatorSkill) {
+    setDraft({
+      name: skill.name,
+      description: skill.description ?? "",
+      ruleBody: skill.ruleBody,
+      scope: skill.scope,
+      scopeValue: skill.scopeValue ?? "",
+      priority: String(skill.priority),
+    });
+    setEditingSkill(skill);
+    setShowCreate(true);
+  }
+
+  function submitForm() {
+    if (!draft.name.trim() || !draft.ruleBody.trim()) {
+      toast({ title: "Name and rule body are required", variant: "destructive" });
+      return;
+    }
+    if (editingSkill) {
+      updateMutation.mutate({
+        id: editingSkill.id,
+        data: {
+          name: draft.name,
+          description: draft.description || null,
+          ruleBody: draft.ruleBody,
+          scope: draft.scope,
+          scopeValue: draft.scopeValue || null,
+          priority: parseInt(draft.priority) || 100,
+        },
+      });
+    } else {
+      createMutation.mutate(draft);
+    }
+  }
+
+  const activeCount = skills.filter((s) => s.isActive).length;
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5 text-primary" />
+                Estimating Skills
+              </CardTitle>
+              <CardDescription>
+                Persistent methodology rules injected into every AI estimate as firm-wide guidance.{" "}
+                {activeCount} active skill{activeCount !== 1 ? "s" : ""} across {skills.length} total.
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowSuggestions((v) => !v)}
+                data-testid="button-skills-suggestions"
+              >
+                <Wand2 className="h-4 w-4 mr-1" />
+                AI suggestions
+              </Button>
+              <Button size="sm" onClick={openCreate} data-testid="button-skills-create">
+                <Plus className="h-4 w-4 mr-1" />
+                New skill
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {skillsQuery.isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading skills…
+            </div>
+          ) : skills.length === 0 ? (
+            <div className="text-sm text-muted-foreground py-4 text-center" data-testid="text-skills-empty">
+              No skills yet. Click "New skill" to author your first rule or use AI suggestions to get started.
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {orgOwned.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Your firm's skills</div>
+                  <div className="divide-y rounded-md border">
+                    {[...orgOwned].sort((a, b) => a.priority - b.priority).map((skill, idx, arr) => (
+                      <div key={skill.id} className="flex items-start gap-3 p-3" data-testid={`row-skill-${skill.id}`}>
+                        <Switch
+                          checked={skill.isActive}
+                          onCheckedChange={(checked) =>
+                            updateMutation.mutate({ id: skill.id, data: { isActive: checked } })
+                          }
+                          data-testid={`switch-skill-active-${skill.id}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm" data-testid={`text-skill-name-${skill.id}`}>{skill.name}</span>
+                            <Badge variant="outline" className="text-xs">{scopeLabel(skill)}</Badge>
+                            <Badge variant="outline" className="text-xs">P{skill.priority}</Badge>
+                            {skill.sourceType === "promoted_lesson" && (
+                              <Badge variant="secondary" className="text-xs">From lesson</Badge>
+                            )}
+                            {!skill.isActive && (
+                              <Badge variant="secondary" className="text-xs">Inactive</Badge>
+                            )}
+                          </div>
+                          {skill.description && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-1 font-mono whitespace-pre-wrap break-all">
+                            {skill.ruleBody.length > 160 ? skill.ruleBody.slice(0, 157) + "…" : skill.ruleBody}
+                          </div>
+                        </div>
+                        <div className="flex flex-col gap-0.5 shrink-0">
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => moveSkill(skill, "up")}
+                              disabled={idx === 0 || reorderMutation.isPending}
+                              title="Move up"
+                              data-testid={`button-skill-up-${skill.id}`}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => moveSkill(skill, "down")}
+                              disabled={idx === arr.length - 1 || reorderMutation.isPending}
+                              title="Move down"
+                              data-testid={`button-skill-down-${skill.id}`}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <div className="flex gap-1">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => openEdit(skill)}
+                              data-testid={`button-skill-edit-${skill.id}`}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 text-destructive"
+                              onClick={() => deleteMutation.mutate(skill.id)}
+                              disabled={deleteMutation.isPending}
+                              data-testid={`button-skill-delete-${skill.id}`}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {seeded.length > 0 && (
+                <div>
+                  <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Trade-pack defaults (read-only — toggle to disable)
+                  </div>
+                  <div className="divide-y rounded-md border bg-muted/30">
+                    {seeded.map((skill) => (
+                      <div key={skill.id} className={`flex items-start gap-3 p-3 ${skill.isActive ? "" : "opacity-50"}`} data-testid={`row-skill-seeded-${skill.id}`}>
+                        <Switch
+                          checked={skill.isActive}
+                          onCheckedChange={(checked) =>
+                            updateMutation.mutate({ id: skill.id, data: { isActive: checked } })
+                          }
+                          data-testid={`switch-skill-seeded-active-${skill.id}`}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium text-sm">{skill.name}</span>
+                            <Badge variant="outline" className="text-xs">{scopeLabel(skill)}</Badge>
+                            <Badge variant="outline" className="text-xs">P{skill.priority}</Badge>
+                            {!skill.isActive && (
+                              <Badge variant="secondary" className="text-xs">Disabled</Badge>
+                            )}
+                          </div>
+                          {skill.description && (
+                            <div className="text-xs text-muted-foreground mt-0.5">{skill.description}</div>
+                          )}
+                          <div className="text-xs text-muted-foreground mt-1 font-mono whitespace-pre-wrap break-all">
+                            {skill.ruleBody.length > 160 ? skill.ruleBody.slice(0, 157) + "…" : skill.ruleBody}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {showSuggestions && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wand2 className="h-4 w-4 text-primary" />
+              AI-suggested skills
+            </CardTitle>
+            <CardDescription>
+              Candidates derived from your training data and lessons learned. Click "Add" to promote one to an active skill.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {suggestionsQuery.isLoading ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Generating suggestions…
+              </div>
+            ) : (suggestionsQuery.data?.suggestions ?? []).length === 0 ? (
+              <div className="text-sm text-muted-foreground" data-testid="text-suggestions-empty">
+                No suggestions available yet — run a training pass first.
+              </div>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {(suggestionsQuery.data?.suggestions ?? []).map((s, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3" data-testid={`row-suggestion-${i}`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">{s.name}</span>
+                        {s.scope !== "global" && s.scopeValue && (
+                          <Badge variant="outline" className="text-xs">{s.scope}: {s.scopeValue}</Badge>
+                        )}
+                      </div>
+                      {s.description && <div className="text-xs text-muted-foreground mt-0.5">{s.description}</div>}
+                      <div className="text-xs font-mono text-muted-foreground mt-1 whitespace-pre-wrap break-all">
+                        {s.ruleBody.length > 200 ? s.ruleBody.slice(0, 197) + "…" : s.ruleBody}
+                      </div>
+                      {s.rationale && <div className="text-xs italic text-muted-foreground mt-1">{s.rationale}</div>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => promoteMutation.mutate(s)}
+                      disabled={promoteMutation.isPending}
+                      data-testid={`button-suggestion-add-${i}`}
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1" />
+                      Add
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={showCreate} onOpenChange={(open) => { if (!open) { setShowCreate(false); setEditingSkill(null); } }}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingSkill ? "Edit skill" : "New skill"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1">
+              <Label htmlFor="skill-name">Name</Label>
+              <Input
+                id="skill-name"
+                value={draft.name}
+                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                placeholder="e.g. Always check soil bearing capacity for footings"
+                data-testid="input-skill-name"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="skill-description">Description (optional)</Label>
+              <Input
+                id="skill-description"
+                value={draft.description}
+                onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
+                placeholder="Short summary shown in the list"
+                data-testid="input-skill-description"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="skill-rule-body">Rule body</Label>
+              <Textarea
+                id="skill-rule-body"
+                rows={5}
+                value={draft.ruleBody}
+                onChange={(e) => setDraft((d) => ({ ...d, ruleBody: e.target.value }))}
+                placeholder="Write the methodology instruction in plain English. This text is injected verbatim into the AI system prompt…"
+                data-testid="textarea-skill-rule-body"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Scope</Label>
+                <Select value={draft.scope} onValueChange={(v) => setDraft((d) => ({ ...d, scope: v as typeof d.scope, scopeValue: "" }))}>
+                  <SelectTrigger data-testid="select-skill-scope">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="global">Global (all estimates)</SelectItem>
+                    <SelectItem value="trade">Trade type</SelectItem>
+                    <SelectItem value="csi_division">CSI Division</SelectItem>
+                    <SelectItem value="project_type">Project type</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {draft.scope !== "global" && (
+                <div className="space-y-1">
+                  <Label>Scope value</Label>
+                  <Input
+                    value={draft.scopeValue}
+                    onChange={(e) => setDraft((d) => ({ ...d, scopeValue: e.target.value }))}
+                    placeholder={
+                      draft.scope === "trade" ? "e.g. Concrete" :
+                      draft.scope === "csi_division" ? "e.g. 03 00 00" :
+                      "e.g. Commercial"
+                    }
+                    data-testid="input-skill-scope-value"
+                  />
+                </div>
+              )}
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="skill-priority">Priority (lower fires first)</Label>
+              <Input
+                id="skill-priority"
+                type="number"
+                min={1}
+                max={9999}
+                value={draft.priority}
+                onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}
+                data-testid="input-skill-priority"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowCreate(false); setEditingSkill(null); }}>Cancel</Button>
+            <Button
+              onClick={submitForm}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              data-testid="button-skill-save"
+            >
+              {(createMutation.isPending || updateMutation.isPending) ? (
+                <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</>
+              ) : editingSkill ? "Save changes" : "Create skill"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Page ───────────────────────────────────────────────────────────────────
+
 export default function AiEstimatorAdminPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState("access");
@@ -1530,6 +2050,7 @@ export default function AiEstimatorAdminPage() {
           <TabsTrigger value="feedback" data-testid="tab-feedback">Feedback</TabsTrigger>
           <TabsTrigger value="sessions" data-testid="tab-sessions">Chat sessions</TabsTrigger>
           <TabsTrigger value="assemblies" data-testid="tab-assemblies">Assemblies</TabsTrigger>
+          <TabsTrigger value="skills" data-testid="tab-skills">Skills</TabsTrigger>
           <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
           <TabsTrigger value="spend" data-testid="tab-spend">AI spend</TabsTrigger>
         </TabsList>
@@ -2119,6 +2640,10 @@ export default function AiEstimatorAdminPage() {
 
         <TabsContent value="assemblies" className="space-y-4">
           <AssembliesTab />
+        </TabsContent>
+
+        <TabsContent value="skills" className="space-y-4">
+          <SkillsTab />
         </TabsContent>
 
         <TabsContent value="settings" className="space-y-4">

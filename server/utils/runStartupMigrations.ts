@@ -155,6 +155,7 @@ import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnum
 import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
 import { ensureEquipmentRepairsPmIdempotency } from "./ensureEquipmentRepairsPmIdempotency";
 import { ensureMobileSyncEventsTable } from "./ensureMobileSyncEventsTable";
+import { seedTradePackSkills } from "../services/aiEstimator/skills";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -541,6 +542,8 @@ const migrations: MigrationStep[] = [
   { name: "closeout_packages_atomic_columns", category: "ADD_COLUMN", fn: ensureCloseoutPackagesAtomicColumns },
   // Task #2693 — mobile_sync_events table + logical_clock on offline_sync_queue
   { name: "mobile_sync_events_table", category: "CREATE_TABLE", fn: ensureMobileSyncEventsTable },
+  // Task #2703 — seed read-only trade-pack skills (idempotent; skips existing rows).
+  { name: "ai_estimator_skills_seed", category: "CREATE_TABLE", fn: seedTradePackSkills },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

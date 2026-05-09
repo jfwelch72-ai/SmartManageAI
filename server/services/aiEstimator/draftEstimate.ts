@@ -1,7 +1,7 @@
 // prompt-injection-guard: draft estimate operates on validated takeoff line items (label/type/unit/cost-code) — no free-text from third parties
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
-import { takeoffMeasurements, takeoffSheets } from "@shared/schema";
+import { organizations, takeoffMeasurements, takeoffSheets } from "@shared/schema";
 import { governedAiCall } from "../aiGovernance";
 // Task #2413 — Routed through provider abstraction so this draft path runs on
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
@@ -14,6 +14,10 @@ import {
   retrieveContext,
   retrieveLessons,
 } from "./retrieval";
+import {
+  retrieveSkillsForEstimate,
+  formatSkillsForPrompt,
+} from "./skills";
 import { logError } from "../../utils/logger";
 import {
   assertBidInOrg,
@@ -33,11 +37,19 @@ export interface DraftLineItem {
   citationIds: string[];
 }
 
+export interface SkillApplied {
+  id: string;
+  name: string;
+  scope: string;
+  scopeValue: string | null;
+}
+
 export interface DraftEstimateResult {
   lines: DraftLineItem[];
   notes: string;
   citations: ReturnType<typeof citationsFromRows>;
   confidence: number;
+  skillsApplied: SkillApplied[];
 }
 
 function safeJson<T>(text: string | null | undefined): T | null {
@@ -169,6 +181,25 @@ export async function generateDraftEstimate(opts: {
   }
   const lessonsBlock = formatLessonsForPrompt(lessonRows);
 
+  // Task #2703 — pull active skills (firm methodology) for this org.
+  // Pass the org's tradeType so trade-scoped seed skills fire correctly.
+  // Best-effort; never fails the draft.
+  let activeSkills: Awaited<ReturnType<typeof retrieveSkillsForEstimate>> = [];
+  try {
+    const [orgRow] = await db
+      .select({ tradeType: organizations.tradeType })
+      .from(organizations)
+      .where(eq(organizations.id, opts.organizationId))
+      .limit(1);
+    activeSkills = await retrieveSkillsForEstimate({
+      organizationId: opts.organizationId,
+      tradeType: orgRow?.tradeType ?? null,
+    });
+  } catch {
+    activeSkills = [];
+  }
+  const skillsBlock = formatSkillsForPrompt(activeSkills);
+
   await reportProgress(75, "Calling AI estimator");
   const sysPrompt = `You are a senior construction estimator drafting a working estimate for a contractor in their own workspace.
 You ONLY use the data provided: the takeoff measurements, the org's learned cost rates, and prior bids/estimates from this org.
@@ -207,8 +238,10 @@ Return strict JSON: {
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            // Task #2703 — firm-wide methodology skills (highest weight, above lessons).
+            ...(skillsBlock ? [{ role: "system" as const, content: skillsBlock }] : []),
             // Task #2415 — qualitative lessons learned from prior EDIT feedback,
-            // injected as soft guidance just below the main system prompt.
+            // injected as soft guidance just below the skills block.
             ...(lessonsBlock ? [{ role: "system" as const, content: lessonsBlock }] : []),
             { role: "user", content: userPrompt },
           ],
@@ -295,12 +328,21 @@ Return strict JSON: {
     );
   }
 
+  // Task #2703 — build the skillsApplied array from the skills that fired.
+  const skillsApplied: SkillApplied[] = activeSkills.map((s) => ({
+    id: s.id,
+    name: s.name,
+    scope: s.scope,
+    scopeValue: s.scopeValue ?? null,
+  }));
+
   return {
     result: {
       lines: [...aiLines, ...assemblyLines],
       notes: parsed.notes ?? "",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
       citations: citationsFromRows(contextRows),
+      skillsApplied,
     },
   };
 }

@@ -227,6 +227,7 @@ import assemblyRoutes from "./assemblyRoutes";
 import orgEstimatingFactorsRoutes from "./orgEstimatingFactorsRoutes";
 import takeoffScopeRoutes from "./takeoffScopeRoutes";
 import aiEstimatorAssemblyRoutes from "./aiEstimatorAssemblyRoutes";
+import aiEstimatorSkillsRoutes from "./aiEstimatorSkillsRoutes";
 import planSetIngestRoutes from "./planSetIngestRoutes";
 import messagingRoutes, { messagingSetup } from "./messagingRoutes";
 import equipmentRoutes from "./equipmentRoutes";
@@ -740,6 +741,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(orgEstimatingFactorsRoutes);
   app.use(takeoffScopeRoutes);
   app.use(aiEstimatorAssemblyRoutes);
+  app.use(aiEstimatorSkillsRoutes);
   app.use(planSetIngestRoutes);
 
   // Internal Messaging System Routes (extracted to messagingRoutes.ts)

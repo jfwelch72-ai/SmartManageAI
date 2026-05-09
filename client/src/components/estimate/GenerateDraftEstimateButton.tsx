@@ -22,11 +22,19 @@ interface DraftLine {
   citationIds: string[];
 }
 
+interface SkillApplied {
+  id: string;
+  name: string;
+  scope: string;
+  scopeValue: string | null;
+}
+
 interface DraftResult {
   lines: DraftLine[];
   notes: string;
   confidence: number;
   citations?: Array<{ id: string; sourceType: string; title: string }>;
+  skillsApplied?: SkillApplied[];
 }
 
 interface Props {
@@ -153,6 +161,22 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                     </tbody>
                   </table>
                 </div>
+                {draft.skillsApplied && draft.skillsApplied.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+                      <Check className="h-3 w-3" />
+                      Skills applied ({draft.skillsApplied.length})
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {draft.skillsApplied.map((s) => (
+                        <Badge key={s.id} variant="secondary" className="text-[10px]" title={s.name}>
+                          {s.scope === "global" ? "🌐" : s.scope === "trade" ? "🔧" : "📋"} {s.name}
+                          {s.scopeValue ? ` (${s.scopeValue})` : ""}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 {draft.citations && draft.citations.length > 0 && (
                   <div className="space-y-1">
                     <div className="text-xs uppercase tracking-wider text-muted-foreground">Sources</div>

@@ -685,3 +685,41 @@ export const aiTakeoffRevisions = pgTable("ai_takeoff_revisions", {
 export const insertAiTakeoffRevisionSchema = createInsertSchema(aiTakeoffRevisions).omit({ id: true, createdAt: true });
 export type InsertAiTakeoffRevision = z.infer<typeof insertAiTakeoffRevisionSchema>;
 export type AiTakeoffRevision = typeof aiTakeoffRevisions.$inferSelect;
+
+// =====================================================================
+// Task #2703 — AI Estimator Skills System.
+//
+// Structured knowledge units (methodology rules, exclusion clauses,
+// risk flags, unit-cost anchors) that are applied to every relevant
+// estimate. Scoped by trade, CSI division, or project type and ordered
+// by priority so conflicting rules resolve predictably.
+//
+// `organizationId` is nullable for the system-seeded read-only trade
+// packs which live at org=NULL and are merged into every org's skill
+// list at retrieval time. User-authored skills always have an orgId.
+// =====================================================================
+export const aiEstimatorSkills = pgTable("ai_estimator_skills", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  ruleBody: text("rule_body").notNull(),
+  scope: text("scope").notNull().default("global"), // 'global' | 'trade' | 'csi_division' | 'project_type'
+  scopeValue: text("scope_value"),
+  priority: integer("priority").notNull().default(100),
+  isActive: boolean("is_active").notNull().default(true),
+  isReadOnly: boolean("is_read_only").notNull().default(false),
+  sourceType: text("source_type").notNull().default("user_authored"), // 'user_authored' | 'promoted_lesson' | 'seeded'
+  sourceLessonId: varchar("source_lesson_id"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  deletedAt: timestamp("deleted_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_skills_org_idx").on(table.organizationId),
+  orgActiveIdx: index("ai_estimator_skills_org_active_idx").on(table.organizationId, table.isActive),
+  priorityIdx: index("ai_estimator_skills_priority_idx").on(table.priority),
+}));
+export const insertAiEstimatorSkillSchema = createInsertSchema(aiEstimatorSkills).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorSkill = z.infer<typeof insertAiEstimatorSkillSchema>;
+export type AiEstimatorSkill = typeof aiEstimatorSkills.$inferSelect;
