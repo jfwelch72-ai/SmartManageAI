@@ -1,0 +1,113 @@
+# Complete Fix Checklist for AI Estimator Integration
+
+## ❌ CRITICAL ISSUES - Data Not Reaching AI
+
+### 1. **Bid Estimate Data Not Loading**
+- [ ] Verify API endpoint retrieving bid #260009 estimate line items
+- [ ] Check database query for estimate items (SELECT * FROM estimate_items WHERE bid_id = 260009)
+- [ ] Confirm data serialization/formatting before context injection
+- [ ] Test with multiple bid IDs to see if issue is specific or systemic
+- [ ] Check for null/empty result handling
+
+### 2. **Learned Rates Not Loading**
+- [ ] Verify query pulling organization's historical cost rates
+- [ ] Check relevance algorithm (how are "most relevant 30" selected?)
+- [ ] Confirm rates table exists and has data
+- [ ] Test rate matching logic (by item type, CSI code, description similarity)
+- [ ] Verify date range filters aren't excluding all data
+
+### 3. **Context Injection Pipeline**
+- [ ] Trace the full data flow: Page Load → DB Query → Context Builder → AI Prompt
+- [ ] Check middleware/service layer that builds AI context
+- [ ] Verify the context template is correctly formatted
+- [ ] Confirm token budget isn't causing truncation (currently showing 200k limit)
+- [ ] Test context builder independently with mock data
+
+### 4. **Page Route & State Management**
+- [ ] Verify `/bids/{bid_id}/estimate` route correctly passes bid_id to chat component
+- [ ] Check JavaScript/frontend state management (React/Vue/Angular context)
+- [ ] Confirm chat widget initialization timing (loading before data arrives?)
+- [ ] Test if page refresh affects data availability
+
+### 5. **Authentication & Permissions**
+- [ ] Verify AI service has database read permissions
+- [ ] Check organization/user scope filtering (can AI see this org's data?)
+- [ ] Confirm API authentication tokens are valid
+- [ ] Test with different user roles to isolate permission issues
+
+---
+
+## 🔍 DIAGNOSTIC STEPS
+
+### Immediate Tests Needed:
+1. **Check server logs** when chat initializes on estimate page
+2. **Run database query manually**: `SELECT * FROM estimate_items WHERE bid_id = 260009`
+3. **Inspect API response** in browser DevTools Network tab
+4. **Add debug logging** to context builder to see what data it receives
+5. **Test with a known-good bid** (pick one that definitely has estimate data)
+
+### Add Error Handling:
+- [ ] Log when estimate query returns empty
+- [ ] Display user-friendly error: "Cannot load estimate data for AI analysis"
+- [ ] Fallback gracefully if learned rates unavailable
+- [ ] Monitor context size to prevent silent truncation
+
+---
+
+## 📋 EXPECTED DATA STRUCTURE (What I Should Receive)
+
+### Estimate Line Items Format:
+```
+Bid #260009 Estimate Items:
+ID | Description | Quantity | Unit | Unit_Cost | Total | Category
+1  | Concrete Pour 4" Slab | 500 | SF | $8.50 | $4,250 | 03-Concrete
+2  | #4 Rebar Grid | 500 | SF | $1.20 | $600 | 03-Concrete
+3  | Framing Labor | 120 | HR | $65.00 | $7,800 | 06-Wood
+...
+```
+
+### Learned Rates Format:
+```
+Historical Rates (30 most relevant):
+Item_Type | Avg_Unit_Cost | Sample_Size | Date_Range | Source_Bids
+Concrete Pour 4" | $8.25 | 15 bids | 2024-01 to 2024-12 | [#259001, #258500...]
+Rebar Install | $1.15 | 12 bids | 2024-03 to 2024-12 | [#259200, #258800...]
+Framing Carpenter | $62.50 | 20 bids | 2024-01 to 2024-12 | [#260001, #259500...]
+...
+```
+
+### Bid Metadata Format:
+```
+Bid Details:
+- Bid ID: 260009
+- Customer: [Name]
+- Project Type: [Commercial/Residential/etc]
+- Location: [City, State]
+- Total Estimate: $[amount]
+- Date Created: [date]
+- Status: [Draft/Submitted/etc]
+```
+
+---
+
+## ⚙️ CONFIGURATION TO VERIFY
+
+- [ ] Environment variables for database connection
+- [ ] AI service configuration (API keys, endpoints)
+- [ ] Context window size limits (token budget settings)
+- [ ] Rate limiting on queries
+- [ ] Caching strategy (are we caching empty results?)
+
+---
+
+## 🧪 TESTING PLAN
+
+1. **Unit Test**: Context builder with mock bid data
+2. **Integration Test**: Full flow from page load to AI response
+3. **Load Test**: Multiple simultaneous users on different bids
+4. **Edge Cases**: 
+   - Bid with no estimate items yet
+   - Brand new org with no learned rates
+   - Very large estimates (1000+ line items)
+
+---
