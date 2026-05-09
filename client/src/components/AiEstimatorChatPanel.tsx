@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   FileText,
   Image as ImageIcon,
+  Info,
   Loader2,
   Mic,
   Paperclip,
@@ -70,6 +71,9 @@ interface Props {
   estimateId?: string;
   projectId?: string;
   enabled: boolean;
+  /** Increments whenever a line item is added/edited/deleted so the panel
+   *  can notify the user that the AI context will be refreshed on the next turn. */
+  lineItemsRevision?: number;
 }
 
 const PROACTIVE_OPENER =
@@ -108,7 +112,7 @@ function formatBytes(n: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled }: Props) {
+export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, enabled, lineItemsRevision }: Props) {
   const { toast } = useToast();
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
@@ -121,6 +125,10 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Guard so the proactive opener is only fired once per panel mount.
   const hasAutoSentRef = useRef(false);
+  // Track whether we should show the "estimate updated" notice.
+  const [showUpdateNotice, setShowUpdateNotice] = useState(false);
+  // Remember the last revision we've seen so we can detect changes.
+  const prevRevisionRef = useRef<number | undefined>(undefined);
 
   const sessionsQuery = useQuery<{ sessions: ChatSession[] }>({
     queryKey: ["/api/ai-estimator/chat/sessions"],
@@ -168,6 +176,7 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     },
     onSuccess: () => {
       setPanelError(null);
+      setShowUpdateNotice(false);
       queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/chat/sessions", sessionId, "messages"] });
       setDraft("");
       setPending([]);
@@ -367,6 +376,20 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     return () => clearTimeout(timer);
   }, [sessionId, messagesQuery.data, messagesQuery.isLoading]);
 
+  // Show a notice whenever line items change after the panel has mounted.
+  // prevRevisionRef starts as undefined so the very first value doesn't trigger a banner.
+  useEffect(() => {
+    if (lineItemsRevision === undefined) return;
+    if (prevRevisionRef.current === undefined) {
+      prevRevisionRef.current = lineItemsRevision;
+      return;
+    }
+    if (lineItemsRevision !== prevRevisionRef.current) {
+      prevRevisionRef.current = lineItemsRevision;
+      setShowUpdateNotice(true);
+    }
+  }, [lineItemsRevision]);
+
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messagesQuery.data?.messages.length]);
@@ -462,6 +485,23 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
           </div>
         ) : (
           <>
+            {showUpdateNotice && (
+              <div
+                className="flex items-center gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm text-primary"
+                data-testid="chat-estimate-updated-notice"
+              >
+                <Info className="h-4 w-4 shrink-0" />
+                <span>Estimate updated — AI has the latest data for your next message.</span>
+                <button
+                  className="ml-auto text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setShowUpdateNotice(false)}
+                  data-testid="button-dismiss-update-notice"
+                  aria-label="Dismiss notice"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
             <ScrollArea className="flex-1">
               <div ref={scrollRef} className="space-y-3 pr-2">
                 {messagesQuery.isLoading || sendTurn.isPending ? (

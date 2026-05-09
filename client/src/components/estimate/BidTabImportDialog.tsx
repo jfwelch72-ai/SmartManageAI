@@ -58,6 +58,8 @@ interface BidTabImportDialogProps {
   estimateId: string;
   bidId?: string;
   defaultCategory?: string;
+  /** Called after a successful import so callers can update their revision counter. */
+  onLineItemsChanged?: () => void;
 }
 
 interface MatchSuggestion {
@@ -226,6 +228,7 @@ export function BidTabImportDialog({
   estimateId,
   bidId,
   defaultCategory = "OTHER",
+  onLineItemsChanged,
 }: BidTabImportDialogProps) {
   const { toast } = useToast();
   const { isEnabled } = useFeatureFlags();
@@ -469,6 +472,7 @@ export function BidTabImportDialog({
       } else {
         await queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
       }
+      onLineItemsChanged?.();
       toast({
         title: "Bid tab imported",
         description: `${payloads.length} line item(s) added — ${withDot} with DOT pay item links, ${payloads.length - withDot} without.`,

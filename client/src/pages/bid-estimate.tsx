@@ -68,6 +68,9 @@ export default function BidEstimate() {
   const hasEstimateAccess = canEditBids(user?.role);
 
   const { toast } = useToast();
+  // Incremented on every successful line-item add/edit/delete so the chat
+  // panel can surface an "Estimate updated" notice to the user.
+  const [lineItemsMutationCount, setLineItemsMutationCount] = useState(0);
   const [addLineItemOpen, setAddLineItemOpen] = useState(false);
   const [assemblyInsertOpen, setAssemblyInsertOpen] = useState(false);
   const [editLineItemOpen, setEditLineItemOpen] = useState(false);
@@ -173,6 +176,7 @@ export default function BidEstimate() {
           });
         }
       }
+      setLineItemsMutationCount((c) => c + 1);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setAddLineItemOpen(false);
       form.reset();
@@ -213,6 +217,7 @@ export default function BidEstimate() {
         {},
       ),
     onSuccess: () => {
+      setLineItemsMutationCount((c) => c + 1);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       toast({ title: "Line item deleted successfully" });
     },
@@ -237,6 +242,7 @@ export default function BidEstimate() {
         data,
       ),
     onSuccess: () => {
+      setLineItemsMutationCount((c) => c + 1);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       setEditLineItemOpen(false);
       setEditingLineItem(null);
@@ -802,7 +808,11 @@ export default function BidEstimate() {
               Insert Assembly
             </Button>
             {estimate && (
-              <BidTabImportDialog estimateId={estimate.id} bidId={bidId} />
+              <BidTabImportDialog
+                estimateId={estimate.id}
+                bidId={bidId}
+                onLineItemsChanged={() => setLineItemsMutationCount((c) => c + 1)}
+              />
             )}
             <LineItemFormDialog
               mode="add"
@@ -884,6 +894,7 @@ export default function BidEstimate() {
               estimateId={estimate.id}
               projectId={bid.convertedToProjectId ?? undefined}
               enabled
+              lineItemsRevision={lineItemsMutationCount}
             />
           </div>
         </div>
@@ -895,6 +906,7 @@ export default function BidEstimate() {
           bidId={bidId}
           open={assemblyInsertOpen}
           onOpenChange={setAssemblyInsertOpen}
+          onLineItemsChanged={() => setLineItemsMutationCount((c) => c + 1)}
         />
       )}
 

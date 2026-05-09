@@ -86,11 +86,14 @@ export function AssemblyInsertDialog({
   bidId,
   open,
   onOpenChange,
+  onLineItemsChanged,
 }: {
   estimateId: string;
   bidId?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Called after line items are successfully inserted so callers can update their revision counter. */
+  onLineItemsChanged?: () => void;
 }) {
   const { toast } = useToast();
   // Task #2139 — let users pin a library assembly to their Tool Chest
@@ -134,6 +137,7 @@ export function AssemblyInsertDialog({
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      onLineItemsChanged?.();
       toast({
         title: "Assembly inserted",
         description: `${data.lineItemsCreated} line items created from "${data.assemblyName}"`,
