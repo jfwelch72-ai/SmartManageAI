@@ -47,6 +47,24 @@ export async function listSessions(
     .limit(50);
 }
 
+export async function deleteSession(
+  organizationId: string,
+  userId: string,
+  sessionId: string,
+): Promise<boolean> {
+  const result = await db
+    .delete(aiEstimatorChatSessions)
+    .where(
+      and(
+        eq(aiEstimatorChatSessions.organizationId, organizationId),
+        eq(aiEstimatorChatSessions.userId, userId),
+        eq(aiEstimatorChatSessions.id, sessionId),
+      ),
+    )
+    .returning({ id: aiEstimatorChatSessions.id });
+  return result.length > 0;
+}
+
 export async function getSessionForUser(
   organizationId: string,
   userId: string,

@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
+  ArrowDown,
   FileText,
   Image as ImageIcon,
   Info,
   Loader2,
   Mic,
   Paperclip,
+  RotateCcw,
   Send,
   Sparkles,
   Square,
@@ -149,6 +151,15 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
   });
 
   const [panelError, setPanelError] = useState<string | null>(null);
+  // "Scroll to bottom" button — shows when the user has scrolled up.
+  const [atBottom, setAtBottom] = useState(true);
+
+  const scrollToBottom = useCallback(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      setAtBottom(true);
+    }
+  }, []);
 
   const createSession = useMutation({
     mutationFn: async () => {
@@ -205,6 +216,28 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/chat/sessions", sessionId, "messages"] });
+    },
+  });
+
+  const clearChat = useMutation({
+    mutationFn: async () => {
+      if (!sessionId) return;
+      await apiRequest("DELETE", `/api/ai-estimator/chat/sessions/${sessionId}`);
+    },
+    onSuccess: () => {
+      // Reset all local state so a fresh session is created automatically.
+      setSessionId(null);
+      setDraft("");
+      setPending([]);
+      setShowUpdateNotice(false);
+      hasAutoSentRef.current = false;
+      prevRevisionRef.current = lineItemsRevision;
+      prevMeasurementsRevisionRef.current = measurementsRevision;
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/chat/sessions"] });
+      toast({ title: "Chat cleared", description: "Starting a fresh conversation." });
+    },
+    onError: () => {
+      toast({ title: "Could not clear chat", description: "Please try again.", variant: "destructive" });
     },
   });
 
@@ -408,9 +441,29 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     }
   }, [measurementsRevision]);
 
+  // Auto-scroll to bottom when new messages arrive — but only if already near the bottom.
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messagesQuery.data?.messages.length]);
+    const el = scrollRef.current;
+    if (!el) return;
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight;
+      setAtBottom(true);
+    }
+  }, [messagesQuery.data?.messages.length, sendTurn.isPending]);
+
+  // Track scroll position to show/hide the jump-to-bottom button.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    function onScroll() {
+      if (!el) return;
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      setAtBottom(distFromBottom < 60);
+    }
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [sessionId]);
 
   // Cleanup any object URLs on unmount.
   useEffect(() => {
@@ -483,7 +536,24 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
     >
       <CardHeader className="pb-2">
         <CardTitle className="text-sm flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-primary" /> Ask the Estimator
+          <Sparkles className="h-4 w-4 text-primary" />
+          <span>Ask the Estimator</span>
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="ml-auto h-6 w-6 text-muted-foreground hover:text-destructive"
+            onClick={() => clearChat.mutate()}
+            disabled={!sessionId || clearChat.isPending}
+            title="Clear chat and start fresh"
+            data-testid="button-clear-chat"
+          >
+            {clearChat.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <RotateCcw className="h-3.5 w-3.5" />
+            )}
+          </Button>
         </CardTitle>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-2 min-h-0">
@@ -520,8 +590,9 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
                 </button>
               </div>
             )}
-            <ScrollArea className="flex-1">
-              <div ref={scrollRef} className="space-y-3 pr-2">
+            <div className="relative flex-1 min-h-0 flex flex-col">
+              <ScrollArea className="flex-1">
+                <div ref={scrollRef} className="space-y-3 pr-2">
                 {messagesQuery.isLoading || sendTurn.isPending ? (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
@@ -621,6 +692,18 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
                 ))}
               </div>
             </ScrollArea>
+            {!atBottom && (
+              <button
+                type="button"
+                onClick={scrollToBottom}
+                className="absolute bottom-2 right-4 z-10 flex h-7 w-7 items-center justify-center rounded-full border bg-background shadow-md hover:bg-muted transition-opacity"
+                aria-label="Scroll to latest message"
+                data-testid="button-scroll-to-bottom"
+              >
+                <ArrowDown className="h-4 w-4 text-muted-foreground" />
+              </button>
+            )}
+            </div>
 
             {pending.length > 0 && (
               <div

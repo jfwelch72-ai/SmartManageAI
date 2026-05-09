@@ -60,6 +60,7 @@ import { logCreate, logDelete, logUpdate } from "./auditLogger";
 import { suggestInline } from "./services/aiEstimator/inlineSuggest";
 import {
   createSession,
+  deleteSession,
   getSessionForUser,
   listMessages,
   listSessions,
@@ -985,6 +986,21 @@ router.post(
       title: data.title,
     });
     res.status(201).json(session);
+  },
+);
+
+router.delete(
+  `${estimatorBase}/chat/sessions/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const deleted = await deleteSession(
+      req.user!.organizationId!,
+      req.user!.id,
+      req.params.id,
+    );
+    if (!deleted) return res.status(404).json({ error: "Session not found" });
+    res.status(204).end();
   },
 );
 
