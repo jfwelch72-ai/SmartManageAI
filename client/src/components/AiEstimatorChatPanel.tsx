@@ -30,6 +30,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 
 type AttachmentKind = "image" | "document" | "audio";
@@ -202,7 +203,7 @@ export function ProposedActionCard({
     } | null;
   };
 
-  const { data: liveEstimate } = useQuery<CachedEstimate>({
+  const { data: liveEstimate, isFetching: isEstimateFetching } = useQuery<CachedEstimate>({
     queryKey: bidEstimateKey(bidId ?? ""),
     enabled: !!bidId,
     staleTime: Infinity,
@@ -351,8 +352,20 @@ export function ProposedActionCard({
             <div className="mt-0.5 text-muted-foreground italic">{String(p.reason)}</div>
           )}
 
-          {/* ── Cost-delta preview (Task #2732) ── */}
-          {showDeltaPreview && !isDelete && (
+          {/* ── Cost-delta preview (Task #2732 / Task #2738) ── */}
+          {/* Shimmer: only for non-settled cards where a preview would normally show,
+              while the estimate is in a background refetch.  Settled (frozen) cards
+              are never shimmed — they always display their captured frozen values. */}
+          {isEstimateFetching && !frozenPreview && !isSettled && showDeltaPreview && (
+            <div
+              className="mt-1.5 rounded bg-muted/60 px-2 py-1"
+              data-testid={`cost-delta-shimmer-${action.toolCallId}`}
+            >
+              <Skeleton className="h-3.5 w-48" />
+            </div>
+          )}
+          {/* Show the add/edit preview when: not shimming (idle or frozen card) */}
+          {showDeltaPreview && !isDelete && (frozenPreview || !isEstimateFetching) && (
             <div
               className="mt-1.5 rounded bg-muted/60 px-2 py-1 text-[11px] font-medium tabular-nums"
               data-testid={`cost-delta-preview-${action.toolCallId}`}
@@ -368,7 +381,8 @@ export function ProposedActionCard({
               </span>
             </div>
           )}
-          {showDeltaPreview && isDelete && (
+          {/* Show the delete preview when: not shimming (idle or frozen card) */}
+          {showDeltaPreview && isDelete && (frozenPreview || !isEstimateFetching) && (
             <div
               className="mt-1.5 rounded bg-destructive/10 px-2 py-1 text-[11px] font-medium tabular-nums text-destructive"
               data-testid={`cost-delta-preview-${action.toolCallId}`}
