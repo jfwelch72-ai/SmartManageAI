@@ -53,6 +53,7 @@ import { getPoolStats } from './utils/poolHealth';
 import { getAllJobMetrics } from './utils/jobMetrics';
 import { getWebVitalsSnapshot } from './webVitalsRoutes';
 import { getPromptInjectionMetricsSnapshot } from './ai/promptInjectionGuard';
+import { getCronMissedTicksSnapshot } from './utils/cronMissedTicks';
 
 const router = Router();
 
@@ -357,6 +358,25 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
     }
   } catch (err) {
     logError('Failed to read prompt-injection metrics for /metrics', {}, err as Error);
+  }
+
+  // Task #2753 — Cron missed-tick counter. Emitted by `scheduleCron()`
+  // in `server/jobs/jobRunner.ts` whenever node-cron fires an
+  // `execution:missed` event — which happens when the event loop was too
+  // busy to fire the cron on time. A non-zero value in production is a
+  // signal that the scheduler is still being starved and needs attention.
+  try {
+    const missedTicks = getCronMissedTicksSnapshot();
+    if (missedTicks.length) {
+      lines.push('# HELP cron_missed_ticks_total Number of cron execution:missed events since process start, per job.');
+      lines.push('# TYPE cron_missed_ticks_total counter');
+      for (const { job, value } of missedTicks) {
+        const safeJob = job.replace(/[^A-Za-z0-9_]/g, '_');
+        lines.push(`cron_missed_ticks_total{job="${safeJob}"} ${value}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read cron missed-tick counters for /metrics', {}, err as Error);
   }
 
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');

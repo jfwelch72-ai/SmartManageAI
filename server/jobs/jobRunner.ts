@@ -1,5 +1,7 @@
-import cron from "node-cron";
+import cron, { type ScheduledTask } from "node-cron";
+import type { TaskContext } from "node-cron";
 import { withSchedulerLock } from "../utils/schedulerLock";
+import { recordCronMissedTick } from "../utils/cronMissedTicks";
 import crypto from "crypto";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
@@ -194,6 +196,134 @@ function recordJobSkipped(job: string): void {
   recordJobMetrics(job, { skipped: 1 });
 }
 
+/**
+ * Task #2753 — Intercept node-cron's raw `console.warn` output and route it
+ * through our structured logger instead.
+ *
+ * node-cron v4 has an internal singleton logger (`dist/cjs/logger.js`) that
+ * calls `console.warn` directly for every WARN-level message — including the
+ * recurring "missed execution at <time>! Possible blocking IO…" line.  Adding
+ * an `execution:missed` listener on the task object does NOT suppress this
+ * built-in output; both fire independently.
+ *
+ * Strategy:
+ *   - Detect node-cron messages by their `[NODE-CRON]` prefix (always present).
+ *   - "missed execution at …" lines are SUPPRESSED because our
+ *     `scheduleCron()` `execution:missed` listener already emits a structured
+ *     `logWarn` with `{ job, scheduledAt }`. Keeping both would double-log.
+ *   - All other node-cron WARNs are TRANSLATED to `logWarn` so they stay in
+ *     the structured log stream rather than appearing as raw console output.
+ *   - Everything else passes through to the original `console.warn` unchanged.
+ *
+ * Called once at the top of `startSchedulers()` so the interception is in
+ * place before the first `cron.schedule()` is evaluated.
+ */
+function installCronLoggerInterceptor(): void {
+  const _original = console.warn.bind(console);
+  // Re-entrancy guard: logWarn() itself calls console.warn (our patched
+  // version). Without the guard, translating a node-cron WARN via logWarn()
+  // would re-enter the intercept and loop until stack overflow. The flag
+  // makes the interceptor a no-op while logWarn's own console.warn is live.
+  let _inInterceptor = false;
+  console.warn = (...args: unknown[]) => {
+    if (_inInterceptor) {
+      _original(...args);
+      return;
+    }
+    const first = typeof args[0] === 'string' ? args[0] : '';
+    if (first.includes('[NODE-CRON]')) {
+      // Strip ANSI colour codes so the stored message is readable in JSON logs.
+      const clean = first.replace(/\x1b\[[0-9;]*m/g, '').trim();
+      if (clean.includes('missed execution at')) {
+        // Already handled by execution:missed listener in scheduleCron().
+        // Suppress the raw duplicate so the structured log is the single
+        // source of truth for missed-tick events.
+        return;
+      }
+      // Other node-cron WARNs (e.g. "task still running, overlap blocked")
+      // are re-emitted as structured WARNs so they appear in log aggregators.
+      _inInterceptor = true;
+      try {
+        logWarn('[cron] node-cron internal warning', { rawMessage: clean });
+      } finally {
+        _inInterceptor = false;
+      }
+      return;
+    }
+    _original(...args);
+  };
+}
+
+/**
+ * Task #2753 — Minimum wall-clock duration (ms) before a cron tick is logged
+ * as slow. Helps identify which specific job is responsible for event-loop
+ * saturation that causes missed ticks.
+ */
+const JOB_SLOW_TICK_THRESHOLD_MS = 200;
+
+/**
+ * Task #2753 — Run `fn`, measure wall-clock via `process.hrtime.bigint()`, and
+ * emit a WARN when the duration exceeds JOB_SLOW_TICK_THRESHOLD_MS. All errors
+ * propagate normally — callers are responsible for their own try/catch.
+ */
+async function runTimedJob(job: string, fn: () => Promise<void>): Promise<void> {
+  const start = process.hrtime.bigint();
+  try {
+    await fn();
+  } finally {
+    const durationMs = Number(process.hrtime.bigint() - start) / 1_000_000;
+    if (durationMs > JOB_SLOW_TICK_THRESHOLD_MS) {
+      logWarn("[cron] slow tick detected", { job, durationMs: Math.round(durationMs) });
+    }
+  }
+}
+
+/**
+ * Task #2753 — Wrap `cron.schedule` so every task automatically:
+ *
+ *  1. Uses `setImmediate` to defer the actual async work off the cron callback
+ *     itself, keeping the tick lightweight and preventing the node-cron
+ *     scheduler from being starved when many jobs fire at the same wall-clock
+ *     second.
+ *  2. Wraps the handler in `runTimedJob` to emit a structured WARN when a
+ *     single invocation takes >200 ms, making slow ticks identifiable.
+ *  3. Converts `execution:missed` events (emitted by node-cron when its
+ *     scheduled fire time slips due to event-loop saturation) into a
+ *     structured `logWarn` line + increments the per-job
+ *     `cron_missed_ticks_total` counter exposed on `/metrics`.
+ *
+ * All calls to `cron.schedule()` in this file MUST go through this helper
+ * so missed-tick observability is uniform across every background job.
+ */
+function scheduleCron(
+  job: string,
+  expression: string,
+  handler: () => Promise<void>,
+): ScheduledTask {
+  const task = cron.schedule(expression, () => {
+    // Defer actual work to the next event-loop iteration so the cron callback
+    // returns synchronously. This prevents all simultaneously-scheduled jobs
+    // from blocking each other's tick processing when they fire at the same
+    // wall-clock second after staggering.
+    setImmediate(() => {
+      runTimedJob(job, handler).catch((err) => {
+        // Backstop: every handler has its own try/catch, so reaching here
+        // indicates a programming error (e.g. a handler that forgot to wrap
+        // its body). Log it explicitly so no failure is silently swallowed.
+        logError("[cron] unhandled error in job handler", { job }, err instanceof Error ? err : new Error(String(err)));
+      });
+    });
+  });
+  task.on("execution:missed", (ctx: TaskContext) => {
+    logWarn("[cron] missed execution — event loop was saturated", {
+      job,
+      scheduledAt: ctx.date.toISOString(),
+    });
+    recordCronMissedTick(job);
+  });
+  return task;
+}
+
 // Task #1949 — overlap guards for the chatty 2-minute cron jobs that
 // were previously stacking up under load and starving the shared
 // Postgres pool. Each guard is a simple in-process boolean: if the
@@ -277,6 +407,11 @@ function logJobErrorWithKind(job: string, message: string, err: unknown): void {
 }
 
 export function startJobRunner() {
+  // Task #2753 — must be the very first thing we do so the intercept is in
+  // place before any cron task is registered and before node-cron's internal
+  // runner has a chance to emit its first raw console.warn.
+  installCronLoggerInterceptor();
+
   logInfo("Starting background job runner");
 
   // Task #705: hydrate the in-memory job metrics window from the
@@ -290,7 +425,7 @@ export function startJobRunner() {
 
   // Task #705: trim stale rows hourly so the persistence table stays
   // bounded by the retention window (24h) regardless of job volume.
-  jobMetricsPruneTask = cron.schedule("0 * * * *", async () => {
+  jobMetricsPruneTask = scheduleCron("job_metrics_prune", "0 0 * * * *", async () => {
     try {
       await withSchedulerLock("job:jobMetricsPruneTask", async () => {
         const deleted = await pruneJobMetricsDb();
@@ -305,7 +440,7 @@ export function startJobRunner() {
   // for spikes vs the trailing baseline and for jobs that have gone
   // silent. Fires in-app notifications to every Super Admin and records
   // a row in `job_metric_alert_events` for the dashboard.
-  jobMetricAlertsTask = cron.schedule("*/15 * * * *", async () => {
+  jobMetricAlertsTask = scheduleCron("job_metric_alerts", "10 */15 * * * *", async () => {
     try {
       await withSchedulerLock("job:jobMetricAlertsTask", async () => {
         const result = await evaluateJobMetricAlerts();
@@ -325,7 +460,7 @@ export function startJobRunner() {
   // Super Admin who has just exited their quiet-hours window. The
   // function itself is idempotent and skips users still inside their
   // window or with no events to summarize.
-  jobMetricQuietDigestTask = cron.schedule("*/15 * * * *", async () => {
+  jobMetricQuietDigestTask = scheduleCron("job_metric_quiet_digest", "20 */15 * * * *", async () => {
     try {
       await withSchedulerLock("job:jobMetricQuietDigestTask", async () => {
         const result = await sendJobMetricAlertQuietHoursDigests({ recordSends: true });
@@ -345,7 +480,7 @@ export function startJobRunner() {
   // expired more than an hour ago. The pruner is idempotent and uses
   // the predicate index from migration 0075, so the tick is cheap even
   // when nothing needs to be deleted.
-  rateLimitCounterPruneTask = cron.schedule("0 * * * *", async () => {
+  rateLimitCounterPruneTask = scheduleCron("rate_limit_counter_prune", "10 0 * * * *", async () => {
     try {
       await withSchedulerLock("job:rateLimitCounterPrune", async () => {
         const mod = await import("../utils/expressRateLimitPgStore");
@@ -366,7 +501,7 @@ export function startJobRunner() {
   // of schema modules; the existing `recordPoolExhaustedEvent`
   // integration already uses the same lazy pattern in
   // `logJobErrorWithKind` above).
-  poolHealthSampleTask = cron.schedule("* * * * *", async () => {
+  poolHealthSampleTask = scheduleCron("pool_health", "0 * * * * *", async () => {
     try {
       await withSchedulerLock("job:poolHealthSampleTask", async () => {
         const mod = await import("../utils/poolHealth");
@@ -377,7 +512,7 @@ export function startJobRunner() {
     }
   });
 
-  outboxTask = cron.schedule("*/2 * * * *", async () => {
+  outboxTask = scheduleCron("outbox", "0 */2 * * * *", async () => {
     // Task #1949 — overlap guard. The cron fires every 2 minutes, but
     // a single tick that delivers webhooks can take longer than that
     // when a target is slow. Without this guard, slow ticks pile up
@@ -401,7 +536,7 @@ export function startJobRunner() {
     }
   });
 
-  retentionTask = cron.schedule("0 2 * * *", async () => {
+  retentionTask = scheduleCron("retention_policy_sweep", "0 0 2 * * *", async () => {
     try {
       await withSchedulerLock("job:retentionTask", async () => {
         await processRetentionPolicies();
@@ -413,7 +548,7 @@ export function startJobRunner() {
     }
   });
 
-  syncScheduleTask = cron.schedule("*/15 * * * *", async () => {
+  syncScheduleTask = scheduleCron("sync_schedules", "0 */15 * * * *", async () => {
     // Task #1951 — overlap guard. Each tick walks every active QBO /
     // integration sync schedule and may issue export/import calls per
     // tenant; on busy systems a single tick can outlast the 15-minute
@@ -436,7 +571,7 @@ export function startJobRunner() {
     }
   });
 
-  socialPostTask = cron.schedule("*/2 * * * *", async () => {
+  socialPostTask = scheduleCron("social_posts", "15 */2 * * * *", async () => {
     // Task #1949 — same overlap guard as outbox/scheduled campaigns;
     // a slow social-platform API call must not pile up onto the next
     // tick and starve the connection pool.
@@ -457,7 +592,7 @@ export function startJobRunner() {
     }
   });
 
-  tokenExpiryTask = cron.schedule("0 3 * * *", async () => {
+  tokenExpiryTask = scheduleCron("social_token_expiry_check", "0 0 3 * * *", async () => {
     try {
       await withSchedulerLock("job:tokenExpiryTask", async () => {
         await checkSocialTokenExpiry();
@@ -469,7 +604,7 @@ export function startJobRunner() {
     }
   });
 
-  complianceCheckTask = cron.schedule("0 7 * * *", async () => {
+  complianceCheckTask = scheduleCron("compliance_expiration_check", "0 0 7 * * *", async () => {
     try {
       await withSchedulerLock("job:complianceCheckTask", async () => {
         await processComplianceExpirations();
@@ -482,7 +617,7 @@ export function startJobRunner() {
   });
 
   // Task #2484 — COI reminder cycle (30/14/7/0d) + nightly status refresh
-  coiReminderTask = cron.schedule("0 8 * * *", async () => {
+  coiReminderTask = scheduleCron("coi_reminder_cycle", "20 0 8 * * *", async () => {
     try {
       await withSchedulerLock("job:coiReminderCycle", async () => {
         const { runCoiReminderCycle, refreshCertificateStatuses } = await import("../coiRoutes");
@@ -496,7 +631,7 @@ export function startJobRunner() {
     }
   });
 
-  profitabilityMonitorTask = cron.schedule("*/15 * * * *", async () => {
+  profitabilityMonitorTask = scheduleCron("profitability", "30 */15 * * * *", async () => {
     // Task #1951 — overlap guard. The profitability sweep loops every
     // active project per org and recomputes margin / earned-value
     // metrics, holding short Postgres connections per project. Under
@@ -522,7 +657,7 @@ export function startJobRunner() {
   // Task #902: nightly capture of per-project KPI snapshots (health, SPI,
   // CPI, burn) so the portfolio dashboard sparklines and 12-week deltas
   // reflect real direction-of-travel instead of created-RFI counts.
-  portfolioKpiSnapshotTask = cron.schedule("15 2 * * *", async () => {
+  portfolioKpiSnapshotTask = scheduleCron("portfolio_kpi_snapshot", "0 15 2 * * *", async () => {
     try {
       await withSchedulerLock("job:portfolioKpiSnapshotTask", async () => {
         await captureWeeklyKpiSnapshots();
@@ -534,7 +669,7 @@ export function startJobRunner() {
     }
   });
 
-  idleOpportunityTask = cron.schedule("0 8 * * *", async () => {
+  idleOpportunityTask = scheduleCron("idle_opportunity_check", "0 0 8 * * *", async () => {
     try {
       await withSchedulerLock("job:idleOpportunityTask", async () => {
         await processIdleOpportunities();
@@ -546,7 +681,7 @@ export function startJobRunner() {
     }
   });
 
-  orphanUploadTask = cron.schedule("*/30 * * * *", async () => {
+  orphanUploadTask = scheduleCron("orphan_uploads", "0 */30 * * * *", async () => {
     try {
       await withSchedulerLock("job:orphanUploadTask", async () => {
         await processOrphanUploads();
@@ -560,7 +695,7 @@ export function startJobRunner() {
   // soft-delete grace period has elapsed (org_deletion_requests with
   // status=SCHEDULED_HARD_DELETE and hard_delete_scheduled_at <= now()).
   // Sends a final confirmation email and writes an audit-log entry.
-  orgHardDeleteSweepTask = cron.schedule("17 * * * *", async () => {
+  orgHardDeleteSweepTask = scheduleCron("org_hard_delete_sweep", "0 17 * * * *", async () => {
     try {
       await withSchedulerLock("job:orgHardDeleteSweepTask", async () => {
         const { runOrgHardDeleteSweep } = await import("./orgHardDeleteSweep");
@@ -576,7 +711,7 @@ export function startJobRunner() {
     }
   });
 
-  bidDueDateTask = cron.schedule("0 * * * *", async () => {
+  bidDueDateTask = scheduleCron("bid_due_date", "20 0 * * * *", async () => {
     try {
       await withSchedulerLock("job:bidDueDateTask", async () => {
         await processBidDueDateApproaching();
@@ -586,7 +721,7 @@ export function startJobRunner() {
     }
   });
 
-  imapSyncTask = cron.schedule("*/15 * * * *", async () => {
+  imapSyncTask = scheduleCron("imap_sync", "40 */15 * * * *", async () => {
     try {
       await withSchedulerLock("job:imapSyncTask", async () => {
         await processImapEmailSync();
@@ -600,7 +735,7 @@ export function startJobRunner() {
   // With push notifications wired up (Task #524), pushes deliver mailbox
   // changes near-instantly; this poll runs every 5 minutes as a safety net
   // for missed events and accounts where push isn't configured.
-  providerSyncTask = cron.schedule("*/5 * * * *", async () => {
+  providerSyncTask = scheduleCron("provider_sync", "0 */5 * * * *", async () => {
     try {
       await withSchedulerLock("job:providerSyncTask", async () => {
         await processProviderEmailSync();
@@ -617,7 +752,7 @@ export function startJobRunner() {
   // the rest of an account's drain. This dedicated job runs every 2 minutes
   // and only walks pendingProviderPush rows, so failed PATCHes get retried
   // promptly even when the safety-net poller is busy.
-  providerPushDrainTask = cron.schedule("*/2 * * * *", async () => {
+  providerPushDrainTask = scheduleCron("provider_push_drain", "30 */2 * * * *", async () => {
     try {
       await withSchedulerLock("job:providerPushDrainTask", async () => {
         await processProviderPushDrain();
@@ -630,7 +765,7 @@ export function startJobRunner() {
   // Task #524: keep Gmail watches and Outlook subscriptions alive. Gmail
   // watches expire after up to 7 days; Outlook subscriptions after ~70
   // hours. Renewing every 15 minutes leaves comfortable headroom.
-  emailPushRenewalTask = cron.schedule("*/15 * * * *", async () => {
+  emailPushRenewalTask = scheduleCron("email_push_renewal", "50 */15 * * * *", async () => {
     try {
       await withSchedulerLock("job:emailPushRenewalTask", async () => {
         await ensureAllEmailPushSubscriptions();
@@ -652,7 +787,7 @@ export function startJobRunner() {
     );
   }, 30_000).unref?.();
 
-  weeklyReportTask = cron.schedule("0 7 * * 1", async () => {
+  weeklyReportTask = scheduleCron("periodic_report_weekly", "0 0 7 * * 1", async () => {
     try {
       await withSchedulerLock("job:weeklyReportTask", async () => {
         await processPeriodicReports("WEEKLY");
@@ -664,7 +799,7 @@ export function startJobRunner() {
     }
   });
 
-  monthlyReportTask = cron.schedule("0 7 1 * *", async () => {
+  monthlyReportTask = scheduleCron("periodic_report_monthly", "0 0 7 1 * *", async () => {
     try {
       await withSchedulerLock("job:monthlyReportTask", async () => {
         await processPeriodicReports("MONTHLY");
@@ -676,7 +811,7 @@ export function startJobRunner() {
     }
   });
 
-  dbHealthCheckTask = cron.schedule("0 */6 * * *", async () => {
+  dbHealthCheckTask = scheduleCron("db_health_check", "0 0 */6 * * *", async () => {
     try {
       await withSchedulerLock("job:dbHealthCheckTask", async () => {
         await runDbHealthCheck();
@@ -688,7 +823,7 @@ export function startJobRunner() {
     }
   });
 
-  socialEngagementTask = cron.schedule("0 */4 * * *", async () => {
+  socialEngagementTask = scheduleCron("social_engagement", "0 0 */4 * * *", async () => {
     // Task #1951 — overlap guard. The engagement sweep hits every
     // social platform's analytics API per linked account; rate-limited
     // backoffs and slow upstreams mean a tick can plausibly outlast
@@ -710,7 +845,7 @@ export function startJobRunner() {
     }
   });
 
-  scheduledCampaignTask = cron.schedule("*/2 * * * *", async () => {
+  scheduledCampaignTask = scheduleCron("scheduled_campaigns", "45 */2 * * * *", async () => {
     // Task #1949 — overlap guard. Each campaign tick can fan out
     // hundreds of `sendEmail` calls; if a tick takes longer than 2
     // minutes we must NOT start a second one in parallel because
@@ -732,7 +867,7 @@ export function startJobRunner() {
     }
   });
 
-  sequenceCadenceTask = cron.schedule("*/2 * * * *", async () => {
+  sequenceCadenceTask = scheduleCron("sequence_cadences", "55 */2 * * * *", async () => {
     // Task #1951 — overlap guard. The sequence runner walks every due
     // CRM enrolment and fans out emails / waits via the same Postgres
     // pool that user requests use. Without this guard a slow tick
@@ -757,7 +892,7 @@ export function startJobRunner() {
 
   // Task #581: nightly geocode projects with addresses but no coordinates
   // so they appear on the Projects map view automatically.
-  projectGeocodeTask = cron.schedule("30 4 * * *", async () => {
+  projectGeocodeTask = scheduleCron("project_geocode", "0 30 4 * * *", async () => {
     try {
       await withSchedulerLock("job:projectGeocodeTask", async () => {
         await geocodePendingProjects();
@@ -772,7 +907,7 @@ export function startJobRunner() {
   // Task #648: detect SLA breaches across all orgs every 5 minutes so the
   // "needs attention" deal queue stays current without an admin manually
   // hitting POST /api/crm/sla/run-check.
-  crmSlaBreachTask = cron.schedule("*/5 * * * *", async () => {
+  crmSlaBreachTask = scheduleCron("crm_sla_breaches", "20 */5 * * * *", async () => {
     // Task #1951 — overlap guard. The breach sweep walks every org's
     // active deal pipeline; on tenants with thousands of in-flight
     // opportunities a tick can outlast 5 minutes and stack onto the
@@ -796,7 +931,7 @@ export function startJobRunner() {
 
   // Task #648: tick the CRM automation engine for IDLE_DAYS triggers every
   // 10 minutes so idle-day automations actually fire on their own.
-  crmIdleAutomationTask = cron.schedule("*/10 * * * *", async () => {
+  crmIdleAutomationTask = scheduleCron("crm_idle_automations", "0 */10 * * * *", async () => {
     // Task #1951 — overlap guard. The idle-automation tick evaluates
     // every active automation rule per org and writes
     // crm_automation_runs rows; a slow tick (e.g. SMTP send-step) can
@@ -822,7 +957,7 @@ export function startJobRunner() {
   // and gates per-recipient on Monday 8am in each user's local timezone so
   // the notification lands during business hours regardless of where the
   // user is, not at the server's wall-clock time.
-  crmBirthdayDigestTask = cron.schedule("0 * * * *", async () => {
+  crmBirthdayDigestTask = scheduleCron("crm_birthday_digest", "30 0 * * * *", async () => {
     // Task #1951 — overlap guard. The hourly digest fans out
     // notifications across every org and recipient timezone; if a
     // slow notification path (email + push) lets a tick stretch past
@@ -849,7 +984,7 @@ export function startJobRunner() {
   // administrators. Runs hourly; per-org cadence/weekday/hour/timezone are
   // honored inside `processCertifiedPayrollWeeklyDigest` so admins can pick
   // their own send time, day, and daily/weekly/biweekly cadence.
-  certifiedPayrollDigestTask = cron.schedule("0 * * * *", async () => {
+  certifiedPayrollDigestTask = scheduleCron("certified_payroll_digest", "45 0 * * * *", async () => {
     // Task #1951 — overlap guard. The hourly digest builds and emails
     // certified payroll PDFs per org; PDF generation + SMTP can take
     // many minutes per tenant, so a backed-up tick must not stack on
@@ -875,7 +1010,7 @@ export function startJobRunner() {
   // is gated by its own cadence/weekday/hour/timezone inside the
   // handler, so the cron itself stays a simple "tick every hour" — the
   // worker decides which projects (if any) get emailed this hour.
-  projectLogEmailScheduleTask = cron.schedule("0 * * * *", async () => {
+  projectLogEmailScheduleTask = scheduleCron("project_log_email_schedules", "0 1 * * * *", async () => {
     // Task #1951 — overlap guard. The hourly sweep builds RFI /
     // submittal PDFs and emails them to per-project distribution
     // lists; PDF rendering + SMTP fan-out can outlast an hour on
@@ -913,7 +1048,7 @@ export function startJobRunner() {
   // The dedupe sentinel inside the handler ensures a re-run within
   // the same local day (manual fire, boot during the firing minute)
   // doesn't re-send.
-  projectLogEmailFailuresDigestTask = cron.schedule("0 * * * *", async () => {
+  projectLogEmailFailuresDigestTask = scheduleCron("project_log_email_failures_digest", "30 1 * * * *", async () => {
     // Task #1951 — overlap guard. Same family as the hourly schedule
     // sweep above: the failures digest fans an email to every org's
     // ADMIN / SUPER_ADMIN users, gated by per-org cadence + dedupe.
@@ -942,7 +1077,7 @@ export function startJobRunner() {
   // corrective action due date has passed and notifies the assigned
   // assignee + the project manager once per overdue cycle. Runs at 7am
   // alongside the existing compliance/expiration checks.
-  swpppOverdueTask = cron.schedule("0 7 * * *", async () => {
+  swpppOverdueTask = scheduleCron("swppp_overdue_corrective_actions", "20 0 7 * * *", async () => {
     try {
       await withSchedulerLock("job:swpppOverdueTask", async () => {
         await processSwpppOverdueCorrectiveActions();
@@ -959,7 +1094,7 @@ export function startJobRunner() {
   // cadence as the SWPPP sweep and uses the same per-row dedupe marker
   // + counter pattern so each overdue cycle generates one initial
   // fanout plus N follow-up reminders (per-org cap).
-  rfiOverdueTask = cron.schedule("0 7 * * *", async () => {
+  rfiOverdueTask = scheduleCron("rfi_overdue_notifications", "40 0 7 * * *", async () => {
     try {
       await withSchedulerLock("job:rfiOverdueTask", async () => {
         await processRfiOverdueNotifications();
@@ -975,7 +1110,7 @@ export function startJobRunner() {
   // IN_REVIEW review whose parent submittal is past its date_required
   // is what we treat as overdue; the assigned reviewer + project
   // manager get the fanout.
-  submittalReviewOverdueTask = cron.schedule("0 7 * * *", async () => {
+  submittalReviewOverdueTask = scheduleCron("submittal_overdue_notifications", "0 1 7 * * *", async () => {
     try {
       await withSchedulerLock("job:submittalReviewOverdueTask", async () => {
         await processSubmittalReviewOverdueNotifications();
@@ -992,7 +1127,7 @@ export function startJobRunner() {
   // each org's configured retention window. Runs after the 02:00 retention
   // job and well before business hours so the daily storage cost reclaim
   // shows up in tomorrow's metrics.
-  certifiedPayrollPurgeTask = cron.schedule("30 3 * * *", async () => {
+  certifiedPayrollPurgeTask = scheduleCron("certified_payroll_purge", "20 30 3 * * *", async () => {
     try {
       await withSchedulerLock("job:certifiedPayrollPurgeTask", async () => {
         const result = await processArchivedCertifiedPayrollPurge();
@@ -1011,7 +1146,7 @@ export function startJobRunner() {
   // (createdById) so account managers see today's birthdays without having to
   // open the CRM. Per-user opt-in/opt-out is handled by the existing
   // notificationTypePrefs (email channel for REMINDER notifications).
-  crmBirthdayDailyTask = cron.schedule("0 7 * * *", async () => {
+  crmBirthdayDailyTask = scheduleCron("crm_birthday_daily_digest", "20 1 7 * * *", async () => {
     try {
       await withSchedulerLock("job:crmBirthdayDailyTask", async () => {
         await processCrmContactBirthdayDailyDigest();
@@ -1029,7 +1164,7 @@ export function startJobRunner() {
   // whose backoff window is due. Successful retries clear the failure
   // state so banners/notifications resolve naturally; exhausted rows are
   // left alone for manual intervention.
-  wageDecisionRetryTask = cron.schedule("*/5 * * * *", async () => {
+  wageDecisionRetryTask = scheduleCron("integration_sync_retry", "40 */5 * * * *", async () => {
     // Task #1951 — overlap guard. The retry sweep walks every failed
     // integration sync row whose backoff is due (Davis-Bacon, QBO,
     // Sage, etc.) and replays the underlying provider call; a slow
@@ -1062,7 +1197,7 @@ export function startJobRunner() {
   // window in US timezones. The sweep itself skips rows currently in
   // the failure-backoff lane, so it cannot hammer DOL when prior
   // attempts failed.
-  wageDecisionStaleRefreshTask = cron.schedule("0 6 * * *", async () => {
+  wageDecisionStaleRefreshTask = scheduleCron("wage_decision_stale_refresh", "0 0 6 * * *", async () => {
     try {
       await withSchedulerLock("job:wageDecisionStaleRefreshTask", async () => {
         const out = await processStaleWageDecisions();
@@ -1081,7 +1216,7 @@ export function startJobRunner() {
   // INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS (default 90 days) is
   // dead weight that will eventually slow down inserts/queries on busy
   // orgs. Runs at 03:45 UTC alongside the other nightly cleanup jobs.
-  suppressionResetPruneTask = cron.schedule("45 3 * * *", async () => {
+  suppressionResetPruneTask = scheduleCron("suppression_reset_prune", "0 45 3 * * *", async () => {
     try {
       await withSchedulerLock("job:suppressionResetPruneTask", async () => {
         const deleted = await pruneSuppressionResets();
@@ -1104,7 +1239,7 @@ export function startJobRunner() {
   // weight. Batched inside the helper so a large tenant can't hold
   // long row-level locks. Runs at 04:00 UTC alongside the other
   // nightly cleanup jobs.
-  projectLogEmailAttemptPruneTask = cron.schedule("0 4 * * *", async () => {
+  projectLogEmailAttemptPruneTask = scheduleCron("project_log_email_attempt_prune", "0 0 4 * * *", async () => {
     try {
       await withSchedulerLock("job:projectLogEmailAttemptPruneTask", async () => {
         const result = await pruneProjectLogEmailScheduleAttempts();
@@ -1129,7 +1264,7 @@ export function startJobRunner() {
   // just after the project-log attempt-history prune so the two
   // batched table sweeps don't overlap. Batched inside the helper so
   // a large tenant can't hold long row-level locks.
-  planDocumentMarkupTrashPurgeTask = cron.schedule("15 4 * * *", async () => {
+  planDocumentMarkupTrashPurgeTask = scheduleCron("plan_document_markup_trash_purge", "0 15 4 * * *", async () => {
     try {
       await withSchedulerLock("job:planDocumentMarkupTrashPurgeTask", async () => {
         const result = await purgePlanDocumentMarkupTrash();
@@ -1160,7 +1295,7 @@ export function startJobRunner() {
   // per-user 24-entry cap doesn't quietly fill up with orphans. Logs
   // per-kind counts so ops can see immediately if a delete hook ever
   // silently regresses (a sustained non-zero count is the signal).
-  takeoffRecentsOrphanPruneTask = cron.schedule("45 4 * * *", async () => {
+  takeoffRecentsOrphanPruneTask = scheduleCron("takeoff_recents_orphan_prune", "0 45 4 * * *", async () => {
     try {
       await withSchedulerLock("job:takeoffRecentsOrphanPruneTask", async () => {
         const out = await pruneOrphanedTakeoffRecents();
@@ -1190,7 +1325,7 @@ export function startJobRunner() {
   // when the parse fails its guards) and emits a single per-agency
   // delta log line + an email to the on-call rotation when a catalog
   // drops below its `AGENCY_MIN_ITEMS` threshold.
-  dotPayItemsRefreshTask = cron.schedule("0 4 1 1,4,7,10 *", async () => {
+  dotPayItemsRefreshTask = scheduleCron("dot_pay_items_refresh", "40 0 4 1 1,4,7,10 *", async () => {
     try {
       await withSchedulerLock("job:dotPayItemsRefreshTask", async () => {
         // Task #1962 — `processDotPayItemsRefresh` now records its own
@@ -1217,7 +1352,7 @@ export function startJobRunner() {
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
   // daily cadence is the right responsiveness without spamming admins.
-  wageDecisionMissingReminderTask = cron.schedule("0 8 * * *", async () => {
+  wageDecisionMissingReminderTask = scheduleCron("wage_decision_missing_reminder", "40 0 8 * * *", async () => {
     try {
       await withSchedulerLock("job:wageDecisionMissingReminderTask", async () => {
         const out = await processMissingWageDecisionReminders();
@@ -1237,7 +1372,7 @@ export function startJobRunner() {
   // colliding with the 03:00 takeoff-recents prune. The recompute is
   // a single GROUP BY + per-bucket UPSERT and finishes in <1s for
   // typical orgs, so we don't bother with overlap guards.
-  aiTakeoffCalibrationTask = cron.schedule("30 3 * * *", async () => {
+  aiTakeoffCalibrationTask = scheduleCron("ai_takeoff_calibration", "0 30 3 * * *", async () => {
     try {
       await withSchedulerLock("job:aiTakeoffCalibrationTask", async () => {
         const { runAiTakeoffCalibrationJob } = await import("../aiTakeoffFeatureRoutes");
@@ -1261,7 +1396,7 @@ export function startJobRunner() {
   // ingestion runner records its own per-org row in
   // `ai_estimator_ingest_runs` (including FAILED rows with the error
   // message) so the admin page surfaces failures without grepping logs.
-  aiEstimatorIngestionTask = cron.schedule("45 2 * * *", async () => {
+  aiEstimatorIngestionTask = scheduleCron("ai_estimator_ingestion", "0 45 2 * * *", async () => {
     if (aiEstimatorIngestionTickRunning) {
       logWarn("AI Estimator scheduled ingestion skipped: previous tick still running");
       recordJobSkipped("ai_estimator_ingestion");
@@ -1293,7 +1428,7 @@ export function startJobRunner() {
   // 04:00 UTC, after both the ingestion (02:45) and the confidence
   // calibration (03:30), so the few-shot exemplar set + per-trade
   // bias nudges are computed against the freshest review state.
-  aiTakeoffCalibrationAggregatorTask = cron.schedule("0 4 * * *", async () => {
+  aiTakeoffCalibrationAggregatorTask = scheduleCron("ai_takeoff_calibration_aggregator", "20 0 4 * * *", async () => {
     try {
       await withSchedulerLock("job:aiTakeoffCalibrationAggregatorTask", async () => {
         const { runCalibrationAggregator } = await import("../services/aiEstimator/calibrationLoop");
@@ -1319,7 +1454,7 @@ export function startJobRunner() {
   // Task #2496 — nightly equipment preventative-maintenance work order
   // generation. Daily at 03:30 UTC; per-org loop wrapped in
   // `withJobOrgContext` so RLS keeps each tick scoped to one tenant.
-  equipmentPmGenerationTask = cron.schedule("30 3 * * *", async () => {
+  equipmentPmGenerationTask = scheduleCron("equipment_pm_generation", "40 30 3 * * *", async () => {
     try {
       await withSchedulerLock("job:equipmentPmGenerationTask", async () => {
         const summary = await processEquipmentPmGeneration();
@@ -1338,7 +1473,7 @@ export function startJobRunner() {
   // non-zero count signals either (a) a manual SQL write that bypassed
   // the engine, or (b) an index that was dropped/disabled. Logged at
   // WARN so it shows up on the observability dashboard.
-  pmDuplicateAuditTask = cron.schedule("17 * * * *", async () => {
+  pmDuplicateAuditTask = scheduleCron("pm_duplicate_audit", "30 17 * * * *", async () => {
     try {
       await withSchedulerLock("job:pmDuplicateAudit", async () => {
         const summary = await auditPmWorkOrderDuplicates();
@@ -1359,7 +1494,7 @@ export function startJobRunner() {
   // whose last persisted progress tick is older than the configured
   // stall window. Flip them to FAILED and broadcast a terminal SSE so
   // any subscribed AI Auto-Takeoff panel transitions out of pending.
-  aiTakeoffStallWatchdogTask = cron.schedule("* * * * *", async () => {
+  aiTakeoffStallWatchdogTask = scheduleCron("ai_takeoff_stall_watchdog", "30 * * * * *", async () => {
     try {
       await withSchedulerLock("job:aiTakeoffStallWatchdog", async () => {
         const summary = await processAiTakeoffStallWatchdog();
