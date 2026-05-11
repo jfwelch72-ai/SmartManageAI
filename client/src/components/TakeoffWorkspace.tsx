@@ -55,6 +55,7 @@ import {
   isPointInPolygon,
 } from "@shared/utils/geometry";
 import { type Tool, type MeasurementType, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
+import { applyZoneClick, applyZoneDblClick } from "./takeoff/zonePolygonDraw";
 import {
   readChestPayload,
   usePinToChest,
@@ -2776,16 +2777,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const handleZoneCanvasClick = useCallback(
     (pt: { x: number; y: number }) => {
       setZoneDrawPoints(prev => {
-        if (prev.length >= 3) {
-          const first = prev[0];
-          const dist = Math.sqrt((pt.x - first.x) ** 2 + (pt.y - first.y) ** 2);
-          if (dist < 15 / stageScale) {
-            setPendingZonePoints(prev);
-            setZoneDrawingActive(false);
-            return [];
-          }
+        const result = applyZoneClick(prev, pt, stageScale);
+        if (result.closedPoints) {
+          setPendingZonePoints(result.closedPoints);
+          setZoneDrawingActive(false);
         }
-        return [...prev, pt];
+        return result.newPoints;
       });
     },
     [stageScale],
@@ -2793,11 +2790,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const handleZoneCanvasDblClick = useCallback(() => {
     setZoneDrawPoints(prev => {
-      if (prev.length >= 3) {
-        setPendingZonePoints(prev);
+      // Konva v9 detects double-clicks by watching two rapid mousedown→mouseup
+      // pairs.  Both mousedowns fire onMouseDown → handleZoneCanvasClick, which
+      // appends a vertex each time.  By the time onDblClick fires (on the
+      // second mouseup) the state already has 2 extra vertices at the
+      // double-click position.  Slice them off before closing the polygon so
+      // the final vertex count reflects only the intentional single-click
+      // vertices the user placed.
+      const withoutDblExtras = prev.length >= 2 ? prev.slice(0, -2) : prev;
+      const result = applyZoneDblClick(withoutDblExtras);
+      if (result.closedPoints) {
+        setPendingZonePoints(result.closedPoints);
         setZoneDrawingActive(false);
       }
-      return [];
+      return result.newPoints;
     });
   }, []);
 
