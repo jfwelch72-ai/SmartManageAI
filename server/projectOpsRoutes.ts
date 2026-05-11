@@ -453,29 +453,19 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
 
     const insertData = { ...validationResult.data, uploadedById: req.user!.id, objectKey };
     const [newDoc] = await db.insert(planDocuments).values([insertData]).returning();
-    // Task #2757 — Best-effort enqueue PDF tile prerender, gated behind
+    // Task #2757 / #2761 — Best-effort enqueue PDF tile prerender, gated behind
     // the TILE_RENDERING_ENABLED feature flag. When OFF (default) no job
     // is dispatched, avoiding misleading false-positive successes from
     // the gated renderer handler. Failure to enqueue must not block
-    // the upload response.
-    try {
-      const { isFeatureEnabled } = await import("./services/featureFlagService");
-      if (await isFeatureEnabled(callerOrgId!, "TILE_RENDERING_ENABLED")) {
-        const { enqueueJob } = await import("./jobQueue");
-        await enqueueJob(
-          "pdf_tile_prerender",
-          { planDocumentId: newDoc.id },
-          {
-            organizationId: callerOrgId!,
-            userId: req.user!.id,
-            idempotencyKey: `pdf_tile_prerender:${newDoc.id}`,
-          },
-        );
-      }
-    } catch (enqErr) {
-      logWarn("pdf_tile_prerender enqueue failed (upload route)", {
+    // the upload response. Logic extracted to `services/pdfTileDispatch`
+    // so the gate can be unit-tested without route machinery.
+    {
+      const { tryEnqueueTilePrerender } = await import("./services/pdfTileDispatch");
+      await tryEnqueueTilePrerender({
         planDocumentId: newDoc.id,
-        error: String(enqErr),
+        organizationId: callerOrgId!,
+        userId: req.user!.id,
+        site: "upload",
       });
     }
     
@@ -652,27 +642,16 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
       mimeType: contentType,
       uploadedById: req.user!.id,
     }]).returning();
-    // Task #2757 — Best-effort enqueue PDF tile prerender for from-url
-    // imports, gated behind TILE_RENDERING_ENABLED. Failure must not
-    // break the upload response.
-    try {
-      const { isFeatureEnabled } = await import("./services/featureFlagService");
-      if (await isFeatureEnabled(req.user!.organizationId!, "TILE_RENDERING_ENABLED")) {
-        const { enqueueJob } = await import("./jobQueue");
-        await enqueueJob(
-          "pdf_tile_prerender",
-          { planDocumentId: newDoc.id },
-          {
-            organizationId: req.user!.organizationId!,
-            userId: req.user!.id,
-            idempotencyKey: `pdf_tile_prerender:${newDoc.id}`,
-          },
-        );
-      }
-    } catch (enqErr) {
-      logWarn("pdf_tile_prerender enqueue failed (from-url route)", {
+    // Task #2757 / #2761 — Best-effort enqueue PDF tile prerender for
+    // from-url imports, gated behind TILE_RENDERING_ENABLED. Logic
+    // extracted to `services/pdfTileDispatch` for testability.
+    {
+      const { tryEnqueueTilePrerender } = await import("./services/pdfTileDispatch");
+      await tryEnqueueTilePrerender({
         planDocumentId: newDoc.id,
-        error: String(enqErr),
+        organizationId: req.user!.organizationId!,
+        userId: req.user!.id,
+        site: "from-url",
       });
     }
 

@@ -47,3 +47,14 @@ async function gatedRenderer(
 export function registerGatedTileRenderer(): void {
   registerTileRenderer(gatedRenderer);
 }
+
+/**
+ * Task #2761 — test-only hook that exposes the internal `gatedRenderer`
+ * function so unit tests can assert it throws without going through the
+ * full pg-boss job dispatch pipeline.
+ *
+ * @internal Not for production use.
+ */
+export const __testHooks = {
+  gatedRenderer,
+} as const;
