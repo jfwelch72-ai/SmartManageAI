@@ -72,6 +72,11 @@ const ALLOWED = new Set([
   path.join(SERVER_DIR, "jobQueue", "handlers", "aiDocument.ts"),
   path.join(SERVER_DIR, "jobQueue", "handlers", "planSetIngest.ts"),
   path.join(SERVER_DIR, "jobQueue", "handlers", "tileRendererStub.ts"),
+  // Task #2760 — Real tile renderer. Dispatched exclusively through the
+  // jobQueue runtime above, which always wraps with withOrgContext when the
+  // job carries an organizationId (the pdf_tile_prerender enqueue paths pass
+  // organizationId). No inner wrap needed.
+  path.join(SERVER_DIR, "jobQueue", "handlers", "tileRendererReal.ts"),
   path.join(SERVER_DIR, "jobQueue", "exports", "auditExport.ts"),
   path.join(SERVER_DIR, "jobQueue", "exports", "changeOrderBulkPdf.ts"),
   path.join(SERVER_DIR, "jobQueue", "exports", "payrollAcknowledgement.ts"),

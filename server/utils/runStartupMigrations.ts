@@ -156,6 +156,7 @@ import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnum
 import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
 import { ensureEquipmentRepairsPmIdempotency } from "./ensureEquipmentRepairsPmIdempotency";
 import { ensureMobileSyncEventsTable } from "./ensureMobileSyncEventsTable";
+import { ensureTakeoffSheetsTileColumns } from "./ensureTakeoffSheetsTileColumns";
 import { seedTradePackSkills } from "../services/aiEstimator/skills";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -549,6 +550,11 @@ const migrations: MigrationStep[] = [
   // chat panel uses to ship file uploads, screenshot pastes and voice notes
   // alongside the prompt. Migration 0112; mirrored here so fresh DBs converge.
   { name: "ai_estimator_chat_attachments", category: "ADD_COLUMN", fn: ensureAiEstimatorChatAttachmentsColumn },
+  // Task #2760 — Server-side PDF tile pre-rendering. Adds tile_status,
+  // tiled_at, and tile_storage_prefix to takeoff_sheets so the real renderer
+  // can stamp tile availability after a pre-render pass. All three columns are
+  // nullable so existing rows are treated as un-rendered (client-side fallback).
+  { name: "takeoff_sheets_tile_columns", category: "ADD_COLUMN", fn: ensureTakeoffSheetsTileColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

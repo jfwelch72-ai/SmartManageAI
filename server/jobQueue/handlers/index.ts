@@ -9,7 +9,7 @@ import { registerPdfTilePrerenderJob } from "./pdfTilePrerender";
 import { registerAccountingSyncJob } from "./accountingSync";
 import { registerBulkExportJob } from "./bulkExport";
 import { registerOrganizationExportGenerator } from "./organizationExport";
-import { registerGatedTileRenderer } from "./tileRendererStub";
+import { registerRealTileRenderer } from "./tileRendererReal";
 import { registerPlanSetIngestJob } from "./planSetIngest";
 // Task #2517 — Side-effect imports register concrete `bulk_export`
 // generators for the audit, change-orders, and payroll surfaces.
@@ -31,10 +31,10 @@ export function registerAllJobHandlers(): void {
   // worker process picks them up at boot. Adding inline registration
   // from a route module would silently break the out-of-process worker.
   registerOrganizationExportGenerator();
-  // Task #2757 — Register the gated renderer. When the TILE_RENDERING_ENABLED
-  // feature flag is OFF (the default), jobs are never dispatched so this
-  // handler is a safety-net for any legacy queue items. When a real
-  // renderer ships, replace this with the real implementation and flip
-  // the flag ON.
-  registerGatedTileRenderer();
+  // Task #2760 — Register the real tile renderer. When TILE_RENDERING_ENABLED
+  // is ON, jobs are dispatched after plan-document uploads and this handler
+  // renders tiles server-side using pdfjs-dist + canvas, then uploads them to
+  // GCS. The Takeoff workspace always falls back to client-side pdfTileWorker
+  // rendering, so the flag is safe to flip ON per-org.
+  registerRealTileRenderer();
 }

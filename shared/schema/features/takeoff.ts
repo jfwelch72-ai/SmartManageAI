@@ -137,6 +137,19 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   assignedTo: varchar("assigned_to"),
   completionStatus: text("completion_status").notNull().default("not_started"),
   targetMeasurements: integer("target_measurements"),
+  // Task #2760 — Server-side PDF tile pre-rendering.
+  // tileStatus tracks the lifecycle of the GCS-stored pre-rendered tiles for
+  // this sheet: null = never attempted, RENDERING = job in progress,
+  // READY = all tiles available, FAILED = last attempt errored.
+  // The Takeoff workspace always falls back to client-side pdfTileWorker when
+  // tileStatus is null or FAILED, so these columns are purely optimisation
+  // metadata and do not break existing tenants.
+  tileStatus: text("tile_status"),
+  tiledAt: timestamp("tiled_at"),
+  // GCS object-key prefix where pre-rendered tiles are stored, e.g.
+  //   <PRIVATE_OBJECT_DIR>/<orgId>/tiles/<planDocId>/
+  // Tiles live at <prefix>z<zoom>/p<sheetIndex>/<tileX>_<tileY>.png
+  tileStoragePrefix: text("tile_storage_prefix"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

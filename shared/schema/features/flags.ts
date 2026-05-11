@@ -218,7 +218,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   AI_PROVIDER_GENERAL: "Route the non-Takeoff AI calls (digest, health, risk, hiring, website/social copy, document analysis, CRM) through the provider router. When ON, primary is Anthropic Claude with OpenAI automatic fallback. When OFF, primary is OpenAI with no fallback (legacy behavior).",
   AI_PROVIDER_EMBEDDINGS: "Reserved provider seam for embedding calls. No alternative embedding provider is wired in today; flipping this on currently has no effect because every call site still resolves to OpenAI text-embedding-3-large.",
   COI_COMPLIANCE_HOLD: "Block pay-app, PO, and subcontractor payable approvals when project insurance compliance is EXPIRED or MISSING. Audited overrides bypass the hold. When OFF, the dashboard still shows non-compliance but releases are not blocked.",
-  TILE_RENDERING_ENABLED: "When ON, enqueues a server-side PDF tile pre-render job after each plan-document upload or import. The job pre-generates image tiles in GCS for faster Takeoff workspace loads on large plans. When OFF (default), no job is dispatched — the Takeoff workspace falls back to client-side rendering via the PDF worker, which always works regardless of this flag.",
+  TILE_RENDERING_ENABLED: "When ON, enqueues a server-side PDF tile pre-render job after each plan-document upload or import. The job renders tiles using pdfjs-dist + canvas on the server and uploads PNGs to GCS for faster Takeoff workspace loads on large plans. Safe to flip ON per-org — the Takeoff workspace always falls back to client-side rendering when tiles are unavailable. When OFF (default), no job is dispatched and rendering remains entirely client-side.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
