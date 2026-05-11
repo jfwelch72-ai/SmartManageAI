@@ -11,6 +11,7 @@ import {
   File,
   ExternalLink,
   RotateCw,
+  RotateCcw,
 } from "lucide-react";
 import {
   getSharedScheduler,
@@ -107,10 +108,23 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [error, setError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
+  // Task #2780 — Per-document rotation state (0 / 90 / 180 / 270 degrees).
+  // Persists across sheet switches within the same component instance via a
+  // Map keyed by URL so returning to a previously rotated sheet restores the
+  // user's orientation. Resets to 0 only for URLs seen for the first time.
+  const rotationCacheRef = useRef<Map<string, number>>(new Map());
+  const [rotation, setRotation] = useState(0);
 
   useEffect(() => {
     onPageChange?.(pageNum);
   }, [pageNum, onPageChange]);
+
+  // Task #2780 — Write rotation back to the cache whenever the user rotates,
+  // so switching away and back restores the same orientation.
+  useEffect(() => {
+    rotationCacheRef.current.set(url, rotation);
+  }, [url, rotation]);
+
   // Task #2188 — Track the in-flight page render so we can cancel the
   // worker-side pdfjs `RenderTask` when the user changes page or zoom
   // mid-render. Without this the worker would keep rasterising a page
@@ -181,6 +195,8 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
     setNumPages(0);
     setPageNum(1);
     setZoomIdx(2);
+    // Restore cached rotation for this URL (0 for first visit).
+    setRotation(rotationCacheRef.current.get(url) ?? 0);
 
     if (pageRenderRef.current) {
       pageRenderRef.current.cancel();
@@ -286,6 +302,8 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
 
   const goPrev = () => setPageNum((p) => Math.max(1, p - 1));
   const goNext = () => setPageNum((p) => Math.min(numPages, p + 1));
+  const rotateCw = () => setRotation((r) => (r + 90) % 360);
+  const rotateCcw = () => setRotation((r) => (r + 270) % 360);
   const zoomIn = () => setZoomIdx((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1));
   const zoomOut = () => setZoomIdx((i) => Math.max(0, i - 1));
   const resetZoom = () => setZoomIdx(2);
@@ -429,6 +447,27 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
             variant="ghost"
             size="icon"
             className="h-7 w-7"
+            onClick={rotateCcw}
+            title="Rotate counter-clockwise"
+            data-testid="button-pdf-rotate-ccw"
+          >
+            <RotateCcw className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={rotateCw}
+            title="Rotate clockwise"
+            data-testid="button-pdf-rotate-cw"
+          >
+            <RotateCw className="w-4 h-4" />
+          </Button>
+          <div className="w-px h-4 bg-border mx-0.5" />
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
             onClick={zoomOut}
             disabled={zoomIdx <= 0}
             data-testid="button-pdf-zoom-out"
@@ -516,7 +555,14 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
             <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
           </div>
         )}
-        <div className="relative inline-block">
+        <div
+          className="relative inline-block"
+          style={{
+            transform: rotation !== 0 ? `rotate(${rotation}deg)` : undefined,
+            transition: "transform 0.2s ease",
+            margin: rotation === 90 || rotation === 270 ? "auto" : undefined,
+          }}
+        >
           <canvas
             ref={canvasRef}
             className="shadow-md block"

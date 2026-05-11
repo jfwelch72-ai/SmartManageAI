@@ -800,6 +800,59 @@ export async function refreshToken(
         if (data.error) return null;
         return { accessToken: data.access_token, expiresIn: data.expires_in };
       }
+      case "TIKTOK": {
+        const params = new URLSearchParams({
+          client_key: clientId || "",
+          client_secret: clientSecret || "",
+          grant_type: "refresh_token",
+          refresh_token: refreshTkn,
+        });
+        const res = await fetch("https://open.tiktokapis.com/v2/oauth/token/", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json() as any;
+        if (!data.access_token) return null;
+        return { accessToken: data.access_token, expiresIn: data.expires_in };
+      }
+      case "YOUTUBE": {
+        const params = new URLSearchParams({
+          client_id: clientId || "",
+          client_secret: clientSecret || "",
+          grant_type: "refresh_token",
+          refresh_token: refreshTkn,
+        });
+        const res = await fetch("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: params.toString(),
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json() as any;
+        if (!data.access_token) return null;
+        return { accessToken: data.access_token, expiresIn: data.expires_in };
+      }
+      case "PINTEREST": {
+        const credentials = "Basic " + Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+        const params = new URLSearchParams({
+          grant_type: "refresh_token",
+          refresh_token: refreshTkn,
+        });
+        const res = await fetch("https://api.pinterest.com/v5/oauth/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: credentials,
+          },
+          body: params.toString(),
+          signal: AbortSignal.timeout(10000),
+        });
+        const data = await res.json() as any;
+        if (!data.access_token) return null;
+        return { accessToken: data.access_token, expiresIn: data.expires_in };
+      }
       default:
         return null;
     }

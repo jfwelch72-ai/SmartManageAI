@@ -14,9 +14,10 @@
 import { defineJob, type JobContext } from "../index";
 import { db } from "../../db";
 import { takeoffSheets, bidDocuments, bids } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getPdfPageCountFromGcs } from "../../utils/pdfPageCount";
-import { logError, logInfo } from "../../utils/logger";
+import { logError, logInfo, logWarn } from "../../utils/logger";
+
 
 export interface PlanSetIngestJobPayload {
   organizationId: string;
@@ -129,6 +130,66 @@ export function registerPlanSetIngestJob(): void {
 
       await ctx.progress(40, `Detected ${pageCount} sheet${pageCount === 1 ? "" : "s"}`, { pageCount });
 
+      // Task #2780 — Physical per-page PDF splitting.
+      // Every PDF plan set (any size, any page count) is split into one single-page
+      // PDF per sheet in GCS. This means each takeoff_sheets row points to its own
+      // dedicated object — no shared parent + sheetIndex approach. The takeoff viewer
+      // therefore only downloads the bytes for the page it needs.
+      //
+      // If splitting fails for any reason (e.g. an encrypted PDF, a corrupt file, or
+      // an out-of-memory condition for an extremely large file), the job falls back to
+      // the legacy sheetIndex-based approach and logs a warning. The caller should
+      // treat a fallback as a degraded-mode success, not a hard failure.
+      let splitPageUrls: Map<number, string> | null = null;
+      const splitBase = gcsFile.name.replace(/\.pdf$/i, "");
+      const isPdf = fileName?.toLowerCase().endsWith(".pdf") ?? false;
+
+      if (isPdf && pageCount >= 1) {
+        try {
+          await ctx.progress(42, "Splitting PDF into per-page files (this may take a moment)", { pageCount });
+          const { PDFDocument } = await import("pdf-lib");
+
+          const pdfBytes: Buffer = await new Promise<Buffer>((resolve, reject) => {
+            const chunks: Buffer[] = [];
+            const stream = gcsFile.createReadStream();
+            stream.on("data", (c: Buffer) => chunks.push(c));
+            stream.on("end", () => resolve(Buffer.concat(chunks)));
+            stream.on("error", reject);
+          });
+
+          const srcPdf = await PDFDocument.load(pdfBytes);
+          const srcBucket = gcsFile.bucket;
+          splitPageUrls = new Map<number, string>();
+
+          for (let i = 0; i < pageCount; i++) {
+            const pagePdf = await PDFDocument.create();
+            const [page] = await pagePdf.copyPages(srcPdf, [i]);
+            pagePdf.addPage(page);
+            const pageBytes = await pagePdf.save();
+            const pageKey = `${splitBase}_split_page_${i}.pdf`;
+            await srcBucket.file(pageKey).save(Buffer.from(pageBytes), { contentType: "application/pdf" });
+            const pageUrl = `https://storage.googleapis.com/${srcBucket.name}/${pageKey}`;
+            splitPageUrls.set(i, pageUrl);
+            // Emit progress every 10 pages during the split loop for large plan sets.
+            if (pageCount > 10 && i > 0 && i % 10 === 0) {
+              const splitPct = 42 + Math.floor((i / pageCount) * 20);
+              await ctx.progress(splitPct, `Split ${i} of ${pageCount} pages`, { splitPage: i, total: pageCount });
+            }
+          }
+
+          logInfo("plan_set_ingest: PDF split complete", {
+            bidId: payload.bidId,
+            pages: pageCount,
+          });
+        } catch (splitErr) {
+          logWarn("plan_set_ingest: PDF split failed — falling back to sheetIndex mode", {
+            bidId: payload.bidId,
+            error: splitErr instanceof Error ? splitErr.message : String(splitErr),
+          });
+          splitPageUrls = null;
+        }
+      }
+
       // Idempotency: pg-boss may retry this job after a partial failure
       // (e.g. transient DB error mid-chunk). To guarantee "one sheet
       // per page" regardless of retry count, we delete any sheets we
@@ -140,6 +201,20 @@ export function registerPlanSetIngestJob(): void {
       await db
         .delete(takeoffSheets)
         .where(and(eq(takeoffSheets.bidId, payload.bidId), eq(takeoffSheets.imageUrl, fileUrl)));
+      // Always remove any previously-split per-page sheets by URL prefix so
+      // re-runs start clean regardless of whether the prior attempt split or not.
+      // This handles the retry case where a previous attempt succeeded (split URLs
+      // exist) but the current attempt's split failed (splitPageUrls = null).
+      //
+      // Use LEFT() prefix comparison to avoid LIKE wildcard semantics entirely.
+      // Every split page URL is `<bucketRoot>/<splitBase>_split_page_<N>.pdf`;
+      // the shared prefix is everything up to and including "_split_page_".
+      // LEFT(image_url, N) = prefix is a plain string equality — underscores and
+      // percent-signs in the path are never interpreted as pattern wildcards.
+      const splitUrlPrefix = `https://storage.googleapis.com/${gcsFile.bucket.name}/${splitBase}_split_page_`;
+      await db.execute(
+        sql`DELETE FROM takeoff_sheets WHERE bid_id = ${payload.bidId} AND LEFT(image_url, ${splitUrlPrefix.length}) = ${splitUrlPrefix}`
+      );
 
       const baseSheetName = payload.baseSheetName ?? fileName.replace(/\.[^/.]+$/, "");
       // Insert in chunks so a 5,000-page plan set doesn't ship a single
@@ -150,10 +225,15 @@ export function registerPlanSetIngestJob(): void {
         const end = Math.min(start + CHUNK, pageCount);
         const values = [];
         for (let i = start; i < end; i++) {
+          // When physically split, each sheet gets its own single-page PDF URL
+          // and a sheetIndex of 0 (the only page). Otherwise, all sheets
+          // share the parent PDF URL and differentiate via sheetIndex.
+          const imageUrl = splitPageUrls?.get(i) ?? fileUrl;
+          const sheetIndex = splitPageUrls ? 0 : i;
           values.push({
             bidId: payload.bidId,
-            imageUrl: fileUrl,
-            sheetIndex: i,
+            imageUrl,
+            sheetIndex,
             sheetName: pageCount > 1 ? `${baseSheetName} - Page ${i + 1}` : baseSheetName,
           });
         }

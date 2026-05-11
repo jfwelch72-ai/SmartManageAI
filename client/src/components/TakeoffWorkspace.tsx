@@ -52,6 +52,7 @@ import {
   computeDistanceInFeet,
   computeLinearWithDropFt,
   computePitchedLinearFt,
+  isPointInPolygon,
 } from "@shared/utils/geometry";
 import { type Tool, type MeasurementType, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
 import {
@@ -1914,6 +1915,35 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const zoomToFitRef = useRef<() => void>(() => {});
 
+  // Task #2780 — load calibration zones for the current sheet so measurements
+  // drawn inside a zone polygon use that zone's px/ft rather than the sheet
+  // global scale. The query is keyed by selectedSheet so it refreshes
+  // automatically when the user switches sheets.
+  interface CalibrationZone {
+    id: string;
+    sheet_id: string;
+    name: string;
+    polygon_points: Array<{ x: number; y: number }>;
+    px_per_foot: number;
+  }
+  const { data: calibrationZones = [] } = useQuery<CalibrationZone[]>({
+    queryKey: [`/api/takeoff/sheets/${selectedSheet}/calibration-zones`],
+    enabled: !!selectedSheet,
+    staleTime: 30_000,
+  });
+
+  const getScaleForPoint = useCallback(
+    (point: { x: number; y: number }): number | undefined => {
+      for (const zone of calibrationZones) {
+        if (isPointInPolygon(point, zone.polygon_points)) {
+          return zone.px_per_foot;
+        }
+      }
+      return currentSheet?.scalePxPerFoot ?? undefined;
+    },
+    [calibrationZones, currentSheet]
+  );
+
   const interactions = useTakeoffInteractions({
     projectId,
     sheetsQueryKey,
@@ -2053,6 +2083,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // truth as PlanMarkupLayer and the long-press detector.
     allowTwoFingerRotate: stylusPrefs.allowTwoFingerRotate,
     palmRejectionBandPx: stylusPrefs.palmRejectionBandPx,
+    getScaleForPoint,
   });
 
   const {
@@ -5880,6 +5911,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       <TakeoffShortcutCheatSheet open={cheatSheetOpen} onOpenChange={setCheatSheetOpen} />
       <InlineCalibrationDrawer
         open={calibrationDrawerOpen}
+        sheetId={selectedSheet ?? undefined}
         onOpenChange={(next) => {
           if (!next) {
             // Route every close through the shared helper so the

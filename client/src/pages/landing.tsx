@@ -1,8 +1,16 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowRight, 
   Check, 
@@ -587,8 +595,116 @@ const howItWorks = [
   }
 ];
 
+// Task #2780 — In-app demo request form (replaces Calendly links).
+function DemoRequestDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+  const { toast } = useToast();
+  const [name, setName] = useState("");
+  const [company, setCompany] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [preferredTime, setPreferredTime] = useState("");
+  const [notes, setNotes] = useState("");
+  const [submitted, setSubmitted] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", "/api/demo/request", { name, company, email, phone: phone || undefined, preferredTime: preferredTime || undefined, notes: notes || undefined }),
+    onSuccess: () => {
+      setSubmitted(true);
+    },
+    onError: () => {
+      toast({ title: "Something went wrong", description: "Please try again or email us directly.", variant: "destructive" });
+    },
+  });
+
+  const handleClose = useCallback((v: boolean) => {
+    if (!v) {
+      setSubmitted(false);
+      setName(""); setCompany(""); setEmail(""); setPhone(""); setPreferredTime(""); setNotes("");
+    }
+    onOpenChange(v);
+  }, [onOpenChange]);
+
+  return (
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="sm:max-w-md" data-testid="dialog-demo-request">
+        <DialogHeader>
+          <DialogTitle>{submitted ? "Request Received!" : "Book a Live Demo"}</DialogTitle>
+          <DialogDescription>
+            {submitted
+              ? "Our team will reach out within 1 business day to schedule your personalized demo."
+              : "See SmartManageAI in action. Our team will reach out to schedule a 30-minute demo tailored to your trade."}
+          </DialogDescription>
+        </DialogHeader>
+        {submitted ? (
+          <div className="flex flex-col items-center gap-4 py-6">
+            <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
+              <Check className="w-7 h-7 text-green-600" />
+            </div>
+            <p className="text-sm text-muted-foreground text-center">
+              Check your inbox at <strong>{email}</strong> for a confirmation email.
+            </p>
+            <Button onClick={() => handleClose(false)} data-testid="button-demo-request-close">
+              Close
+            </Button>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="demo-name">Full Name *</Label>
+                <Input id="demo-name" value={name} onChange={e => setName(e.target.value)} placeholder="Jane Smith" data-testid="input-demo-name" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="demo-company">Company *</Label>
+                <Input id="demo-company" value={company} onChange={e => setCompany(e.target.value)} placeholder="Smith Construction" data-testid="input-demo-company" />
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="demo-email">Work Email *</Label>
+              <Input id="demo-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="jane@smithconstruction.com" data-testid="input-demo-email" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="demo-phone">Phone (optional)</Label>
+                <Input id="demo-phone" type="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" data-testid="input-demo-phone" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="demo-time">Preferred Time</Label>
+                <Select value={preferredTime} onValueChange={setPreferredTime}>
+                  <SelectTrigger id="demo-time" data-testid="select-demo-preferred-time">
+                    <SelectValue placeholder="Any time" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="morning">Morning (8am–12pm)</SelectItem>
+                    <SelectItem value="afternoon">Afternoon (12pm–5pm)</SelectItem>
+                    <SelectItem value="evening">Evening (5pm–7pm)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="demo-notes">What would you like to see? (optional)</Label>
+              <Textarea id="demo-notes" value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g., estimating workflow, GPS time tracking, AIA billing..." rows={2} data-testid="textarea-demo-notes" />
+            </div>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending || !name.trim() || !company.trim() || !email.trim() || !email.includes("@")}
+              data-testid="button-demo-request-submit"
+            >
+              {mutation.isPending ? "Sending..." : "Request Demo"}
+              <Calendar className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function LandingPage() {
   const [showAllFeatures, setShowAllFeatures] = useState(false);
+  const [demoOpen, setDemoOpen] = useState(false);
 
   useEffect(() => {
     document.title = "SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades";
@@ -615,6 +731,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
+      <DemoRequestDialog open={demoOpen} onOpenChange={setDemoOpen} />
 
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -675,22 +792,16 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <a
-                href="https://calendly.com/smartmanageai/demo"
-                target="_blank"
-                rel="noopener noreferrer"
-                data-testid="link-hero-book-demo"
+              <Button
+                size="lg"
+                variant="outline"
+                className="w-full sm:w-auto text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
+                data-testid="button-hero-book-demo"
+                onClick={() => setDemoOpen(true)}
               >
-                <Button
-                  size="lg"
-                  variant="outline"
-                  className="w-full sm:w-auto text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
-                  data-testid="button-hero-book-demo"
-                >
-                  <Calendar className="mr-2 h-5 w-5" />
-                  Book a Live Demo
-                </Button>
-              </a>
+                <Calendar className="mr-2 h-5 w-5" />
+                Book a Live Demo
+              </Button>
             </div>
             <div className="flex flex-wrap gap-6 text-gray-400">
               <div className="flex items-center gap-2">
@@ -1277,22 +1388,16 @@ export default function LandingPage() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <a
-              href="https://calendly.com/smartmanageai/demo"
-              target="_blank"
-              rel="noopener noreferrer"
-              data-testid="link-cta-book-demo"
+            <Button
+              size="lg"
+              variant="outline"
+              className="text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
+              data-testid="button-cta-book-demo"
+              onClick={() => setDemoOpen(true)}
             >
-              <Button
-                size="lg"
-                variant="outline"
-                className="text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
-                data-testid="button-cta-book-demo"
-              >
-                <Calendar className="mr-2 h-5 w-5" />
-                Book a Live Demo
-              </Button>
-            </a>
+              <Calendar className="mr-2 h-5 w-5" />
+              Book a Live Demo
+            </Button>
           </div>
         </div>
       </section>

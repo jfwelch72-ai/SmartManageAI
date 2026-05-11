@@ -1,4 +1,9 @@
 import { useEffect, useState } from "react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { MapPin } from "lucide-react";
+import { CalibrationZonesPanel } from "./CalibrationZonesPanel";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -55,9 +60,96 @@ import { cn } from "@/lib/utils";
  * We render the panel directly via Radix primitives instead.
  */
 
+// Task #2780 — "Save as Zone" inline button rendered inside the calibration drawer.
+// Expands the calibration line into a thin perpendicular rectangle zone polygon,
+// prompts for a name, and POSTs to /api/takeoff/sheets/:sheetId/calibration-zones.
+function SaveZoneButton({
+  sheetId,
+  pxPerFoot,
+  calibrationPoints,
+}: {
+  sheetId?: string;
+  pxPerFoot: number;
+  calibrationPoints: [{ x: number; y: number }, { x: number; y: number }];
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [zoneName, setZoneName] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!sheetId) throw new Error("No sheet");
+      const [p1, p2] = calibrationPoints;
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+      const halfW = Math.max(len * 0.2, 20);
+      const nx = (-dy / len) * halfW;
+      const ny = (dx / len) * halfW;
+      const polygon = [
+        { x: p1.x + nx, y: p1.y + ny },
+        { x: p2.x + nx, y: p2.y + ny },
+        { x: p2.x - nx, y: p2.y - ny },
+        { x: p1.x - nx, y: p1.y - ny },
+      ];
+      return apiRequest("POST", `/api/takeoff/sheets/${sheetId}/calibration-zones`, {
+        name: zoneName.trim() || "Calibration Zone",
+        polygonPoints: polygon,
+        pxPerFoot,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Zone saved", description: `Calibration zone "${zoneName || "Calibration Zone"}" saved.` });
+      qc.invalidateQueries({ queryKey: [`/api/takeoff/sheets/${sheetId}/calibration-zones`] });
+      setOpen(false);
+      setZoneName("");
+    },
+    onError: () => {
+      toast({ title: "Failed to save zone", variant: "destructive" });
+    },
+  });
+
+  if (!sheetId) return null;
+
+  return open ? (
+    <div className="flex items-center gap-1">
+      <input
+        type="text"
+        value={zoneName}
+        onChange={e => setZoneName(e.target.value)}
+        placeholder="Zone name…"
+        className="h-7 rounded border border-input bg-background px-2 text-xs w-28 focus:outline-none focus:ring-1 focus:ring-ring"
+        onKeyDown={e => { if (e.key === "Enter") mutation.mutate(); if (e.key === "Escape") setOpen(false); }}
+        autoFocus
+        data-testid="input-save-zone-name"
+      />
+      <Button type="button" size="sm" className="h-7 px-2 text-xs" onClick={() => mutation.mutate()} disabled={mutation.isPending} data-testid="button-save-zone-confirm">
+        Save
+      </Button>
+      <Button type="button" size="sm" variant="ghost" className="h-7 px-1" onClick={() => setOpen(false)} data-testid="button-save-zone-cancel">
+        <X className="w-3 h-3" />
+      </Button>
+    </div>
+  ) : (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-7 px-2 text-xs"
+      onClick={() => setOpen(true)}
+      data-testid="button-save-as-zone"
+    >
+      <MapPin className="w-3 h-3 mr-1" /> Save as Zone
+    </Button>
+  );
+}
+
 export interface InlineCalibrationDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Task #2780 — Optional sheet ID used by the "Save as Zone" affordance. */
+  sheetId?: string;
   /** Current calibration mode driven by the canvas click handler in
    *  `use-takeoff-interactions.ts`. */
   calibrationMode: "idle" | "first-point" | "second-point";
@@ -922,25 +1014,43 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
             </div>
           </div>
 
-          <div className="mt-auto flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              data-testid="button-inline-calibration-cancel"
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              onClick={handleSave}
-              disabled={!distanceValid || calibrationPoints.length !== 2}
-              data-testid="button-inline-calibration-save"
-            >
-              Save calibration
-            </Button>
+          {props.sheetId && (
+            <CalibrationZonesPanel
+              sheetId={props.sheetId}
+              className="border-t border-border -mx-4 mt-2"
+            />
+          )}
+
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {previewScale !== null && calibrationPoints.length === 2 && (
+                <SaveZoneButton
+                  sheetId={props.sheetId}
+                  pxPerFoot={previewScale}
+                  calibrationPoints={calibrationPoints as [{ x: number; y: number }, { x: number; y: number }]}
+                />
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                data-testid="button-inline-calibration-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleSave}
+                disabled={!distanceValid || calibrationPoints.length !== 2}
+                data-testid="button-inline-calibration-save"
+              >
+                Save calibration
+              </Button>
+            </div>
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

@@ -158,6 +158,8 @@ import { ensureEquipmentRepairsPmIdempotency } from "./ensureEquipmentRepairsPmI
 import { ensureMobileSyncEventsTable } from "./ensureMobileSyncEventsTable";
 import { ensureTakeoffSheetsTileColumns } from "./ensureTakeoffSheetsTileColumns";
 import { seedTradePackSkills } from "../services/aiEstimator/skills";
+import { ensureDemoRequestsTable } from "./ensureDemoRequestsTable";
+import { ensureCalibrationZonesTable } from "./ensureCalibrationZonesTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -555,6 +557,10 @@ const migrations: MigrationStep[] = [
   // can stamp tile availability after a pre-render pass. All three columns are
   // nullable so existing rows are treated as un-rendered (client-side fallback).
   { name: "takeoff_sheets_tile_columns", category: "ADD_COLUMN", fn: ensureTakeoffSheetsTileColumns },
+  // Task #2780 — In-app demo request form (replaces Calendly external link).
+  { name: "demo_requests_table", category: "CREATE_TABLE", fn: ensureDemoRequestsTable },
+  // Task #2780 — Multi-region calibration zones in Takeoff workspace.
+  { name: "takeoff_sheet_calibration_zones_table", category: "CREATE_TABLE", fn: ensureCalibrationZonesTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

@@ -152,6 +152,13 @@ interface UseTakeoffInteractionsParams {
    *  size larger than this band are dropped while a stylus is in
    *  contact. Pen + mouse events are unaffected. */
   palmRejectionBandPx?: number;
+  /**
+   * Task #2780 — Zone-aware scale resolver. When provided, the hook calls
+   * this before falling back to `currentSheet.scalePxPerFoot`. Enables
+   * per-region calibration zones that override the sheet-level scale for
+   * measurements created inside a zone polygon.
+   */
+  getScaleForPoint?: (point: { x: number; y: number }) => number | undefined;
 }
 
 function inverseRotatePoint(
@@ -170,6 +177,8 @@ function inverseRotatePoint(
 
 export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const { toast } = useToast();
+
+  // getScaleForPoint is destructured in the main params block below with resolveScale defined after.
 
   const [mouseDownPosition, _setMouseDownPosition] = useState<{ x: number; y: number } | null>(null);
   const mouseDownPositionRef = useRef<{ x: number; y: number } | null>(null);
@@ -284,7 +293,25 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     enabledSnapModes, constraintMode, orthoPresetIndex,
     allowTwoFingerRotate = false,
     palmRejectionBandPx,
+    getScaleForPoint,
   } = params;
+
+  // Task #2780 — Zone-aware scale resolver. Returns the px/ft to use for a
+  // measurement starting at `startPoint`. Checks calibration zones first via
+  // the caller-provided `getScaleForPoint` callback; falls back to the sheet
+  // global scale. Defined here (after the main params destructure) so
+  // `currentSheet` and `getScaleForPoint` are both in scope without a
+  // redeclaration conflict.
+  const resolveScale = useCallback(
+    (startPoint?: { x: number; y: number }): number | undefined => {
+      if (startPoint && getScaleForPoint) {
+        const zoneScale = getScaleForPoint(startPoint);
+        if (zoneScale !== undefined && zoneScale > 0) return zoneScale;
+      }
+      return currentSheet?.scalePxPerFoot ?? undefined;
+    },
+    [getScaleForPoint, currentSheet]
+  );
   // Task #2142 — Track the cumulative rotate delta during a single
   // pinch so we can apply discrete 90° rotations without accidentally
   // chaining multiple rotations from one continuous gesture. The ref
@@ -582,13 +609,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   );
 
   const completePolygon = useCallback(() => {
-    if (!selectedSheet || !currentSheet?.scalePxPerFoot || drawingPoints.length < 3) {
+    const polyScale = resolveScale(drawingPoints[0]);
+    if (!selectedSheet || !polyScale || drawingPoints.length < 3) {
       toast({ title: "Error", description: "Need at least 3 points for polygon", variant: "destructive" });
       return;
     }
 
-    const areaFt2 = computePolygonAreaInFt2(drawingPoints, currentSheet.scalePxPerFoot);
-    const perimeterFt = computePolygonPerimeterInFt(drawingPoints, currentSheet.scalePxPerFoot);
+    const areaFt2 = computePolygonAreaInFt2(drawingPoints, polyScale);
+    const perimeterFt = computePolygonPerimeterInFt(drawingPoints, polyScale);
 
     // Ribbon aliases (e.g. polygon → area) must commit through the
     // canonical tool — otherwise closing a polygon would silently
@@ -653,10 +681,11 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
 
     setIsDrawing(false);
     setDrawingPoints([]);
-  }, [selectedSheet, currentSheet, drawingPoints, activeTool, selectedCategoryId, pitchRatio, measurements.length, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
+  }, [selectedSheet, currentSheet, resolveScale, drawingPoints, activeTool, selectedCategoryId, pitchRatio, measurements.length, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
 
   const completeSegment = useCallback(() => {
-    if (!selectedSheet || !currentSheet?.scalePxPerFoot || drawingPoints.length < 2) {
+    const segScale = resolveScale(drawingPoints[0]);
+    if (!selectedSheet || !segScale || drawingPoints.length < 2) {
       toast({ title: "Error", description: "Need at least 2 points for a segment measurement", variant: "destructive" });
       return;
     }
@@ -666,7 +695,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     let totalLengthFt = 0;
 
     for (let i = 0; i < drawingPoints.length - 1; i++) {
-      const segLen = computeDistanceInFeet([drawingPoints[i], drawingPoints[i + 1]], currentSheet.scalePxPerFoot);
+      const segLen = computeDistanceInFeet([drawingPoints[i], drawingPoints[i + 1]], segScale);
       totalLengthFt += segLen;
       segmentProperties.push({
         label: `Seg ${i + 1}`,
@@ -687,7 +716,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
 
     setIsDrawing(false);
     setDrawingPoints([]);
-  }, [selectedSheet, currentSheet, drawingPoints, selectedCategoryId, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
+  }, [selectedSheet, currentSheet, resolveScale, drawingPoints, selectedCategoryId, aggregatedMeasurements, createMeasurementMutation, setIsDrawing, setDrawingPoints, toast]);
 
   const handleStageClick = useCallback((e: any) => {
     const stage = e.target.getStage();
@@ -750,13 +779,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
     } else if (tool === "linear") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
-      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!resolveScale(point)) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
         setIsDrawing(true);
         setDrawingPoints([point]);
       } else {
         const newPoints = [...drawingPoints, point];
-        const lengthFt = computeDistanceInFeet(newPoints, currentSheet.scalePxPerFoot);
+        const linearScale = resolveScale(newPoints[0]) ?? 1;
+        const lengthFt = computeDistanceInFeet(newPoints, linearScale);
         commitMeasurement({
           sheetId: selectedSheet, type: "LINEAR", points: newPoints,
           label: `Line ${measurements.length + 1}`, categoryId: selectedCategoryId,
@@ -767,13 +797,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
     } else if (activeTool === "linear_with_drop" || activeTool === "pitched_linear") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
-      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!resolveScale(point)) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
         setIsDrawing(true);
         setDrawingPoints([point]);
       } else {
         const newPoints = [...drawingPoints, point];
-        const baseLengthFt = computeDistanceInFeet(newPoints, currentSheet.scalePxPerFoot);
+        const dropScale = resolveScale(newPoints[0]) ?? 1;
+        const baseLengthFt = computeDistanceInFeet(newPoints, dropScale);
         let finalLength = baseLengthFt;
         let measureType: MeasurementType = activeTool === "linear_with_drop" ? "LINEAR_WITH_DROP" : "PITCHED_LINEAR";
         if (activeTool === "linear_with_drop") {
@@ -795,7 +826,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
     } else if (tool === "arc") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
-      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!resolveScale(point)) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
         setIsDrawing(true);
         setCurrentDrawingTool("arc");
@@ -807,7 +838,8 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       } else if (drawingPoints.length === 2) {
         const [startPoint, middlePoint] = drawingPoints;
         const endPoint = point;
-        const arcSegment = createArcSegment(startPoint, endPoint, middlePoint, currentSheet.scalePxPerFoot);
+        const arcScale = resolveScale(startPoint) ?? 1;
+        const arcSegment = createArcSegment(startPoint, endPoint, middlePoint, arcScale);
         if (!arcSegment) {
           toast({ title: "Error", description: "Points are collinear - cannot form arc. Try different points.", variant: "destructive" });
           setIsDrawing(false);
@@ -836,7 +868,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // measurement using a 32-sided polygon approximation so existing
       // area math, deductions, and renderers all work unchanged.
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
-      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!resolveScale(point)) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
         setIsDrawing(true);
         setCurrentDrawingTool("arc");
@@ -849,13 +881,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           toast({ title: "Radius too small", description: "Click farther from the center to define a circle.", variant: "destructive" });
           return;
         }
+        const circleScale = resolveScale(center) ?? 1;
         const sides = 32;
         const polygon: Point[] = [];
         for (let i = 0; i < sides; i++) {
           const theta = (i / sides) * 2 * Math.PI;
           polygon.push({ x: center.x + radiusPx * Math.cos(theta), y: center.y + radiusPx * Math.sin(theta) });
         }
-        const radiusFt = radiusPx / currentSheet.scalePxPerFoot;
+        const radiusFt = radiusPx / circleScale;
         const areaFt2 = Math.PI * radiusFt * radiusFt;
         const perimeterFt = 2 * Math.PI * radiusFt;
         commitMeasurement({
@@ -979,7 +1012,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     if (isDrawingTool && pendingDimLengthFt && pendingDimLengthFt > 0) {
       onConsumeDimLength?.();
     }
-  }, [activeTool, resolvePoint, verifyMode, verifyPoints, verifyExpectedDistance, calibrationMode, calibrationPoints,
+  }, [activeTool, resolvePoint, resolveScale, verifyMode, verifyPoints, verifyExpectedDistance, calibrationMode, calibrationPoints,
     isDrawing, drawingPoints, selectedSheet, currentSheet, measurements, selectedCategoryId, pitchRatio, dropDistance,
     aggregatedMeasurements, createMeasurementMutation, completePolygon, pendingDimLengthFt, onConsumeDimLength,
     setSelectedMeasurementId, setVerifyPoints, setVerifyMode, setVerifyResult,

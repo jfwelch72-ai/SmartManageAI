@@ -181,6 +181,8 @@ import takeoffToolChestRoutes from "./takeoffToolChestRoutes";
 import takeoffSheetSetRoutes from "./takeoffSheetSetRoutes";
 import takeoffRecentsRoutes from "./takeoffRecentsRoutes";
 import takeoffStylusTelemetryRoutes from "./takeoffStylusTelemetryRoutes";
+import takeoffCalibrationZoneRoutes from "./takeoffCalibrationZoneRoutes";
+import demoRoutes from "./demoRoutes";
 import bimRoutes from "./bimRoutes";
 import lidarRoutes from "./lidarRoutes";
 import mobilizationRoutes from "./mobilizationRoutes";
@@ -268,6 +270,9 @@ import supportRoutes from "./supportRoutes";
 export async function registerRoutes(app: Express): Promise<Server> {
   // Register operational routes BEFORE auth middleware (health checks should be public)
   app.use(opsRoutes);
+
+  // Task #2780 — Demo request form (unauthenticated).
+  app.use(demoRoutes);
 
   // Task #2488 — Frontend RUM beacon ingestion. Anonymous + CSRF-exempt
   // (the browser uses navigator.sendBeacon which cannot attach headers).
@@ -675,6 +680,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(takeoffToolChestRoutes);
   app.use(takeoffSheetSetRoutes);
   app.use(takeoffRecentsRoutes);
+  // Task #2780 — Multi-region calibration zones.
+  app.use(takeoffCalibrationZoneRoutes);
   app.use(bimRoutes);
   app.use(lidarRoutes);
   app.use(mobilizationRoutes);

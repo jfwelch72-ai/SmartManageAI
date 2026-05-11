@@ -752,6 +752,12 @@ function getPlatformCredentials(platform: string): { clientId: string; clientSec
       return { clientId: process.env.LINKEDIN_CLIENT_ID || "", clientSecret: process.env.LINKEDIN_CLIENT_SECRET || "" };
     case "TWITTER":
       return { clientId: process.env.TWITTER_CLIENT_ID || "", clientSecret: process.env.TWITTER_CLIENT_SECRET || "" };
+    case "TIKTOK":
+      return { clientId: process.env.TIKTOK_CLIENT_ID || "", clientSecret: process.env.TIKTOK_CLIENT_SECRET || "" };
+    case "YOUTUBE":
+      return { clientId: process.env.YOUTUBE_CLIENT_ID || "", clientSecret: process.env.YOUTUBE_CLIENT_SECRET || "" };
+    case "PINTEREST":
+      return { clientId: process.env.PINTEREST_APP_ID || "", clientSecret: process.env.PINTEREST_APP_SECRET || "" };
     default:
       return { clientId: "", clientSecret: "" };
   }
