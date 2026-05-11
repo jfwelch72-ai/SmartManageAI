@@ -1,4 +1,5 @@
 // Task #2780 — In-app demo request form backend.
+// Task #2783 — CRM lead sync on demo request submission.
 // POST /api/demo/request — unauthenticated, rate-limited.
 import { Router, type Request, type Response, type NextFunction } from "express";
 import { z } from "zod";
@@ -6,6 +7,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { sendEmail } from "./email";
 import { logError, logInfo } from "./utils/logger";
+import { createDemoLeadInCrm } from "./demoLeadService";
 import rateLimit from "express-rate-limit";
 import { PgExpressRateLimitStore } from "./utils/expressRateLimitPgStore";
 
@@ -60,6 +62,11 @@ router.post("/api/demo/request", demoLimiter, async (req: Request, res: Response
     `);
 
     logInfo("demo_request submitted", { email, company });
+
+    // Task #2783 — Async CRM lead creation; failure is non-fatal.
+    createDemoLeadInCrm({ name, company, email, phone, notes }).catch(() => {
+      // Already logged inside createDemoLeadInCrm.
+    });
 
     const adminEmail = process.env.DEMO_REQUESTS_EMAIL || process.env.SUPPORT_REPORT_RECIPIENTS;
     if (adminEmail) {

@@ -2361,4 +2361,104 @@ router.get("/platform/organizations/:orgId/view-dashboard", requireAuth, require
   }
 });
 
+// ── Task #2783: Demo Lead CRM Config (Super Admin) ────────────────────────────
+
+router.get("/platform/demo-lead-config", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "SUPER_ADMIN access required" });
+    }
+
+    const rows = await db.execute(
+      sql`SELECT enabled, target_org_id, initial_stage, crm_org_type, updated_at FROM demo_lead_crm_config WHERE id = 'singleton' LIMIT 1`,
+    );
+    const row = rows.rows[0] as {
+      enabled: boolean;
+      target_org_id: string | null;
+      initial_stage: string;
+      crm_org_type: string;
+      updated_at: Date;
+    } | undefined;
+
+    const envOverride = process.env.DEMO_CRM_ORG_ID?.trim() || null;
+
+    res.json({
+      enabled: row?.enabled ?? true,
+      targetOrgId: envOverride ?? row?.target_org_id ?? null,
+      initialStage: row?.initial_stage ?? "LEAD",
+      crmOrgType: row?.crm_org_type ?? "CONTRACTOR",
+      updatedAt: row?.updated_at ?? null,
+      envOverrideActive: !!envOverride,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+const demoLeadConfigSchema = z.object({
+  enabled: z.boolean().optional(),
+  targetOrgId: z.string().nullable().optional(),
+  initialStage: z.enum(["LEAD", "QUALIFIED", "ESTIMATING", "BID_SUBMITTED", "NEGOTIATION", "WON", "LOST"]).optional(),
+  crmOrgType: z.enum(["CONTRACTOR", "SUBCONTRACTOR", "SUPPLIER", "VENDOR", "OWNER_REP", "RENTAL_VENDOR", "SERVICE_VENDOR"]).optional(),
+});
+
+router.patch("/platform/demo-lead-config", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN") {
+      return res.status(403).json({ error: "SUPER_ADMIN access required" });
+    }
+
+    const parsed = demoLeadConfigSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid config data", details: parsed.error.flatten() });
+    }
+
+    const { enabled, targetOrgId, initialStage, crmOrgType } = parsed.data;
+
+    await db.execute(sql`
+      UPDATE demo_lead_crm_config SET
+        enabled = COALESCE(${enabled ?? null}, enabled),
+        target_org_id = CASE WHEN ${targetOrgId !== undefined ? "1" : "0"} = '1' THEN ${targetOrgId ?? null} ELSE target_org_id END,
+        initial_stage = COALESCE(${initialStage ?? null}, initial_stage),
+        crm_org_type = COALESCE(${crmOrgType ?? null}, crm_org_type),
+        updated_at = NOW()
+      WHERE id = 'singleton'
+    `);
+
+    logAudit({
+      action: "UPDATE",
+      entityType: "demo_lead_crm_config",
+      entityId: "singleton",
+      userId: user.id,
+      newValue: JSON.stringify(parsed.data),
+    });
+
+    const rows = await db.execute(
+      sql`SELECT enabled, target_org_id, initial_stage, crm_org_type, updated_at FROM demo_lead_crm_config WHERE id = 'singleton' LIMIT 1`,
+    );
+    const row = rows.rows[0] as {
+      enabled: boolean;
+      target_org_id: string | null;
+      initial_stage: string;
+      crm_org_type: string;
+      updated_at: Date;
+    } | undefined;
+
+    const envOverride = process.env.DEMO_CRM_ORG_ID?.trim() || null;
+
+    res.json({
+      enabled: row?.enabled ?? true,
+      targetOrgId: envOverride ?? row?.target_org_id ?? null,
+      initialStage: row?.initial_stage ?? "LEAD",
+      crmOrgType: row?.crm_org_type ?? "CONTRACTOR",
+      updatedAt: row?.updated_at ?? null,
+      envOverrideActive: !!envOverride,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
