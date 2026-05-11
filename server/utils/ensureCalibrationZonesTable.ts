@@ -9,6 +9,11 @@ import { logError, logInfo } from "./logger";
  * creates the `takeoff_sheet_calibration_zones` table that stores named
  * calibration regions (each with its own px-per-foot scale) layered on top
  * of a takeoff sheet.
+ *
+ * Note: `CREATE TABLE IF NOT EXISTS` can still raise a 23505 unique_violation
+ * on `pg_type_typname_nsp_index` when the table's composite type already exists
+ * in the catalog (e.g. after a prior successful run). We catch that specific code
+ * and treat it as "already exists — skip" to keep boot idempotent.
  */
 export async function ensureCalibrationZonesTable(): Promise<void> {
   try {
@@ -28,7 +33,15 @@ export async function ensureCalibrationZonesTable(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS calibration_zones_sheet_idx ON takeoff_sheet_calibration_zones(sheet_id)`);
 
     logInfo("[migration] takeoff_sheet_calibration_zones table ready");
-  } catch (err) {
+  } catch (err: unknown) {
+    const pgErr = err as { code?: string; constraint?: string };
+    if (
+      pgErr?.code === "23505" &&
+      pgErr?.constraint === "pg_type_typname_nsp_index"
+    ) {
+      logInfo("[migration] takeoff_sheet_calibration_zones already exists, skipped");
+      return;
+    }
     logError(err, { helper: "ensureCalibrationZonesTable" });
     throw err;
   }
