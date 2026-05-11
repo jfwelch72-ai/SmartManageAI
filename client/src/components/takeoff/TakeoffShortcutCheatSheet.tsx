@@ -134,8 +134,8 @@ export function TakeoffShortcutCheatSheet({ open, onOpenChange }: TakeoffShortcu
                         )}
                       </div>
                       {r.comingSoon && (
-                        <Badge variant="outline" className="text-[9px] uppercase tracking-wide shrink-0">
-                          soon
+                        <Badge variant="secondary" className="text-[9px] uppercase tracking-wide shrink-0 text-muted-foreground">
+                          Planned
                         </Badge>
                       )}
                     </li>
