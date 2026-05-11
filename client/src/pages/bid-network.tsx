@@ -696,6 +696,9 @@ function NetworkSettingsDialog() {
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
 
+  // Only ADMIN and SUPER_ADMIN can save — the POST route enforces this server-side too
+  const canEdit = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
+
   const settingsDialogUrl = `/api/bid-network/settings/${user?.organizationId}`;
   const { data: settings, refetch } = useQuery<NetworkSettings>({
     queryKey: [settingsDialogUrl],
@@ -709,6 +712,20 @@ function NetworkSettingsDialog() {
     notifyByEmail: true,
     notifyInApp: true,
   });
+
+  // Sync formData whenever settings arrive from the server, including after the
+  // query resolves while the dialog is already open.
+  useEffect(() => {
+    if (settings) {
+      setFormData({
+        isNetworkEnabled: settings.isNetworkEnabled ?? true,
+        canReceiveBidInvites: settings.canReceiveBidInvites ?? true,
+        canSendBidRequests: settings.canSendBidRequests ?? true,
+        notifyByEmail: settings.notifyByEmail ?? true,
+        notifyInApp: settings.notifyInApp ?? true,
+      });
+    }
+  }, [settings]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
@@ -729,21 +746,8 @@ function NetworkSettingsDialog() {
     },
   });
 
-  const handleOpen = (isOpen: boolean) => {
-    if (isOpen && settings) {
-      setFormData({
-        isNetworkEnabled: settings.isNetworkEnabled ?? true,
-        canReceiveBidInvites: settings.canReceiveBidInvites ?? true,
-        canSendBidRequests: settings.canSendBidRequests ?? true,
-        notifyByEmail: settings.notifyByEmail ?? true,
-        notifyInApp: settings.notifyInApp ?? true,
-      });
-    }
-    setOpen(isOpen);
-  };
-
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" data-testid="button-network-settings">
           <Settings className="w-4 h-4 mr-2" />
@@ -772,6 +776,7 @@ function NetworkSettingsDialog() {
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, isNetworkEnabled: checked })
               }
+              disabled={!canEdit}
               data-testid="switch-network-enabled"
             />
           </div>
@@ -790,6 +795,7 @@ function NetworkSettingsDialog() {
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, canSendBidRequests: checked })
               }
+              disabled={!canEdit}
               data-testid="switch-can-send"
             />
           </div>
@@ -806,6 +812,7 @@ function NetworkSettingsDialog() {
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, canReceiveBidInvites: checked })
               }
+              disabled={!canEdit}
               data-testid="switch-can-receive"
             />
           </div>
@@ -824,6 +831,7 @@ function NetworkSettingsDialog() {
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, notifyByEmail: checked })
               }
+              disabled={!canEdit}
               data-testid="switch-notify-email"
             />
           </div>
@@ -840,6 +848,7 @@ function NetworkSettingsDialog() {
               onCheckedChange={(checked) =>
                 setFormData({ ...formData, notifyInApp: checked })
               }
+              disabled={!canEdit}
               data-testid="switch-notify-app"
             />
           </div>
@@ -849,13 +858,19 @@ function NetworkSettingsDialog() {
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={() => saveMutation.mutate(formData)}
-            disabled={saveMutation.isPending}
-            data-testid="button-save-settings"
-          >
-            {saveMutation.isPending ? "Saving..." : "Save Settings"}
-          </Button>
+          {canEdit ? (
+            <Button
+              onClick={() => saveMutation.mutate(formData)}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-settings"
+            >
+              {saveMutation.isPending ? "Saving..." : "Save Settings"}
+            </Button>
+          ) : (
+            <Button disabled title="Only org admins can change these settings" data-testid="button-save-settings">
+              Admin Only
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

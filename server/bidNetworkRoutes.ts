@@ -1,4 +1,5 @@
 import { Router, Response, NextFunction } from "express";
+import { z } from "zod";
 import { db } from "./db";
 import { 
   organizationNetworkSettings, 
@@ -14,6 +15,7 @@ import {
 import { eq, and, or, desc, sql, isNull, ne, inArray, like } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, requireAnyFeaturePermission, AuthRequest } from "./auth";
 import { logInfo, logError } from "./utils/logger";
+
 import { insertNotifications } from "./services/notificationService";
 import { 
   sendBidInvitationNotification, 
@@ -21,6 +23,14 @@ import {
   sendClarificationNotification,
   createBidNetworkInAppNotification 
 } from "./bidNetworkNotifications";
+
+const networkSettingsBodySchema = z.object({
+  isNetworkEnabled: z.boolean(),
+  canReceiveBidInvites: z.boolean(),
+  canSendBidRequests: z.boolean(),
+  notifyByEmail: z.boolean(),
+  notifyInApp: z.boolean(),
+});
 
 const router = Router();
 
@@ -72,22 +82,17 @@ router.get("/settings/:organizationId", requireAuth, requireRole("SUPER_ADMIN", 
 router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = req.user!;
-    const data = req.body;
-    
-    // Determine target organization with proper authorization
-    let organizationId: string;
-    
-    if (data.organizationId && data.organizationId !== user.organizationId) {
-      // Attempting to modify another organization's settings
-      // Only SUPER_ADMIN can do this
-      if (user.role !== "SUPER_ADMIN") {
-        return res.status(403).json({ error: "Cannot modify settings for another organization" });
-      }
-      organizationId = data.organizationId;
-    } else {
-      // Use user's own organization
-      organizationId = user.organizationId!;
+
+    // Validate and strip unknown fields from the request body
+    const parsed = networkSettingsBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid settings payload", details: parsed.error.flatten() });
     }
+    const data = parsed.data;
+
+    // Always operate on the authenticated user's own organization.
+    // SUPER_ADMIN cross-org writes use a separate admin API.
+    const organizationId = user.organizationId!;
     
     // Check if settings exist
     const [existing] = await db
@@ -96,7 +101,7 @@ router.post("/settings", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async
       .where(eq(organizationNetworkSettings.organizationId, organizationId));
     
     if (existing) {
-      // Update
+      // Update — only the validated fields are written
       const [updated] = await db
         .update(organizationNetworkSettings)
         .set({
