@@ -6,7 +6,7 @@ import crypto from "crypto";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
-import { logInfo, logError, logWarn } from "../utils/logger";
+import { logInfo, logError, logWarn, logDebug } from "../utils/logger";
 import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
@@ -16,6 +16,7 @@ import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, reten
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
+import { OAuthPermanentError } from "../integrations/providers/oauthErrors";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform, fetchEngagement } from "../social/publishService";
 import { socialAccounts } from "@shared/schema";
@@ -2539,8 +2540,27 @@ async function processSyncSchedules() {
     const startTime = Date.now();
     try {
       let connection = await connectionService.getConnection(schedule.connectionId, schedule.organizationId);
-      if (!connection || connection.status !== "active") {
-        logError("Sync schedule skipped: connection inactive", { scheduleId: schedule.id });
+      if (!connection) {
+        logError("Sync schedule skipped: connection not found", { scheduleId: schedule.id });
+        continue;
+      }
+      if (connection.status === "needs_reconnect") {
+        // Task #2755 — connection is permanently expired; user must re-authorize.
+        // Log at DEBUG (not error) and advance nextRunAt so this schedule does
+        // NOT fire again on the very next tick, eliminating tight-loop log spam.
+        logDebug("Sync schedule skipped: connection needs reconnect", {
+          scheduleId: schedule.id,
+          connectionId: connection.id,
+          provider: connection.provider,
+        });
+        await db
+          .update(qboSyncSchedules)
+          .set({ nextRunAt: computeNextRunAt(schedule.frequency) })
+          .where(eq(qboSyncSchedules.id, schedule.id));
+        continue;
+      }
+      if (connection.status !== "active") {
+        logWarn("Sync schedule skipped: connection inactive", { scheduleId: schedule.id, status: connection.status });
         continue;
       }
 
@@ -2554,7 +2574,25 @@ async function processSyncSchedules() {
             connection = (await connectionService.getConnection(connection.id, schedule.organizationId))!;
             logInfo("Token refreshed for scheduled sync", { connectionId: connection.id });
           } catch (refreshErr) {
-            logError("Token refresh failed for scheduled sync", { error: String(refreshErr) });
+            const refreshErrMsg = refreshErr instanceof Error ? refreshErr.message : String(refreshErr);
+            // Task #2755 — permanent token revocations (invalid_grant / AADSTS) must
+            // mark the connection needs_reconnect so the scheduled job stops retrying
+            // and the UI shows a Reconnect button instead of flooding the logs.
+            const isPermanent =
+              refreshErr instanceof OAuthPermanentError ||
+              /invalid_grant|AADSTS/i.test(refreshErrMsg);
+            if (isPermanent) {
+              connectionService
+                .markConnectionNeedsReconnect(connection.id, schedule.organizationId, refreshErrMsg)
+                .catch(() => undefined);
+              logDebug("Token refresh permanently failed for scheduled sync — connection marked needs_reconnect", {
+                error: refreshErrMsg,
+                connectionId: connection.id,
+                scheduleId: schedule.id,
+              });
+            } else {
+              logError("Token refresh failed for scheduled sync", { error: refreshErrMsg, scheduleId: schedule.id });
+            }
             continue;
           }
         }
@@ -3641,7 +3679,13 @@ async function processProviderEmailSync() {
         try {
           // Persist failure state so it surfaces in the UI and the next run
           // can decide whether to retry or wait for reconnect.
-          const isReconnect = /NEEDS_RECONNECT|invalid_grant|401|403/i.test(message);
+          // Task #2755 — OutlookAuthError (invalid_grant) and GmailAuthError
+          // both indicate permanent token revocation; detect by class name OR
+          // message pattern so the check is robust to dynamic imports.
+          const isReconnect =
+            (err instanceof Error && (err.name === "OutlookAuthError" || err.name === "GmailAuthError")) ||
+            /invalid_grant|AADSTS/i.test(message);
+          const wasNotNeedsReconnect = account.syncStatus !== "NEEDS_RECONNECT";
           await db
             .update(emailAccounts)
             .set({
@@ -3650,6 +3694,28 @@ async function processProviderEmailSync() {
               updatedAt: new Date(),
             })
             .where(eq(emailAccounts.id, account.id));
+          // Notify the account owner only on the first NEEDS_RECONNECT
+          // transition to avoid flooding their notification bell.
+          if (isReconnect && wasNotNeedsReconnect) {
+            const providerName =
+              account.provider === "OUTLOOK" ? "Outlook"
+              : account.provider === "GMAIL" ? "Gmail"
+              : account.provider;
+            insertNotification({
+              userId: account.userId,
+              organizationId: account.organizationId,
+              type: "INTEGRATION_RECONNECT_REQUIRED",
+              title: `Your ${providerName} connection has expired`,
+              message: `Your ${providerName} email sync has stopped. Reconnect your account in Settings → Integrations to resume email tracking.`,
+              relatedEntityId: account.id,
+              relatedEntityType: "EMAIL_ACCOUNT",
+            }).catch((notifyErr: unknown) =>
+              logError("Failed to send email reconnect notification", {
+                accountId: account.id,
+                error: String(notifyErr),
+              }),
+            );
+          }
         } catch (persistErr) {
           logError("Failed to persist sync error state", { account: account.emailAddress }, persistErr instanceof Error ? persistErr : new Error(String(persistErr)));
         }

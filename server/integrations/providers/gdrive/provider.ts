@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
@@ -92,7 +93,15 @@ export const gdriveProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`Google Drive token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 400) {
+          const errBody = await response.text();
+          if (/invalid_grant|invalid_client|Token has been expired or revoked/i.test(errBody)) {
+            throw new OAuthPermanentError(`Google Drive OAuth token permanently revoked: ${response.status} ${errBody.substring(0, 150)}`);
+          }
+        }
+        throw new Error(`Google Drive token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {

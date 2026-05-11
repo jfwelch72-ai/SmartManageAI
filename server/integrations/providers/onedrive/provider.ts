@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const MICROSOFT_AUTH_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
 const MICROSOFT_TOKEN_URL = "https://login.microsoftonline.com/common/oauth2/v2.0/token";
@@ -92,7 +93,13 @@ export const onedriveProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`OneDrive token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => "");
+        if (response.status >= 400 && response.status < 500 && /invalid_grant|AADSTS|consent_required|interaction_required/i.test(errBody)) {
+          throw new OAuthPermanentError(`OneDrive OAuth token permanently revoked: ${response.status} ${errBody.substring(0, 150)}`);
+        }
+        throw new Error(`OneDrive token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {

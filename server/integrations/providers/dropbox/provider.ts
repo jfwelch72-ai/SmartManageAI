@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const DROPBOX_AUTH_URL = "https://www.dropbox.com/oauth2/authorize";
 const DROPBOX_TOKEN_URL = "https://api.dropboxapi.com/oauth2/token";
@@ -90,7 +91,12 @@ export const dropboxProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`Dropbox token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 400) {
+          throw new OAuthPermanentError(`Dropbox OAuth token permanently revoked: ${response.status}`);
+        }
+        throw new Error(`Dropbox token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {

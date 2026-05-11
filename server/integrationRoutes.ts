@@ -7,6 +7,7 @@ import { logIntegrationAudit, getSecurityAuditLog, recordSuppressionReset, listS
 import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
+import { OAuthPermanentError } from "./integrations/providers/oauthErrors";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import { eq, and, desc, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, sageAccountMappings, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable, payApplications, sovLineItems, scheduleOfValues, crmOrganisations, payRuns } from "@shared/schema";
@@ -115,7 +116,9 @@ router.post("/connections/:id/authorize", requireAuth, async (req, res, next) =>
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
     if (provider.authType !== "oauth") return res.status(400).json({ error: "Provider does not use OAuth authorization" });
-    if (!["pending", "error"].includes(connection.status)) return res.status(400).json({ error: `Connection is already ${connection.status}` });
+    // Task #2755 — also allow needs_reconnect so users can re-authorize
+    // a connection whose refresh token was permanently revoked.
+    if (!["pending", "error", "needs_reconnect"].includes(connection.status)) return res.status(400).json({ error: `Connection is already ${connection.status}` });
     const state = Buffer.from(JSON.stringify({ connectionId: connection.id, orgId: user.organizationId, redirectUri: `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback` })).toString("base64url");
     const redirectUri = `${getCanonicalBaseUrl(req)}/api/integrations/connections/${connection.id}/callback`;
     const authUrl = provider.getAuthUrl(connection.id, redirectUri, state);
@@ -140,6 +143,8 @@ router.get("/connections/:id/callback", async (req, res, next) => {
     const provider = getProvider(connection.provider);
     if (!provider) return res.status(400).json({ error: "Provider not registered" });
     const tokens = await provider.handleCallback(code as string, state as string);
+    // storeConnectionTokens resets status to "active" and clears any
+    // outstanding INTEGRATION_RECONNECT_REQUIRED notifications (Task #2755).
     await connectionService.storeConnectionTokens(connectionId, orgId, tokens);
     logIntegrationAudit("connection.authorized", { orgId, connectionId, provider: connection.provider });
     res.redirect("/settings/integrations?connected=true");
@@ -333,7 +338,17 @@ async function getValidAccessToken(provider: CloudProvider, orgId: string): Prom
       await connectionService.storeConnectionTokens(connection.id, orgId, tokens);
       accessToken = tokens.accessToken;
     } catch (err) {
-      logError("Token refresh failed during cloud browse", { error: String(err) });
+      const errMsg = err instanceof Error ? err.message : String(err);
+      // Task #2755 — permanent auth failures (invalid_grant / AADSTS) should
+      // mark the connection needs_reconnect rather than silently returning null.
+      // This stops the scheduled task from logging the same error every 5 min.
+      const isPermanent =
+        err instanceof OAuthPermanentError ||
+        /invalid_grant|AADSTS/i.test(errMsg);
+      if (isPermanent) {
+        connectionService.markConnectionNeedsReconnect(connection.id, orgId, errMsg).catch(() => undefined);
+      }
+      logError("Token refresh failed during cloud browse", { error: errMsg, isPermanent });
       return null;
     }
   }
@@ -763,8 +778,19 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
           logIntegrationAudit("security.token_refresh_success", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id });
           logInfo("Token refreshed before sync", { connectionId: connection.id });
         } catch (refreshErr) {
-          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: String(refreshErr) });
-          logError("Token refresh failed before sync", { error: String(refreshErr) });
+          const refreshErrMsg = refreshErr instanceof Error ? refreshErr.message : String(refreshErr);
+          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: refreshErrMsg });
+          // Task #2755 — permanent token revocations (invalid_grant / AADSTS) mark
+          // the connection needs_reconnect so subsequent sync attempts skip cleanly.
+          const isPermanentSync =
+            refreshErr instanceof OAuthPermanentError ||
+            /invalid_grant|AADSTS/i.test(refreshErrMsg);
+          if (isPermanentSync) {
+            connectionService
+              .markConnectionNeedsReconnect(connection.id, user.organizationId, refreshErrMsg)
+              .catch(() => undefined);
+          }
+          logError("Token refresh failed before sync", { error: refreshErrMsg, isPermanentSync });
           return res.status(401).json({ error: "Token expired and refresh failed. Please reconnect." });
         }
       } else {
@@ -3230,7 +3256,19 @@ router.post("/connections/:id/stackct-sync", requireAuth, async (req, res, next)
           connection = (await connectionService.getDecryptedConnection(connection.id, user.organizationId))!;
           logIntegrationAudit("security.token_refresh_success", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id });
         } catch (refreshErr) {
-          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: String(refreshErr) });
+          const refreshErrMsg = refreshErr instanceof Error ? refreshErr.message : String(refreshErr);
+          logIntegrationAudit("security.token_refresh_failed", { orgId: user.organizationId, connectionId: connection.id, provider: connection.provider, userId: user.id, error: refreshErrMsg });
+          // Task #2755 — permanent token revocations mark needs_reconnect so the
+          // user sees a Reconnect CTA and the job stops spamming error logs.
+          const isPermanentStackct =
+            refreshErr instanceof OAuthPermanentError ||
+            /invalid_grant|AADSTS/i.test(refreshErrMsg);
+          if (isPermanentStackct) {
+            connectionService
+              .markConnectionNeedsReconnect(connection.id, user.organizationId, refreshErrMsg)
+              .catch(() => undefined);
+          }
+          logError("Token refresh failed before stackct sync", { error: refreshErrMsg, isPermanentStackct });
           return res.status(401).json({ error: "Token expired and refresh failed. Please reconnect." });
         }
       }

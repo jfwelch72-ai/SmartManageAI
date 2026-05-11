@@ -1,7 +1,7 @@
 import {logError, logWarn, logInfo } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
-import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task, crmContacts, crmOrganisations } from "@shared/schema";
+import { emailAccounts, insertEmailAccountSchema, type EmailAccount, emailProviderEnum, emailThreads, emailMessages, emailAttachments, tasks, emailTasks, emailThreadStatusEnum, emailClassificationEnum, emailSummaries, type Task, crmContacts, crmOrganisations, notifications } from "@shared/schema";
 import { eq, and, desc, gte, or, isNotNull, isNull, sql, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
@@ -1070,6 +1070,9 @@ router.get("/oauth/gmail/callback", async (req, res, next) => {
       .limit(1);
 
     if (existing) {
+      // Task #2755 — track whether account was NEEDS_RECONNECT so we can clear
+      // the outstanding reconnect notification after successful re-auth.
+      const wasNeedsReconnect = existing.syncStatus === "NEEDS_RECONNECT";
       // Update existing account with new tokens
       await db
         .update(emailAccounts)
@@ -1083,6 +1086,23 @@ router.get("/oauth/gmail/callback", async (req, res, next) => {
           updatedAt: new Date(),
         })
         .where(eq(emailAccounts.id, existing.id));
+      if (wasNeedsReconnect) {
+        // Clear the INTEGRATION_RECONNECT_REQUIRED notification so the banner
+        // disappears from the UI automatically after successful re-auth.
+        db.update(notifications)
+          .set({ isRead: true })
+          .where(
+            and(
+              eq(notifications.organizationId, userInfo.organizationId),
+              eq(notifications.type, "INTEGRATION_RECONNECT_REQUIRED"),
+              eq(notifications.relatedEntityId, existing.id),
+            ),
+          )
+          .then(() => undefined)
+          .catch((err: unknown) =>
+            logError("Failed to clear Gmail reconnect notification", { accountId: existing.id, error: String(err) }),
+          );
+      }
     } else {
       // Create new account
       await db.insert(emailAccounts).values({
@@ -1271,6 +1291,9 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
 
     let accountId: string;
     if (existing) {
+      // Task #2755 — track whether account was NEEDS_RECONNECT so we can clear
+      // the outstanding reconnect notification after successful re-auth.
+      const wasNeedsReconnectOutlook = existing.syncStatus === "NEEDS_RECONNECT";
       await db
         .update(emailAccounts)
         .set({
@@ -1287,6 +1310,23 @@ router.get("/oauth/outlook/callback", async (req, res, next) => {
         })
         .where(eq(emailAccounts.id, existing.id));
       accountId = existing.id;
+      if (wasNeedsReconnectOutlook) {
+        // Clear the INTEGRATION_RECONNECT_REQUIRED notification so the banner
+        // disappears from the UI automatically after successful re-auth.
+        db.update(notifications)
+          .set({ isRead: true })
+          .where(
+            and(
+              eq(notifications.organizationId, userInfo.organizationId),
+              eq(notifications.type, "INTEGRATION_RECONNECT_REQUIRED"),
+              eq(notifications.relatedEntityId, existing.id),
+            ),
+          )
+          .then(() => undefined)
+          .catch((err: unknown) =>
+            logError("Failed to clear Outlook reconnect notification", { accountId: existing.id, error: String(err) }),
+          );
+      }
     } else {
       accountId = crypto.randomUUID();
       await db.insert(emailAccounts).values({
@@ -2138,9 +2178,22 @@ async function getValidGmailToken(account: typeof emailAccounts.$inferSelect): P
   return refreshGmailAccessToken(account);
 }
 
+/**
+ * Task #2755 — Sentinel error thrown when Outlook returns a permanent
+ * token-refresh failure (invalid_grant, interaction_required, revoked consent).
+ * The caller marks the account syncStatus = NEEDS_RECONNECT and stops
+ * retrying — there is no amount of backoff that will fix a revoked token.
+ */
+export class OutlookAuthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "OutlookAuthError";
+  }
+}
+
 async function refreshOutlookAccessToken(account: typeof emailAccounts.$inferSelect): Promise<string> {
   if (!account.refreshToken) {
-    throw new Error("No refresh token available for account " + account.emailAddress);
+    throw new OutlookAuthError("No refresh token available for account " + account.emailAddress);
   }
 
   const response = await fetch("https://login.microsoftonline.com/common/oauth2/v2.0/token", {
@@ -2157,6 +2210,19 @@ async function refreshOutlookAccessToken(account: typeof emailAccounts.$inferSel
 
   if (!response.ok) {
     const errText = await response.text();
+    // Permanent failures (invalid_grant, AADSTS, interaction_required) cannot
+    // be retried — the user must re-authorize via OAuth. Surface these as
+    // OutlookAuthError so the sync wrapper marks NEEDS_RECONNECT instead of
+    // DEGRADED/ERROR, preventing endless retry logs in production.
+    if (
+      response.status >= 400 &&
+      response.status < 500 &&
+      /invalid_grant|AADSTS|interaction_required|consent_required/i.test(errText)
+    ) {
+      throw new OutlookAuthError(
+        `Outlook OAuth token permanently revoked (invalid_grant): ${response.status} ${errText.substring(0, 150)}`,
+      );
+    }
     logError("Outlook token refresh failed:", {}, new Error(String(errText)));
     throw new Error("Failed to refresh Outlook access token");
   }

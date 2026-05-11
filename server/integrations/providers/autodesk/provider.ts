@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const AUTODESK_AUTH_URL = "https://developer.api.autodesk.com/authentication/v2/authorize";
 const AUTODESK_TOKEN_URL = "https://developer.api.autodesk.com/authentication/v2/token";
@@ -83,7 +84,13 @@ export const autodeskProvider: IntegrationProvider = {
         refresh_token: metadata.refreshToken || "",
       }),
     });
-    if (!response.ok) throw new Error(`Autodesk token refresh failed: ${response.status}`);
+    if (!response.ok) {
+      const errBody = await response.text().catch(() => "");
+      if (response.status === 401 || (response.status === 400 && /invalid_grant|invalid_token/i.test(errBody))) {
+        throw new OAuthPermanentError(`Autodesk OAuth token permanently revoked: ${response.status} ${errBody.substring(0, 150)}`);
+      }
+      throw new Error(`Autodesk token refresh failed: ${response.status}`);
+    }
     const data = await response.json();
     return {
       accessToken: data.access_token,

@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const BOX_AUTH_URL = "https://account.box.com/api/oauth2/authorize";
 const BOX_TOKEN_URL = "https://api.box.com/oauth2/token";
@@ -89,7 +90,12 @@ export const boxProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`Box token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 400) {
+          throw new OAuthPermanentError(`Box OAuth token permanently revoked: ${response.status}`);
+        }
+        throw new Error(`Box token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {

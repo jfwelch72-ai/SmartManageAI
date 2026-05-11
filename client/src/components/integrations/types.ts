@@ -9,7 +9,7 @@ export interface Connection {
   id: string;
   provider: string;
   displayName: string | null;
-  status: "pending" | "active" | "disconnected" | "error";
+  status: "pending" | "active" | "disconnected" | "error" | "needs_reconnect";
   lastSyncAt: string | null;
   lastSyncError: string | null;
   createdAt: string;

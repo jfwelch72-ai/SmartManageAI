@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const SAGE_AUTH_URL = "https://api.intacct.com/oauth/authorize";
 const SAGE_TOKEN_URL = "https://api.intacct.com/oauth/token";
@@ -91,7 +92,12 @@ export const sageProvider: IntegrationProvider = {
         refresh_token: metadata.refreshToken || "",
       }),
     });
-    if (!response.ok) throw new Error(`Sage token refresh failed: ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 400) {
+        throw new OAuthPermanentError(`Sage OAuth token permanently revoked: ${response.status}`);
+      }
+      throw new Error(`Sage token refresh failed: ${response.status}`);
+    }
     const data = await response.json();
     // storeConnectionTokens overwrites metadata with `raw`, so carry the
     // per-tenant Web Services credentials forward across the refresh.

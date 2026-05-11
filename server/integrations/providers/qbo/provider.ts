@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const QBO_AUTH_BASE = "https://appcenter.intuit.com/connect/oauth2";
 const QBO_TOKEN_URL = "https://oauth.platform.intuit.com/oauth2/v1/tokens/bearer";
@@ -101,6 +102,12 @@ export const qboProvider: IntegrationProvider = {
       clearTimeout(timeout);
 
       if (!response.ok) {
+        if (response.status === 401 || response.status === 400) {
+          const errBody = await response.text().catch(() => "");
+          if (/invalid_grant|AuthorizationFailed|Token.*expired/i.test(errBody) || response.status === 401) {
+            throw new OAuthPermanentError(`QBO OAuth token permanently revoked: ${response.status} ${errBody.substring(0, 150)}`);
+          }
+        }
         throw new Error(`QBO token refresh failed: ${response.status}`);
       }
 

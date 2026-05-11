@@ -3,7 +3,8 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus, Key } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus, Key, RotateCcw, AlertTriangle } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -154,7 +155,12 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
     );
   }
 
-  const activeConnections = (connections || []).filter(c => c.status === "active");
+  // Task #2755 — include needs_reconnect connections in the "Active" list
+  // so they still appear in the status table with a reconnect CTA.
+  const activeConnections = (connections || []).filter(
+    c => c.status === "active" || c.status === "needs_reconnect",
+  );
+  const reconnectConnections = (connections || []).filter(c => c.status === "needs_reconnect");
   const qboConnection = activeConnections.find(c => c.provider === "qbo");
   const sageConnection = activeConnections.find(c => c.provider === "sage_intacct");
   const zapierConnection = activeConnections.find(c => c.provider === "zapier");
@@ -190,6 +196,44 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       )}
 
       <SecurityBanner />
+
+      {/* Task #2755 — Reconnect alert banner for connections with permanently
+          revoked OAuth tokens (invalid_grant / AADSTS). */}
+      {reconnectConnections.length > 0 && (
+        <Alert variant="destructive" data-testid="alert-reconnect-required">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Integration reconnect required</AlertTitle>
+          <AlertDescription>
+            <p className="mb-3">
+              {reconnectConnections.length === 1
+                ? "One of your integrations has lost authorization."
+                : `${reconnectConnections.length} of your integrations have lost authorization.`}{" "}
+              This usually happens when you revoke app permissions in your account settings or after a
+              password change. Click Reconnect to re-authorize and resume syncing.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {reconnectConnections.map((conn) => (
+                <Button
+                  key={conn.id}
+                  size="sm"
+                  variant="outline"
+                  className="border-red-400 dark:border-red-500 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20"
+                  onClick={() => authorizeMutation.mutate(conn.id)}
+                  disabled={authorizeMutation.isPending}
+                  data-testid={`button-reconnect-banner-${conn.id}`}
+                >
+                  {authorizeMutation.isPending ? (
+                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3 mr-1" />
+                  )}
+                  Reconnect {conn.displayName || conn.provider}
+                </Button>
+              ))}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <SyncRetryPanel />
 
@@ -332,11 +376,28 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
                     <div className="flex items-center gap-3">
                       <TokenStatusBadge status={connection.tokenStatus} encrypted={connection.tokensEncrypted} />
                       <Badge
-                        variant={connection.status === "active" ? "default" : connection.status === "error" ? "destructive" : "secondary"}
+                        variant={
+                          connection.status === "active" ? "default"
+                          : connection.status === "needs_reconnect" ? "destructive"
+                          : connection.status === "error" ? "destructive"
+                          : "secondary"
+                        }
                         data-testid={`badge-connection-status-${connection.id}`}
                       >
-                        {connection.status}
+                        {connection.status === "needs_reconnect" ? "Reconnect required" : connection.status}
                       </Badge>
+                      {connection.status === "needs_reconnect" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => authorizeMutation.mutate(connection.id)}
+                          disabled={authorizeMutation.isPending}
+                          data-testid={`button-reconnect-list-${connection.id}`}
+                        >
+                          <RotateCcw className="h-3 w-3 mr-1" />
+                          Reconnect
+                        </Button>
+                      )}
                     </div>
                   </div>
                   <SecurityDetailsPanel connection={connection} />

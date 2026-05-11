@@ -593,14 +593,25 @@ export function ProviderCardGrid({
         const conn = getConnectionForProvider(provider.key);
         const isConnected = conn?.status === "active";
         const isPending = conn?.status === "pending";
+        // Task #2755 — needs_reconnect means the refresh token was permanently
+        // revoked; treat it like pending for UI purposes so the Reconnect button
+        // appears and the card shows a warning indicator.
+        const isNeedsReconnect = conn?.status === "needs_reconnect";
+        const needsAuthorize = isPending || isNeedsReconnect;
         const isOAuth = provider.authType === "oauth";
         return (
-          <Card key={provider.key} data-testid={`card-provider-${provider.key}`}>
+          <Card
+            key={provider.key}
+            data-testid={`card-provider-${provider.key}`}
+            className={isNeedsReconnect ? "border-amber-400 dark:border-amber-500" : undefined}
+          >
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   {isConnected ? (
                     <CheckCircle className="h-5 w-5 text-green-500" />
+                  ) : isNeedsReconnect ? (
+                    <ShieldAlert className="h-5 w-5 text-amber-500" />
                   ) : isPending ? (
                     <Info className="h-5 w-5 text-yellow-500" />
                   ) : (
@@ -609,10 +620,10 @@ export function ProviderCardGrid({
                   <CardTitle className="text-base">{provider.displayName}</CardTitle>
                 </div>
                 <Badge
-                  variant={isConnected ? "default" : isPending ? "outline" : "secondary"}
+                  variant={isConnected ? "default" : isNeedsReconnect ? "destructive" : isPending ? "outline" : "secondary"}
                   data-testid={`badge-provider-status-${provider.key}`}
                 >
-                  {isConnected ? "Connected" : conn ? conn.status : "Disconnected"}
+                  {isConnected ? "Connected" : isNeedsReconnect ? "Reconnect required" : conn ? conn.status : "Disconnected"}
                 </Badge>
               </div>
             </CardHeader>
@@ -627,7 +638,12 @@ export function ProviderCardGrid({
               {provider.key === "dol_davis_bacon" && conn && (
                 <DavisBaconSuppressedFailuresPanel connectionId={conn.id} />
               )}
-              {isPending && isOAuth && (
+              {isNeedsReconnect && (
+                <p className="text-xs text-amber-600 dark:text-amber-400" data-testid={`text-reconnect-warning-${provider.key}`}>
+                  Your OAuth token has expired. Click Reconnect to restore sync.
+                </p>
+              )}
+              {isPending && !isNeedsReconnect && isOAuth && (
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">
                   {provider.key === "sage_intacct"
                     ? "Credentials required — click below to enter Web Services details."
@@ -636,14 +652,19 @@ export function ProviderCardGrid({
               )}
               {conn ? (
                 <div className="flex flex-col gap-2">
-                  {isPending && isOAuth && onAuthorize && (
+                  {needsAuthorize && isOAuth && onAuthorize && (
                     <Button
                       className="w-full"
+                      variant={isNeedsReconnect ? "default" : "default"}
                       onClick={() => onAuthorize(conn.id)}
                       data-testid={`button-authorize-${provider.key}`}
                     >
-                      <Link2 className="h-4 w-4 mr-2" />
-                      {provider.key === "sage_intacct" ? "Configure credentials" : "Authorize"}
+                      {isNeedsReconnect ? (
+                        <RotateCcw className="h-4 w-4 mr-2" />
+                      ) : (
+                        <Link2 className="h-4 w-4 mr-2" />
+                      )}
+                      {isNeedsReconnect ? "Reconnect" : provider.key === "sage_intacct" ? "Configure credentials" : "Authorize"}
                     </Button>
                   )}
                   <Button

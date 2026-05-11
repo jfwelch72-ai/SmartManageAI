@@ -1,6 +1,20 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
+
+/**
+ * Task #2755 — Microsoft-specific subclass of OAuthPermanentError, thrown when
+ * Microsoft returns a permanent token-refresh failure (invalid_grant, AADSTS
+ * error codes, revoked consent). Extends the shared base so callers can test
+ * `instanceof OAuthPermanentError` without knowing the provider.
+ */
+export class MicrosoftOAuthPermanentError extends OAuthPermanentError {
+  constructor(message: string) {
+    super(message);
+    this.name = "MicrosoftOAuthPermanentError";
+  }
+}
 
 const MS_AUTH_URL = "https://login.microsoftonline.com";
 const MS_TOKEN_URL_TEMPLATE = "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token";
@@ -96,7 +110,23 @@ export const microsoftProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`Microsoft token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        const errBody = await response.text();
+        // Permanent failures (invalid_grant, AADSTS codes) cannot be retried —
+        // the user must re-authorize. Surface as MicrosoftOAuthPermanentError so
+        // callers can mark the connection needs_reconnect instead of ERROR.
+        if (
+          response.status >= 400 &&
+          response.status < 500 &&
+          /invalid_grant|AADSTS|consent_required|interaction_required/i.test(errBody)
+        ) {
+          throw new MicrosoftOAuthPermanentError(
+            `Microsoft OAuth token permanently revoked: ${response.status} ${errBody.substring(0, 150)}`,
+          );
+        }
+        logError("Microsoft token refresh failed", { status: response.status, body: errBody.substring(0, 200) });
+        throw new Error(`Microsoft token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {

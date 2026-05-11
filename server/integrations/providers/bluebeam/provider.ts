@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const BLUEBEAM_AUTH_URL = "https://authentication.bluebeam.com/oauth2/v1/authorize";
 const BLUEBEAM_TOKEN_URL = "https://authentication.bluebeam.com/oauth2/v1/token";
@@ -79,7 +80,12 @@ export const bluebeamProvider: IntegrationProvider = {
         client_secret: clientSecret,
       }),
     });
-    if (!response.ok) throw new Error(`Bluebeam token refresh failed: ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 400) {
+        throw new OAuthPermanentError(`Bluebeam OAuth token permanently revoked: ${response.status}`);
+      }
+      throw new Error(`Bluebeam token refresh failed: ${response.status}`);
+    }
     const data = await response.json();
     return {
       accessToken: data.access_token,

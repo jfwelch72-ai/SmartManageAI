@@ -175,6 +175,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // Task #2490: previously-untyped notification kinds used by route code.
   "CRM_TASK_REMINDER",
   "action_required",
+  // Task #2755: fired when an OAuth integration's refresh token is
+  // permanently revoked (invalid_grant) so the user must re-authorize.
+  // Fanned out to org ADMIN/SUPER_ADMIN for integration_connections and
+  // to the account owner for email_accounts (Gmail/Outlook). Cleared by
+  // marking the notification as read when the user successfully reconnects.
+  "INTEGRATION_RECONNECT_REQUIRED",
 ]);
 
 // Task #2321 — review-status state machine for individual takeoff
@@ -879,7 +885,7 @@ export const portalChatThreadCategoryEnum = pgEnum("portal_chat_thread_category"
 export const portalChatPriorityEnum = pgEnum("portal_chat_priority", ["NORMAL", "URGENT"]);
 
 export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "google", "microsoft", "docusign", "dropbox_sign", "zapier", "dropbox", "gdrive", "onedrive", "box", "stackct", "aashtoware", "dol_davis_bacon", "dbe_directory", "surety_verification", "sage_intacct", "bluebeam", "autodesk"]);
-export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected"]);
+export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected", "needs_reconnect"]);
 export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
 export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
 export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT", "CRM_QUOTE", "CRM_OPPORTUNITY"]);

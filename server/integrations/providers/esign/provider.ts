@@ -1,6 +1,7 @@
 import type { IntegrationProvider, TokenSet } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { logInfo, logError } from "../../../utils/logger";
+import { OAuthPermanentError } from "../oauthErrors";
 
 const DOCUSIGN_AUTH_URL = "https://account-d.docusign.com/oauth/auth";
 const DOCUSIGN_TOKEN_URL = "https://account-d.docusign.com/oauth/token";
@@ -100,7 +101,12 @@ export const esignProvider: IntegrationProvider = {
       });
       clearTimeout(timeout);
 
-      if (!response.ok) throw new Error(`DocuSign token refresh failed: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 400) {
+          throw new OAuthPermanentError(`DocuSign OAuth token permanently revoked: ${response.status}`);
+        }
+        throw new Error(`DocuSign token refresh failed: ${response.status}`);
+      }
 
       const data = await response.json();
       return {
