@@ -1,11 +1,31 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileText, Loader2 } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { ArrowLeft, ExternalLink, FileText, Loader2, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useBids, useProjects } from "@/hooks/use-data";
 
 interface StandaloneTakeoff {
   id: string;
@@ -25,6 +45,85 @@ interface StandaloneTakeoff {
  * Reached from the standalone detail page via "Open workspace" or by
  * clicking a sheet row (which deep-links `?sheet=<id>`).
  */
+function WorkspaceTagDialog({ takeoffId }: { takeoffId: string }) {
+  const { data: bids = [] } = useBids();
+  const { data: projects = [] } = useProjects();
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [destKind, setDestKind] = useState<"bid" | "project">("bid");
+  const [destId, setDestId] = useState("");
+
+  const tagMutation = useMutation({
+    mutationFn: async (body: { bidId?: string; projectId?: string }) => {
+      const res = await apiRequest("POST", `/api/takeoff/standalone/${takeoffId}/tags`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Takeoff tagged", description: "This takeoff now appears in the destination's Suggested Takeoffs." });
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", takeoffId, "tags"] });
+      setOpen(false);
+      setDestId("");
+    },
+    onError: () => toast({ title: "Tag failed", variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="h-8 gap-1 px-2 sm:px-3 shrink-0" data-testid="button-tag-takeoff-workspace">
+          <Tag className="w-3.5 h-3.5" />
+          <span className="hidden sm:inline">Tag</span>
+        </Button>
+      </DialogTrigger>
+      <DialogContent data-testid="dialog-tag-takeoff-workspace">
+        <DialogHeader>
+          <DialogTitle>Tag this takeoff</DialogTitle>
+          <DialogDescription>
+            Linking attaches the takeoff to a bid or project — it will appear in their Suggested Takeoffs and can be sent to their estimate.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label>Destination type</Label>
+            <Select value={destKind} onValueChange={(v) => { setDestKind(v === "project" ? "project" : "bid"); setDestId(""); }}>
+              <SelectTrigger data-testid="select-workspace-dest-kind"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bid">Bid</SelectItem>
+                <SelectItem value="project">Project</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label>{destKind === "bid" ? "Bid" : "Project"}</Label>
+            <Select value={destId} onValueChange={setDestId}>
+              <SelectTrigger data-testid="select-workspace-dest-id"><SelectValue placeholder="Select..." /></SelectTrigger>
+              <SelectContent>
+                {(destKind === "bid" ? bids : projects).map((d) => {
+                  const opt = d as { id: string; name?: string | null; code?: string | null };
+                  return (
+                    <SelectItem key={opt.id} value={opt.id}>
+                      {opt.name || opt.code || opt.id}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            onClick={() => tagMutation.mutate(destKind === "bid" ? { bidId: destId } : { projectId: destId })}
+            disabled={!destId || tagMutation.isPending}
+            data-testid="button-confirm-tag-workspace"
+          >
+            {tagMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Tag"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function TakeoffStandaloneWorkspacePage() {
   const [, params] = useRoute("/takeoff/standalone/:id/workspace");
   const [location] = useLocation();
@@ -124,6 +223,7 @@ export default function TakeoffStandaloneWorkspacePage() {
             Standalone
           </Badge>
         </div>
+        <WorkspaceTagDialog takeoffId={takeoff.id} />
         <Button
           asChild
           size="sm"

@@ -31,6 +31,8 @@ export const quantityCategories = pgTable("quantity_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  // Task #2701 — standalone takeoff categories (no bid/project required)
+  standaloneTakeoffId: varchar("standalone_takeoff_id"),
   name: text("name").notNull(),
   color: text("color").notNull().default("#3b82f6"),
   lineStyle: text("line_style").notNull().default("solid"),
@@ -43,6 +45,7 @@ export const quantityCategories = pgTable("quantity_categories", {
 }, (table) => ({
   projectIdx: index("quantity_categories_project_idx").on(table.projectId),
   bidIdx: index("quantity_categories_bid_idx").on(table.bidId),
+  standaloneIdx: index("quantity_categories_standalone_idx").on(table.standaloneTakeoffId),
 }));
 
 // Task #2320 — Sheet-scale provenance + revision-drift detection.

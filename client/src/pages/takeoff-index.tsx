@@ -17,17 +17,6 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
@@ -103,8 +92,6 @@ export default function TakeoffIndexPage() {
   const [search, setSearch] = useState("");
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const [newOpen, setNewOpen] = useState(false);
-  const [newTitle, setNewTitle] = useState("");
 
   // Task #2403 — My standalone takeoffs (Phase 1 entry point).
   const myTakeoffs = useQuery<MyStandaloneTakeoff[]>({
@@ -113,16 +100,15 @@ export default function TakeoffIndexPage() {
   });
 
   const createTakeoff = useMutation({
-    mutationFn: async (title: string) => {
+    mutationFn: async () => {
+      const date = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const title = `Untitled takeoff – ${date}`;
       const res = await apiRequest("POST", "/api/takeoff/standalone", { title });
       return res.json();
     },
     onSuccess: (data: { id: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", "list", "mine"] });
-      toast({ title: "Takeoff created" });
-      setNewOpen(false);
-      setNewTitle("");
-      setLocation(`/takeoff/standalone/${data.id}`);
+      setLocation(`/takeoff/standalone/${data.id}/workspace`);
     },
     onError: (err: unknown) =>
       toast({
@@ -244,41 +230,16 @@ export default function TakeoffIndexPage() {
             before there is a bid or project.
           </p>
         </div>
-        <Dialog open={newOpen} onOpenChange={setNewOpen}>
-          <DialogTrigger asChild>
-            <Button data-testid="button-new-standalone-takeoff">
-              <Plus className="w-4 h-4 mr-1.5" /> New Takeoff
-            </Button>
-          </DialogTrigger>
-          <DialogContent data-testid="dialog-new-standalone-takeoff">
-            <DialogHeader>
-              <DialogTitle>New standalone takeoff</DialogTitle>
-              <DialogDescription>
-                Standalone takeoffs are not yet attached to a bid or project. You
-                can tag them later, or send measurements directly into an estimate.
-              </DialogDescription>
-            </DialogHeader>
-            <div>
-              <Label htmlFor="new-takeoff-title">Title</Label>
-              <Input
-                id="new-takeoff-title"
-                value={newTitle}
-                onChange={(e) => setNewTitle(e.target.value)}
-                placeholder="e.g. ACME Industrial — early budget pass"
-                data-testid="input-new-takeoff-title"
-              />
-            </div>
-            <DialogFooter>
-              <Button
-                onClick={() => createTakeoff.mutate(newTitle.trim())}
-                disabled={!newTitle.trim() || createTakeoff.isPending}
-                data-testid="button-create-standalone-takeoff"
-              >
-                {createTakeoff.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button
+          onClick={() => createTakeoff.mutate()}
+          disabled={createTakeoff.isPending}
+          data-testid="button-new-standalone-takeoff"
+        >
+          {createTakeoff.isPending
+            ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+            : <Plus className="w-4 h-4 mr-1.5" />}
+          New Takeoff
+        </Button>
       </div>
 
       {(myTakeoffs.data?.length ?? 0) > 0 && (

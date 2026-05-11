@@ -14,6 +14,7 @@ import {
   takeoffSuggestionDismissals,
   takeoffSheets,
   takeoffMeasurements,
+  quantityCategories,
   bids,
   projects,
   SHEET_DISCIPLINES,
@@ -235,16 +236,47 @@ router.post("/api/takeoff/standalone/:id/sheets", requireAuth, async (req: AuthR
 //
 // Task #2550 — The shared TakeoffWorkspace component fetches a per-context
 // quantity-categories list and a flattened all-measurements list to power
-// per-sheet count chips. Standalone takeoffs do not currently support
-// categories, so we serve an empty list (the workspace handles `[]` by
-// hiding the "uncategorized" rollup). All-measurements aggregates every
+// per-sheet count chips. Categories are scoped to the standalone takeoff via
+// standalone_takeoff_id (Task #2701). All-measurements aggregates every
 // measurement attached to any sheet under this standalone takeoff.
 
 router.get("/api/takeoff/standalone/:id/categories", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const row = await loadAccessibleTakeoff(req.params.id, req.user!);
     if (!row) return res.status(404).json({ error: "Takeoff not found" });
-    res.json([]);
+    const cats = await db
+      .select()
+      .from(quantityCategories)
+      .where(eq(quantityCategories.standaloneTakeoffId, row.id))
+      .orderBy(quantityCategories.displayOrder);
+    res.json(cats);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/takeoff/standalone/:id/categories", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+
+    const name = (req.body.name ?? "").toString().trim();
+    if (!name) return res.status(400).json({ error: "Category name is required" });
+
+    const [cat] = await db
+      .insert(quantityCategories)
+      .values({
+        standaloneTakeoffId: row.id,
+        name,
+        color: req.body.color ?? "#3b82f6",
+        lineStyle: req.body.lineStyle ?? "solid",
+        lineWidth: req.body.lineWidth ?? 3,
+        wasteFactor: req.body.wasteFactor ?? 0,
+        unitCost: req.body.unitCost ?? null,
+        displayOrder: req.body.displayOrder ?? 0,
+      })
+      .returning();
+    res.status(201).json(cat);
   } catch (err) {
     next(err);
   }

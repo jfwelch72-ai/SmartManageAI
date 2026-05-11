@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorIngestRuns,
@@ -7,6 +7,7 @@ import {
   estimates,
   estimateLineItems,
   historicalCosts,
+  standaloneTakeoffs,
   takeoffMeasurements,
   takeoffSheets,
   type AiEstimatorIngestRun,
@@ -436,6 +437,59 @@ export async function runIngestion(
       if (measRows.length > 0) {
         const mUpserts = await bulkUpsertKnowledgeRows(measRows);
         recordChanges(mUpserts, measRows.map(() => null));
+      }
+    }
+
+    // 3b. Standalone takeoff measurements — Task #2701. Same KV shape as bid
+    // takeoff measurements above; scoped to the org's non-archived standalone
+    // takeoffs via takeoffSheets.standaloneTakeoffId.
+    const orgStandalones = await db
+      .select({ id: standaloneTakeoffs.id })
+      .from(standaloneTakeoffs)
+      .where(and(
+        eq(standaloneTakeoffs.organizationId, organizationId),
+        isNull(standaloneTakeoffs.archivedAt),
+      ));
+    if (orgStandalones.length > 0) {
+      const standaloneIds = orgStandalones.map((s) => s.id);
+      const standaloneSheets = await db
+        .select()
+        .from(takeoffSheets)
+        .where(
+          since
+            ? and(inArray(takeoffSheets.standaloneTakeoffId, standaloneIds), gte(takeoffSheets.updatedAt, since))
+            : inArray(takeoffSheets.standaloneTakeoffId, standaloneIds),
+        );
+      if (standaloneSheets.length > 0) {
+        const saMeasRows: InsertAiEstimatorKnowledgeIndex[] = [];
+        for (const sheet of standaloneSheets) {
+          const measurements = await db
+            .select()
+            .from(takeoffMeasurements)
+            .where(eq(takeoffMeasurements.sheetId, sheet.id));
+          counters.takeoffsIngested += measurements.length;
+          for (const m of measurements.slice(0, 200)) {
+            const v = m.computedAreaFt2 ?? m.computedLengthFt ?? m.computedVolumeCy ?? m.count ?? 0;
+            saMeasRows.push({
+              organizationId,
+              sourceType: "takeoff_measurement",
+              sourceId: m.id,
+              bidId: null,
+              projectId: null,
+              costCode: null,
+              tradeType: null,
+              title: `Standalone Takeoff: ${m.label}`,
+              contentSnippet: `${m.type} value=${v}`,
+              tags: [m.type, "standalone_takeoff"],
+              numericFacets: { value: Number(v) },
+              contentHash: null,
+            });
+          }
+        }
+        if (saMeasRows.length > 0) {
+          const saUpserts = await bulkUpsertKnowledgeRows(saMeasRows);
+          recordChanges(saUpserts, saMeasRows.map(() => null));
+        }
       }
     }
 

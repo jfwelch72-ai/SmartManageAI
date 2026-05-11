@@ -89,6 +89,19 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
       }
     }
 
+    // Task #2701 — standalone takeoff categories
+    const standaloneCatCol = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'quantity_categories' AND column_name = 'standalone_takeoff_id'
+      )::boolean AS e
+    `);
+    if (standaloneCatCol.rows[0]?.e !== true) {
+      await db.execute(sql`ALTER TABLE "quantity_categories" ADD COLUMN IF NOT EXISTS "standalone_takeoff_id" varchar`);
+      await db.execute(sql`CREATE INDEX IF NOT EXISTS "quantity_categories_standalone_idx" ON "quantity_categories" ("standalone_takeoff_id")`);
+      logInfo("[migration] quantity_categories.standalone_takeoff_id — applied");
+    }
+
   } catch (err) {
     logError("[migration] Failed to ensure takeoff enhancement columns:", {}, err instanceof Error ? err : new Error(String(err)));
   }
