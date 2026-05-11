@@ -31,15 +31,7 @@ export async function ensureSchedulingModuleEnhancements(): Promise<void> {
         ADD COLUMN IF NOT EXISTS external_source_ref varchar(128)
     `);
 
-    const tableCheck = await db.execute(sql`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables
-        WHERE table_name = 'schedule_task_dependencies'
-      )::boolean AS table_exists
-    `);
-    const tableExists = tableCheck.rows[0]?.table_exists === true;
-
-    if (!tableExists) {
+    try {
       await db.execute(sql`
         CREATE TABLE IF NOT EXISTS schedule_task_dependencies (
           id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -55,9 +47,14 @@ export async function ensureSchedulingModuleEnhancements(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS schedule_task_deps_successor_idx ON schedule_task_dependencies(successor_task_id)`);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS schedule_task_deps_predecessor_idx ON schedule_task_dependencies(predecessor_task_id)`);
       await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS schedule_task_deps_unique_edge_idx ON schedule_task_dependencies(successor_task_id, predecessor_task_id)`);
-      logInfo("[migration] schedule_task_dependencies table — created");
-    } else {
-      logInfo("[migration] schedule_task_dependencies table — already present, skipped");
+      logInfo("[migration] schedule_task_dependencies table — ensured");
+    } catch (tableErr: unknown) {
+      const pgErr = tableErr as { code?: string; constraint?: string };
+      if (pgErr?.code === "23505" && pgErr?.constraint === "pg_class_relname_nsp_index") {
+        logInfo("[migration] schedule_task_dependencies table — already exists, skipped");
+      } else {
+        throw tableErr;
+      }
     }
 
     // Ensure the unique edge index covers (successor, predecessor) only — older
