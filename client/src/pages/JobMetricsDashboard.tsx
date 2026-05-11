@@ -53,6 +53,10 @@ interface JobMetricsResponse {
 interface JobsListResponse {
   jobs: JobMetricsResponse[];
   range: RangeKey;
+  /** Task #2771 — cumulative missed-tick counters keyed by job name,
+   *  sourced from `getCronMissedTicksSnapshot()`. Shown as an amber
+   *  badge in each JobCard header when the total is > 0. */
+  missedTicks?: Record<string, number>;
 }
 
 type RangeKey = "24h" | "7d" | "30d";
@@ -220,6 +224,7 @@ export function JobCard({
   range,
   activeAlerts,
   waitingSaturationSamples,
+  missedTicksTotal,
 }: {
   job: JobMetricsResponse;
   range: RangeKey;
@@ -228,6 +233,11 @@ export function JobCard({
   // from `/api/admin/metrics/pool` so the per-counter tooltip can name
   // the configured threshold.
   waitingSaturationSamples?: number;
+  // Task #2771 — Cumulative missed cron ticks for this job since the
+  // server last restarted (sourced from `getCronMissedTicksSnapshot()`).
+  // Shown as an amber badge when > 0 so operators can spot event-loop
+  // pressure without scanning per-counter charts.
+  missedTicksTotal?: number;
 }) {
   const counters = useMemo(() => counterKeys(job), [job]);
   // Task #2017 — Split counters into *cumulative* (incremented per
@@ -308,6 +318,16 @@ export function JobCard({
                   data-testid={`badge-skipped-${job.job}`}
                 >
                   <AlertTriangle className="h-3 w-3" /> {skippedTotal} skipped
+                </Badge>
+              )}
+              {(missedTicksTotal ?? 0) > 0 && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-500 text-amber-700 dark:text-amber-300"
+                  title="Cron ticks missed due to event-loop saturation since the last server restart. Persistent missed ticks may indicate CPU pressure or a slow event loop."
+                  data-testid={`badge-missed-ticks-${job.job}`}
+                >
+                  <AlertTriangle className="h-3 w-3" /> {missedTicksTotal} missed tick{missedTicksTotal === 1 ? "" : "s"}
                 </Badge>
               )}
               {isPoolHealth && poolExhaustedTotal > 0 && (
@@ -2092,6 +2112,7 @@ export default function JobMetricsDashboard() {
               range={range}
               activeAlerts={activeByJob[job.job] ?? 0}
               waitingSaturationSamples={waitingSaturationSamples}
+              missedTicksTotal={data?.missedTicks?.[job.job]}
             />
           ))}
         </div>

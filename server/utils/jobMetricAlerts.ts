@@ -32,6 +32,7 @@ import {
 } from "@shared/schema";
 
 import { getAllJobMetrics, type JobCounters } from "./jobMetrics";
+import { getCronMissedTicksSnapshot } from "./cronMissedTicks";
 import { logError, logInfo } from "./logger";
 import { insertNotifications } from "../services/notificationService";
 import { sendEmail } from "../services/emailService";
@@ -87,6 +88,45 @@ export const DEFAULT_SKIPPED_EMAIL_FLOOR_PER_HOUR = Number.isFinite(
 )
   ? Number(process.env.JOB_METRIC_SKIPPED_EMAIL_FLOOR_PER_HOUR)
   : 10;
+
+// Task #2771 — Missed-tick alert rule.
+// `cron_missed_ticks_total{job}` is a cumulative counter incremented by
+// `scheduleCron()` on each `execution:missed` event (node-cron fires this
+// when the event loop was too saturated to honour the scheduled fire time).
+// The alert engine tracks per-evaluation deltas so that ">3 missed ticks in
+// the last ~15-minute evaluation window" triggers an alert, not the all-time
+// total since process start. Operators can override all three env vars without
+// redeploying; the per-job `jobMetricAlertRules` table rows also win over the
+// built-in defaults as usual.
+export const MISSED_TICK_COUNTER = "missedTick";
+export const DEFAULT_MISSED_TICK_FLOOR = Number.isFinite(
+  Number(process.env.JOB_METRIC_MISSED_TICK_FLOOR),
+)
+  ? Number(process.env.JOB_METRIC_MISSED_TICK_FLOOR)
+  : 3;
+export const DEFAULT_MISSED_TICK_DEDUPE_MINUTES = Number.isFinite(
+  Number(process.env.JOB_METRIC_MISSED_TICK_DEDUPE_MINUTES),
+)
+  ? Number(process.env.JOB_METRIC_MISSED_TICK_DEDUPE_MINUTES)
+  : 15;
+export const DEFAULT_MISSED_TICK_EMAIL_FLOOR = Number.isFinite(
+  Number(process.env.JOB_METRIC_MISSED_TICK_EMAIL_FLOOR),
+)
+  ? Number(process.env.JOB_METRIC_MISSED_TICK_EMAIL_FLOOR)
+  : 5;
+
+/**
+ * Process-local snapshot of the missed-tick counters as of the most
+ * recent `evaluateJobMetricAlerts` run. Used to compute per-evaluation
+ * deltas: delta = currentSnapshot[job] − lastMissedTickSnapshot[job].
+ * Reset to zero on each server restart (matches the source counter).
+ */
+const _lastMissedTickSnapshot = new Map<string, number>();
+
+/** Test seam — reset the missed-tick snapshot between test cases. */
+export function resetMissedTickSnapshotForTests(): void {
+  _lastMissedTickSnapshot.clear();
+}
 
 // Task #1957 — Configurable thresholds for the synthetic `pool_health`
 // job's absolute-floor spike rule on the `exhausted` counter. Each
@@ -567,6 +607,27 @@ function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
         override.emailWhenAbove === undefined
           ? DEFAULT_EMAIL_SPIKE_MULTIPLIER
           : override.emailWhenAbove,
+    };
+  }
+  // Task #2771 — `missedTick` is the per-evaluation delta of the
+  // cumulative `cron_missed_ticks_total{job}` counter maintained by
+  // `cronMissedTicks.ts`. Treat it as an absolute-floor rule so a job
+  // that starts missing ticks pages immediately once the delta clears
+  // `DEFAULT_MISSED_TICK_FLOOR` per evaluation window (~15 min by
+  // default). Operators can still override per-job via
+  // `jobMetricAlertRules` rows.
+  if (counter === MISSED_TICK_COUNTER) {
+    return {
+      id: null,
+      job,
+      counter,
+      kind: "spike",
+      threshold: 0,
+      minAbsolute: DEFAULT_MISSED_TICK_FLOOR,
+      dedupeMinutes: DEFAULT_MISSED_TICK_DEDUPE_MINUTES,
+      enabled: true,
+      isDefault: true,
+      emailWhenAbove: DEFAULT_MISSED_TICK_EMAIL_FLOOR,
     };
   }
   // Task #1959 — `skipped` is the overlap-guard counter from
@@ -1148,7 +1209,13 @@ export async function evaluateJobMetricAlerts(
   };
 
   result.jobsScanned = jobs.length;
-  if (jobs.length === 0) return result;
+  // Task #2771 — do NOT early-return when jobs.length === 0. The
+  // missed-tick evaluation section below runs on `getCronMissedTicksSnapshot()`
+  // which is independent of the ring-buffer `jobs` list, so a freshly
+  // restarted server (zero historic samples) could still have accumulated
+  // missed ticks that need alerting. We let the main `for (const j of jobs)`
+  // loop below iterate zero times, and the `if (fired.length === 0) return result`
+  // check further down guards the DB-write + notification paths.
 
   let rules: JobMetricAlertRule[] = [];
   try {
@@ -1314,6 +1381,76 @@ export async function evaluateJobMetricAlerts(
           recentEvents.set(dedupeKey, now);
         }
       }
+    }
+  }
+
+  // Task #2771 — Missed-tick alert rule.
+  // `cron_missed_ticks_total{job}` is cumulative since process start,
+  // so we diff against `_lastMissedTickSnapshot` (updated at the end of
+  // this block) to get the per-evaluation-window delta (~15 min at the
+  // default cron cadence for `evaluateJobMetricAlerts`). An alert fires
+  // for any job whose delta meets or exceeds `DEFAULT_MISSED_TICK_FLOOR`
+  // (default 3), subject to the usual dedupe / snooze guards. The
+  // snapshot is always advanced regardless of whether an alert fired so
+  // each window only accounts for its own incremental misses.
+  {
+    const currentMissedTicks = getCronMissedTicksSnapshot();
+    const currentSnapshot = new Map<string, number>(
+      currentMissedTicks.map(({ job, value }) => [job, value]),
+    );
+
+    for (const { job, value } of currentMissedTicks) {
+      const lastValue = _lastMissedTickSnapshot.get(job) ?? 0;
+      const delta = value - lastValue;
+      if (delta <= 0) continue;
+
+      const rule = resolveRule(job, MISSED_TICK_COUNTER, "spike", rules);
+      if (!rule || !rule.enabled) continue;
+
+      if (delta < rule.minAbsolute) continue;
+
+      const dedupeKey = `${job}::${MISSED_TICK_COUNTER}::spike`;
+      const snoozedUntil = activeSnoozes.get(dedupeKey);
+      if (snoozedUntil && snoozedUntil > now) {
+        result.alertsSuppressed++;
+        continue;
+      }
+      const lastFired = recentEvents.get(dedupeKey);
+      if (lastFired && now - lastFired < rule.dedupeMinutes * 60 * 1000) {
+        result.alertsSuppressed++;
+        continue;
+      }
+
+      const message = `Job "${job}" missed ${delta} cron tick${delta === 1 ? "" : "s"} since the last evaluation (threshold ≥ ${rule.minAbsolute}${rule.isDefault ? ", default rule" : ""}).`;
+      const alert: JobMetricAlert = {
+        job,
+        counter: MISSED_TICK_COUNTER,
+        kind: "spike",
+        ruleId: rule.id,
+        message,
+        observedValue: delta,
+        baselineValue: 0,
+        emailed: false,
+      };
+      fired.push(alert);
+      firedRules.push({ rule, emailMetric: delta });
+      eventRows.push({
+        job: alert.job,
+        counter: alert.counter,
+        kind: alert.kind,
+        ruleId: alert.ruleId,
+        message: alert.message,
+        observedValue: delta.toFixed(4),
+        baselineValue: (0).toFixed(4),
+        triggeredAt: new Date(now),
+      });
+      recentEvents.set(dedupeKey, now);
+    }
+
+    // Always advance the snapshot so the next evaluation window sees
+    // only the incremental delta, not the cumulative total.
+    for (const [job, value] of currentSnapshot) {
+      _lastMissedTickSnapshot.set(job, value);
     }
   }
 

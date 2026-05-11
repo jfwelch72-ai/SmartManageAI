@@ -856,8 +856,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // that publishes counters via recordJobMetrics) without grepping logs.
   app.get("/api/admin/metrics/jobs", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
     const { getAllJobMetricsForRange, parseMetricsRange } = await import("./utils/jobMetrics");
+    const { getCronMissedTicksSnapshot } = await import("./utils/cronMissedTicks");
     const range = parseMetricsRange(req.query.range);
-    res.json({ jobs: await getAllJobMetricsForRange(range), range });
+    const missedTicksArr = getCronMissedTicksSnapshot();
+    const missedTicks: Record<string, number> = {};
+    for (const { job, value } of missedTicksArr) missedTicks[job] = value;
+    res.json({ jobs: await getAllJobMetricsForRange(range), range, missedTicks });
   });
 
   // Task #1950 — live Postgres pool stats + recent `pool_exhausted`
