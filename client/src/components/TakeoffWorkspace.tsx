@@ -2111,6 +2111,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     handleStageMouseDown,
     handleStageMouseUp,
     handleStageMouseMove,
+    clearCursorPosition,
     handleStageDragStart,
     handleStageDragMove,
     handleStageDragEnd,
@@ -4735,6 +4736,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     handleStageMouseDown,
     handleStageMouseUp,
     handleStageMouseMove,
+    clearCursorPosition,
     handleStageDragStart,
     handleStageDragMove,
     handleStageDragEnd,
@@ -5296,10 +5298,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // straight to recalibration. Estimators triaging from the
       // status row no longer have to scroll back up to the header.
       onOpenCalibration: openCalibrationDrawer,
-      // Task #2785 — Live active zone badge in the status bar. When
-      // the cursor is inside a calibration zone polygon the bottom bar
-      // shows a cyan badge with the zone name + px/ft so the estimator
-      // always knows which zone-specific scale is being applied.
+      // Task #2795 — Live active zone badge in the status bar. The badge now
+      // shows in real time as the cursor moves over the canvas, not just while
+      // drawing. When inside a zone, shows the zone name + px/ft. When on the
+      // canvas but outside all zones, the bottom bar shows a "Sheet scale" fallback.
       activeZone: activeCalibrationZone
         ? {
             id: activeCalibrationZone.id,
@@ -5307,9 +5309,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             pxPerFoot: activeCalibrationZone.px_per_foot,
           }
         : null,
-      // Task #2785 — Gate the zone badge on drawing state so idle cursor
-      // movement over zones doesn't add noise to the status bar.
-      isDrawing,
+      // Task #2795 — True whenever the cursor is over the canvas (cursorPosition
+      // is non-null). Drives the sheet-scale fallback chip when outside all zones.
+      cursorOnCanvas: !!cursorPosition,
     },
     measurementTable: {
       visible: showMeasurementTable && !!selectedSheet,

@@ -253,6 +253,9 @@ export interface CanvasStageProps {
   handleStageMouseDown: (e: any) => any;
   handleStageMouseUp: (e: any) => any;
   handleStageMouseMove: (e: any) => any;
+  /** Task #2795 — Called on Stage mouseleave to clear cursorPosition so
+   *  the bottom-bar zone/sheet-scale indicator hides when not over canvas. */
+  clearCursorPosition?: () => void;
   handleStageDragStart: (e: any) => any;
   handleStageDragMove: (e: any) => any;
   handleStageDragEnd: (e: any) => any;
@@ -386,6 +389,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     handleStageMouseDown,
     handleStageMouseUp,
     handleStageMouseMove,
+    clearCursorPosition,
     handleStageDragStart,
     handleStageDragMove,
     handleStageDragEnd,
@@ -518,6 +522,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     collab.sendCursorMove(canvasX, canvasY, selectedSheet);
                   }
                 }
+              }}
+              onMouseLeave={() => {
+                // Task #2795 — Clear cursor position when the pointer leaves the
+                // canvas so the live zone/sheet-scale indicator in the status bar
+                // hides instead of showing stale last-position data.
+                clearCursorPosition?.();
               }}
               onTouchStart={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseDown(e); } else { handleStageMouseDown(e); } }}
               onTouchEnd={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleTouchEnd(e); } }}

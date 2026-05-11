@@ -1740,6 +1740,11 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     setOrthoLock,
     currentSnap,
     cursorPosition,
+    // Task #2795 — Exposed so CanvasStage can clear the position on
+    // mouse-leave, which drives cursorOnCanvas=false in WorkspaceBottomBar
+    // and hides the live zone / sheet-scale indicator when the pointer
+    // is no longer over the canvas.
+    clearCursorPosition: useCallback(() => setCursorPosition(null), []),
     polarGuideStep,
     snapTargets,
     runningMeasurement,
