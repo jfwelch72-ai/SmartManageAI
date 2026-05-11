@@ -167,6 +167,22 @@ export interface CanvasStageProps {
   calibrationPoints: Point[];
   verifyPoints: Point[];
 
+  /**
+   * Task #2781 — Calibration zone polygons to render as overlays on
+   * the canvas. When provided, each zone is drawn as a labeled polygon
+   * so users can see which scale applies where.
+   */
+  calibrationZones?: Array<{
+    id: string;
+    name: string;
+    polygon_points: Array<{ x: number; y: number }>;
+    px_per_foot: number;
+  }>;
+  /** ID of the currently-selected calibration zone (highlighted on canvas). */
+  selectedCalibrationZoneId?: string | null;
+  /** Called when the user clicks a zone polygon on the canvas. */
+  onSelectCalibrationZone?: (id: string | null) => void;
+
   currentSnap: any;
   runningMeasurement: { value: number; unit: string; segments?: number } | null;
   /**
@@ -324,6 +340,9 @@ function CanvasStageImpl(props: CanvasStageProps) {
     hoveredMeasurementId,
     calibrationPoints,
     verifyPoints,
+    calibrationZones,
+    selectedCalibrationZoneId,
+    onSelectCalibrationZone,
     currentSnap,
     runningMeasurement,
     snapStats,
@@ -1805,6 +1824,72 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     )}
                   </>
                 )}
+
+                {/* Task #2781 — Calibration zone polygon overlays. Rendered before
+                    calibration pick-point markers so the zone rectangles don't
+                    obscure the active calibration line. Each zone is drawn as a
+                    closed polygon with a semi-transparent fill and a labeled
+                    centroid. Clicking a zone calls onSelectCalibrationZone so
+                    the sidebar can scroll to and highlight the matching row. */}
+                {calibrationZones && calibrationZones.length > 0 && pdfImage && calibrationZones.map((zone) => {
+                  const pts = zone.polygon_points;
+                  if (!pts || pts.length < 3) return null;
+                  const isSelected = selectedCalibrationZoneId === zone.id;
+                  const flatPts = pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]);
+                  const cx = pts.reduce((s: number, p: { x: number; y: number }) => s + p.x, 0) / pts.length;
+                  const cy = pts.reduce((s: number, p: { x: number; y: number }) => s + p.y, 0) / pts.length;
+                  const sw = (isSelected ? 2.5 : 1.5) / stageScale;
+                  const labelFontSize = Math.max(9, 13 / stageScale);
+                  const scaleFontSize = Math.max(8, 11 / stageScale);
+                  const labelW = 160 / stageScale;
+                  return (
+                    <Fragment key={`cal-zone-${zone.id}`}>
+                      <Line
+                        points={flatPts}
+                        closed={true}
+                        fill={isSelected ? "rgba(6,182,212,0.22)" : "rgba(6,182,212,0.10)"}
+                        stroke={isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.60)"}
+                        strokeWidth={sw}
+                        dash={isSelected ? undefined : [6 / stageScale, 3 / stageScale]}
+                        listening={true}
+                        onClick={() => onSelectCalibrationZone?.(isSelected ? null : zone.id)}
+                        onTap={() => onSelectCalibrationZone?.(isSelected ? null : zone.id)}
+                        onMouseEnter={(e) => {
+                          const container = e.target.getStage()?.container();
+                          if (container) container.style.cursor = "pointer";
+                        }}
+                        onMouseLeave={(e) => {
+                          const container = e.target.getStage()?.container();
+                          if (container) container.style.cursor = "default";
+                        }}
+                        data-testid={`canvas-zone-polygon-${zone.id}`}
+                      />
+                      <Text
+                        x={cx}
+                        y={cy - labelFontSize * 1.2}
+                        text={zone.name}
+                        fontSize={labelFontSize}
+                        fontStyle="bold"
+                        fill={isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.90)"}
+                        align="center"
+                        width={labelW}
+                        offsetX={labelW / 2}
+                        listening={false}
+                      />
+                      <Text
+                        x={cx}
+                        y={cy + 2 / stageScale}
+                        text={`${zone.px_per_foot.toFixed(1)} px/ft`}
+                        fontSize={scaleFontSize}
+                        fill={isSelected ? "rgba(6,182,212,0.95)" : "rgba(6,182,212,0.75)"}
+                        align="center"
+                        width={labelW}
+                        offsetX={labelW / 2}
+                        listening={false}
+                      />
+                    </Fragment>
+                  );
+                })}
 
                 {calibrationPoints.map((point, i) => (
                   <Circle

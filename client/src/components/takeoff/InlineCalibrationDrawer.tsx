@@ -256,6 +256,11 @@ export interface InlineCalibrationDrawerProps {
    *  prompt — there's nothing to lock. Optional so existing callers
    *  that don't yet thread the count keep the original behaviour. */
   existingMeasurementCount?: number;
+  /** Task #2781 — ID of the zone currently selected on the canvas.
+   *  Forwarded to CalibrationZonesPanel so the row highlights. */
+  selectedCalibrationZoneId?: string | null;
+  /** Task #2781 — Called when a zone is selected (canvas click or panel row click). */
+  onSelectCalibrationZone?: (id: string | null) => void;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -1018,6 +1023,8 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
             <CalibrationZonesPanel
               sheetId={props.sheetId}
               className="border-t border-border -mx-4 mt-2"
+              selectedZoneId={props.selectedCalibrationZoneId}
+              onSelectZone={props.onSelectCalibrationZone}
             />
           )}
 

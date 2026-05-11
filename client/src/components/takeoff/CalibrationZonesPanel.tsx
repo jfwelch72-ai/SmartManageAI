@@ -23,6 +23,10 @@ interface CalibrationZone {
 interface CalibrationZonesPanelProps {
   sheetId: string | null | undefined;
   className?: string;
+  /** Task #2781 — ID of the zone currently selected on the canvas. */
+  selectedZoneId?: string | null;
+  /** Task #2781 — Called when a zone row is clicked so the canvas can highlight it. */
+  onSelectZone?: (id: string | null) => void;
 }
 
 interface EditState {
@@ -35,11 +39,15 @@ function ZoneRow({
   sheetId,
   onDelete,
   isDeleting,
+  isSelected,
+  onSelect,
 }: {
   zone: CalibrationZone;
   sheetId: string;
   onDelete: (id: string) => void;
   isDeleting: boolean;
+  isSelected?: boolean;
+  onSelect?: (id: string | null) => void;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -142,8 +150,12 @@ function ZoneRow({
 
   return (
     <div
-      className="flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-muted/40 group"
+      className={cn(
+        "flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-muted/40 group cursor-pointer",
+        isSelected && "bg-cyan-50 dark:bg-cyan-950/30 ring-1 ring-cyan-400/60"
+      )}
       data-testid={`calibration-zone-row-${zone.id}`}
+      onClick={() => !editing && onSelect?.(isSelected ? null : zone.id)}
     >
       <div className="flex flex-col min-w-0 flex-1">
         <span className="font-medium truncate" data-testid={`text-zone-name-${zone.id}`}>
@@ -158,7 +170,8 @@ function ZoneRow({
           variant="ghost"
           size="icon"
           className="h-6 w-6 text-muted-foreground hover:text-foreground"
-          onClick={() => {
+          onClick={(e) => {
+            e.stopPropagation();
             setEditState({ name: zone.name, pxPerFoot: zone.px_per_foot.toFixed(4) });
             setEditing(true);
           }}
@@ -171,7 +184,7 @@ function ZoneRow({
           variant="ghost"
           size="icon"
           className="h-6 w-6 text-destructive hover:text-destructive"
-          onClick={() => onDelete(zone.id)}
+          onClick={(e) => { e.stopPropagation(); onDelete(zone.id); }}
           disabled={isDeleting}
           data-testid={`button-delete-zone-${zone.id}`}
         >
@@ -182,7 +195,7 @@ function ZoneRow({
   );
 }
 
-export function CalibrationZonesPanel({ sheetId, className }: CalibrationZonesPanelProps) {
+export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSelectZone }: CalibrationZonesPanelProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
@@ -244,6 +257,8 @@ export function CalibrationZonesPanel({ sheetId, className }: CalibrationZonesPa
                 sheetId={sheetId}
                 onDelete={id => deleteMutation.mutate(id)}
                 isDeleting={deleteMutation.isPending}
+                isSelected={selectedZoneId === zone.id}
+                onSelect={onSelectZone}
               />
             ))}
           </div>

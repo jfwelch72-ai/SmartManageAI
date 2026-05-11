@@ -1932,6 +1932,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     staleTime: 30_000,
   });
 
+  // Task #2781 — Track which calibration zone is selected (bidirectional:
+  // clicking a zone polygon on the canvas selects it; clicking a zone row in
+  // the CalibrationZonesPanel also selects it). Reset when the sheet changes.
+  const [selectedCalibrationZoneId, setSelectedCalibrationZoneId] = useState<string | null>(null);
+  useEffect(() => {
+    setSelectedCalibrationZoneId(null);
+  }, [selectedSheet]);
+
   const getScaleForPoint = useCallback(
     (point: { x: number; y: number }): number | undefined => {
       for (const zone of calibrationZones) {
@@ -4619,6 +4627,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     hoveredMeasurementId,
     calibrationPoints,
     verifyPoints,
+    calibrationZones,
+    selectedCalibrationZoneId,
+    onSelectCalibrationZone: setSelectedCalibrationZoneId,
     currentSnap,
     runningMeasurement,
     snapStats,
@@ -6010,6 +6021,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         // sheet has a prior `scalePxPerFoot`, so brand-new sheets
         // skip the prompt entirely.
         existingMeasurementCount={measurements.length}
+        selectedCalibrationZoneId={selectedCalibrationZoneId}
+        onSelectCalibrationZone={setSelectedCalibrationZoneId}
       />
 
       {/* Task #2325 — Scale History side panel. Mounted alongside the
