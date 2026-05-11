@@ -1972,10 +1972,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                     </Button>
                   </ObjectUploader>
                   {documentType === "PLANS" && (
-                    <>
-                      <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
-                      <p className="text-[10px] text-amber-600 dark:text-amber-400" data-testid="hint-pdf-single-sheet">Note: Multi-page PDF splitting is coming soon. Each upload currently creates one sheet.</p>
-                    </>
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-pdf-only">PDF files only for Plans</p>
                   )}
                   {documentType === "BIM" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
@@ -2088,13 +2085,22 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                 <Printer className="w-4 h-4 mr-2" />
                                 Print All Sheets
                               </DropdownMenuItem>
-                              <DropdownMenuItem
-                                onClick={(e) => { e.stopPropagation(); toast({ description: "Rotating blank sheets right — feature coming soon." }); }}
-                                data-testid="menu-item-rotate-sheets"
-                              >
-                                <RotateCw className="w-4 h-4 mr-2" />
-                                Rotate All Blank Sheets Right
-                              </DropdownMenuItem>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span tabIndex={0} className="outline-none">
+                                    <DropdownMenuItem
+                                      disabled
+                                      data-testid="menu-item-rotate-sheets"
+                                    >
+                                      <RotateCw className="w-4 h-4 mr-2" />
+                                      Rotate All Blank Sheets Right
+                                    </DropdownMenuItem>
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right">
+                                  <p>Rotation coming in a future update</p>
+                                </TooltipContent>
+                              </Tooltip>
                               <DropdownMenuItem
                                 onClick={(e) => { e.stopPropagation(); handleHideAllSheets(group.name); }}
                                 data-testid="menu-item-hide-sheets"

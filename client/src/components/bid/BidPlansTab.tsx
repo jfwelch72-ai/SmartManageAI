@@ -998,13 +998,22 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                               <Printer className="w-4 h-4 mr-2" />
                               Print All Sheets
                             </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={(e) => { e.stopPropagation(); toast({ description: "Rotating blank sheets right — feature coming soon." }); }}
-                              data-testid="menu-item-rotate-sheets"
-                            >
-                              <RotateCw className="w-4 h-4 mr-2" />
-                              Rotate All Blank Sheets Right
-                            </DropdownMenuItem>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span tabIndex={0} className="outline-none">
+                                  <DropdownMenuItem
+                                    disabled
+                                    data-testid="menu-item-rotate-sheets"
+                                  >
+                                    <RotateCw className="w-4 h-4 mr-2" />
+                                    Rotate All Blank Sheets Right
+                                  </DropdownMenuItem>
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="right">
+                                <p>Rotation coming in a future update</p>
+                              </TooltipContent>
+                            </Tooltip>
                             <DropdownMenuItem
                               onClick={(e) => { e.stopPropagation(); handleHideAllSheets(group.name); }}
                               data-testid="menu-item-hide-sheets"

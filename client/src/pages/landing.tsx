@@ -3,10 +3,6 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useToast } from "@/hooks/use-toast";
 import { 
   ArrowRight, 
   Check, 
@@ -36,7 +32,6 @@ import {
   Globe,
   Network,
   Sparkles,
-  Play,
   Star,
   CheckCircle2,
   Bell,
@@ -593,11 +588,7 @@ const howItWorks = [
 ];
 
 export default function LandingPage() {
-  const [showDemoModal, setShowDemoModal] = useState(false);
-  const [notifyEmail, setNotifyEmail] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAllFeatures, setShowAllFeatures] = useState(false);
-  const { toast } = useToast();
 
   useEffect(() => {
     document.title = "SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades";
@@ -619,23 +610,6 @@ export default function LandingPage() {
     return () => { document.title = "SmartManageAI"; };
   }, []);
 
-  const handleNotifySubmit = async () => {
-    if (!notifyEmail.trim()) {
-      toast({ title: "Please enter your email", variant: "destructive" });
-      return;
-    }
-    
-    setIsSubmitting(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsSubmitting(false);
-    
-    toast({ 
-      title: "You're on the list!", 
-      description: "We'll notify you when the demo video is ready." 
-    });
-    setNotifyEmail("");
-    setShowDemoModal(false);
-  };
 
   const visibleFeatures = showAllFeatures ? features : features.slice(0, 8);
 
@@ -700,16 +674,6 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
-              <Button 
-                size="lg" 
-                variant="secondary" 
-                className="w-full sm:w-auto bg-white/10 border-white/30 text-white text-base px-8 py-6" 
-                onClick={() => setShowDemoModal(true)}
-                data-testid="button-hero-demo"
-              >
-                <Play className="mr-2 h-5 w-5" />
-                Watch Demo
-              </Button>
             </div>
             <div className="flex flex-wrap gap-6 text-gray-400">
               <div className="flex items-center gap-2">
@@ -898,8 +862,8 @@ export default function LandingPage() {
                           <div className="flex items-center gap-2">
                             <h4 className="font-medium">{feature.name}</h4>
                             {(feature as any).comingSoon && (
-                              <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">
-                                Coming Soon
+                              <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">
+                                Roadmap
                               </Badge>
                             )}
                           </div>
@@ -993,8 +957,8 @@ export default function LandingPage() {
                     <div className="flex items-center gap-3 mb-4">
                       <h3 className="text-2xl font-bold">{capability.title}</h3>
                       {(capability as any).comingSoon && (
-                        <Badge variant="outline" className="bg-amber-500/10 text-amber-600 border-amber-500/30">
-                          Coming Soon
+                        <Badge variant="outline" className="bg-muted text-muted-foreground border-border">
+                          Roadmap
                         </Badge>
                       )}
                     </div>
@@ -1253,7 +1217,7 @@ export default function LandingPage() {
                       <div className="flex items-center gap-2">
                         <h4 className="font-medium text-sm">{addon.name}</h4>
                         {(addon as any).comingSoon && (
-                          <Badge variant="outline" className="text-xs bg-amber-500/10 text-amber-600 border-amber-500/30">Soon</Badge>
+                          <Badge variant="outline" className="text-xs bg-muted text-muted-foreground border-border">Roadmap</Badge>
                         )}
                       </div>
                       <div className="text-right flex-shrink-0">
@@ -1296,15 +1260,6 @@ export default function LandingPage() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
-            <Button 
-              size="lg" 
-              variant="secondary" 
-              className="bg-white/10 border-white/30 text-white text-base px-8 py-6" 
-              onClick={() => setShowDemoModal(true)}
-              data-testid="button-cta-demo"
-            >
-              Schedule a Demo
-            </Button>
           </div>
         </div>
       </section>
@@ -1365,46 +1320,6 @@ export default function LandingPage() {
         </div>
       </footer>
 
-      <Dialog open={showDemoModal} onOpenChange={setShowDemoModal}>
-        <DialogContent className="sm:max-w-md" data-testid="dialog-demo-coming-soon">
-          <DialogHeader>
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mb-4">
-              <Video className="w-8 h-8 text-primary" />
-            </div>
-            <DialogTitle className="text-center text-2xl" data-testid="text-demo-modal-title">Demo Coming Soon!</DialogTitle>
-            <DialogDescription className="text-center" data-testid="text-demo-modal-description">
-              We're putting the finishing touches on our product demo video. 
-              Leave your email below and we'll notify you the moment it's ready.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="notify-email">Email Address</Label>
-              <Input
-                id="notify-email"
-                type="email"
-                placeholder="your@email.com"
-                value={notifyEmail}
-                onChange={(e) => setNotifyEmail(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleNotifySubmit()}
-                data-testid="input-notify-email"
-              />
-            </div>
-            <Button 
-              onClick={handleNotifySubmit} 
-              className="w-full"
-              disabled={isSubmitting}
-              data-testid="button-notify-submit"
-            >
-              <Bell className="mr-2 h-4 w-4" />
-              {isSubmitting ? "Submitting..." : "Notify Me When Ready"}
-            </Button>
-            <p className="text-xs text-muted-foreground text-center" data-testid="text-demo-modal-privacy">
-              We respect your privacy. No spam, just one notification when the demo is live.
-            </p>
-          </div>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

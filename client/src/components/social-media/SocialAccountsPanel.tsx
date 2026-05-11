@@ -245,15 +245,10 @@ export function SocialAccountsPanel() {
                         </div>
                       </div>
                     ) : comingSoon ? (
-                      <Tooltip>
-                        <TooltipTrigger>
-                          <Badge variant="outline" className="text-xs text-muted-foreground gap-1 px-1.5 py-0 cursor-default">
-                            <Info className="h-3 w-3" />
-                            Coming Soon
-                          </Badge>
-                        </TooltipTrigger>
-                        <TooltipContent><p>OAuth for {p.label} coming soon</p></TooltipContent>
-                      </Tooltip>
+                      <Badge variant="outline" className="text-xs text-muted-foreground gap-1 px-1.5 py-0 cursor-default">
+                        <Info className="h-3 w-3" />
+                        Not supported
+                      </Badge>
                     ) : !configured ? (
                       <Tooltip>
                         <TooltipTrigger>
