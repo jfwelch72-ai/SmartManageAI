@@ -4203,7 +4203,16 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRo
  */
 router.get("/api/estimates", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = getOrgIdForFilter(req);
+    const { orgId, mustDenyAccess, isSuperAdmin: isSuper } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const orgCondition = isSuper
+      ? undefined
+      : or(eq(bids.gcOrganizationId, orgId!), eq(projects.gcOrganizationId, orgId!));
+
     const rows = await db
       .select({
         id: estimates.id,
@@ -4215,7 +4224,7 @@ router.get("/api/estimates", requireAuth, async (req: AuthRequest, res, next) =>
       .from(estimates)
       .leftJoin(bids, eq(estimates.bidId, bids.id))
       .leftJoin(projects, eq(estimates.projectId, projects.id))
-      .where(or(eq(bids.gcOrganizationId, orgId), eq(projects.gcOrganizationId, orgId)))
+      .where(orgCondition)
       .orderBy(desc(estimates.createdAt));
 
     res.json(
@@ -4240,11 +4249,20 @@ router.get("/api/estimates", requireAuth, async (req: AuthRequest, res, next) =>
  */
 router.get("/api/bids/:code/estimates", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const orgId = getOrgIdForFilter(req);
+    const { orgId, mustDenyAccess, isSuperAdmin: isSuper } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
+
+    const bidCondition = isSuper
+      ? eq(bids.code, req.params.code)
+      : and(eq(bids.code, req.params.code), eq(bids.gcOrganizationId, orgId!));
+
     const [bid] = await db
       .select()
       .from(bids)
-      .where(and(eq(bids.code, req.params.code), eq(bids.gcOrganizationId, orgId)))
+      .where(bidCondition)
       .limit(1);
 
     if (!bid) {
