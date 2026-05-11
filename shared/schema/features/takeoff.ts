@@ -1280,3 +1280,24 @@ export type StandaloneTakeoffFile = typeof standaloneTakeoffFiles.$inferSelect;
 export const insertTakeoffSuggestionDismissalSchema = createInsertSchema(takeoffSuggestionDismissals).omit({ id: true, createdAt: true });
 export type InsertTakeoffSuggestionDismissal = z.infer<typeof insertTakeoffSuggestionDismissalSchema>;
 export type TakeoffSuggestionDismissal = typeof takeoffSuggestionDismissals.$inferSelect;
+
+// Task #2780 — Named calibration zones layered on a takeoff sheet.
+// Each zone carries its own px-per-foot scale so different areas of a
+// plan can have independent calibration (e.g. different drawing scales
+// on the same sheet).
+export const takeoffSheetCalibrationZones = pgTable("takeoff_sheet_calibration_zones", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  polygonPoints: jsonb("polygon_points").notNull().$type<Array<{ x: number; y: number }>>(),
+  pxPerFoot: doublePrecision("px_per_foot").notNull(),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  sheetIdx: index("calibration_zones_sheet_idx").on(table.sheetId),
+}));
+
+export const insertTakeoffSheetCalibrationZoneSchema = createInsertSchema(takeoffSheetCalibrationZones).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffSheetCalibrationZone = z.infer<typeof insertTakeoffSheetCalibrationZoneSchema>;
+export type TakeoffSheetCalibrationZone = typeof takeoffSheetCalibrationZones.$inferSelect;

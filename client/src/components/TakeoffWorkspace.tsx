@@ -6337,6 +6337,35 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         <SheetHost />
 
         <CanvasHost />
+        {/* Task #2786 — Transparent DOM mirror of each calibration zone polygon.
+            Konva Line elements have no DOM nodes; these zero-opacity,
+            pointer-events:none SVG polygons give e2e tests a stable
+            data-testid handle for render assertions and coordinate look-up
+            without affecting normal user interaction. */}
+        {calibrationZones.length > 0 && (
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            <svg width="100%" height="100%" style={{ position: "absolute", inset: 0 }}>
+              {calibrationZones.map((zone) => (
+                <polygon
+                  key={zone.id}
+                  data-testid={`canvas-zone-polygon-${zone.id}`}
+                  points={zone.polygon_points
+                    .map((p) => `${p.x * stageScale + stagePosition.x},${p.y * stageScale + stagePosition.y}`)
+                    .join(" ")}
+                  style={{ opacity: 0, pointerEvents: "none" }}
+                />
+              ))}
+            </svg>
+          </div>
+        )}
         <WorkspaceBottomBar {...panelSlice.bottomBar} />
         {/* Tool Chest mounts inside canvas-area so its `top-0 left-0`
             absolute positioning sits *below* the unified ribbon. The

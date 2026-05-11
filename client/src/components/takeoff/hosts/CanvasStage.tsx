@@ -1912,7 +1912,9 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     closed polygon with a semi-transparent fill and a labeled
                     centroid. Clicking a zone calls onSelectCalibrationZone so
                     the sidebar can scroll to and highlight the matching row. */}
-                {calibrationZones && calibrationZones.length > 0 && pdfImage && calibrationZones.map((zone) => {
+                {/* Task #2786 — Render independently of pdfImage so e2e tests
+                    can click the real Konva hit-test layer without a loaded PDF. */}
+                {calibrationZones && calibrationZones.length > 0 && calibrationZones.map((zone) => {
                   const isBeingEdited = editingZoneId === zone.id;
                   // Task #2793 — While a zone is in vertex-drag reshape mode, render
                   // from editingZonePoints (the mutable draft) rather than the
