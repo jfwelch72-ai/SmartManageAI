@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertCircle, DollarSign, Flag, Layers, TableProperties, Trash2 } from "lucide-react";
+import { AlertCircle, DollarSign, Flag, Layers, MapPin, TableProperties, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TakeoffMeasurement, TakeoffSheet } from "@shared/schema";
@@ -45,6 +45,20 @@ export interface WorkspaceBottomBarProps {
   // header chip. When omitted the chip stays read-only (legacy
   // callers / tests that only need the visual indicator).
   onOpenCalibration?: () => void;
+  /**
+   * Task #2785 — When the cursor is inside a calibration zone polygon, the
+   * workspace computes which zone is active and passes it here. The bottom bar
+   * shows a live badge so the estimator always knows which zone-specific scale
+   * is being applied to the current measurement. Null / undefined = cursor is
+   * on the global sheet scale.
+   */
+  activeZone?: { id: string; name: string; pxPerFoot: number } | null;
+  /**
+   * Task #2785 — Whether a measurement is currently being drawn. The active-zone
+   * badge is only shown during an in-progress draw so idle cursor movement over
+   * zones doesn't add noise when the user is just inspecting the canvas.
+   */
+  isDrawing?: boolean;
 }
 
 // Task #2344 — Default UNVERIFIED chip used when a caller hasn't
@@ -72,7 +86,12 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
     showOverlaySlider, onToggleOverlaySlider, showMeasurementTable, onToggleMeasurementTable,
     showReviewQueue, onToggleReviewQueue, reviewQueueCount,
     stageScale, currentSheet, calibrationConfidence, onOpenCalibration,
+    activeZone, isDrawing,
   } = props;
+
+  // Task #2785 — Only show the zone badge when a measurement is being actively
+  // drawn. When idle, moving the cursor over zones doesn't add noise.
+  const showActiveZone = !!(isDrawing && activeZone);
 
   // Task #2344 — Use the same four-level confidence helper output as
   // the sheet-header chip. The bottom-bar previously derived a
@@ -139,6 +158,20 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
         <div className="flex sm:hidden h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar-mobile">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-medium text-foreground/80 shrink-0">{measurements.length} m</span>
+            {/* Task #2785 — Active calibration zone badge (mobile). Only shown
+                while a measurement is being drawn so idle cursor movement over
+                zones doesn't add noise. Shows name + px/ft for full parity. */}
+            {showActiveZone && (
+              <span
+                className="flex items-center gap-1 shrink-0 rounded px-1.5 py-0.5 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-400/40"
+                data-testid="status-active-zone-mobile"
+                title={`Zone "${activeZone!.name}" — ${activeZone!.pxPerFoot.toFixed(2)} px/ft`}
+              >
+                <MapPin className="w-2.5 h-2.5 shrink-0" aria-hidden="true" />
+                <span className="truncate max-w-[6rem] text-[10px] font-medium">{activeZone!.name}</span>
+                <span className="text-[9px] text-cyan-600/80 dark:text-cyan-400/80 shrink-0">{activeZone!.pxPerFoot.toFixed(2)} px/ft</span>
+              </span>
+            )}
             {/* Task #2344 — When `onOpenCalibration` is wired, the
               *  mobile chip behaves as a tap target that opens the
               *  same calibration drawer the sheet-header chip and the
@@ -215,6 +248,23 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
             )}
           </div>
           <div className="flex items-center gap-3">
+            {/* Task #2785 — Active calibration zone badge (desktop). Only shown
+                while a measurement is being drawn so idle cursor movement over
+                zones doesn't add noise. Placed before toggle buttons so it's
+                always visible when active without displacing the calibration chip. */}
+            {showActiveZone && (
+              <span
+                className="flex items-center gap-1 rounded px-1.5 py-0.5 bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-400/40 shrink-0"
+                data-testid="status-active-zone"
+                title={`Zone-specific scale active: "${activeZone!.name}" — ${activeZone!.pxPerFoot.toFixed(2)} px/ft`}
+              >
+                <MapPin className="w-3 h-3 shrink-0" aria-hidden="true" />
+                <span className="font-medium truncate max-w-[10rem]" data-testid="text-active-zone-name">{activeZone!.name}</span>
+                <span className="text-cyan-600/80 dark:text-cyan-400/80 hidden md:inline" data-testid="text-active-zone-scale">
+                  · {activeZone!.pxPerFoot.toFixed(2)} px/ft
+                </span>
+              </span>
+            )}
             <button
               className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showCostPanel && "bg-primary/10 text-primary")}
               onClick={onToggleCostPanel}

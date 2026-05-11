@@ -1,5 +1,6 @@
 // Task #2780 — Calibration zones panel for multi-region calibration.
 // Shows zones for the current sheet with inline rename + scale editing and delete.
+// Task #2785 — Accepts `activeZoneId` to highlight the zone the cursor is currently in.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,14 @@ interface CalibrationZonesPanelProps {
   selectedZoneId?: string | null;
   /** Task #2781 — Called when a zone row is clicked so the canvas can highlight it. */
   onSelectZone?: (id: string | null) => void;
+  /**
+   * Task #2785 — ID of the zone the cursor is currently inside. The panel
+   * highlights this row with a live "cursor here" indicator so the estimator
+   * can see which zone scale is being applied while drawing. Unlike
+   * `selectedZoneId` (which is click-driven and persistent), `activeZoneId`
+   * follows the cursor in real time and updates on every mouse move.
+   */
+  activeZoneId?: string | null;
 }
 
 interface EditState {
@@ -40,6 +49,7 @@ function ZoneRow({
   onDelete,
   isDeleting,
   isSelected,
+  isActive,
   onSelect,
 }: {
   zone: CalibrationZone;
@@ -47,6 +57,8 @@ function ZoneRow({
   onDelete: (id: string) => void;
   isDeleting: boolean;
   isSelected?: boolean;
+  /** Task #2785 — true when the cursor is currently inside this zone's polygon. */
+  isActive?: boolean;
   onSelect?: (id: string | null) => void;
 }) {
   const { toast } = useToast();
@@ -152,15 +164,32 @@ function ZoneRow({
     <div
       className={cn(
         "flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-muted/40 group cursor-pointer",
-        isSelected && "bg-cyan-50 dark:bg-cyan-950/30 ring-1 ring-cyan-400/60"
+        isSelected && "bg-cyan-50 dark:bg-cyan-950/30 ring-1 ring-cyan-400/60",
+        isActive && !isSelected && "bg-cyan-50/60 dark:bg-cyan-950/20 ring-1 ring-cyan-300/40"
       )}
       data-testid={`calibration-zone-row-${zone.id}`}
+      data-active-zone={isActive || undefined}
       onClick={() => !editing && onSelect?.(isSelected ? null : zone.id)}
     >
       <div className="flex flex-col min-w-0 flex-1">
-        <span className="font-medium truncate" data-testid={`text-zone-name-${zone.id}`}>
-          {zone.name}
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          <span className="font-medium truncate" data-testid={`text-zone-name-${zone.id}`}>
+            {zone.name}
+          </span>
+          {/* Task #2785 — Live "cursor here" indicator. A small pulsing dot
+              next to the zone name tells the estimator the cursor is currently
+              inside this zone and that its scale is being applied. */}
+          {isActive && (
+            <span
+              className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-900/50 rounded px-1 py-0"
+              data-testid={`badge-zone-active-${zone.id}`}
+              title="Cursor is inside this zone"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse inline-block" aria-hidden="true" />
+              active
+            </span>
+          )}
+        </div>
         <span className="text-muted-foreground text-[10px]" data-testid={`text-zone-scale-${zone.id}`}>
           {zone.px_per_foot.toFixed(2)} px/ft
         </span>
@@ -195,7 +224,7 @@ function ZoneRow({
   );
 }
 
-export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSelectZone }: CalibrationZonesPanelProps) {
+export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSelectZone, activeZoneId }: CalibrationZonesPanelProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
@@ -258,6 +287,7 @@ export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSe
                 onDelete={id => deleteMutation.mutate(id)}
                 isDeleting={deleteMutation.isPending}
                 isSelected={selectedZoneId === zone.id}
+                isActive={activeZoneId === zone.id}
                 onSelect={onSelectZone}
               />
             ))}

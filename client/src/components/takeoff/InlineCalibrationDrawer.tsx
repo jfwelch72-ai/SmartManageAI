@@ -261,6 +261,11 @@ export interface InlineCalibrationDrawerProps {
   selectedCalibrationZoneId?: string | null;
   /** Task #2781 — Called when a zone is selected (canvas click or panel row click). */
   onSelectCalibrationZone?: (id: string | null) => void;
+  /**
+   * Task #2785 — ID of the zone the cursor is currently inside. Forwarded to
+   * CalibrationZonesPanel so the active row shows a live "cursor here" indicator.
+   */
+  activeCalibrationZoneId?: string | null;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -1025,6 +1030,7 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
               className="border-t border-border -mx-4 mt-2"
               selectedZoneId={props.selectedCalibrationZoneId}
               onSelectZone={props.onSelectCalibrationZone}
+              activeZoneId={props.activeCalibrationZoneId}
             />
           )}
 

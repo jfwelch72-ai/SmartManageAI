@@ -2125,6 +2125,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     toggleMeasurementSelection,
   } = interactions;
 
+  // Task #2785 — Derive which calibration zone the cursor is currently inside.
+  // We reuse the same `isPointInPolygon` utility that `getScaleForPoint` uses so
+  // the bottom-bar badge and the sidebar highlight always agree with the scale
+  // that will actually be applied when the user places the next vertex.
+  // `cursorPosition` is in canvas world-coordinates (same space as zone polygons)
+  // so no transform is needed here.
+  const activeCalibrationZone = useMemo(() => {
+    if (!cursorPosition || calibrationZones.length === 0) return null;
+    for (const zone of calibrationZones) {
+      if (isPointInPolygon(cursorPosition, zone.polygon_points)) {
+        return zone;
+      }
+    }
+    return null;
+  }, [cursorPosition, calibrationZones]);
+
   // Task #2141 — When a Sheet Set is active, fetch its members so
   // navigation can be re-scoped to the set's ordered list. Disabled
   // when no set is active to avoid wasted round-trips. Detail key
@@ -5224,6 +5240,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // straight to recalibration. Estimators triaging from the
       // status row no longer have to scroll back up to the header.
       onOpenCalibration: openCalibrationDrawer,
+      // Task #2785 — Live active zone badge in the status bar. When
+      // the cursor is inside a calibration zone polygon the bottom bar
+      // shows a cyan badge with the zone name + px/ft so the estimator
+      // always knows which zone-specific scale is being applied.
+      activeZone: activeCalibrationZone
+        ? {
+            id: activeCalibrationZone.id,
+            name: activeCalibrationZone.name,
+            pxPerFoot: activeCalibrationZone.px_per_foot,
+          }
+        : null,
+      // Task #2785 — Gate the zone badge on drawing state so idle cursor
+      // movement over zones doesn't add noise to the status bar.
+      isDrawing,
     },
     measurementTable: {
       visible: showMeasurementTable && !!selectedSheet,
@@ -6023,6 +6053,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         existingMeasurementCount={measurements.length}
         selectedCalibrationZoneId={selectedCalibrationZoneId}
         onSelectCalibrationZone={setSelectedCalibrationZoneId}
+        activeCalibrationZoneId={activeCalibrationZone?.id ?? null}
       />
 
       {/* Task #2325 — Scale History side panel. Mounted alongside the
