@@ -3410,7 +3410,7 @@ Generate a realistic schedule that:
               { role: "user", content: userPrompt },
             ],
             response_format: { type: "json_object" },
-            max_completion_tokens: 4000,
+            max_completion_tokens: 16000,
           },
         });
         const result = completion.choices[0]?.message?.content;
@@ -3431,9 +3431,8 @@ Generate a realistic schedule that:
     let aiResponse: AIScheduleResponse;
     try {
       aiResponse = JSON.parse(responseContent);
-    } catch (parseError) {
-      next(parseError);
-      return;
+    } catch {
+      return res.status(500).json({ error: "AI returned an incomplete schedule response. Please try again." });
     }
 
     const existingSchedules = await db
