@@ -615,6 +615,7 @@ export default function LandingPage() {
 
   return (
     <div className="min-h-screen bg-background">
+
       <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -674,6 +675,22 @@ export default function LandingPage() {
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </Link>
+              <a
+                href="https://calendly.com/smartmanageai/demo"
+                target="_blank"
+                rel="noopener noreferrer"
+                data-testid="link-hero-book-demo"
+              >
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="w-full sm:w-auto text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
+                  data-testid="button-hero-book-demo"
+                >
+                  <Calendar className="mr-2 h-5 w-5" />
+                  Book a Live Demo
+                </Button>
+              </a>
             </div>
             <div className="flex flex-wrap gap-6 text-gray-400">
               <div className="flex items-center gap-2">
@@ -1260,6 +1277,22 @@ export default function LandingPage() {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
             </Link>
+            <a
+              href="https://calendly.com/smartmanageai/demo"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="link-cta-book-demo"
+            >
+              <Button
+                size="lg"
+                variant="outline"
+                className="text-base px-8 py-6 bg-white/10 text-white border-white/30 hover:bg-white/20 hover:text-white"
+                data-testid="button-cta-book-demo"
+              >
+                <Calendar className="mr-2 h-5 w-5" />
+                Book a Live Demo
+              </Button>
+            </a>
           </div>
         </div>
       </section>
