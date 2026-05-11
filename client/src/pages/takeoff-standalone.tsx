@@ -1,7 +1,18 @@
 import { useMemo, useState } from "react";
 import { Link, useRoute } from "wouter";
 import { useQueries, useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, ArrowDown, ArrowUp, ExternalLink, FileText, Loader2, Plus, Ruler, Tag, Trash2 } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowDown,
+  ArrowUp,
+  ExternalLink,
+  FileText,
+  Loader2,
+  Plus,
+  Ruler,
+  Tag,
+  Trash2,
+} from "lucide-react";
 import { SendToEstimateDialog } from "@/components/SendToEstimateDialog";
 import { ObjectUploader } from "@/components/ObjectUploader";
 import { Button } from "@/components/ui/button";
@@ -122,11 +133,17 @@ export default function TakeoffStandalonePage() {
 
   const tagMutation = useMutation({
     mutationFn: async (body: { bidId?: string; projectId?: string }) => {
-      const res = await apiRequest("POST", `/api/takeoff/standalone/${id}/tags`, body);
+      const res = await apiRequest(
+        "POST",
+        `/api/takeoff/standalone/${id}/tags`,
+        body,
+      );
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "tags"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "tags"],
+      });
       toast({ title: "Tagged", description: "Takeoff linked successfully." });
       setTagOpen(false);
     },
@@ -159,7 +176,10 @@ export default function TakeoffStandalonePage() {
       if (previous) {
         const indexById = new Map(order.map((o) => [o.id, o.sheetIndex]));
         const next = [...previous]
-          .map((s) => ({ ...s, sheetIndex: indexById.get(s.id) ?? s.sheetIndex }))
+          .map((s) => ({
+            ...s,
+            sheetIndex: indexById.get(s.id) ?? s.sheetIndex,
+          }))
           .sort((a, b) => a.sheetIndex - b.sheetIndex);
         queryClient.setQueryData(
           ["/api/takeoff/standalone", id, "sheets"],
@@ -204,7 +224,10 @@ export default function TakeoffStandalonePage() {
   // Task #2561 — Manual discipline override for a single sheet. Stamps
   // disciplineSource="USER" on the server so AI re-passes won't clobber it.
   const setDisciplineMutation = useMutation({
-    mutationFn: async (vars: { sheetId: string; discipline: string | null }) => {
+    mutationFn: async (vars: {
+      sheetId: string;
+      discipline: string | null;
+    }) => {
       const res = await apiRequest(
         "PATCH",
         `/api/takeoff/standalone/${id}/sheets/${vars.sheetId}/discipline`,
@@ -213,7 +236,9 @@ export default function TakeoffStandalonePage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "sheets"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "sheets"],
+      });
     },
     onError: (err: unknown) =>
       toast({
@@ -228,7 +253,9 @@ export default function TakeoffStandalonePage() {
       await apiRequest("DELETE", `/api/takeoff/standalone/${id}/tags/${tagId}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "tags"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "tags"],
+      });
     },
   });
 
@@ -260,9 +287,18 @@ export default function TakeoffStandalonePage() {
         uploaded.mimeType === "application/pdf" ||
         /\.pdf$/i.test(uploaded.fileName);
       if (isPdf) {
-        const res = await apiRequest("POST", `/api/takeoff/standalone/${id}/import-plan`, uploaded);
-        const data = (await res.json()) as { sheets?: unknown[]; pageCount?: number };
-        return { pageCount: Number(data.pageCount ?? data.sheets?.length ?? 1) };
+        const res = await apiRequest(
+          "POST",
+          `/api/takeoff/standalone/${id}/import-plan`,
+          uploaded,
+        );
+        const data = (await res.json()) as {
+          sheets?: unknown[];
+          pageCount?: number;
+        };
+        return {
+          pageCount: Number(data.pageCount ?? data.sheets?.length ?? 1),
+        };
       }
       await apiRequest("POST", `/api/takeoff/standalone/${id}/files`, uploaded);
       const isImagePlan =
@@ -279,8 +315,12 @@ export default function TakeoffStandalonePage() {
       return { pageCount: 0 };
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "files"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", id, "sheets"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "files"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", id, "sheets"],
+      });
     },
     onError: (err: unknown) =>
       toast({
@@ -301,7 +341,11 @@ export default function TakeoffStandalonePage() {
     }>;
   }) => {
     if (!result.successful?.length) {
-      toast({ title: "Upload failed", description: "No file uploaded", variant: "destructive" });
+      toast({
+        title: "Upload failed",
+        description: "No file uploaded",
+        variant: "destructive",
+      });
       return;
     }
     let successCount = 0;
@@ -325,9 +369,7 @@ export default function TakeoffStandalonePage() {
               // toast so the user knows a 12-page PDF actually became
               // 12 sheets in one click instead of one merged sheet.
               const sheetSuffix =
-                totalSheets > successCount
-                  ? ` (${totalSheets} sheets)`
-                  : "";
+                totalSheets > successCount ? ` (${totalSheets} sheets)` : "";
               toast({
                 title: "Upload complete",
                 description: `${successCount} file(s) attached to this takeoff${sheetSuffix}.`,
@@ -391,7 +433,10 @@ export default function TakeoffStandalonePage() {
   if (!id) return <div className="p-6">Missing takeoff id.</div>;
   if (takeoffQuery.isLoading) {
     return (
-      <div className="flex items-center justify-center py-16" data-testid="standalone-loading">
+      <div
+        className="flex items-center justify-center py-16"
+        data-testid="standalone-loading"
+      >
         <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -406,7 +451,10 @@ export default function TakeoffStandalonePage() {
   const isUploading = uploadMutation.isPending;
 
   return (
-    <div className="container max-w-5xl mx-auto p-6 space-y-6" data-testid="standalone-takeoff-page">
+    <div
+      className="container max-w-full mx-auto p-6 space-y-6"
+      data-testid="standalone-takeoff-page"
+    >
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link href="/takeoff" data-testid="link-back-to-takeoff">
           <span className="inline-flex items-center gap-1 hover:text-foreground">
@@ -417,7 +465,10 @@ export default function TakeoffStandalonePage() {
 
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold" data-testid="text-standalone-title">
+          <h1
+            className="text-2xl font-semibold"
+            data-testid="text-standalone-title"
+          >
             {t.title}
           </h1>
           <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
@@ -452,7 +503,10 @@ export default function TakeoffStandalonePage() {
               </span>
             )}
           </Button>
-          <SendToEstimateButton standaloneTakeoffId={t.id} sheetIds={sheets.map((s) => s.id)} />
+          <SendToEstimateButton
+            standaloneTakeoffId={t.id}
+            sheetIds={sheets.map((s) => s.id)}
+          />
           <Dialog open={tagOpen} onOpenChange={setTagOpen}>
             <DialogTrigger asChild>
               <Button variant="outline" data-testid="button-tag-takeoff">
@@ -477,14 +531,22 @@ export default function TakeoffStandalonePage() {
           <CardContent className="space-y-2">
             {tags.map((tag) => {
               const bid = tag.bidId
-                ? (allBids as Array<{ id: string; code?: string | null; name?: string | null }>).find(
-                    (b) => b.id === tag.bidId,
-                  )
+                ? (
+                    allBids as Array<{
+                      id: string;
+                      code?: string | null;
+                      name?: string | null;
+                    }>
+                  ).find((b) => b.id === tag.bidId)
                 : null;
               const project = tag.projectId
-                ? (allProjects as Array<{ id: string; code?: string | null; name?: string | null }>).find(
-                    (p) => p.id === tag.projectId,
-                  )
+                ? (
+                    allProjects as Array<{
+                      id: string;
+                      code?: string | null;
+                      name?: string | null;
+                    }>
+                  ).find((p) => p.id === tag.projectId)
                 : null;
               const label = bid
                 ? `${bid.code ?? "Bid"} — ${bid.name ?? bid.id}`
@@ -507,9 +569,13 @@ export default function TakeoffStandalonePage() {
                   <span className="truncate">{label}</span>
                   <div className="flex items-center gap-1 shrink-0">
                     {workspaceHref && (
-                      <Link href={workspaceHref} data-testid={`link-open-workspace-${tag.id}`}>
+                      <Link
+                        href={workspaceHref}
+                        data-testid={`link-open-workspace-${tag.id}`}
+                      >
                         <Button size="sm" variant="outline">
-                          <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open in workspace
+                          <ExternalLink className="w-3.5 h-3.5 mr-1.5" /> Open
+                          in workspace
                         </Button>
                       </Link>
                     )}
@@ -539,7 +605,10 @@ export default function TakeoffStandalonePage() {
              *  list below is rendered grouped by discipline so this
              *  doubles as a jump target for large plan sets. */}
             {sheets.length > 0 && (
-              <Select value={disciplineFilter} onValueChange={setDisciplineFilter}>
+              <Select
+                value={disciplineFilter}
+                onValueChange={setDisciplineFilter}
+              >
                 <SelectTrigger
                   className="h-8 w-[180px] text-xs"
                   data-testid="select-discipline-filter"
@@ -551,7 +620,8 @@ export default function TakeoffStandalonePage() {
                   <SelectItem value="UNCLASSIFIED">Unclassified</SelectItem>
                   {presentDisciplines.map((code) => (
                     <SelectItem key={code} value={code}>
-                      {code} — {DISCIPLINE_LABELS[code] ?? code} ({disciplineCounts.get(code) ?? 0})
+                      {code} — {DISCIPLINE_LABELS[code] ?? code} (
+                      {disciplineCounts.get(code) ?? 0})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -561,7 +631,11 @@ export default function TakeoffStandalonePage() {
               maxNumberOfFiles={10}
               allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg"]}
               fileType="DOCUMENT"
-              onComplete={handleUploadComplete as React.ComponentProps<typeof ObjectUploader>["onComplete"]}
+              onComplete={
+                handleUploadComplete as React.ComponentProps<
+                  typeof ObjectUploader
+                >["onComplete"]
+              }
               testId="button-upload-plan"
             >
               <Button
@@ -582,12 +656,18 @@ export default function TakeoffStandalonePage() {
         </CardHeader>
         <CardContent>
           {sheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="text-sheets-empty">
-              No sheets yet. Upload a PDF or image plan above, then click
-              "Open workspace" to start drawing measurements.
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="text-sheets-empty"
+            >
+              No sheets yet. Upload a PDF or image plan above, then click "Open
+              workspace" to start drawing measurements.
             </p>
           ) : groupedSheets.length === 0 ? (
-            <p className="text-sm text-muted-foreground" data-testid="text-sheets-filtered-empty">
+            <p
+              className="text-sm text-muted-foreground"
+              data-testid="text-sheets-filtered-empty"
+            >
               No sheets match this discipline filter.
             </p>
           ) : (
@@ -612,7 +692,10 @@ export default function TakeoffStandalonePage() {
                         ? "Unclassified"
                         : `${group.code} — ${DISCIPLINE_LABELS[group.code] ?? group.code}`}
                     </span>
-                    <Badge variant="secondary" className="text-[10px] h-4 px-1.5">
+                    <Badge
+                      variant="secondary"
+                      className="text-[10px] h-4 px-1.5"
+                    >
                       {group.sheets.length}
                     </Badge>
                   </div>
@@ -630,7 +713,9 @@ export default function TakeoffStandalonePage() {
                             size="icon"
                             variant="ghost"
                             className="h-6 w-6"
-                            disabled={globalIdx <= 0 || reorderSheetsMutation.isPending}
+                            disabled={
+                              globalIdx <= 0 || reorderSheetsMutation.isPending
+                            }
                             onClick={() => moveSheet(s.id, "up")}
                             title="Move up"
                             data-testid={`button-move-sheet-up-${s.id}`}
@@ -642,7 +727,10 @@ export default function TakeoffStandalonePage() {
                             size="icon"
                             variant="ghost"
                             className="h-6 w-6"
-                            disabled={globalIdx === sheets.length - 1 || reorderSheetsMutation.isPending}
+                            disabled={
+                              globalIdx === sheets.length - 1 ||
+                              reorderSheetsMutation.isPending
+                            }
                             onClick={() => moveSheet(s.id, "down")}
                             title="Move down"
                             data-testid={`button-move-sheet-down-${s.id}`}
@@ -659,7 +747,11 @@ export default function TakeoffStandalonePage() {
                           <span className="flex-1 truncate">{s.sheetName}</span>
                           {s.discipline && (
                             <Badge
-                              variant={s.disciplineSource === "USER" ? "default" : "outline"}
+                              variant={
+                                s.disciplineSource === "USER"
+                                  ? "default"
+                                  : "outline"
+                              }
                               className="text-[10px] h-5 px-1.5 shrink-0"
                               title={
                                 s.disciplineSource === "USER"
@@ -723,7 +815,11 @@ export default function TakeoffStandalonePage() {
           ) : (
             <div className="space-y-1">
               {files.map((f) => (
-                <div key={f.id} className="flex items-center gap-2 text-sm" data-testid={`file-row-${f.id}`}>
+                <div
+                  key={f.id}
+                  className="flex items-center gap-2 text-sm"
+                  data-testid={`file-row-${f.id}`}
+                >
                   <FileText className="w-4 h-4 text-muted-foreground" />
                   <a
                     href={f.fileUrl}
@@ -760,15 +856,23 @@ function TagDialogContent({
       <DialogHeader>
         <DialogTitle>Tag this takeoff</DialogTitle>
         <DialogDescription>
-          Linking attaches the takeoff to a bid or project. It will appear in their
-          Suggested takeoffs and can be sent to their estimate.
+          Linking attaches the takeoff to a bid or project. It will appear in
+          their Suggested takeoffs and can be sent to their estimate.
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-3">
         <div>
           <Label>Destination type</Label>
-          <Select value={destKind} onValueChange={(v) => { setDestKind(v === "project" ? "project" : "bid"); setDestId(""); }}>
-            <SelectTrigger data-testid="select-dest-kind"><SelectValue /></SelectTrigger>
+          <Select
+            value={destKind}
+            onValueChange={(v) => {
+              setDestKind(v === "project" ? "project" : "bid");
+              setDestId("");
+            }}
+          >
+            <SelectTrigger data-testid="select-dest-kind">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="bid">Bid</SelectItem>
               <SelectItem value="project">Project</SelectItem>
@@ -778,10 +882,16 @@ function TagDialogContent({
         <div>
           <Label>{destKind === "bid" ? "Bid" : "Project"}</Label>
           <Select value={destId} onValueChange={setDestId}>
-            <SelectTrigger data-testid="select-dest-id"><SelectValue placeholder="Select..." /></SelectTrigger>
+            <SelectTrigger data-testid="select-dest-id">
+              <SelectValue placeholder="Select..." />
+            </SelectTrigger>
             <SelectContent>
               {(destKind === "bid" ? bids : projects).map((d) => {
-                const opt = d as { id: string; name?: string | null; code?: string | null };
+                const opt = d as {
+                  id: string;
+                  name?: string | null;
+                  code?: string | null;
+                };
                 return (
                   <SelectItem key={opt.id} value={opt.id}>
                     {opt.name || opt.code || opt.id}
@@ -794,7 +904,11 @@ function TagDialogContent({
       </div>
       <DialogFooter>
         <Button
-          onClick={() => onSubmit(destKind === "bid" ? { bidId: destId } : { projectId: destId })}
+          onClick={() =>
+            onSubmit(
+              destKind === "bid" ? { bidId: destId } : { projectId: destId },
+            )
+          }
           disabled={!destId || isSubmitting}
           data-testid="button-confirm-tag"
         >

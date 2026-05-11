@@ -4196,6 +4196,84 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRo
   }
 });
 
+/**
+ * GET /api/estimates
+ * List all estimates for the authenticated org, with bid/project label.
+ * Used by SendToEstimateDialog when no specific bid/project context is provided.
+ */
+router.get("/api/estimates", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = getOrgIdForFilter(req);
+    const rows = await db
+      .select({
+        id: estimates.id,
+        versionNumber: estimates.versionNumber,
+        status: estimates.status,
+        bidName: bids.name,
+        projectName: projects.name,
+      })
+      .from(estimates)
+      .leftJoin(bids, eq(estimates.bidId, bids.id))
+      .leftJoin(projects, eq(estimates.projectId, projects.id))
+      .where(or(eq(bids.gcOrganizationId, orgId), eq(projects.gcOrganizationId, orgId)))
+      .orderBy(desc(estimates.createdAt));
+
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        name: r.bidName
+          ? `${r.bidName} — v${r.versionNumber}`
+          : r.projectName
+          ? `${r.projectName} — v${r.versionNumber}`
+          : `Estimate v${r.versionNumber}`,
+        status: r.status,
+      })),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/bids/:code/estimates
+ * List estimates for a specific bid (documented in swagger, now implemented).
+ */
+router.get("/api/bids/:code/estimates", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = getOrgIdForFilter(req);
+    const [bid] = await db
+      .select()
+      .from(bids)
+      .where(and(eq(bids.code, req.params.code), eq(bids.gcOrganizationId, orgId)))
+      .limit(1);
+
+    if (!bid) {
+      res.status(404).json({ error: "Bid not found" });
+      return;
+    }
+
+    const rows = await db
+      .select({
+        id: estimates.id,
+        versionNumber: estimates.versionNumber,
+        status: estimates.status,
+      })
+      .from(estimates)
+      .where(eq(estimates.bidId, bid.id))
+      .orderBy(desc(estimates.versionNumber));
+
+    res.json(
+      rows.map((r) => ({
+        id: r.id,
+        name: `${bid.name} — v${r.versionNumber}`,
+        status: r.status,
+      })),
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const organizationId = req.user?.organizationId;

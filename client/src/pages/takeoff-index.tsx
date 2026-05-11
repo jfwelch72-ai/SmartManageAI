@@ -22,7 +22,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -97,18 +101,31 @@ export default function TakeoffIndexPage() {
   // Task #2403 — My standalone takeoffs (Phase 1 entry point).
   const myTakeoffs = useQuery<MyStandaloneTakeoff[]>({
     queryKey: ["/api/takeoff/standalone", "list", "mine"],
-    queryFn: async () => (await fetch("/api/takeoff/standalone?scope=mine", { credentials: "include" })).json(),
+    queryFn: async () =>
+      (
+        await fetch("/api/takeoff/standalone?scope=mine", {
+          credentials: "include",
+        })
+      ).json(),
   });
 
   const createTakeoff = useMutation({
     mutationFn: async () => {
-      const date = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const date = new Date().toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
       const title = `Untitled takeoff – ${date}`;
-      const res = await apiRequest("POST", "/api/takeoff/standalone", { title });
+      const res = await apiRequest("POST", "/api/takeoff/standalone", {
+        title,
+      });
       return res.json();
     },
     onSuccess: (data: { id: string }) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", "list", "mine"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/standalone", "list", "mine"],
+      });
       setLocation(`/takeoff/standalone/${data.id}/workspace`);
     },
     onError: (err: unknown) =>
@@ -141,7 +158,9 @@ export default function TakeoffIndexPage() {
     return map;
   }, [projects]);
 
-  const refreshEntry = (entry: RecentTakeoffEntry): RecentTakeoffEntry | null => {
+  const refreshEntry = (
+    entry: RecentTakeoffEntry,
+  ): RecentTakeoffEntry | null => {
     if (entry.kind === "bid") {
       const fresh = bidsByCode.get(entry.entityCode);
       if (!fresh) return null;
@@ -161,15 +180,17 @@ export default function TakeoffIndexPage() {
   };
 
   const visiblePinned = useMemo(
-    () => recents.pinned
-      .map(refreshEntry)
-      .filter((e): e is NonNullable<typeof e> => e !== null),
+    () =>
+      recents.pinned
+        .map(refreshEntry)
+        .filter((e): e is NonNullable<typeof e> => e !== null),
     [recents.pinned, bidsByCode, projectsByCode],
   );
   const visibleRecent = useMemo(
-    () => recents.recent
-      .map(refreshEntry)
-      .filter((e): e is NonNullable<typeof e> => e !== null),
+    () =>
+      recents.recent
+        .map(refreshEntry)
+        .filter((e): e is NonNullable<typeof e> => e !== null),
     [recents.recent, bidsByCode, projectsByCode],
   );
   const hasRecents = visiblePinned.length > 0 || visibleRecent.length > 0;
@@ -216,13 +237,19 @@ export default function TakeoffIndexPage() {
     !isLoading && filteredBids.length === 0 && filteredProjects.length === 0;
 
   return (
-    <div className="container max-w-5xl mx-auto p-6 space-y-6" data-testid="takeoff-index-page">
+    <div
+      className="container max-w-full mx-auto p-6 px-8 space-y-6"
+      data-testid="takeoff-index-page"
+    >
       <div className="flex items-start gap-4">
         <div className="rounded-md bg-primary/10 p-3 shrink-0">
           <Ruler className="w-6 h-6 text-primary" />
         </div>
         <div className="flex-1 min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight" data-testid="text-takeoff-index-title">
+          <h1
+            className="text-2xl font-semibold tracking-tight"
+            data-testid="text-takeoff-index-title"
+          >
             Takeoff
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -236,9 +263,11 @@ export default function TakeoffIndexPage() {
           disabled={createTakeoff.isPending}
           data-testid="button-new-standalone-takeoff"
         >
-          {createTakeoff.isPending
-            ? <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
-            : <Plus className="w-4 h-4 mr-1.5" />}
+          {createTakeoff.isPending ? (
+            <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+          ) : (
+            <Plus className="w-4 h-4 mr-1.5" />
+          )}
           New Takeoff
         </Button>
       </div>
@@ -250,17 +279,27 @@ export default function TakeoffIndexPage() {
           </h2>
           <div className="grid gap-2">
             {myTakeoffs.data!.map((t) => (
-              <Link key={t.id} href={`/takeoff/standalone/${t.id}`} data-testid={`link-my-takeoff-${t.id}`}>
+              <Link
+                key={t.id}
+                href={`/takeoff/standalone/${t.id}`}
+                data-testid={`link-my-takeoff-${t.id}`}
+              >
                 <Card className="hover-elevate active-elevate-2 transition-colors cursor-pointer">
                   <CardContent className="flex items-center gap-3 p-4">
                     <Layers className="w-5 h-5 text-muted-foreground shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-medium truncate">{t.title}</span>
-                        {t.tradeType && <Badge variant="outline" className="text-[10px]">{t.tradeType}</Badge>}
+                        {t.tradeType && (
+                          <Badge variant="outline" className="text-[10px]">
+                            {t.tradeType}
+                          </Badge>
+                        )}
                       </div>
                       {t.clientName && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{t.clientName}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {t.clientName}
+                        </p>
                       )}
                     </div>
                     <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
@@ -374,7 +413,10 @@ export default function TakeoffIndexPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center py-16" data-testid="takeoff-index-loading">
+        <div
+          className="flex items-center justify-center py-16"
+          data-testid="takeoff-index-loading"
+        >
           <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
         </div>
       ) : showEmptyState ? (
@@ -392,10 +434,18 @@ export default function TakeoffIndexPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button asChild variant="outline" data-testid="button-takeoff-go-to-bids">
+              <Button
+                asChild
+                variant="outline"
+                data-testid="button-takeoff-go-to-bids"
+              >
                 <Link href="/bids">Go to Bids</Link>
               </Button>
-              <Button asChild variant="outline" data-testid="button-takeoff-go-to-projects">
+              <Button
+                asChild
+                variant="outline"
+                data-testid="button-takeoff-go-to-projects"
+              >
                 <Link href="/projects">Go to Projects</Link>
               </Button>
             </div>
@@ -447,7 +497,10 @@ export default function TakeoffIndexPage() {
                               {bid.code}
                             </Badge>
                             {bid.status && (
-                              <Badge variant="secondary" className="text-[10px] shrink-0">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] shrink-0"
+                              >
                                 {bid.status}
                               </Badge>
                             )}
@@ -515,7 +568,10 @@ export default function TakeoffIndexPage() {
                               {project.code}
                             </Badge>
                             {project.status && (
-                              <Badge variant="secondary" className="text-[10px] shrink-0">
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] shrink-0"
+                              >
                                 {project.status}
                               </Badge>
                             )}
@@ -547,9 +603,10 @@ interface RecentCardProps {
 }
 
 function RecentCard({ entry, isPinned, userId }: RecentCardProps) {
-  const basePath = entry.kind === "project"
-    ? `/takeoff/project/${entry.entityCode}`
-    : `/takeoff/${entry.entityCode}`;
+  const basePath =
+    entry.kind === "project"
+      ? `/takeoff/project/${entry.entityCode}`
+      : `/takeoff/${entry.entityCode}`;
   const href = entry.sheetId
     ? `${basePath}?sheet=${encodeURIComponent(entry.sheetId)}`
     : basePath;
@@ -598,8 +655,8 @@ function RecentCard({ entry, isPinned, userId }: RecentCardProps) {
                 className="font-medium truncate text-sm"
                 data-testid={`text-takeoff-recent-title-${testKey}`}
               >
-                {entry.sheetName
-                  || (entry.sheetId
+                {entry.sheetName ||
+                  (entry.sheetId
                     ? "Sheet"
                     : entry.entityName || entry.entityCode)}
               </span>

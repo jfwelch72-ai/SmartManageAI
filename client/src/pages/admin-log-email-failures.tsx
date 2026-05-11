@@ -105,21 +105,28 @@ interface FailureRow {
 // are escape hatches for admins who specifically want to triage by
 // "currently broken right now" or "most recently failed".
 type FailuresSortMode = "rolling" | "streak" | "recent";
-const FAILURES_SORT_OPTIONS: Array<{ value: FailuresSortMode; label: string; description: string }> = [
+const FAILURES_SORT_OPTIONS: Array<{
+  value: FailuresSortMode;
+  label: string;
+  description: string;
+}> = [
   {
     value: "rolling",
     label: "Most failures (30d)",
-    description: "Chronic offenders first — sorted by failed sends in the last 30 days.",
+    description:
+      "Chronic offenders first — sorted by failed sends in the last 30 days.",
   },
   {
     value: "streak",
     label: "Longest current streak",
-    description: "Currently broken pipelines first — sorted by consecutive-failure count.",
+    description:
+      "Currently broken pipelines first — sorted by consecutive-failure count.",
   },
   {
     value: "recent",
     label: "Most recent failure",
-    description: "Freshest breakage first — sorted by the timestamp of the last failed attempt.",
+    description:
+      "Freshest breakage first — sorted by the timestamp of the last failed attempt.",
   },
 ];
 
@@ -172,7 +179,9 @@ function ResendNowButton({
 
   const lastAt = lastResendAt.get(cooldownKey);
   const remainingMs =
-    lastAt !== undefined ? Math.max(0, SEND_NOW_COOLDOWN_MS - (now - lastAt)) : 0;
+    lastAt !== undefined
+      ? Math.max(0, SEND_NOW_COOLDOWN_MS - (now - lastAt))
+      : 0;
   const cooldownSeconds = Math.ceil(remainingMs / 1000);
   const isCoolingDown = remainingMs > 0;
 
@@ -229,8 +238,12 @@ function ResendNowButton({
       // Refresh the failures list (so SUCCESS rows drop off) and the
       // per-schedule attempts cache (so the history popover shows the
       // newly-written attempt row).
-      queryClient.invalidateQueries({ queryKey: ["/api/log-email-schedule-failures"] });
-      queryClient.invalidateQueries({ queryKey: buildAttemptsQueryKey(projectId, logType) });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/log-email-schedule-failures"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: buildAttemptsQueryKey(projectId, logType),
+      });
     },
     onError: (err) => {
       // The 30s debounce returns 429 with the wait-time message — the
@@ -241,7 +254,8 @@ function ResendNowButton({
       // toast already explains the wait.
       toast({
         title: "Couldn't resend the log",
-        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        description:
+          err instanceof Error ? err.message : "Please try again in a moment.",
         variant: "destructive",
       });
     },
@@ -317,10 +331,27 @@ interface DigestSubscriptionResponse {
 // keeps the historical "indefinite" semantics. Numbers are days the
 // server expands into a `muted_until` deadline. Keep this list in
 // sync with `MAX_SNOOZE_DAYS` in `notificationPreferencesRoutes.ts`.
-const SNOOZE_OPTIONS: Array<{ value: number | null; label: string; description: string }> = [
-  { value: 7, label: "7 days", description: "Auto-unmutes in a week — good for clearing this week's noise." },
-  { value: 30, label: "30 days", description: "Auto-unmutes next month — good for ongoing remediation." },
-  { value: null, label: "Indefinitely", description: "Stays muted until you toggle it back on." },
+const SNOOZE_OPTIONS: Array<{
+  value: number | null;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: 7,
+    label: "7 days",
+    description:
+      "Auto-unmutes in a week — good for clearing this week's noise.",
+  },
+  {
+    value: 30,
+    label: "30 days",
+    description: "Auto-unmutes next month — good for ongoing remediation.",
+  },
+  {
+    value: null,
+    label: "Indefinitely",
+    description: "Stays muted until you toggle it back on.",
+  },
 ];
 
 function formatRelativePast(isoTs: string | null): string | null {
@@ -373,7 +404,9 @@ function DigestSubscriptionCard() {
   // *next* mute click on either channel uses it. `null` = indefinite.
   // Defaults to indefinite because that's the historical behavior and
   // the right pick when an admin really wants to mute permanently.
-  const [pendingSnoozeDays, setPendingSnoozeDays] = useState<number | null>(null);
+  const [pendingSnoozeDays, setPendingSnoozeDays] = useState<number | null>(
+    null,
+  );
 
   const mutation = useMutation({
     mutationFn: async (patch: {
@@ -397,11 +430,15 @@ function DigestSubscriptionCard() {
       });
       // Also invalidate the standard prefs query so the Notifications
       // settings page picks up the change next time it mounts.
-      queryClient.invalidateQueries({ queryKey: ["/api/notifications/preferences"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/notifications/preferences"],
+      });
 
       const label = patch.emailEnabled !== undefined ? "Email" : "In-app";
       const enabled =
-        patch.emailEnabled !== undefined ? patch.emailEnabled : patch.inAppEnabled;
+        patch.emailEnabled !== undefined
+          ? patch.emailEnabled
+          : patch.inAppEnabled;
       // Task #1747 — Mute toasts now name the snooze window so the
       // admin gets immediate confirmation of how long the digest will
       // be silent (and that "indefinitely" really means forever).
@@ -421,7 +458,8 @@ function DigestSubscriptionCard() {
     onError: (err) => {
       toast({
         title: "Couldn't update your digest subscription",
-        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        description:
+          err instanceof Error ? err.message : "Please try again in a moment.",
         variant: "destructive",
       });
     },
@@ -437,7 +475,10 @@ function DigestSubscriptionCard() {
           <CardDescription>Loading your subscription…</CardDescription>
         </CardHeader>
         <CardContent>
-          <Skeleton className="h-9 w-full" data-testid="loading-digest-subscription" />
+          <Skeleton
+            className="h-9 w-full"
+            data-testid="loading-digest-subscription"
+          />
         </CardContent>
       </Card>
     );
@@ -469,7 +510,13 @@ function DigestSubscriptionCard() {
     );
   }
 
-  const { emailEnabled, inAppEnabled, channelEmailEnabled, mutedAt, mutedUntil } = data;
+  const {
+    emailEnabled,
+    inAppEnabled,
+    channelEmailEnabled,
+    mutedAt,
+    mutedUntil,
+  } = data;
   const anyChannelMuted = !emailEnabled || !inAppEnabled;
   const bothMuted = !emailEnabled && !inAppEnabled;
   const StatusIcon = bothMuted ? BellOff : Bell;
@@ -480,7 +527,9 @@ function DigestSubscriptionCard() {
   // effect (server already accounts for an expired snooze), so the
   // copy never claims a stale duration.
   const mutedAgo = anyChannelMuted ? formatRelativePast(mutedAt) : null;
-  const autoClearsIn = anyChannelMuted ? formatRelativeFuture(mutedUntil) : null;
+  const autoClearsIn = anyChannelMuted
+    ? formatRelativeFuture(mutedUntil)
+    : null;
   const mutedAtAbs = formatAbsolute(mutedAt);
   const mutedUntilAbs = formatAbsolute(mutedUntil);
 
@@ -494,15 +543,13 @@ function DigestSubscriptionCard() {
         <CardDescription>
           {bothMuted ? (
             <span data-testid="text-digest-subscription-status">
-              You've muted the daily summary of these failures. The
-              per-failure ping (sent the moment a schedule first breaks)
-              is unaffected.
+              You've muted the daily summary of these failures. The per-failure
+              ping (sent the moment a schedule first breaks) is unaffected.
             </span>
           ) : (
             <span data-testid="text-digest-subscription-status">
-              You're subscribed to a daily summary of these failures.
-              Mute either channel below — your per-failure ping is
-              unaffected.
+              You're subscribed to a daily summary of these failures. Mute
+              either channel below — your per-failure ping is unaffected.
             </span>
           )}
         </CardDescription>
@@ -524,7 +571,10 @@ function DigestSubscriptionCard() {
                 mutation.mutate(
                   checked
                     ? { emailEnabled: true }
-                    : { emailEnabled: false, mutedUntilDays: pendingSnoozeDays },
+                    : {
+                        emailEnabled: false,
+                        mutedUntilDays: pendingSnoozeDays,
+                      },
                 )
               }
               data-testid="switch-digest-email"
@@ -543,7 +593,10 @@ function DigestSubscriptionCard() {
                 mutation.mutate(
                   checked
                     ? { inAppEnabled: true }
-                    : { inAppEnabled: false, mutedUntilDays: pendingSnoozeDays },
+                    : {
+                        inAppEnabled: false,
+                        mutedUntilDays: pendingSnoozeDays,
+                      },
                 )
               }
               data-testid="switch-digest-in-app"
@@ -576,7 +629,8 @@ function DigestSubscriptionCard() {
           </span>
           {SNOOZE_OPTIONS.map((opt) => {
             const isSelected = pendingSnoozeDays === opt.value;
-            const testValue = opt.value === null ? "indefinite" : `${opt.value}d`;
+            const testValue =
+              opt.value === null ? "indefinite" : `${opt.value}d`;
             return (
               <Button
                 key={testValue}
@@ -631,8 +685,8 @@ function DigestSubscriptionCard() {
             className="text-xs text-muted-foreground mt-3"
             data-testid="text-digest-channel-email-off"
           >
-            Heads up: your channel-level email is off, but this digest
-            override keeps the daily summary arriving in your inbox.
+            Heads up: your channel-level email is off, but this digest override
+            keeps the daily summary arriving in your inbox.
           </p>
         )}
       </CardContent>
@@ -640,7 +694,13 @@ function DigestSubscriptionCard() {
   );
 }
 
-function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus; rowKey: string }) {
+function FailureStatusBadge({
+  status,
+  rowKey,
+}: {
+  status: LogEmailAttemptStatus;
+  rowKey: string;
+}) {
   if (status === "NO_RECIPIENTS") {
     return (
       <Badge
@@ -680,7 +740,8 @@ export default function AdminLogEmailFailuresPage() {
   // MANAGER / SUPERINTENDENT can still browse the dashboard but won't
   // see (or write to) a pref row that does nothing.
   const role = authUser?.effectiveRole || authUser?.role;
-  const canManageDigestSubscription = role === "ADMIN" || role === "SUPER_ADMIN";
+  const canManageDigestSubscription =
+    role === "ADMIN" || role === "SUPER_ADMIN";
 
   // Task #1785 — admin-selectable sort. Default is "rolling" so chronic
   // offenders surface above schedules that just happen to be currently
@@ -725,7 +786,9 @@ export default function AdminLogEmailFailuresPage() {
     }
     return null;
   });
-  const [dismissedMuteBannerKey, setDismissedMuteBannerKey] = useState<string | null>(null);
+  const [dismissedMuteBannerKey, setDismissedMuteBannerKey] = useState<
+    string | null
+  >(null);
   const showMuteBanner =
     muteBanner !== null && dismissedMuteBannerKey !== muteBanner.key;
 
@@ -746,9 +809,7 @@ export default function AdminLogEmailFailuresPage() {
       if (!changed) return;
       const newSearch = url.searchParams.toString();
       const newUrl =
-        url.pathname +
-        (newSearch ? `?${newSearch}` : "") +
-        (url.hash || "");
+        url.pathname + (newSearch ? `?${newSearch}` : "") + (url.hash || "");
       window.history.replaceState(window.history.state, "", newUrl);
     } catch {
       // Ignore — the banner is still rendered from in-memory state.
@@ -768,10 +829,13 @@ export default function AdminLogEmailFailuresPage() {
   }, [muteBanner]);
 
   return (
-    <div className="container mx-auto py-8 px-4 max-w-6xl space-y-6">
+    <div className="container mx-auto py-8 px-4 max-w-full space-y-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="space-y-1">
-          <h1 className="text-2xl font-semibold" data-testid="heading-log-email-failures">
+          <h1
+            className="text-2xl font-semibold"
+            data-testid="heading-log-email-failures"
+          >
             Scheduled email failures
           </h1>
           <p className="text-sm text-muted-foreground max-w-2xl">
@@ -801,8 +865,8 @@ export default function AdminLogEmailFailuresPage() {
             <AlertTitle>Daily failures digest muted</AlertTitle>
             <AlertDescription>
               You won't receive this digest by email or in-app anymore. The
-              per-failure ping is unaffected. Use the toggles below to
-              re-enable either channel at any time.
+              per-failure ping is unaffected. Use the toggles below to re-enable
+              either channel at any time.
             </AlertDescription>
             <button
               type="button"
@@ -823,8 +887,8 @@ export default function AdminLogEmailFailuresPage() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>That mute link is no longer valid</AlertTitle>
             <AlertDescription>
-              The link may have expired or already been used. Use the
-              digest subscription toggles below to mute it directly.
+              The link may have expired or already been used. Use the digest
+              subscription toggles below to mute it directly.
             </AlertDescription>
             <button
               type="button"
@@ -852,9 +916,9 @@ export default function AdminLogEmailFailuresPage() {
                   so admins don't think "currently broken right now" is
                   the only thing they're seeing.
                 */}
-                Sorted by {activeSortLabel.toLowerCase()}. Capped at 50
-                rows; resolve the distribution list and the row will clear
-                on the next successful send.
+                Sorted by {activeSortLabel.toLowerCase()}. Capped at 50 rows;
+                resolve the distribution list and the row will clear on the next
+                successful send.
               </CardDescription>
             </div>
           </div>
@@ -948,10 +1012,16 @@ export default function AdminLogEmailFailuresPage() {
                         data-testid={`row-failure-${rowKey}`}
                       >
                         <TableCell>
-                          <div className="font-medium" data-testid={`text-project-name-${rowKey}`}>
+                          <div
+                            className="font-medium"
+                            data-testid={`text-project-name-${rowKey}`}
+                          >
                             {row.projectName}
                           </div>
-                          <div className="text-xs text-muted-foreground" data-testid={`text-project-code-${rowKey}`}>
+                          <div
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-project-code-${rowKey}`}
+                          >
                             {row.projectCode}
                           </div>
                         </TableCell>
@@ -959,7 +1029,10 @@ export default function AdminLogEmailFailuresPage() {
                           {row.logType}
                         </TableCell>
                         <TableCell>
-                          <FailureStatusBadge status={row.lastAttemptStatus} rowKey={rowKey} />
+                          <FailureStatusBadge
+                            status={row.lastAttemptStatus}
+                            rowKey={rowKey}
+                          />
                           {row.lastAttemptError && (
                             <p
                               className="text-xs text-muted-foreground break-words mt-1 max-w-xs"
@@ -969,7 +1042,10 @@ export default function AdminLogEmailFailuresPage() {
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs whitespace-nowrap" data-testid={`text-last-attempt-${rowKey}`}>
+                        <TableCell
+                          className="text-xs whitespace-nowrap"
+                          data-testid={`text-last-attempt-${rowKey}`}
+                        >
                           {formatLogEmailAttemptTime(row.lastAttemptAt)}
                         </TableCell>
                         <TableCell
@@ -1011,7 +1087,8 @@ export default function AdminLogEmailFailuresPage() {
                               >
                                 <div className="space-y-2">
                                   <div className="text-sm font-medium">
-                                    Recent attempts — {row.projectName} ({row.logType})
+                                    Recent attempts — {row.projectName} (
+                                    {row.logType})
                                   </div>
                                   {/* `enabled` is unconditionally true here:
                                       the popover only mounts when the admin
