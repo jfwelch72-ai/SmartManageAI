@@ -282,6 +282,36 @@ export interface CanvasStageProps {
   onZoneCanvasClick?: (pt: Point) => void;
   /** Called when the user double-clicks during zone drawing (closes the polygon). */
   onZoneCanvasDblClick?: () => void;
+
+  /**
+   * Task #2793 — Zone polygon vertex-drag reshape mode.
+   * When set, this zone's polygon is shown with draggable vertex handles
+   * instead of the normal static overlay.
+   */
+  editingZoneId?: string | null;
+  /**
+   * Current vertex positions for the zone being edited. Updated on every
+   * drag so the canvas preview stays live.
+   */
+  editingZonePoints?: Point[] | null;
+  /**
+   * Called with the vertex index and new canvas-space position as the user
+   * drags a handle. The parent updates `editingZonePoints` so the canvas
+   * re-renders the live polygon outline.
+   */
+  onZoneVertexDrag?: (idx: number, pt: Point) => void;
+  /**
+   * Task #2793 — Called when the user clicks a zone polygon on the canvas.
+   * Receives the full zone object so the parent can decide whether to enter
+   * vertex-edit mode (e.g. when the calibration drawer is open) or just
+   * select the zone. When undefined, falls back to `onSelectCalibrationZone`.
+   */
+  onZonePolygonClick?: (zone: {
+    id: string;
+    name: string;
+    polygon_points: Array<{ x: number; y: number }>;
+    px_per_foot: number;
+  }) => void;
 }
 
 function CanvasStageImpl(props: CanvasStageProps) {
@@ -409,6 +439,10 @@ function CanvasStageImpl(props: CanvasStageProps) {
     zoneDrawPoints,
     onZoneCanvasClick,
     onZoneCanvasDblClick,
+    editingZoneId,
+    editingZonePoints,
+    onZoneVertexDrag,
+    onZonePolygonClick,
   } = props;
 
   // Visible world-coordinate rectangle — used for viewport culling so
@@ -1871,13 +1905,19 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     centroid. Clicking a zone calls onSelectCalibrationZone so
                     the sidebar can scroll to and highlight the matching row. */}
                 {calibrationZones && calibrationZones.length > 0 && pdfImage && calibrationZones.map((zone) => {
-                  const pts = zone.polygon_points;
+                  const isBeingEdited = editingZoneId === zone.id;
+                  // Task #2793 — While a zone is in vertex-drag reshape mode, render
+                  // from editingZonePoints (the mutable draft) rather than the
+                  // persisted polygon_points, so the canvas preview stays live.
+                  const pts = isBeingEdited && editingZonePoints && editingZonePoints.length >= 3
+                    ? editingZonePoints
+                    : zone.polygon_points;
                   if (!pts || pts.length < 3) return null;
                   const isSelected = selectedCalibrationZoneId === zone.id;
                   const flatPts = pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]);
                   const cx = pts.reduce((s: number, p: { x: number; y: number }) => s + p.x, 0) / pts.length;
                   const cy = pts.reduce((s: number, p: { x: number; y: number }) => s + p.y, 0) / pts.length;
-                  const sw = (isSelected ? 2.5 : 1.5) / stageScale;
+                  const sw = (isBeingEdited ? 2.5 : isSelected ? 2.5 : 1.5) / stageScale;
                   const labelFontSize = Math.max(9, 13 / stageScale);
                   const scaleFontSize = Math.max(8, 11 / stageScale);
                   const labelW = 160 / stageScale;
@@ -1886,14 +1926,32 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       <Line
                         points={flatPts}
                         closed={true}
-                        fill={isSelected ? "rgba(6,182,212,0.22)" : "rgba(6,182,212,0.10)"}
-                        stroke={isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.60)"}
+                        fill={isBeingEdited ? "rgba(245,158,11,0.18)" : isSelected ? "rgba(6,182,212,0.22)" : "rgba(6,182,212,0.10)"}
+                        stroke={isBeingEdited ? "rgba(245,158,11,1)" : isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.60)"}
                         strokeWidth={sw}
-                        dash={isSelected ? undefined : [6 / stageScale, 3 / stageScale]}
-                        listening={true}
-                        onClick={() => onSelectCalibrationZone?.(isSelected ? null : zone.id)}
-                        onTap={() => onSelectCalibrationZone?.(isSelected ? null : zone.id)}
+                        dash={isBeingEdited || isSelected ? undefined : [6 / stageScale, 3 / stageScale]}
+                        listening={!isBeingEdited}
+                        onClick={() => {
+                          if (isBeingEdited) return;
+                          // Task #2793 — When onZonePolygonClick is provided (calibration
+                          // drawer is open), the parent decides whether to enter edit mode
+                          // or just select. Without it, fall back to the plain select path.
+                          if (onZonePolygonClick) {
+                            onZonePolygonClick(zone);
+                          } else {
+                            onSelectCalibrationZone?.(isSelected ? null : zone.id);
+                          }
+                        }}
+                        onTap={() => {
+                          if (isBeingEdited) return;
+                          if (onZonePolygonClick) {
+                            onZonePolygonClick(zone);
+                          } else {
+                            onSelectCalibrationZone?.(isSelected ? null : zone.id);
+                          }
+                        }}
                         onMouseEnter={(e) => {
+                          if (isBeingEdited) return;
                           const container = e.target.getStage()?.container();
                           if (container) container.style.cursor = "pointer";
                         }}
@@ -1909,7 +1967,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         text={zone.name}
                         fontSize={labelFontSize}
                         fontStyle="bold"
-                        fill={isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.90)"}
+                        fill={isBeingEdited ? "rgba(245,158,11,1)" : isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.90)"}
                         align="center"
                         width={labelW}
                         offsetX={labelW / 2}
@@ -1920,12 +1978,42 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         y={cy + 2 / stageScale}
                         text={`${zone.px_per_foot.toFixed(1)} px/ft`}
                         fontSize={scaleFontSize}
-                        fill={isSelected ? "rgba(6,182,212,0.95)" : "rgba(6,182,212,0.75)"}
+                        fill={isBeingEdited ? "rgba(245,158,11,0.90)" : isSelected ? "rgba(6,182,212,0.95)" : "rgba(6,182,212,0.75)"}
                         align="center"
                         width={labelW}
                         offsetX={labelW / 2}
                         listening={false}
                       />
+                      {/* Task #2793 — Draggable vertex handles shown only while this
+                          zone is in reshape mode. Each Circle is draggable; its
+                          dragmove calls onZoneVertexDrag(idx, newPos) so the parent
+                          updates editingZonePoints and the polygon preview re-renders. */}
+                      {isBeingEdited && pts.map((pt, i) => (
+                        <Circle
+                          key={`zone-edit-vtx-${zone.id}-${i}`}
+                          x={pt.x}
+                          y={pt.y}
+                          radius={6 / stageScale}
+                          fill="rgba(245,158,11,0.90)"
+                          stroke="white"
+                          strokeWidth={1.5 / stageScale}
+                          draggable={true}
+                          onDragMove={(e) => {
+                            const node = e.target;
+                            onZoneVertexDrag?.(i, { x: node.x(), y: node.y() });
+                          }}
+                          onMouseEnter={(e) => {
+                            const container = e.target.getStage()?.container();
+                            if (container) container.style.cursor = "crosshair";
+                          }}
+                          onMouseLeave={(e) => {
+                            const container = e.target.getStage()?.container();
+                            if (container) container.style.cursor = "default";
+                          }}
+                          perfectDrawEnabled={false}
+                          data-testid={`canvas-zone-vertex-${zone.id}-${i}`}
+                        />
+                      ))}
                     </Fragment>
                   );
                 })}

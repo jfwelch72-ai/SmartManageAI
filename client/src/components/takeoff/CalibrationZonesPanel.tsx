@@ -1,13 +1,14 @@
 // Task #2780 — Calibration zones panel for multi-region calibration.
 // Shows zones for the current sheet with inline rename + scale editing and delete.
 // Task #2785 — Accepts `activeZoneId` to highlight the zone the cursor is currently in.
+// Task #2793 — Adds "Edit polygon" button to open vertex-drag reshape mode.
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Trash2, MapPin, ChevronDown, ChevronUp, Pencil, Check, X } from "lucide-react";
+import { Trash2, MapPin, ChevronDown, ChevronUp, Pencil, Check, X, Move } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,13 @@ interface CalibrationZonesPanelProps {
    * follows the cursor in real time and updates on every mouse move.
    */
   activeZoneId?: string | null;
+  /**
+   * Task #2793 — Called when the user clicks "Edit polygon" on a zone row.
+   * The parent enters vertex-drag reshape mode for the given zone.
+   */
+  onEditPolygon?: (zone: CalibrationZone) => void;
+  /** Task #2793 — ID of the zone currently being reshaped (vertex-drag mode). */
+  editingZoneId?: string | null;
 }
 
 interface EditState {
@@ -50,7 +58,9 @@ function ZoneRow({
   isDeleting,
   isSelected,
   isActive,
+  isEditing,
   onSelect,
+  onEditPolygon,
 }: {
   zone: CalibrationZone;
   sheetId: string;
@@ -59,7 +69,11 @@ function ZoneRow({
   isSelected?: boolean;
   /** Task #2785 — true when the cursor is currently inside this zone's polygon. */
   isActive?: boolean;
+  /** Task #2793 — true when this zone is in vertex-drag reshape mode. */
+  isEditing?: boolean;
   onSelect?: (id: string | null) => void;
+  /** Task #2793 — triggered by the "Edit polygon" button. */
+  onEditPolygon?: (zone: CalibrationZone) => void;
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -165,7 +179,8 @@ function ZoneRow({
       className={cn(
         "flex items-center justify-between gap-2 rounded px-2 py-1 hover:bg-muted/40 group cursor-pointer",
         isSelected && "bg-cyan-50 dark:bg-cyan-950/30 ring-1 ring-cyan-400/60",
-        isActive && !isSelected && "bg-cyan-50/60 dark:bg-cyan-950/20 ring-1 ring-cyan-300/40"
+        isActive && !isSelected && "bg-cyan-50/60 dark:bg-cyan-950/20 ring-1 ring-cyan-300/40",
+        isEditing && "bg-amber-50 dark:bg-amber-950/30 ring-1 ring-amber-400/60"
       )}
       data-testid={`calibration-zone-row-${zone.id}`}
       data-active-zone={isActive || undefined}
@@ -176,10 +191,21 @@ function ZoneRow({
           <span className="font-medium truncate" data-testid={`text-zone-name-${zone.id}`}>
             {zone.name}
           </span>
+          {/* Task #2793 — "editing" badge when vertex-drag reshape mode is active. */}
+          {isEditing && (
+            <span
+              className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 rounded px-1 py-0"
+              data-testid={`badge-zone-editing-${zone.id}`}
+              title="Vertex edit mode active — drag handles on canvas"
+            >
+              <Move className="w-2 h-2 inline-block" aria-hidden="true" />
+              editing
+            </span>
+          )}
           {/* Task #2785 — Live "cursor here" indicator. A small pulsing dot
               next to the zone name tells the estimator the cursor is currently
               inside this zone and that its scale is being applied. */}
-          {isActive && (
+          {isActive && !isEditing && (
             <span
               className="inline-flex items-center gap-0.5 shrink-0 text-[9px] font-semibold text-cyan-600 dark:text-cyan-400 bg-cyan-100 dark:bg-cyan-900/50 rounded px-1 py-0"
               data-testid={`badge-zone-active-${zone.id}`}
@@ -195,6 +221,24 @@ function ZoneRow({
         </span>
       </div>
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+        {/* Task #2793 — "Edit polygon" reshapes the zone outline via vertex handles. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "h-6 w-6",
+            isEditing ? "text-amber-600 hover:text-amber-700" : "text-muted-foreground hover:text-foreground"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditPolygon?.(zone);
+          }}
+          disabled={isDeleting}
+          title="Edit polygon vertices"
+          data-testid={`button-edit-zone-polygon-${zone.id}`}
+        >
+          <Move className="w-3 h-3" />
+        </Button>
         <Button
           variant="ghost"
           size="icon"
@@ -224,7 +268,7 @@ function ZoneRow({
   );
 }
 
-export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSelectZone, activeZoneId }: CalibrationZonesPanelProps) {
+export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSelectZone, activeZoneId, onEditPolygon, editingZoneId }: CalibrationZonesPanelProps) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
@@ -288,7 +332,9 @@ export function CalibrationZonesPanel({ sheetId, className, selectedZoneId, onSe
                 isDeleting={deleteMutation.isPending}
                 isSelected={selectedZoneId === zone.id}
                 isActive={activeZoneId === zone.id}
+                isEditing={editingZoneId === zone.id}
                 onSelect={onSelectZone}
+                onEditPolygon={onEditPolygon}
               />
             ))}
           </div>

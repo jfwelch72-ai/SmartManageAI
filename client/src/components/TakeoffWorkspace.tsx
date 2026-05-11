@@ -500,6 +500,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [zoneDrawingActive, setZoneDrawingActive] = useState(false);
   const [zoneDrawPoints, setZoneDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [pendingZonePoints, setPendingZonePoints] = useState<{ x: number; y: number }[] | null>(null);
+  // Task #2793 — Zone polygon vertex-drag reshape mode.
+  // editingZoneId = the zone being reshaped; editingZonePoints = mutable draft vertices.
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editingZonePoints, setEditingZonePoints] = useState<{ x: number; y: number }[] | null>(null);
   // Task #2325 — Scale History side panel. Holds the sheet ID it was
   // opened for so callers (drift banner, calibration drawer) can target a
   // specific sheet that may differ from the currently selected one.
@@ -1950,6 +1954,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setZoneDrawingActive(false);
     setZoneDrawPoints([]);
     setPendingZonePoints(null);
+    // Task #2793 — Also exit vertex-drag reshape mode when switching sheets.
+    setEditingZoneId(null);
+    setEditingZonePoints(null);
   }, [selectedSheet]);
 
   const getScaleForPoint = useCallback(
@@ -2749,6 +2756,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setZoneDrawingActive(false);
     setZoneDrawPoints([]);
     setPendingZonePoints(null);
+    // Task #2793 — Also exit vertex-drag reshape mode when the drawer closes
+    // so draggable handles never persist without save/cancel controls visible.
+    setEditingZoneId(null);
+    setEditingZonePoints(null);
   }, [
     setCalibrationMode,
     setCalibrationPoints,
@@ -2789,6 +2800,59 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       return [];
     });
   }, []);
+
+  // Task #2793 — Zone polygon vertex-drag reshape handlers.
+  // handleStartZoneEdit: enters reshape mode for a zone by copying its
+  // persisted polygon_points into the mutable editingZonePoints draft.
+  const handleStartZoneEdit = useCallback(
+    (zone: { id: string; polygon_points: Array<{ x: number; y: number }> }) => {
+      setEditingZoneId(zone.id);
+      setEditingZonePoints([...zone.polygon_points]);
+    },
+    [],
+  );
+
+  // handleZoneVertexDrag: called on every drag move from the canvas circle
+  // handles; splices the new position into the draft array.
+  const handleZoneVertexDrag = useCallback(
+    (idx: number, pt: { x: number; y: number }) => {
+      setEditingZonePoints(prev => {
+        if (!prev) return prev;
+        const next = [...prev];
+        next[idx] = pt;
+        return next;
+      });
+    },
+    [],
+  );
+
+  // handleCancelZoneEdit: exits reshape mode and discards the draft.
+  const handleCancelZoneEdit = useCallback(() => {
+    setEditingZoneId(null);
+    setEditingZonePoints(null);
+  }, []);
+
+  // handleSaveZoneEdit: PATCHes the updated polygon_points to the server.
+  const handleSaveZoneEdit = useCallback(async () => {
+    if (!editingZoneId || !editingZonePoints || editingZonePoints.length < 3) return;
+    try {
+      await apiRequest("PATCH", `/api/takeoff/calibration-zones/${editingZoneId}`, {
+        polygonPoints: editingZonePoints,
+      });
+      queryClient.invalidateQueries({
+        queryKey: [`/api/takeoff/sheets/${selectedSheet}/calibration-zones`],
+      });
+      setEditingZoneId(null);
+      setEditingZonePoints(null);
+      toast({ title: "Zone polygon updated" });
+    } catch {
+      toast({
+        title: "Failed to save zone polygon",
+        description: "Check your connection and try again.",
+        variant: "destructive",
+      });
+    }
+  }, [editingZoneId, editingZonePoints, selectedSheet, toast]);
 
   // Task #2141 — Calibrate-set entry point: triggered when the user
   // clicks the per-set scale chip in the SheetSetsPanel. Mark the
@@ -4699,10 +4763,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     calibrationZones,
     selectedCalibrationZoneId,
     onSelectCalibrationZone: setSelectedCalibrationZoneId,
+    // Task #2793 — When the calibration drawer is open, clicking a zone
+    // polygon enters vertex-drag reshape mode for that zone (and also
+    // selects it so the row highlights). When the drawer is closed the
+    // prop is undefined and the canvas falls back to the plain select path.
+    onZonePolygonClick: calibrationDrawerOpen
+      ? (zone) => {
+          setSelectedCalibrationZoneId(zone.id);
+          handleStartZoneEdit(zone);
+        }
+      : undefined,
     zoneDrawingActive,
     zoneDrawPoints,
     onZoneCanvasClick: handleZoneCanvasClick,
     onZoneCanvasDblClick: handleZoneCanvasDblClick,
+    editingZoneId,
+    editingZonePoints,
+    onZoneVertexDrag: handleZoneVertexDrag,
     currentSnap,
     runningMeasurement,
     snapStats,
@@ -6124,6 +6201,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         zoneDrawPoints={zoneDrawPoints}
         pendingZonePoints={pendingZonePoints}
         onClearPendingZone={() => setPendingZonePoints(null)}
+        editingZoneId={editingZoneId}
+        onEditPolygon={handleStartZoneEdit}
+        onSaveZoneEdit={handleSaveZoneEdit}
+        onCancelZoneEdit={handleCancelZoneEdit}
       />
 
       {/* Task #2325 — Scale History side panel. Mounted alongside the

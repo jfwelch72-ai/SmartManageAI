@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin, Hexagon } from "lucide-react";
+import { MapPin, Hexagon, Move } from "lucide-react";
 import { CalibrationZonesPanel } from "./CalibrationZonesPanel";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -446,6 +446,19 @@ export interface InlineCalibrationDrawerProps {
   pendingZonePoints?: { x: number; y: number }[] | null;
   /** Clear the pending polygon after save or cancel. */
   onClearPendingZone?: () => void;
+
+  /**
+   * Task #2793 — Zone polygon reshape (vertex-drag edit) mode.
+   * When `editingZoneId` is set the panel shows a save/cancel banner and
+   * the canvas displays draggable vertex handles.
+   */
+  editingZoneId?: string | null;
+  /** Called when the user clicks "Edit polygon" on a zone row in the panel. */
+  onEditPolygon?: (zone: { id: string; name: string; polygon_points: Array<{ x: number; y: number }>; px_per_foot: number }) => void;
+  /** Save the reshaped polygon by PATCHing the zone. */
+  onSaveZoneEdit?: () => void;
+  /** Cancel reshape and discard any vertex moves. */
+  onCancelZoneEdit?: () => void;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -1205,13 +1218,50 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
           </div>
 
           {props.sheetId && (
-            <CalibrationZonesPanel
-              sheetId={props.sheetId}
-              className="border-t border-border -mx-4 mt-2"
-              selectedZoneId={props.selectedCalibrationZoneId}
-              onSelectZone={props.onSelectCalibrationZone}
-              activeZoneId={props.activeCalibrationZoneId}
-            />
+            <>
+              <CalibrationZonesPanel
+                sheetId={props.sheetId}
+                className="border-t border-border -mx-4 mt-2"
+                selectedZoneId={props.selectedCalibrationZoneId}
+                onSelectZone={props.onSelectCalibrationZone}
+                activeZoneId={props.activeCalibrationZoneId}
+                onEditPolygon={props.onEditPolygon}
+                editingZoneId={props.editingZoneId}
+              />
+              {/* Task #2793 — Save/cancel banner shown while a zone is in vertex-drag
+                  reshape mode. Sits directly below the zone panel so it's visually
+                  tied to the zone list without obscuring other drawer content. */}
+              {props.editingZoneId && (
+                <div
+                  className="flex items-center gap-2 rounded-md border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs"
+                  data-testid="zone-edit-save-banner"
+                >
+                  <Move className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span className="flex-1 text-amber-700 dark:text-amber-300">
+                    Drag vertex handles on the plan to reshape the zone
+                  </span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-xs shrink-0"
+                    onClick={props.onCancelZoneEdit}
+                    data-testid="button-zone-edit-cancel"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-6 px-2 text-xs shrink-0 bg-amber-600 hover:bg-amber-700 text-white"
+                    onClick={props.onSaveZoneEdit}
+                    data-testid="button-zone-edit-save"
+                  >
+                    Save changes
+                  </Button>
+                </div>
+              )}
+            </>
           )}
 
           {/* Task #2784 — Draw Zone section. Shows either:
