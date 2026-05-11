@@ -494,7 +494,7 @@ router.post("/ai/assistant/chat", requireAuth, async (req: AuthRequest, res, nex
 });
 
 const aiAnalysisSchema = z.object({
-  module: z.enum(['SCHEDULING', 'DELAYS', 'COSTS', 'EQUIPMENT', 'VENDOR_PRICING', 'PROJECT_HEALTH', 'ALL']).optional(),
+  module: z.enum(['SCHEDULING', 'DELAYS', 'COSTS', 'EQUIPMENT', 'VENDOR_PRICING', 'PROJECT_HEALTH', 'ALL', 'BIDS']).optional(),
   projectId: z.string().optional(),
   saveResults: z.boolean().optional().default(true),
 });
@@ -516,7 +516,7 @@ router.post("/ai-analyze", sensitiveLimiter, requireAuth, async (req: AuthReques
 
     let result;
     
-    if (module === 'ALL' || !module) {
+    if (module === 'ALL' || module === 'BIDS' || !module) {
       result = await runComprehensiveAnalysis(organizationId || undefined, projectId);
     } else {
       switch (module) {

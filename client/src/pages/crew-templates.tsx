@@ -8,7 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -35,7 +41,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Users, Plus, Pencil, Trash2, Loader2, HardHat, Truck } from "lucide-react";
+import {
+  Users,
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  HardHat,
+  Truck,
+} from "lucide-react";
 
 interface CrewTemplate {
   id: string;
@@ -111,14 +125,29 @@ function emptyForm(): FormState {
 }
 
 function emptyWorker(): CrewWorker {
-  return { classificationLabel: "", count: 1, hourlyRate: "0", burdenPercent: "0" };
+  return {
+    classificationLabel: "",
+    count: 1,
+    hourlyRate: "0",
+    burdenPercent: "0",
+  };
 }
 
 function emptyEquipment(): CrewEquipment {
-  return { equipmentLabel: "", count: 1, dailyRate: "0", fuelCostPerDay: "0", notes: "" };
+  return {
+    equipmentLabel: "",
+    count: 1,
+    dailyRate: "0",
+    fuelCostPerDay: "0",
+    notes: "",
+  };
 }
 
-function computeCost(workers: CrewWorker[], equipment: CrewEquipment[], hours: number) {
+function computeCost(
+  workers: CrewWorker[],
+  equipment: CrewEquipment[],
+  hours: number,
+) {
   let labor = 0;
   for (const w of workers) {
     const rate = Number(w.hourlyRate ?? 0);
@@ -127,7 +156,9 @@ function computeCost(workers: CrewWorker[], equipment: CrewEquipment[], hours: n
   }
   let equip = 0;
   for (const e of equipment) {
-    equip += Number(e.count ?? 0) * (Number(e.dailyRate ?? 0) + Number(e.fuelCostPerDay ?? 0));
+    equip +=
+      Number(e.count ?? 0) *
+      (Number(e.dailyRate ?? 0) + Number(e.fuelCostPerDay ?? 0));
   }
   return { labor, equip, total: labor + equip };
 }
@@ -156,9 +187,12 @@ export default function CrewTemplatesPage() {
           name: detail.template.name,
           tradeType: detail.template.tradeType ?? "",
           description: detail.template.description ?? "",
-          defaultHoursPerDay: String(detail.template.defaultHoursPerDay ?? "8.00"),
+          defaultHoursPerDay: String(
+            detail.template.defaultHoursPerDay ?? "8.00",
+          ),
           defaultProductionUnit: detail.template.defaultProductionUnit ?? "",
-          defaultProductionPerDay: detail.template.defaultProductionPerDay ?? "",
+          defaultProductionPerDay:
+            detail.template.defaultProductionPerDay ?? "",
           isActive: detail.template.isActive,
         },
         workers: detail.workers.map((w) => ({
@@ -186,22 +220,33 @@ export default function CrewTemplatesPage() {
           tradeType: data.template.tradeType || null,
           description: data.template.description || null,
           defaultProductionUnit: data.template.defaultProductionUnit || null,
-          defaultProductionPerDay: data.template.defaultProductionPerDay || null,
+          defaultProductionPerDay:
+            data.template.defaultProductionPerDay || null,
         },
         workers: data.workers,
         equipment: data.equipment,
       };
-      const res = await apiRequest("POST", "/api/estimating-crew-templates", payload);
+      const res = await apiRequest(
+        "POST",
+        "/api/estimating-crew-templates",
+        payload,
+      );
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimating-crew-templates"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/estimating-crew-templates"],
+      });
       setDialogOpen(false);
       setForm(emptyForm());
       toast({ title: "Crew template created" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to create template", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to create template",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const updateMutation = useMutation({
@@ -212,38 +257,60 @@ export default function CrewTemplatesPage() {
           tradeType: data.template.tradeType || null,
           description: data.template.description || null,
           defaultProductionUnit: data.template.defaultProductionUnit || null,
-          defaultProductionPerDay: data.template.defaultProductionPerDay || null,
+          defaultProductionPerDay:
+            data.template.defaultProductionPerDay || null,
         },
         workers: data.workers,
         equipment: data.equipment,
       };
-      const res = await apiRequest("PATCH", `/api/estimating-crew-templates/${id}`, payload);
+      const res = await apiRequest(
+        "PATCH",
+        `/api/estimating-crew-templates/${id}`,
+        payload,
+      );
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimating-crew-templates"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/estimating-crew-templates", vars.id] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/estimating-crew-templates"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/estimating-crew-templates", vars.id],
+      });
       setDialogOpen(false);
       setEditingId(null);
       setForm(emptyForm());
       toast({ title: "Crew template updated" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to update template", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to update template",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest("DELETE", `/api/estimating-crew-templates/${id}`);
+      const res = await apiRequest(
+        "DELETE",
+        `/api/estimating-crew-templates/${id}`,
+      );
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/estimating-crew-templates"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/estimating-crew-templates"],
+      });
       setDeleteId(null);
       toast({ title: "Crew template deleted" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to delete template", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to delete template",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   function openCreate() {
@@ -270,20 +337,29 @@ export default function CrewTemplatesPage() {
   }
 
   const liveCost = useMemo(
-    () => computeCost(form.workers, form.equipment, Number(form.template.defaultHoursPerDay) || 8),
+    () =>
+      computeCost(
+        form.workers,
+        form.equipment,
+        Number(form.template.defaultHoursPerDay) || 8,
+      ),
     [form],
   );
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container max-w-full mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-page-title">
+          <h1
+            className="text-3xl font-bold flex items-center gap-2"
+            data-testid="text-page-title"
+          >
             <Users className="h-7 w-7" />
             Crew Templates
           </h1>
           <p className="text-muted-foreground mt-1">
-            Reusable crew compositions for estimating — workers, equipment, and daily roll-up cost.
+            Reusable crew compositions for estimating — workers, equipment, and
+            daily roll-up cost.
           </p>
         </div>
         <Button onClick={openCreate} data-testid="button-add-template">
@@ -296,7 +372,8 @@ export default function CrewTemplatesPage() {
         <CardHeader>
           <CardTitle>Templates</CardTitle>
           <CardDescription>
-            Click a template to edit its workers and equipment. Daily cost is recomputed automatically.
+            Click a template to edit its workers and equipment. Daily cost is
+            recomputed automatically.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -305,7 +382,10 @@ export default function CrewTemplatesPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : templates.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground" data-testid="text-empty-templates">
+            <div
+              className="text-center py-8 text-muted-foreground"
+              data-testid="text-empty-templates"
+            >
               No crew templates yet. Create one to standardize your bid pricing.
             </div>
           ) : (
@@ -323,10 +403,14 @@ export default function CrewTemplatesPage() {
               <TableBody>
                 {templates.map((t) => (
                   <TableRow key={t.id} data-testid={`row-template-${t.id}`}>
-                    <TableCell className="font-mono text-xs">{t.code}</TableCell>
+                    <TableCell className="font-mono text-xs">
+                      {t.code}
+                    </TableCell>
                     <TableCell className="font-medium">{t.name}</TableCell>
                     <TableCell>{t.tradeType ?? "—"}</TableCell>
-                    <TableCell>{Number(t.defaultHoursPerDay).toFixed(2)}</TableCell>
+                    <TableCell>
+                      {Number(t.defaultHoursPerDay).toFixed(2)}
+                    </TableCell>
                     <TableCell>
                       {t.isActive ? (
                         <Badge>Active</Badge>
@@ -360,12 +444,24 @@ export default function CrewTemplatesPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={(o) => { setDialogOpen(o); if (!o) { setEditingId(null); setForm(emptyForm()); } }}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(o) => {
+          setDialogOpen(o);
+          if (!o) {
+            setEditingId(null);
+            setForm(emptyForm());
+          }
+        }}
+      >
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingId ? "Edit Crew Template" : "New Crew Template"}</DialogTitle>
+            <DialogTitle>
+              {editingId ? "Edit Crew Template" : "New Crew Template"}
+            </DialogTitle>
             <DialogDescription>
-              Define crew composition. Labor cost = count × hourly × hours × (1 + burden). Equipment cost = count × (daily + fuel).
+              Define crew composition. Labor cost = count × hourly × hours × (1
+              + burden). Equipment cost = count × (daily + fuel).
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-6">
@@ -375,7 +471,12 @@ export default function CrewTemplatesPage() {
                 <Input
                   id="tpl-code"
                   value={form.template.code}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, code: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: { ...form.template, code: e.target.value },
+                    })
+                  }
                   placeholder="e.g. CONC-CREW-A"
                   data-testid="input-template-code"
                 />
@@ -385,7 +486,12 @@ export default function CrewTemplatesPage() {
                 <Input
                   id="tpl-name"
                   value={form.template.name}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, name: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: { ...form.template, name: e.target.value },
+                    })
+                  }
                   placeholder="e.g. Concrete Pour Crew"
                   data-testid="input-template-name"
                 />
@@ -395,7 +501,12 @@ export default function CrewTemplatesPage() {
                 <Input
                   id="tpl-trade"
                   value={form.template.tradeType}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, tradeType: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: { ...form.template, tradeType: e.target.value },
+                    })
+                  }
                   placeholder="e.g. Concrete"
                   data-testid="input-template-trade"
                 />
@@ -407,7 +518,15 @@ export default function CrewTemplatesPage() {
                   type="number"
                   step="0.25"
                   value={form.template.defaultHoursPerDay}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, defaultHoursPerDay: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: {
+                        ...form.template,
+                        defaultHoursPerDay: e.target.value,
+                      },
+                    })
+                  }
                   data-testid="input-template-hours"
                 />
               </div>
@@ -416,7 +535,15 @@ export default function CrewTemplatesPage() {
                 <Input
                   id="tpl-prod-unit"
                   value={form.template.defaultProductionUnit}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, defaultProductionUnit: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: {
+                        ...form.template,
+                        defaultProductionUnit: e.target.value,
+                      },
+                    })
+                  }
                   placeholder="e.g. CY, SF, LF"
                   data-testid="input-template-prod-unit"
                 />
@@ -428,7 +555,15 @@ export default function CrewTemplatesPage() {
                   type="number"
                   step="0.01"
                   value={form.template.defaultProductionPerDay}
-                  onChange={(e) => setForm({ ...form, template: { ...form.template, defaultProductionPerDay: e.target.value } })}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      template: {
+                        ...form.template,
+                        defaultProductionPerDay: e.target.value,
+                      },
+                    })
+                  }
                   data-testid="input-template-prod-day"
                 />
               </div>
@@ -439,7 +574,12 @@ export default function CrewTemplatesPage() {
               <Textarea
                 id="tpl-desc"
                 value={form.template.description}
-                onChange={(e) => setForm({ ...form, template: { ...form.template, description: e.target.value } })}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    template: { ...form.template, description: e.target.value },
+                  })
+                }
                 rows={2}
                 data-testid="input-template-desc"
               />
@@ -449,7 +589,12 @@ export default function CrewTemplatesPage() {
               <Switch
                 id="tpl-active"
                 checked={form.template.isActive}
-                onCheckedChange={(v) => setForm({ ...form, template: { ...form.template, isActive: v } })}
+                onCheckedChange={(v) =>
+                  setForm({
+                    ...form,
+                    template: { ...form.template, isActive: v },
+                  })
+                }
                 data-testid="switch-template-active"
               />
               <Label htmlFor="tpl-active">Active</Label>
@@ -464,14 +609,21 @@ export default function CrewTemplatesPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setForm({ ...form, workers: [...form.workers, emptyWorker()] })}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      workers: [...form.workers, emptyWorker()],
+                    })
+                  }
                   data-testid="button-add-worker"
                 >
                   <Plus className="h-4 w-4 mr-1" /> Add Worker
                 </Button>
               </div>
               {form.workers.length === 0 ? (
-                <div className="text-sm text-muted-foreground italic">No workers added.</div>
+                <div className="text-sm text-muted-foreground italic">
+                  No workers added.
+                </div>
               ) : (
                 <div className="border rounded-md overflow-x-auto">
                   <Table>
@@ -492,7 +644,10 @@ export default function CrewTemplatesPage() {
                               value={w.classificationLabel}
                               onChange={(e) => {
                                 const next = [...form.workers];
-                                next[i] = { ...next[i], classificationLabel: e.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  classificationLabel: e.target.value,
+                                };
                                 setForm({ ...form, workers: next });
                               }}
                               placeholder="e.g. Foreman"
@@ -506,7 +661,10 @@ export default function CrewTemplatesPage() {
                               value={w.count}
                               onChange={(e) => {
                                 const next = [...form.workers];
-                                next[i] = { ...next[i], count: Number(e.target.value) || 0 };
+                                next[i] = {
+                                  ...next[i],
+                                  count: Number(e.target.value) || 0,
+                                };
                                 setForm({ ...form, workers: next });
                               }}
                               data-testid={`input-worker-count-${i}`}
@@ -519,7 +677,10 @@ export default function CrewTemplatesPage() {
                               value={w.hourlyRate}
                               onChange={(e) => {
                                 const next = [...form.workers];
-                                next[i] = { ...next[i], hourlyRate: e.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  hourlyRate: e.target.value,
+                                };
                                 setForm({ ...form, workers: next });
                               }}
                               data-testid={`input-worker-rate-${i}`}
@@ -532,7 +693,10 @@ export default function CrewTemplatesPage() {
                               value={w.burdenPercent}
                               onChange={(e) => {
                                 const next = [...form.workers];
-                                next[i] = { ...next[i], burdenPercent: e.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  burdenPercent: e.target.value,
+                                };
                                 setForm({ ...form, workers: next });
                               }}
                               data-testid={`input-worker-burden-${i}`}
@@ -544,7 +708,12 @@ export default function CrewTemplatesPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() =>
-                                setForm({ ...form, workers: form.workers.filter((_, j) => j !== i) })
+                                setForm({
+                                  ...form,
+                                  workers: form.workers.filter(
+                                    (_, j) => j !== i,
+                                  ),
+                                })
                               }
                               data-testid={`button-remove-worker-${i}`}
                             >
@@ -568,14 +737,21 @@ export default function CrewTemplatesPage() {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setForm({ ...form, equipment: [...form.equipment, emptyEquipment()] })}
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      equipment: [...form.equipment, emptyEquipment()],
+                    })
+                  }
                   data-testid="button-add-equipment"
                 >
                   <Plus className="h-4 w-4 mr-1" /> Add Equipment
                 </Button>
               </div>
               {form.equipment.length === 0 ? (
-                <div className="text-sm text-muted-foreground italic">No equipment added.</div>
+                <div className="text-sm text-muted-foreground italic">
+                  No equipment added.
+                </div>
               ) : (
                 <div className="border rounded-md overflow-x-auto">
                   <Table>
@@ -596,7 +772,10 @@ export default function CrewTemplatesPage() {
                               value={e.equipmentLabel}
                               onChange={(ev) => {
                                 const next = [...form.equipment];
-                                next[i] = { ...next[i], equipmentLabel: ev.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  equipmentLabel: ev.target.value,
+                                };
                                 setForm({ ...form, equipment: next });
                               }}
                               placeholder="e.g. Skid Steer"
@@ -610,7 +789,10 @@ export default function CrewTemplatesPage() {
                               value={e.count}
                               onChange={(ev) => {
                                 const next = [...form.equipment];
-                                next[i] = { ...next[i], count: Number(ev.target.value) || 0 };
+                                next[i] = {
+                                  ...next[i],
+                                  count: Number(ev.target.value) || 0,
+                                };
                                 setForm({ ...form, equipment: next });
                               }}
                               data-testid={`input-equipment-count-${i}`}
@@ -623,7 +805,10 @@ export default function CrewTemplatesPage() {
                               value={e.dailyRate}
                               onChange={(ev) => {
                                 const next = [...form.equipment];
-                                next[i] = { ...next[i], dailyRate: ev.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  dailyRate: ev.target.value,
+                                };
                                 setForm({ ...form, equipment: next });
                               }}
                               data-testid={`input-equipment-rate-${i}`}
@@ -636,7 +821,10 @@ export default function CrewTemplatesPage() {
                               value={e.fuelCostPerDay}
                               onChange={(ev) => {
                                 const next = [...form.equipment];
-                                next[i] = { ...next[i], fuelCostPerDay: ev.target.value };
+                                next[i] = {
+                                  ...next[i],
+                                  fuelCostPerDay: ev.target.value,
+                                };
                                 setForm({ ...form, equipment: next });
                               }}
                               data-testid={`input-equipment-fuel-${i}`}
@@ -648,7 +836,12 @@ export default function CrewTemplatesPage() {
                               size="sm"
                               variant="ghost"
                               onClick={() =>
-                                setForm({ ...form, equipment: form.equipment.filter((_, j) => j !== i) })
+                                setForm({
+                                  ...form,
+                                  equipment: form.equipment.filter(
+                                    (_, j) => j !== i,
+                                  ),
+                                })
                               }
                               data-testid={`button-remove-equipment-${i}`}
                             >
@@ -671,19 +864,28 @@ export default function CrewTemplatesPage() {
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <div className="text-muted-foreground">Labor / Day</div>
-                    <div className="text-lg font-semibold" data-testid="text-cost-labor">
+                    <div
+                      className="text-lg font-semibold"
+                      data-testid="text-cost-labor"
+                    >
                       ${liveCost.labor.toFixed(2)}
                     </div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Equipment / Day</div>
-                    <div className="text-lg font-semibold" data-testid="text-cost-equipment">
+                    <div
+                      className="text-lg font-semibold"
+                      data-testid="text-cost-equipment"
+                    >
                       ${liveCost.equip.toFixed(2)}
                     </div>
                   </div>
                   <div>
                     <div className="text-muted-foreground">Total / Day</div>
-                    <div className="text-lg font-semibold" data-testid="text-cost-total">
+                    <div
+                      className="text-lg font-semibold"
+                      data-testid="text-cost-total"
+                    >
                       ${liveCost.total.toFixed(2)}
                     </div>
                   </div>
@@ -692,7 +894,11 @@ export default function CrewTemplatesPage() {
             </Card>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-template">
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              data-testid="button-cancel-template"
+            >
               Cancel
             </Button>
             <Button
@@ -709,17 +915,22 @@ export default function CrewTemplatesPage() {
         </DialogContent>
       </Dialog>
 
-      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+      <AlertDialog
+        open={!!deleteId}
+        onOpenChange={(o) => !o && setDeleteId(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Delete crew template?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the template and its workers/equipment. Bids that already
-              referenced it keep their snapshot values.
+              This permanently removes the template and its workers/equipment.
+              Bids that already referenced it keep their snapshot values.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-delete">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteId && deleteMutation.mutate(deleteId)}
               data-testid="button-confirm-delete"

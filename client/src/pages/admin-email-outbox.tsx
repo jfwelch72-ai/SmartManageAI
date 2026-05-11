@@ -1,16 +1,37 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Inbox, Loader2, Trash2, Mail, FilterX, Search, Wifi, WifiOff } from "lucide-react";
+import {
+  Inbox,
+  Loader2,
+  Trash2,
+  Mail,
+  FilterX,
+  Search,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { format, startOfDay, endOfDay, parse } from "date-fns";
 import NotFound from "@/pages/not-found";
 import { DatePicker } from "@/components/ui/date-picker";
@@ -45,7 +66,13 @@ interface PersistedFilters {
   toDate: Date | undefined;
 }
 
-const FILTER_PARAM_KEYS = ["recipient", "subject", "source", "fromDate", "toDate"] as const;
+const FILTER_PARAM_KEYS = [
+  "recipient",
+  "subject",
+  "source",
+  "fromDate",
+  "toDate",
+] as const;
 
 function parseDateParam(value: string | null): Date | undefined {
   if (!value) return undefined;
@@ -55,7 +82,13 @@ function parseDateParam(value: string | null): Date | undefined {
 
 function readFiltersFromUrl(): PersistedFilters {
   if (typeof window === "undefined") {
-    return { recipient: "", subject: "", source: "all", fromDate: undefined, toDate: undefined };
+    return {
+      recipient: "",
+      subject: "",
+      source: "all",
+      fromDate: undefined,
+      toDate: undefined,
+    };
   }
   const params = new URLSearchParams(window.location.search);
   const sourceRaw = params.get("source");
@@ -76,11 +109,14 @@ function writeFiltersToUrl(filters: PersistedFilters) {
   for (const key of FILTER_PARAM_KEYS) {
     params.delete(key);
   }
-  if (filters.recipient.trim() !== "") params.set("recipient", filters.recipient);
+  if (filters.recipient.trim() !== "")
+    params.set("recipient", filters.recipient);
   if (filters.subject.trim() !== "") params.set("subject", filters.subject);
   if (filters.source !== "all") params.set("source", filters.source);
-  if (filters.fromDate) params.set("fromDate", format(filters.fromDate, "yyyy-MM-dd"));
-  if (filters.toDate) params.set("toDate", format(filters.toDate, "yyyy-MM-dd"));
+  if (filters.fromDate)
+    params.set("fromDate", format(filters.fromDate, "yyyy-MM-dd"));
+  if (filters.toDate)
+    params.set("toDate", format(filters.toDate, "yyyy-MM-dd"));
   const query = params.toString();
   const newUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
   const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -101,11 +137,17 @@ export default function AdminEmailOutboxPage() {
   });
 
   const initialFilters = useMemo(() => readFiltersFromUrl(), []);
-  const [recipientFilter, setRecipientFilter] = useState(initialFilters.recipient);
+  const [recipientFilter, setRecipientFilter] = useState(
+    initialFilters.recipient,
+  );
   const [subjectFilter, setSubjectFilter] = useState(initialFilters.subject);
-  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">(initialFilters.source);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">(
+    initialFilters.source,
+  );
   const [searchQuery, setSearchQuery] = useState("");
-  const [fromDate, setFromDate] = useState<Date | undefined>(initialFilters.fromDate);
+  const [fromDate, setFromDate] = useState<Date | undefined>(
+    initialFilters.fromDate,
+  );
   const [toDate, setToDate] = useState<Date | undefined>(initialFilters.toDate);
 
   useEffect(() => {
@@ -128,7 +170,8 @@ export default function AdminEmailOutboxPage() {
     const toMs = toDate ? endOfDay(toDate).getTime() : null;
     return messages.filter((msg) => {
       if (sourceFilter !== "all" && msg.source !== sourceFilter) return false;
-      if (subject && !(msg.subject ?? "").toLowerCase().includes(subject)) return false;
+      if (subject && !(msg.subject ?? "").toLowerCase().includes(subject))
+        return false;
       if (recipient) {
         const haystack = [
           ...(msg.to ?? []),
@@ -161,7 +204,15 @@ export default function AdminEmailOutboxPage() {
       }
       return true;
     });
-  }, [messages, recipientFilter, subjectFilter, sourceFilter, searchQuery, fromDate, toDate]);
+  }, [
+    messages,
+    recipientFilter,
+    subjectFilter,
+    sourceFilter,
+    searchQuery,
+    fromDate,
+    toDate,
+  ]);
 
   const filtersActive =
     recipientFilter.trim() !== "" ||
@@ -232,7 +283,10 @@ export default function AdminEmailOutboxPage() {
         transport: "noop",
         messages: [],
       });
-      toast({ title: "Outbox cleared", description: "All captured test emails were removed." });
+      toast({
+        title: "Outbox cleared",
+        description: "All captured test emails were removed.",
+      });
     },
     onError: (err: Error) => {
       toast({
@@ -245,7 +299,10 @@ export default function AdminEmailOutboxPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]" data-testid="status-loading">
+      <div
+        className="flex items-center justify-center min-h-[400px]"
+        data-testid="status-loading"
+      >
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
@@ -259,16 +316,22 @@ export default function AdminEmailOutboxPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6 max-w-6xl">
+    <div className="container mx-auto p-6 space-y-6 max-w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="heading-email-outbox">
+          <h1
+            className="text-2xl font-semibold flex items-center gap-2"
+            data-testid="heading-email-outbox"
+          >
             <Inbox className="h-6 w-6" />
             Test Email Outbox
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Captured outbound emails while <code className="px-1 py-0.5 rounded bg-muted">EMAIL_TRANSPORT=noop</code>.
-            Nothing was actually delivered.
+            Captured outbound emails while{" "}
+            <code className="px-1 py-0.5 rounded bg-muted">
+              EMAIL_TRANSPORT=noop
+            </code>
+            . Nothing was actually delivered.
           </p>
         </div>
         <Button
@@ -289,7 +352,9 @@ export default function AdminEmailOutboxPage() {
       <Card data-testid="card-filters">
         <CardContent className="py-4 space-y-3">
           <div className="space-y-1.5">
-            <Label htmlFor="filter-search" className="text-xs">Search</Label>
+            <Label htmlFor="filter-search" className="text-xs">
+              Search
+            </Label>
             <div className="relative">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
               <Input
@@ -303,69 +368,90 @@ export default function AdminEmailOutboxPage() {
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-[1fr_1fr_180px_180px_180px_auto] lg:items-end">
-          <div className="space-y-1.5">
-            <Label htmlFor="filter-recipient" className="text-xs">Recipient</Label>
-            <Input
-              id="filter-recipient"
-              placeholder="email or domain…"
-              value={recipientFilter}
-              onChange={(e) => setRecipientFilter(e.target.value)}
-              data-testid="input-filter-recipient"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="filter-subject" className="text-xs">Subject contains</Label>
-            <Input
-              id="filter-subject"
-              placeholder="search subject…"
-              value={subjectFilter}
-              onChange={(e) => setSubjectFilter(e.target.value)}
-              data-testid="input-filter-subject"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="filter-source" className="text-xs">Source</Label>
-            <Select
-              value={sourceFilter}
-              onValueChange={(v) => setSourceFilter(v as "all" | "resend" | "smtp")}
+            <div className="space-y-1.5">
+              <Label htmlFor="filter-recipient" className="text-xs">
+                Recipient
+              </Label>
+              <Input
+                id="filter-recipient"
+                placeholder="email or domain…"
+                value={recipientFilter}
+                onChange={(e) => setRecipientFilter(e.target.value)}
+                data-testid="input-filter-recipient"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="filter-subject" className="text-xs">
+                Subject contains
+              </Label>
+              <Input
+                id="filter-subject"
+                placeholder="search subject…"
+                value={subjectFilter}
+                onChange={(e) => setSubjectFilter(e.target.value)}
+                data-testid="input-filter-subject"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="filter-source" className="text-xs">
+                Source
+              </Label>
+              <Select
+                value={sourceFilter}
+                onValueChange={(v) =>
+                  setSourceFilter(v as "all" | "resend" | "smtp")
+                }
+              >
+                <SelectTrigger
+                  id="filter-source"
+                  data-testid="select-filter-source"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" data-testid="option-source-all">
+                    All sources
+                  </SelectItem>
+                  <SelectItem value="resend" data-testid="option-source-resend">
+                    Resend
+                  </SelectItem>
+                  <SelectItem value="smtp" data-testid="option-source-smtp">
+                    SMTP
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="filter-from-date" className="text-xs">
+                From
+              </Label>
+              <DatePicker
+                value={fromDate ?? null}
+                onChange={(d) => setFromDate(d)}
+                placeholder="From date"
+                data-testid="input-filter-from-date"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="filter-to-date" className="text-xs">
+                To
+              </Label>
+              <DatePicker
+                value={toDate ?? null}
+                onChange={(d) => setToDate(d)}
+                placeholder="To date"
+                data-testid="input-filter-to-date"
+              />
+            </div>
+            <Button
+              variant="ghost"
+              onClick={clearFilters}
+              disabled={!filtersActive}
+              data-testid="button-clear-filters"
             >
-              <SelectTrigger id="filter-source" data-testid="select-filter-source">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all" data-testid="option-source-all">All sources</SelectItem>
-                <SelectItem value="resend" data-testid="option-source-resend">Resend</SelectItem>
-                <SelectItem value="smtp" data-testid="option-source-smtp">SMTP</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="filter-from-date" className="text-xs">From</Label>
-            <DatePicker
-              value={fromDate ?? null}
-              onChange={(d) => setFromDate(d)}
-              placeholder="From date"
-              data-testid="input-filter-from-date"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="filter-to-date" className="text-xs">To</Label>
-            <DatePicker
-              value={toDate ?? null}
-              onChange={(d) => setToDate(d)}
-              placeholder="To date"
-              data-testid="input-filter-to-date"
-            />
-          </div>
-          <Button
-            variant="ghost"
-            onClick={clearFilters}
-            disabled={!filtersActive}
-            data-testid="button-clear-filters"
-          >
-            <FilterX className="h-4 w-4 mr-2" />
-            Reset
-          </Button>
+              <FilterX className="h-4 w-4 mr-2" />
+              Reset
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -379,7 +465,8 @@ export default function AdminEmailOutboxPage() {
             </>
           ) : (
             <>
-              {messages.length} captured {messages.length === 1 ? "message" : "messages"}
+              {messages.length} captured{" "}
+              {messages.length === 1 ? "message" : "messages"}
             </>
           )}
         </span>
@@ -404,7 +491,10 @@ export default function AdminEmailOutboxPage() {
         <Card data-testid="card-empty-outbox">
           <CardContent className="py-12 flex flex-col items-center justify-center text-center text-muted-foreground gap-3">
             <Mail className="h-10 w-10" />
-            <div>No captured emails yet. Trigger a flow such as password reset to populate the outbox.</div>
+            <div>
+              No captured emails yet. Trigger a flow such as password reset to
+              populate the outbox.
+            </div>
           </CardContent>
         </Card>
       ) : filteredMessages.length === 0 ? (
@@ -430,42 +520,59 @@ export default function AdminEmailOutboxPage() {
             .map((msg) => {
               const realIndex = messages.indexOf(msg);
               return (
-                <Card key={`${msg.capturedAt}-${realIndex}`} data-testid={`card-email-${realIndex}`}>
+                <Card
+                  key={`${msg.capturedAt}-${realIndex}`}
+                  data-testid={`card-email-${realIndex}`}
+                >
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex-1 min-w-0">
-                        <CardTitle className="text-base truncate" data-testid={`text-subject-${realIndex}`}>
+                        <CardTitle
+                          className="text-base truncate"
+                          data-testid={`text-subject-${realIndex}`}
+                        >
                           {msg.subject || "(no subject)"}
                         </CardTitle>
                         <CardDescription className="mt-1 space-y-0.5">
                           <div data-testid={`text-from-${realIndex}`}>
-                            <span className="font-medium">From:</span> {msg.from}
+                            <span className="font-medium">From:</span>{" "}
+                            {msg.from}
                           </div>
                           <div data-testid={`text-to-${realIndex}`}>
-                            <span className="font-medium">To:</span> {msg.to.join(", ")}
+                            <span className="font-medium">To:</span>{" "}
+                            {msg.to.join(", ")}
                           </div>
                           {msg.cc && msg.cc.length > 0 && (
                             <div>
-                              <span className="font-medium">Cc:</span> {msg.cc.join(", ")}
+                              <span className="font-medium">Cc:</span>{" "}
+                              {msg.cc.join(", ")}
                             </div>
                           )}
                           {msg.bcc && msg.bcc.length > 0 && (
                             <div>
-                              <span className="font-medium">Bcc:</span> {msg.bcc.join(", ")}
+                              <span className="font-medium">Bcc:</span>{" "}
+                              {msg.bcc.join(", ")}
                             </div>
                           )}
                           {msg.replyTo && (
                             <div>
-                              <span className="font-medium">Reply-To:</span> {msg.replyTo}
+                              <span className="font-medium">Reply-To:</span>{" "}
+                              {msg.replyTo}
                             </div>
                           )}
                         </CardDescription>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
-                        <Badge variant="secondary" data-testid={`badge-source-${realIndex}`}>
+                        <Badge
+                          variant="secondary"
+                          data-testid={`badge-source-${realIndex}`}
+                        >
                           {msg.source}
                         </Badge>
-                        <span className="text-xs text-muted-foreground" data-testid={`text-captured-${realIndex}`}>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-captured-${realIndex}`}
+                        >
                           {format(new Date(msg.capturedAt), "PPpp")}
                         </span>
                       </div>
@@ -475,17 +582,26 @@ export default function AdminEmailOutboxPage() {
                     <Tabs defaultValue={msg.html ? "html" : "text"}>
                       <TabsList>
                         {msg.html && (
-                          <TabsTrigger value="html" data-testid={`tab-html-${realIndex}`}>
+                          <TabsTrigger
+                            value="html"
+                            data-testid={`tab-html-${realIndex}`}
+                          >
                             HTML
                           </TabsTrigger>
                         )}
                         {msg.text && (
-                          <TabsTrigger value="text" data-testid={`tab-text-${realIndex}`}>
+                          <TabsTrigger
+                            value="text"
+                            data-testid={`tab-text-${realIndex}`}
+                          >
                             Text
                           </TabsTrigger>
                         )}
                         {msg.html && (
-                          <TabsTrigger value="html-source" data-testid={`tab-html-source-${realIndex}`}>
+                          <TabsTrigger
+                            value="html-source"
+                            data-testid={`tab-html-source-${realIndex}`}
+                          >
                             HTML source
                           </TabsTrigger>
                         )}

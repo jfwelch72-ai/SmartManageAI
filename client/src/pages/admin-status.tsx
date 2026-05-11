@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
@@ -60,7 +72,11 @@ type AdminComponent = {
   sort_order: number;
 };
 
-type IncidentStatus = "INVESTIGATING" | "IDENTIFIED" | "MONITORING" | "RESOLVED";
+type IncidentStatus =
+  | "INVESTIGATING"
+  | "IDENTIFIED"
+  | "MONITORING"
+  | "RESOLVED";
 type IncidentImpact = "NONE" | "MINOR" | "MAJOR" | "CRITICAL";
 
 type IncidentUpdate = {
@@ -140,7 +156,12 @@ const SUBSCRIBER_REMOVALS_KEY = ["/api/admin/status/subscriber-removals"];
 const SUMMARY_KEY = ["/api/public/status/summary"];
 
 const IMPACT_OPTIONS: IncidentImpact[] = ["NONE", "MINOR", "MAJOR", "CRITICAL"];
-const STATUS_OPTIONS: IncidentStatus[] = ["INVESTIGATING", "IDENTIFIED", "MONITORING", "RESOLVED"];
+const STATUS_OPTIONS: IncidentStatus[] = [
+  "INVESTIGATING",
+  "IDENTIFIED",
+  "MONITORING",
+  "RESOLVED",
+];
 const PROBE_KIND_OPTIONS = [
   "http_get",
   "http_self",
@@ -185,16 +206,20 @@ type ComponentSavePayload = {
 };
 
 const STATUS_BADGE: Record<ComponentStatus, string> = {
-  operational: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
-  degraded: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  operational:
+    "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
+  degraded:
+    "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
   outage: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
   unknown: "bg-muted text-muted-foreground border-border",
 };
 
 const IMPACT_BADGE: Record<IncidentImpact, string> = {
   NONE: "bg-muted text-muted-foreground border-border",
-  MINOR: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
-  MAJOR: "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30",
+  MINOR:
+    "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30",
+  MAJOR:
+    "bg-orange-500/10 text-orange-700 dark:text-orange-400 border-orange-500/30",
   CRITICAL: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
 };
 
@@ -214,12 +239,20 @@ export default function AdminStatusPage() {
     document.title = "Status Admin | SmartManageAI";
   }, []);
 
-  const componentsQuery = useQuery<AdminComponent[]>({ queryKey: COMPONENTS_KEY });
+  const componentsQuery = useQuery<AdminComponent[]>({
+    queryKey: COMPONENTS_KEY,
+  });
   const incidentsQuery = useQuery<AdminIncident[]>({ queryKey: INCIDENTS_KEY });
   const summaryQuery = useQuery<StatusSummary>({ queryKey: SUMMARY_KEY });
-  const subscribersQuery = useQuery<Subscriber[]>({ queryKey: SUBSCRIBERS_KEY });
-  const subscriberRemovalsQuery = useQuery<SubscriberRemoval[]>({ queryKey: SUBSCRIBER_REMOVALS_KEY });
-  const webhookSecretsQuery = useQuery<WebhookSecretsResponse>({ queryKey: WEBHOOK_SECRETS_KEY });
+  const subscribersQuery = useQuery<Subscriber[]>({
+    queryKey: SUBSCRIBERS_KEY,
+  });
+  const subscriberRemovalsQuery = useQuery<SubscriberRemoval[]>({
+    queryKey: SUBSCRIBER_REMOVALS_KEY,
+  });
+  const webhookSecretsQuery = useQuery<WebhookSecretsResponse>({
+    queryKey: WEBHOOK_SECRETS_KEY,
+  });
 
   const summaryByCompId = useMemo(() => {
     const map = new Map<string, StatusSummary["components"][number]>();
@@ -241,21 +274,34 @@ export default function AdminStatusPage() {
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
     },
     onError: (err: Error) => {
-      toast({ title: "Probe sweep failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Probe sweep failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   return (
-    <div className="container mx-auto p-6 space-y-6 max-w-6xl">
+    <div className="container mx-auto p-6 space-y-6 max-w-full">
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2" data-testid="heading-admin-status">
+          <h1
+            className="text-2xl font-semibold flex items-center gap-2"
+            data-testid="heading-admin-status"
+          >
             <Activity className="h-6 w-6" />
             Status page admin
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Manage components and publish incidents shown on{" "}
-            <a href="/status" className="underline" target="_blank" rel="noopener noreferrer" data-testid="link-public-status">
+            <a
+              href="/status"
+              className="underline"
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="link-public-status"
+            >
               /status
             </a>
             . Incident updates fan out emails to confirmed subscribers.
@@ -276,7 +322,9 @@ export default function AdminStatusPage() {
         </Button>
       </div>
 
-      <WebhookSecretsBanner findings={webhookSecretsQuery.data?.findings ?? []} />
+      <WebhookSecretsBanner
+        findings={webhookSecretsQuery.data?.findings ?? []}
+      />
 
       <Tabs defaultValue="incidents">
         <TabsList>
@@ -330,7 +378,11 @@ export default function AdminStatusPage() {
  * zero findings. Severity-colour-coded so an `error` (a webhook that will
  * actively reject deliveries) is louder than a `warn` (graceful degradation).
  */
-function WebhookSecretsBanner({ findings }: { findings: WebhookSecretFinding[] }) {
+function WebhookSecretsBanner({
+  findings,
+}: {
+  findings: WebhookSecretFinding[];
+}) {
   if (findings.length === 0) return null;
 
   return (
@@ -351,7 +403,10 @@ function WebhookSecretsBanner({ findings }: { findings: WebhookSecretFinding[] }
             <Icon className="h-5 w-5 flex-shrink-0 mt-0.5" />
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-semibold" data-testid={`text-webhook-secret-integration-${f.variable}`}>
+                <span
+                  className="font-semibold"
+                  data-testid={`text-webhook-secret-integration-${f.variable}`}
+                >
                   {f.integration}
                 </span>
                 <Badge
@@ -372,7 +427,9 @@ function WebhookSecretsBanner({ findings }: { findings: WebhookSecretFinding[] }
                   {f.variable}
                 </code>
               </div>
-              <div data-testid={`text-webhook-secret-message-${f.variable}`}>{f.message}</div>
+              <div data-testid={`text-webhook-secret-message-${f.variable}`}>
+                {f.message}
+              </div>
             </div>
           </div>
         );
@@ -397,10 +454,17 @@ function IncidentsSection({
   return (
     <>
       <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground" data-testid="text-incident-count">
-          {incidents.length} incident{incidents.length === 1 ? "" : "s"} in the last year
+        <div
+          className="text-sm text-muted-foreground"
+          data-testid="text-incident-count"
+        >
+          {incidents.length} incident{incidents.length === 1 ? "" : "s"} in the
+          last year
         </div>
-        <Button onClick={() => setCreateOpen(true)} data-testid="button-new-incident">
+        <Button
+          onClick={() => setCreateOpen(true)}
+          data-testid="button-new-incident"
+        >
           <Plus className="h-4 w-4 mr-2" /> Declare incident
         </Button>
       </div>
@@ -424,7 +488,11 @@ function IncidentsSection({
         </div>
       )}
 
-      <CreateIncidentDialog open={createOpen} onOpenChange={setCreateOpen} components={components} />
+      <CreateIncidentDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        components={components}
+      />
     </>
   );
 }
@@ -451,7 +519,11 @@ function IncidentRow({
       toast({ title: "Incident deleted" });
     },
     onError: (err: Error) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Delete failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -462,27 +534,46 @@ function IncidentRow({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div className="min-w-0">
-            <CardTitle className="text-base flex items-center gap-2" data-testid={`text-incident-title-${incident.id}`}>
+            <CardTitle
+              className="text-base flex items-center gap-2"
+              data-testid={`text-incident-title-${incident.id}`}
+            >
               {incident.title}
             </CardTitle>
             <CardDescription className="mt-1 flex items-center gap-1 text-xs">
               <Clock className="h-3 w-3" /> Started {fmt(incident.startedAt)}
-              {incident.resolvedAt && <> · Resolved {fmt(incident.resolvedAt)}</>}
+              {incident.resolvedAt && (
+                <> · Resolved {fmt(incident.resolvedAt)}</>
+              )}
             </CardDescription>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="outline" className={IMPACT_BADGE[incident.impact]} data-testid={`badge-impact-${incident.id}`}>
+            <Badge
+              variant="outline"
+              className={IMPACT_BADGE[incident.impact]}
+              data-testid={`badge-impact-${incident.id}`}
+            >
               {incident.impact}
             </Badge>
-            <Badge variant="outline" data-testid={`badge-status-${incident.id}`}>
+            <Badge
+              variant="outline"
+              data-testid={`badge-status-${incident.id}`}
+            >
               {incident.status}
             </Badge>
           </div>
         </div>
         {incident.affectedComponents.length > 0 && (
-          <div className="mt-2 flex flex-wrap gap-1" data-testid={`row-incident-components-${incident.id}`}>
+          <div
+            className="mt-2 flex flex-wrap gap-1"
+            data-testid={`row-incident-components-${incident.id}`}
+          >
             {incident.affectedComponents.map((c) => (
-              <Badge key={c.id} variant="secondary" data-testid={`badge-incident-${incident.id}-component-${c.key}`}>
+              <Badge
+                key={c.id}
+                variant="secondary"
+                data-testid={`badge-incident-${incident.id}-component-${c.key}`}
+              >
                 {c.name}
               </Badge>
             ))}
@@ -493,9 +584,16 @@ function IncidentRow({
         {incident.updates.length > 0 && (
           <div className="space-y-2 border-t border-border pt-3">
             {[...incident.updates].reverse().map((u) => (
-              <div key={u.id} className="text-sm" data-testid={`incident-update-${u.id}`}>
+              <div
+                key={u.id}
+                className="text-sm"
+                data-testid={`incident-update-${u.id}`}
+              >
                 <div className="text-xs text-muted-foreground">
-                  <span className="font-medium text-foreground">{u.status}</span> · {fmt(u.createdAt)}
+                  <span className="font-medium text-foreground">
+                    {u.status}
+                  </span>{" "}
+                  · {fmt(u.createdAt)}
                 </div>
                 <div className="whitespace-pre-wrap">{u.body}</div>
               </div>
@@ -507,7 +605,9 @@ function IncidentRow({
           <div className="border-t border-border pt-3 text-sm">
             <div className="font-medium mb-1">Post-mortem</div>
             {incident.postmortem && (
-              <div className="whitespace-pre-wrap text-foreground/90">{incident.postmortem}</div>
+              <div className="whitespace-pre-wrap text-foreground/90">
+                {incident.postmortem}
+              </div>
             )}
             {incident.postmortemUrl && (
               <a
@@ -572,12 +672,14 @@ function IncidentRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this incident?</AlertDialogTitle>
             <AlertDialogDescription>
-              The incident and all its updates will be permanently removed from the public
-              status page.
+              The incident and all its updates will be permanently removed from
+              the public status page.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid={`button-cancel-delete-${incident.id}`}>
+            <AlertDialogCancel
+              data-testid={`button-cancel-delete-${incident.id}`}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
@@ -644,12 +746,18 @@ function CreateIncidentDialog({
       onOpenChange(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to create incident", description: err.message, variant: "destructive" });
+      toast({
+        title: "Failed to create incident",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   const toggleAffected = (id: string) => {
-    setAffectedIds((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
+    setAffectedIds((prev) =>
+      prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id],
+    );
   };
 
   return (
@@ -675,7 +783,10 @@ function CreateIncidentDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={status} onValueChange={(v) => setStatus(v as IncidentStatus)}>
+              <Select
+                value={status}
+                onValueChange={(v) => setStatus(v as IncidentStatus)}
+              >
                 <SelectTrigger data-testid="select-incident-status">
                   <SelectValue />
                 </SelectTrigger>
@@ -690,7 +801,10 @@ function CreateIncidentDialog({
             </div>
             <div className="space-y-1.5">
               <Label>Impact</Label>
-              <Select value={impact} onValueChange={(v) => setImpact(v as IncidentImpact)}>
+              <Select
+                value={impact}
+                onValueChange={(v) => setImpact(v as IncidentImpact)}
+              >
                 <SelectTrigger data-testid="select-incident-impact">
                   <SelectValue />
                 </SelectTrigger>
@@ -705,7 +819,9 @@ function CreateIncidentDialog({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="incident-initial-update">Initial update (optional)</Label>
+            <Label htmlFor="incident-initial-update">
+              Initial update (optional)
+            </Label>
             <Textarea
               id="incident-initial-update"
               value={initialUpdate}
@@ -716,7 +832,9 @@ function CreateIncidentDialog({
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="incident-postmortem-url">Post-mortem URL (optional)</Label>
+            <Label htmlFor="incident-postmortem-url">
+              Post-mortem URL (optional)
+            </Label>
             <Input
               id="incident-postmortem-url"
               type="url"
@@ -742,7 +860,9 @@ function CreateIncidentDialog({
                       data-testid={`checkbox-affected-${c.key}`}
                     />
                     <span>{c.name}</span>
-                    <span className="text-xs text-muted-foreground">({c.key})</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({c.key})
+                    </span>
                   </label>
                 ))}
               </div>
@@ -750,7 +870,11 @@ function CreateIncidentDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-create-incident">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel-create-incident"
+          >
             Cancel
           </Button>
           <Button
@@ -758,7 +882,9 @@ function CreateIncidentDialog({
             disabled={create.isPending || title.trim().length < 3}
             data-testid="button-submit-create-incident"
           >
-            {create.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {create.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Publish incident
           </Button>
         </DialogFooter>
@@ -791,10 +917,14 @@ function PostUpdateDialog({
 
   const post = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("POST", `/api/admin/status/incidents/${incidentId}/updates`, {
-        status,
-        body,
-      });
+      const res = await apiRequest(
+        "POST",
+        `/api/admin/status/incidents/${incidentId}/updates`,
+        {
+          status,
+          body,
+        },
+      );
       return res.json();
     },
     onSuccess: () => {
@@ -807,7 +937,11 @@ function PostUpdateDialog({
       onOpenChange(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to post update", description: err.message, variant: "destructive" });
+      toast({
+        title: "Failed to post update",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -817,14 +951,17 @@ function PostUpdateDialog({
         <DialogHeader>
           <DialogTitle>Post incident update</DialogTitle>
           <DialogDescription>
-            Posting an update with status RESOLVED will close the incident and stamp the resolved
-            time.
+            Posting an update with status RESOLVED will close the incident and
+            stamp the resolved time.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label>Status</Label>
-            <Select value={status} onValueChange={(v) => setStatus(v as IncidentStatus)}>
+            <Select
+              value={status}
+              onValueChange={(v) => setStatus(v as IncidentStatus)}
+            >
               <SelectTrigger data-testid="select-update-status">
                 <SelectValue />
               </SelectTrigger>
@@ -850,7 +987,11 @@ function PostUpdateDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-post-update">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel-post-update"
+          >
             Cancel
           </Button>
           <Button
@@ -858,7 +999,9 @@ function PostUpdateDialog({
             disabled={post.isPending || body.trim().length === 0}
             data-testid="button-submit-post-update"
           >
-            {post.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {post.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             {status === "RESOLVED" ? "Resolve incident" : "Post update"}
           </Button>
         </DialogFooter>
@@ -882,8 +1025,12 @@ function EditIncidentDialog({
   const [title, setTitle] = useState(incident.title);
   const [impact, setImpact] = useState<IncidentImpact>(incident.impact);
   const [postmortem, setPostmortem] = useState(incident.postmortem ?? "");
-  const [postmortemUrl, setPostmortemUrl] = useState(incident.postmortemUrl ?? "");
-  const [affectedIds, setAffectedIds] = useState<string[]>(incident.affectedComponents.map((c) => c.id));
+  const [postmortemUrl, setPostmortemUrl] = useState(
+    incident.postmortemUrl ?? "",
+  );
+  const [affectedIds, setAffectedIds] = useState<string[]>(
+    incident.affectedComponents.map((c) => c.id),
+  );
 
   useEffect(() => {
     if (open) {
@@ -904,7 +1051,11 @@ function EditIncidentDialog({
         postmortem: postmortem.trim() ? postmortem : null,
         postmortemUrl: postmortemUrl.trim() ? postmortemUrl : null,
       };
-      const res = await apiRequest("PATCH", `/api/admin/status/incidents/${incident.id}`, body);
+      const res = await apiRequest(
+        "PATCH",
+        `/api/admin/status/incidents/${incident.id}`,
+        body,
+      );
       return (await res.json()) as { ok: true };
     },
     onSuccess: () => {
@@ -914,12 +1065,18 @@ function EditIncidentDialog({
       onOpenChange(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Save failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   const toggleAffected = (id: string) => {
-    setAffectedIds((prev) => (prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id]));
+    setAffectedIds((prev) =>
+      prev.includes(id) ? prev.filter((k) => k !== id) : [...prev, id],
+    );
   };
 
   return (
@@ -928,7 +1085,8 @@ function EditIncidentDialog({
         <DialogHeader>
           <DialogTitle>Edit incident</DialogTitle>
           <DialogDescription>
-            Updating these fields does not send an email. Use “Post update” to notify subscribers.
+            Updating these fields does not send an email. Use “Post update” to
+            notify subscribers.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -943,7 +1101,10 @@ function EditIncidentDialog({
           </div>
           <div className="space-y-1.5">
             <Label>Impact</Label>
-            <Select value={impact} onValueChange={(v) => setImpact(v as IncidentImpact)}>
+            <Select
+              value={impact}
+              onValueChange={(v) => setImpact(v as IncidentImpact)}
+            >
               <SelectTrigger data-testid="select-edit-impact">
                 <SelectValue />
               </SelectTrigger>
@@ -994,7 +1155,9 @@ function EditIncidentDialog({
                       data-testid={`checkbox-edit-affected-${c.key}`}
                     />
                     <span>{c.name}</span>
-                    <span className="text-xs text-muted-foreground">({c.key})</span>
+                    <span className="text-xs text-muted-foreground">
+                      ({c.key})
+                    </span>
                   </label>
                 ))}
               </div>
@@ -1002,7 +1165,11 @@ function EditIncidentDialog({
           )}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-edit-incident">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel-edit-incident"
+          >
             Cancel
           </Button>
           <Button
@@ -1010,7 +1177,9 @@ function EditIncidentDialog({
             disabled={save.isPending || title.trim().length < 3}
             data-testid="button-save-edit-incident"
           >
-            {save.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {save.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Save changes
           </Button>
         </DialogFooter>
@@ -1035,10 +1204,17 @@ function ComponentsSection({
   return (
     <>
       <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground" data-testid="text-component-count">
-          {components.length} component{components.length === 1 ? "" : "s"} configured
+        <div
+          className="text-sm text-muted-foreground"
+          data-testid="text-component-count"
+        >
+          {components.length} component{components.length === 1 ? "" : "s"}{" "}
+          configured
         </div>
-        <Button onClick={() => setCreateOpen(true)} data-testid="button-new-component">
+        <Button
+          onClick={() => setCreateOpen(true)}
+          data-testid="button-new-component"
+        >
           <Plus className="h-4 w-4 mr-2" /> Add component
         </Button>
       </div>
@@ -1088,20 +1264,31 @@ function ComponentRow({
 
   const toggleEnabled = useMutation({
     mutationFn: async (enabled: boolean) => {
-      await apiRequest("PATCH", `/api/admin/status/components/${component.id}`, { enabled });
+      await apiRequest(
+        "PATCH",
+        `/api/admin/status/components/${component.id}`,
+        { enabled },
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: COMPONENTS_KEY });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
     },
     onError: (err: Error) => {
-      toast({ title: "Toggle failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Toggle failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("DELETE", `/api/admin/status/components/${component.id}`);
+      await apiRequest(
+        "DELETE",
+        `/api/admin/status/components/${component.id}`,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: COMPONENTS_KEY });
@@ -1109,7 +1296,11 @@ function ComponentRow({
       toast({ title: "Component deleted" });
     },
     onError: (err: Error) => {
-      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Delete failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1120,10 +1311,17 @@ function ComponentRow({
       <CardContent className="py-4 flex items-start justify-between gap-3 flex-wrap">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="font-medium" data-testid={`text-component-name-${component.key}`}>
+            <div
+              className="font-medium"
+              data-testid={`text-component-name-${component.key}`}
+            >
               {component.name}
             </div>
-            <Badge variant="outline" className={STATUS_BADGE[status]} data-testid={`badge-component-status-${component.key}`}>
+            <Badge
+              variant="outline"
+              className={STATUS_BADGE[status]}
+              data-testid={`badge-component-status-${component.key}`}
+            >
               {status}
             </Badge>
             <Badge variant="outline" className="font-mono text-xs">
@@ -1136,11 +1334,15 @@ function ComponentRow({
             )}
           </div>
           {component.description && (
-            <div className="text-sm text-muted-foreground mt-1">{component.description}</div>
+            <div className="text-sm text-muted-foreground mt-1">
+              {component.description}
+            </div>
           )}
           <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3">
             <span>Probe: {component.probe_kind}</span>
-            {component.probe_url && <span className="truncate">URL: {component.probe_url}</span>}
+            {component.probe_url && (
+              <span className="truncate">URL: {component.probe_url}</span>
+            )}
             <span>Last check: {fmt(summary?.lastCheckedAt ?? null)}</span>
           </div>
           {summary?.lastError && status !== "operational" && (
@@ -1274,20 +1476,34 @@ function ComponentDialog({
       };
       if (mode === "create") {
         body.key = key;
-        const res = await apiRequest("POST", "/api/admin/status/components", body);
+        const res = await apiRequest(
+          "POST",
+          "/api/admin/status/components",
+          body,
+        );
         return res.json();
       }
-      const res = await apiRequest("PATCH", `/api/admin/status/components/${component!.id}`, body);
+      const res = await apiRequest(
+        "PATCH",
+        `/api/admin/status/components/${component!.id}`,
+        body,
+      );
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: COMPONENTS_KEY });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
-      toast({ title: mode === "create" ? "Component created" : "Component updated" });
+      toast({
+        title: mode === "create" ? "Component created" : "Component updated",
+      });
       onOpenChange(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Save failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1297,9 +1513,12 @@ function ComponentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === "create" ? "Add component" : "Edit component"}</DialogTitle>
+          <DialogTitle>
+            {mode === "create" ? "Add component" : "Edit component"}
+          </DialogTitle>
           <DialogDescription>
-            Components appear on the public status page along with uptime and last probe time.
+            Components appear on the public status page along with uptime and
+            last probe time.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -1339,7 +1558,10 @@ function ComponentDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Probe kind</Label>
-              <Select value={probeKind} onValueChange={(v) => setProbeKind(v as ProbeKind)}>
+              <Select
+                value={probeKind}
+                onValueChange={(v) => setProbeKind(v as ProbeKind)}
+              >
                 <SelectTrigger data-testid="select-probe-kind">
                   <SelectValue />
                 </SelectTrigger>
@@ -1383,7 +1605,9 @@ function ComponentDialog({
                 id="comp-expect"
                 type="number"
                 value={probeExpectStatus}
-                onChange={(e) => setProbeExpectStatus(Number(e.target.value) || 200)}
+                onChange={(e) =>
+                  setProbeExpectStatus(Number(e.target.value) || 200)
+                }
                 data-testid="input-component-expect-status"
               />
             </div>
@@ -1393,18 +1617,28 @@ function ComponentDialog({
                 id="comp-timeout"
                 type="number"
                 value={probeTimeoutMs}
-                onChange={(e) => setProbeTimeoutMs(Number(e.target.value) || 8000)}
+                onChange={(e) =>
+                  setProbeTimeoutMs(Number(e.target.value) || 8000)
+                }
                 data-testid="input-component-timeout"
               />
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Switch checked={enabled} onCheckedChange={setEnabled} data-testid="switch-component-enabled" />
+            <Switch
+              checked={enabled}
+              onCheckedChange={setEnabled}
+              data-testid="switch-component-enabled"
+            />
             <Label>Enabled</Label>
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-component">
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            data-testid="button-cancel-component"
+          >
             Cancel
           </Button>
           <Button
@@ -1417,7 +1651,9 @@ function ComponentDialog({
             }
             data-testid="button-save-component"
           >
-            {save.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {save.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             {mode === "create" ? "Create" : "Save"}
           </Button>
         </DialogFooter>
@@ -1482,8 +1718,16 @@ function SubscribersSection({
     { ids?: string[]; emails?: string[]; reason?: string }
   >({
     mutationFn: async (body) => {
-      const res = await apiRequest("POST", "/api/admin/status/subscribers/bulk-delete", body);
-      return (await res.json()) as { ok: boolean; removed: number; removedEmails: string[] };
+      const res = await apiRequest(
+        "POST",
+        "/api/admin/status/subscribers/bulk-delete",
+        body,
+      );
+      return (await res.json()) as {
+        ok: boolean;
+        removed: number;
+        removedEmails: string[];
+      };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: SUBSCRIBERS_KEY });
@@ -1493,21 +1737,31 @@ function SubscribersSection({
       setPasteOpen(false);
       setPasteValue("");
       toast({
-        title: data.removed === 1 ? "1 subscriber removed" : `${data.removed} subscribers removed`,
+        title:
+          data.removed === 1
+            ? "1 subscriber removed"
+            : `${data.removed} subscribers removed`,
         description:
           data.removed === 0
             ? "No matching subscribers were found."
             : data.removedEmails.slice(0, 3).join(", ") +
-              (data.removedEmails.length > 3 ? ` +${data.removedEmails.length - 3} more` : ""),
+              (data.removedEmails.length > 3
+                ? ` +${data.removedEmails.length - 3} more`
+                : ""),
       });
     },
     onError: (err: Error) => {
-      toast({ title: "Bulk remove failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Bulk remove failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
   const allSelected =
-    visibleSubscribers.length > 0 && selectedIds.size === visibleSubscribers.length;
+    visibleSubscribers.length > 0 &&
+    selectedIds.size === visibleSubscribers.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
   const toggleAll = () => {
@@ -1557,10 +1811,16 @@ function SubscribersSection({
   return (
     <>
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="text-sm text-muted-foreground" data-testid="text-subscriber-count">
+        <div
+          className="text-sm text-muted-foreground"
+          data-testid="text-subscriber-count"
+        >
           {confirmed} confirmed of {subscribers.length} total
           {bouncingTotal > 0 && (
-            <span className="ml-2 text-amber-700 dark:text-amber-400" data-testid="text-bouncing-count">
+            <span
+              className="ml-2 text-amber-700 dark:text-amber-400"
+              data-testid="text-bouncing-count"
+            >
               · {bouncingTotal} bouncing
             </span>
           )}
@@ -1649,15 +1909,18 @@ function SubscribersSection({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Remove {selectedIds.size} subscriber{selectedIds.size === 1 ? "" : "s"}?
+              Remove {selectedIds.size} subscriber
+              {selectedIds.size === 1 ? "" : "s"}?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              The selected subscribers will stop receiving incident emails. They can resubscribe
-              from the public status page if needed.
+              The selected subscribers will stop receiving incident emails. They
+              can resubscribe from the public status page if needed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-1.5 py-2">
-            <Label htmlFor="bulk-removal-reason">Reason (recorded in audit log)</Label>
+            <Label htmlFor="bulk-removal-reason">
+              Reason (recorded in audit log)
+            </Label>
             <Input
               id="bulk-removal-reason"
               value={bulkReason}
@@ -1668,7 +1931,9 @@ function SubscribersSection({
             />
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-bulk-remove">Cancel</AlertDialogCancel>
+            <AlertDialogCancel data-testid="button-cancel-bulk-remove">
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={(e) => {
                 e.preventDefault();
@@ -1698,8 +1963,9 @@ function SubscribersSection({
           <DialogHeader>
             <DialogTitle>Remove subscribers by email list</DialogTitle>
             <DialogDescription>
-              Paste a list of email addresses (one per line, or separated by commas / spaces). Any
-              that match a current subscriber will be removed. Unmatched addresses are ignored.
+              Paste a list of email addresses (one per line, or separated by
+              commas / spaces). Any that match a current subscriber will be
+              removed. Unmatched addresses are ignored.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -1710,12 +1976,17 @@ function SubscribersSection({
               placeholder={"bouncing@example.com\nabuse@example.com\n…"}
               data-testid="input-paste-emails"
             />
-            <div className="text-xs text-muted-foreground" data-testid="text-paste-email-count">
+            <div
+              className="text-xs text-muted-foreground"
+              data-testid="text-paste-email-count"
+            >
               {parsedPasteEmails.length} valid email
               {parsedPasteEmails.length === 1 ? "" : "s"} detected
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="paste-removal-reason">Reason (recorded in audit log)</Label>
+              <Label htmlFor="paste-removal-reason">
+                Reason (recorded in audit log)
+              </Label>
               <Input
                 id="paste-removal-reason"
                 value={pasteReason}
@@ -1745,7 +2016,9 @@ function SubscribersSection({
               }
               data-testid="button-confirm-paste-remove"
             >
-              {bulkDelete.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              {bulkDelete.isPending && (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              )}
               Remove {parsedPasteEmails.length || ""}
             </Button>
           </DialogFooter>
@@ -1783,7 +2056,11 @@ function SubscriberRow({
       const label = REMOVAL_REASON_LABELS[reasonKind];
       const note = reasonNote.trim();
       const reason = note ? `${label}: ${note}` : label;
-      await apiRequest("DELETE", `/api/admin/status/subscribers/${subscriber.id}`, { reason });
+      await apiRequest(
+        "DELETE",
+        `/api/admin/status/subscribers/${subscriber.id}`,
+        { reason },
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SUBSCRIBERS_KEY });
@@ -1794,7 +2071,11 @@ function SubscriberRow({
       setReasonKind("user_request");
     },
     onError: (err: Error) => {
-      toast({ title: "Remove failed", description: err.message, variant: "destructive" });
+      toast({
+        title: "Remove failed",
+        description: err.message,
+        variant: "destructive",
+      });
     },
   });
 
@@ -1811,7 +2092,10 @@ function SubscriberRow({
           aria-label={`Select subscriber ${subscriber.email}`}
           data-testid={`checkbox-subscriber-${subscriber.id}`}
         />
-        <div className="font-medium truncate" data-testid={`text-subscriber-email-${subscriber.id}`}>
+        <div
+          className="font-medium truncate"
+          data-testid={`text-subscriber-email-${subscriber.id}`}
+        >
           {subscriber.email}
         </div>
       </div>
@@ -1847,7 +2131,8 @@ function SubscriberRow({
           >
             {subscriber.complaint_count} complaint
             {subscriber.complaint_count === 1 ? "" : "s"}
-            {subscriber.last_event_at && subscriber.last_event_type === "complaint"
+            {subscriber.last_event_at &&
+            subscriber.last_event_type === "complaint"
               ? ` · ${fmt(subscriber.last_event_at)}`
               : ""}
           </Badge>
@@ -1855,7 +2140,9 @@ function SubscriberRow({
         <Badge variant={subscriber.confirmed ? "secondary" : "outline"}>
           {subscriber.confirmed ? "confirmed" : "pending"}
         </Badge>
-        <span className="text-xs text-muted-foreground">{fmt(subscriber.created_at)}</span>
+        <span className="text-xs text-muted-foreground">
+          {fmt(subscriber.created_at)}
+        </span>
         <Button
           size="sm"
           variant="ghost"
@@ -1877,14 +2164,17 @@ function SubscriberRow({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove this subscriber?</AlertDialogTitle>
             <AlertDialogDescription>
-              {subscriber.email} will stop receiving incident emails. They can resubscribe
-              themselves from the public status page if needed.
+              {subscriber.email} will stop receiving incident emails. They can
+              resubscribe themselves from the public status page if needed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label htmlFor={`removal-reason-${subscriber.id}`}>Reason</Label>
-              <Select value={reasonKind} onValueChange={(v) => setReasonKind(v as RemovalReason)}>
+              <Select
+                value={reasonKind}
+                onValueChange={(v) => setReasonKind(v as RemovalReason)}
+              >
                 <SelectTrigger
                   id={`removal-reason-${subscriber.id}`}
                   data-testid={`select-removal-reason-${subscriber.id}`}
@@ -1893,7 +2183,11 @@ function SubscriberRow({
                 </SelectTrigger>
                 <SelectContent>
                   {REMOVAL_REASONS.map((r) => (
-                    <SelectItem key={r} value={r} data-testid={`option-removal-reason-${r}`}>
+                    <SelectItem
+                      key={r}
+                      value={r}
+                      data-testid={`option-removal-reason-${r}`}
+                    >
                       {REMOVAL_REASON_LABELS[r]}
                     </SelectItem>
                   ))}
@@ -1901,7 +2195,9 @@ function SubscriberRow({
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor={`removal-note-${subscriber.id}`}>Notes (optional)</Label>
+              <Label htmlFor={`removal-note-${subscriber.id}`}>
+                Notes (optional)
+              </Label>
               <Textarea
                 id={`removal-note-${subscriber.id}`}
                 value={reasonNote}
@@ -1914,7 +2210,9 @@ function SubscriberRow({
             </div>
           </div>
           <AlertDialogFooter>
-            <AlertDialogCancel data-testid={`button-cancel-delete-subscriber-${subscriber.id}`}>
+            <AlertDialogCancel
+              data-testid={`button-cancel-delete-subscriber-${subscriber.id}`}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction
@@ -1955,7 +2253,8 @@ function RecentRemovalsSection({
       <CardHeader>
         <CardTitle className="text-base">Recently removed</CardTitle>
         <CardDescription>
-          The last {removals.length || "few"} subscribers removed by an admin, with the reason recorded at the time of removal.
+          The last {removals.length || "few"} subscribers removed by an admin,
+          with the reason recorded at the time of removal.
         </CardDescription>
       </CardHeader>
       <CardContent className="p-0">
@@ -1964,7 +2263,10 @@ function RecentRemovalsSection({
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : removals.length === 0 ? (
-          <div className="px-4 py-6 text-sm text-muted-foreground" data-testid="text-no-removals">
+          <div
+            className="px-4 py-6 text-sm text-muted-foreground"
+            data-testid="text-no-removals"
+          >
             No subscriber removals recorded yet.
           </div>
         ) : (
@@ -1981,7 +2283,10 @@ function RecentRemovalsSection({
                   data-testid={`removal-row-${r.id}`}
                 >
                   <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="font-medium truncate" data-testid={`text-removal-email-${r.id}`}>
+                    <div
+                      className="font-medium truncate"
+                      data-testid={`text-removal-email-${r.id}`}
+                    >
                       {r.email}
                     </div>
                     <span
@@ -1991,14 +2296,22 @@ function RecentRemovalsSection({
                       {fmt(r.removed_at)}
                     </span>
                   </div>
-                  <div className="text-xs text-muted-foreground" data-testid={`text-removal-actor-${r.id}`}>
+                  <div
+                    className="text-xs text-muted-foreground"
+                    data-testid={`text-removal-actor-${r.id}`}
+                  >
                     Removed by {actor}
                   </div>
-                  <div className="text-sm" data-testid={`text-removal-reason-${r.id}`}>
+                  <div
+                    className="text-sm"
+                    data-testid={`text-removal-reason-${r.id}`}
+                  >
                     {r.reason && r.reason.trim().length > 0 ? (
                       r.reason
                     ) : (
-                      <span className="text-muted-foreground italic">No reason recorded</span>
+                      <span className="text-muted-foreground italic">
+                        No reason recorded
+                      </span>
                     )}
                   </div>
                 </div>

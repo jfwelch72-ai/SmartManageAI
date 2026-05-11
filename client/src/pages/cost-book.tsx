@@ -8,7 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -32,7 +38,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { BookOpen, Plus, Pencil, RefreshCw, Search, Loader2, Trash2, MapPin } from "lucide-react";
+import {
+  BookOpen,
+  Plus,
+  Pencil,
+  RefreshCw,
+  Search,
+  Loader2,
+  Trash2,
+  MapPin,
+} from "lucide-react";
 import { format } from "date-fns";
 
 interface CostBookProvider {
@@ -112,7 +127,9 @@ export default function CostBookPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<CostBookProvider | null>(null);
   const [form, setForm] = useState(emptyForm());
-  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(
+    null,
+  );
   const [search, setSearch] = useState("");
   const [geoDialogOpen, setGeoDialogOpen] = useState(false);
   const [editingGeo, setEditingGeo] = useState<CostBookGeoFactor | null>(null);
@@ -123,13 +140,18 @@ export default function CostBookPage() {
   });
 
   const activeProviderId = useMemo(() => {
-    if (selectedProviderId && providers.some((p) => p.id === selectedProviderId)) {
+    if (
+      selectedProviderId &&
+      providers.some((p) => p.id === selectedProviderId)
+    ) {
       return selectedProviderId;
     }
     return providers[0]?.id ?? null;
   }, [selectedProviderId, providers]);
 
-  const { data: entries = [], isFetching: entriesLoading } = useQuery<CostBookEntry[]>({
+  const { data: entries = [], isFetching: entriesLoading } = useQuery<
+    CostBookEntry[]
+  >({
     queryKey: ["/api/cost-book/providers", activeProviderId, "entries", search],
     queryFn: async () => {
       if (!activeProviderId) return [];
@@ -164,7 +186,12 @@ export default function CostBookPage() {
       setForm(emptyForm());
       toast({ title: "Provider created" });
     },
-    onError: (err: Error) => toast({ title: "Failed to create provider", description: err.message, variant: "destructive" }),
+    onError: (err: Error) =>
+      toast({
+        title: "Failed to create provider",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const updateMutation = useMutation({
@@ -176,7 +203,11 @@ export default function CostBookPage() {
         defaultRegion: data.defaultRegion || null,
         notes: data.notes || null,
       };
-      const res = await apiRequest("PATCH", `/api/cost-book/providers/${id}`, payload);
+      const res = await apiRequest(
+        "PATCH",
+        `/api/cost-book/providers/${id}`,
+        payload,
+      );
       return res.json();
     },
     onSuccess: () => {
@@ -186,10 +217,17 @@ export default function CostBookPage() {
       setForm(emptyForm());
       toast({ title: "Provider updated" });
     },
-    onError: (err: Error) => toast({ title: "Failed to update provider", description: err.message, variant: "destructive" }),
+    onError: (err: Error) =>
+      toast({
+        title: "Failed to update provider",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
-  const { data: geoFactors = [], isFetching: geoLoading } = useQuery<CostBookGeoFactor[]>({
+  const { data: geoFactors = [], isFetching: geoLoading } = useQuery<
+    CostBookGeoFactor[]
+  >({
     queryKey: ["/api/cost-book/providers", activeProviderId, "geo-factors"],
     enabled: !!activeProviderId,
   });
@@ -215,7 +253,11 @@ export default function CostBookPage() {
       toast({ title: "Region added" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to add region", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to add region",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const updateGeoMutation = useMutation({
@@ -235,7 +277,11 @@ export default function CostBookPage() {
       toast({ title: "Region updated" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to update region", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to update region",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const deleteGeoMutation = useMutation({
@@ -251,23 +297,41 @@ export default function CostBookPage() {
       toast({ title: "Region deleted" });
     },
     onError: (err: Error) =>
-      toast({ title: "Failed to delete region", description: err.message, variant: "destructive" }),
+      toast({
+        title: "Failed to delete region",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   const syncMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await apiRequest("POST", `/api/cost-book/providers/${id}/sync`, {});
+      const res = await apiRequest(
+        "POST",
+        `/api/cost-book/providers/${id}/sync`,
+        {},
+      );
       return res.json();
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cost-book/providers"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/cost-book/providers", activeProviderId, "entries"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/cost-book/providers", activeProviderId, "entries"],
+      });
       toast({
         title: "Sync complete",
-        description: typeof data?.upserted === "number" ? `Upserted ${data.upserted} entries` : "Provider refreshed",
+        description:
+          typeof data?.upserted === "number"
+            ? `Upserted ${data.upserted} entries`
+            : "Provider refreshed",
       });
     },
-    onError: (err: Error) => toast({ title: "Sync failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) =>
+      toast({
+        title: "Sync failed",
+        description: err.message,
+        variant: "destructive",
+      }),
   });
 
   function openCreate() {
@@ -308,14 +372,18 @@ export default function CostBookPage() {
       laborFactor: String(g.laborFactor),
       equipmentFactor: String(g.equipmentFactor),
       totalFactor: String(g.totalFactor),
-      asOfDate: g.asOfDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
+      asOfDate:
+        g.asOfDate?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
     });
     setGeoDialogOpen(true);
   }
 
   function submitGeo() {
     if (!geoForm.regionCode.trim() || !geoForm.regionName.trim()) {
-      toast({ title: "Region code and name are required", variant: "destructive" });
+      toast({
+        title: "Region code and name are required",
+        variant: "destructive",
+      });
       return;
     }
     if (editingGeo) {
@@ -338,10 +406,13 @@ export default function CostBookPage() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container max-w-full mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2" data-testid="text-page-title">
+          <h1
+            className="text-3xl font-bold flex items-center gap-2"
+            data-testid="text-page-title"
+          >
             <BookOpen className="h-7 w-7" />
             Cost Book
           </h1>
@@ -358,7 +429,9 @@ export default function CostBookPage() {
       <Card>
         <CardHeader>
           <CardTitle>Providers</CardTitle>
-          <CardDescription>Configured cost-book sources for your organization.</CardDescription>
+          <CardDescription>
+            Configured cost-book sources for your organization.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -366,7 +439,10 @@ export default function CostBookPage() {
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
             </div>
           ) : providers.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground" data-testid="text-empty-providers">
+            <div
+              className="text-center py-8 text-muted-foreground"
+              data-testid="text-empty-providers"
+            >
               No cost-book providers yet. Add one to get started.
             </div>
           ) : (
@@ -403,7 +479,9 @@ export default function CostBookPage() {
                     </TableCell>
                     <TableCell>{p.defaultRegion ?? "—"}</TableCell>
                     <TableCell>
-                      {p.lastSyncedAt ? format(new Date(p.lastSyncedAt), "MMM d, yyyy h:mm a") : "Never"}
+                      {p.lastSyncedAt
+                        ? format(new Date(p.lastSyncedAt), "MMM d, yyyy h:mm a")
+                        : "Never"}
                     </TableCell>
                     <TableCell>
                       {p.isActive ? (
@@ -417,10 +495,14 @@ export default function CostBookPage() {
                         size="sm"
                         variant="outline"
                         onClick={() => syncMutation.mutate(p.id)}
-                        disabled={syncMutation.isPending && syncMutation.variables === p.id}
+                        disabled={
+                          syncMutation.isPending &&
+                          syncMutation.variables === p.id
+                        }
                         data-testid={`button-sync-${p.id}`}
                       >
-                        {syncMutation.isPending && syncMutation.variables === p.id ? (
+                        {syncMutation.isPending &&
+                        syncMutation.variables === p.id ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
                         ) : (
                           <RefreshCw className="h-4 w-4" />
@@ -468,8 +550,13 @@ export default function CostBookPage() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : entries.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground" data-testid="text-empty-entries">
-                {search ? "No entries match your search." : "No entries loaded yet. Run Sync to populate."}
+              <div
+                className="text-center py-8 text-muted-foreground"
+                data-testid="text-empty-entries"
+              >
+                {search
+                  ? "No entries match your search."
+                  : "No entries loaded yet. Run Sync to populate."}
               </div>
             ) : (
               <div className="border rounded-md overflow-x-auto">
@@ -488,12 +575,20 @@ export default function CostBookPage() {
                   <TableBody>
                     {entries.map((e) => (
                       <TableRow key={e.id} data-testid={`row-entry-${e.id}`}>
-                        <TableCell className="font-mono text-xs">{e.sourceCode}</TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {e.sourceCode}
+                        </TableCell>
                         <TableCell>{e.description}</TableCell>
                         <TableCell>{e.unit}</TableCell>
-                        <TableCell className="text-right">${Number(e.materialCost).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">${Number(e.laborCost).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">${Number(e.equipmentCost).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">
+                          ${Number(e.materialCost).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          ${Number(e.laborCost).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          ${Number(e.equipmentCost).toFixed(2)}
+                        </TableCell>
                         <TableCell className="text-right font-medium">
                           ${Number(e.totalCost).toFixed(2)}
                         </TableCell>
@@ -517,10 +612,15 @@ export default function CostBookPage() {
                   Geo Factors
                 </CardTitle>
                 <CardDescription>
-                  Per-region material, labor, and equipment multipliers applied during cost-book lookups.
+                  Per-region material, labor, and equipment multipliers applied
+                  during cost-book lookups.
                 </CardDescription>
               </div>
-              <Button onClick={openCreateGeo} size="sm" data-testid="button-add-geo-factor">
+              <Button
+                onClick={openCreateGeo}
+                size="sm"
+                data-testid="button-add-geo-factor"
+              >
                 <Plus className="h-4 w-4 mr-2" />
                 Add Region
               </Button>
@@ -532,7 +632,10 @@ export default function CostBookPage() {
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : geoFactors.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground" data-testid="text-empty-geo-factors">
+              <div
+                className="text-center py-8 text-muted-foreground"
+                data-testid="text-empty-geo-factors"
+              >
                 No regions yet. Add one to apply regional pricing adjustments.
               </div>
             ) : (
@@ -553,17 +656,36 @@ export default function CostBookPage() {
                   </TableHeader>
                   <TableBody>
                     {geoFactors.map((g) => {
-                      const loc = [g.city, g.state, g.postalCode].filter(Boolean).join(", ");
+                      const loc = [g.city, g.state, g.postalCode]
+                        .filter(Boolean)
+                        .join(", ");
                       return (
-                        <TableRow key={g.id} data-testid={`row-geo-factor-${g.id}`}>
-                          <TableCell className="font-mono text-xs">{g.regionCode}</TableCell>
+                        <TableRow
+                          key={g.id}
+                          data-testid={`row-geo-factor-${g.id}`}
+                        >
+                          <TableCell className="font-mono text-xs">
+                            {g.regionCode}
+                          </TableCell>
                           <TableCell>{g.regionName}</TableCell>
-                          <TableCell className="text-sm text-muted-foreground">{loc || "—"}</TableCell>
-                          <TableCell className="text-right tabular-nums">{Number(g.materialFactor).toFixed(3)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{Number(g.laborFactor).toFixed(3)}</TableCell>
-                          <TableCell className="text-right tabular-nums">{Number(g.equipmentFactor).toFixed(3)}</TableCell>
-                          <TableCell className="text-right tabular-nums font-medium">{Number(g.totalFactor).toFixed(3)}</TableCell>
-                          <TableCell className="text-sm">{g.asOfDate?.slice(0, 10)}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {loc || "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(g.materialFactor).toFixed(3)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(g.laborFactor).toFixed(3)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {Number(g.equipmentFactor).toFixed(3)}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums font-medium">
+                            {Number(g.totalFactor).toFixed(3)}
+                          </TableCell>
+                          <TableCell className="text-sm">
+                            {g.asOfDate?.slice(0, 10)}
+                          </TableCell>
                           <TableCell className="text-right space-x-1">
                             <Button
                               size="sm"
@@ -577,14 +699,20 @@ export default function CostBookPage() {
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                if (confirm(`Delete region "${g.regionName}"?`)) {
+                                if (
+                                  confirm(`Delete region "${g.regionName}"?`)
+                                ) {
                                   deleteGeoMutation.mutate(g.id);
                                 }
                               }}
-                              disabled={deleteGeoMutation.isPending && deleteGeoMutation.variables === g.id}
+                              disabled={
+                                deleteGeoMutation.isPending &&
+                                deleteGeoMutation.variables === g.id
+                              }
                               data-testid={`button-delete-geo-${g.id}`}
                             >
-                              {deleteGeoMutation.isPending && deleteGeoMutation.variables === g.id ? (
+                              {deleteGeoMutation.isPending &&
+                              deleteGeoMutation.variables === g.id ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />
                               ) : (
                                 <Trash2 className="h-4 w-4" />
@@ -605,9 +733,12 @@ export default function CostBookPage() {
       <Dialog open={geoDialogOpen} onOpenChange={setGeoDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editingGeo ? "Edit Region" : "Add Region"}</DialogTitle>
+            <DialogTitle>
+              {editingGeo ? "Edit Region" : "Add Region"}
+            </DialogTitle>
             <DialogDescription>
-              Set per-region multipliers. Lookups use the total factor as a fallback when a per-cost factor is 1.000.
+              Set per-region multipliers. Lookups use the total factor as a
+              fallback when a per-cost factor is 1.000.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -617,7 +748,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-code"
                   value={geoForm.regionCode}
-                  onChange={(e) => setGeoForm({ ...geoForm, regionCode: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, regionCode: e.target.value })
+                  }
                   placeholder="DEN-CO"
                   data-testid="input-geo-code"
                 />
@@ -627,7 +760,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-name"
                   value={geoForm.regionName}
-                  onChange={(e) => setGeoForm({ ...geoForm, regionName: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, regionName: e.target.value })
+                  }
                   placeholder="Denver Metro"
                   data-testid="input-geo-name"
                 />
@@ -639,7 +774,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-city"
                   value={geoForm.city}
-                  onChange={(e) => setGeoForm({ ...geoForm, city: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, city: e.target.value })
+                  }
                   data-testid="input-geo-city"
                 />
               </div>
@@ -648,7 +785,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-state"
                   value={geoForm.state}
-                  onChange={(e) => setGeoForm({ ...geoForm, state: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, state: e.target.value })
+                  }
                   placeholder="CO"
                   data-testid="input-geo-state"
                 />
@@ -658,7 +797,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-postal"
                   value={geoForm.postalCode}
-                  onChange={(e) => setGeoForm({ ...geoForm, postalCode: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, postalCode: e.target.value })
+                  }
                   placeholder="80202"
                   data-testid="input-geo-postal"
                 />
@@ -670,7 +811,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-material"
                   value={geoForm.materialFactor}
-                  onChange={(e) => setGeoForm({ ...geoForm, materialFactor: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, materialFactor: e.target.value })
+                  }
                   inputMode="decimal"
                   data-testid="input-geo-material"
                 />
@@ -680,7 +823,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-labor"
                   value={geoForm.laborFactor}
-                  onChange={(e) => setGeoForm({ ...geoForm, laborFactor: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, laborFactor: e.target.value })
+                  }
                   inputMode="decimal"
                   data-testid="input-geo-labor"
                 />
@@ -690,7 +835,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-equipment"
                   value={geoForm.equipmentFactor}
-                  onChange={(e) => setGeoForm({ ...geoForm, equipmentFactor: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, equipmentFactor: e.target.value })
+                  }
                   inputMode="decimal"
                   data-testid="input-geo-equipment"
                 />
@@ -700,7 +847,9 @@ export default function CostBookPage() {
                 <Input
                   id="geo-total"
                   value={geoForm.totalFactor}
-                  onChange={(e) => setGeoForm({ ...geoForm, totalFactor: e.target.value })}
+                  onChange={(e) =>
+                    setGeoForm({ ...geoForm, totalFactor: e.target.value })
+                  }
                   inputMode="decimal"
                   data-testid="input-geo-total"
                 />
@@ -712,18 +861,26 @@ export default function CostBookPage() {
                 id="geo-asof"
                 type="date"
                 value={geoForm.asOfDate}
-                onChange={(e) => setGeoForm({ ...geoForm, asOfDate: e.target.value })}
+                onChange={(e) =>
+                  setGeoForm({ ...geoForm, asOfDate: e.target.value })
+                }
                 data-testid="input-geo-asof"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setGeoDialogOpen(false)} data-testid="button-cancel-geo">
+            <Button
+              variant="outline"
+              onClick={() => setGeoDialogOpen(false)}
+              data-testid="button-cancel-geo"
+            >
               Cancel
             </Button>
             <Button
               onClick={submitGeo}
-              disabled={createGeoMutation.isPending || updateGeoMutation.isPending}
+              disabled={
+                createGeoMutation.isPending || updateGeoMutation.isPending
+              }
               data-testid="button-save-geo"
             >
               {(createGeoMutation.isPending || updateGeoMutation.isPending) && (
@@ -738,9 +895,12 @@ export default function CostBookPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Provider" : "Add Provider"}</DialogTitle>
+            <DialogTitle>
+              {editing ? "Edit Provider" : "Add Provider"}
+            </DialogTitle>
             <DialogDescription>
-              Configure a cost-book source. Use API endpoint + key env var for external providers.
+              Configure a cost-book source. Use API endpoint + key env var for
+              external providers.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -760,12 +920,17 @@ export default function CostBookPage() {
                 value={form.providerKind}
                 onValueChange={(v) => setForm({ ...form, providerKind: v })}
               >
-                <SelectTrigger id="provider-kind" data-testid="select-provider-kind">
+                <SelectTrigger
+                  id="provider-kind"
+                  data-testid="select-provider-kind"
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {PROVIDER_KINDS.map((k) => (
-                    <SelectItem key={k} value={k}>{k}</SelectItem>
+                    <SelectItem key={k} value={k}>
+                      {k}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -776,7 +941,9 @@ export default function CostBookPage() {
                 <Input
                   id="provider-endpoint"
                   value={form.apiEndpoint}
-                  onChange={(e) => setForm({ ...form, apiEndpoint: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, apiEndpoint: e.target.value })
+                  }
                   placeholder="https://…"
                   data-testid="input-provider-endpoint"
                 />
@@ -786,7 +953,9 @@ export default function CostBookPage() {
                 <Input
                   id="provider-keyenv"
                   value={form.apiKeyEnvVar}
-                  onChange={(e) => setForm({ ...form, apiKeyEnvVar: e.target.value })}
+                  onChange={(e) =>
+                    setForm({ ...form, apiKeyEnvVar: e.target.value })
+                  }
                   placeholder="RSMEANS_API_KEY"
                   data-testid="input-provider-keyenv"
                 />
@@ -797,7 +966,9 @@ export default function CostBookPage() {
               <Input
                 id="provider-region"
                 value={form.defaultRegion}
-                onChange={(e) => setForm({ ...form, defaultRegion: e.target.value })}
+                onChange={(e) =>
+                  setForm({ ...form, defaultRegion: e.target.value })
+                }
                 placeholder="e.g. NATIONAL_AVG"
                 data-testid="input-provider-region"
               />
@@ -823,7 +994,11 @@ export default function CostBookPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-provider">
+            <Button
+              variant="outline"
+              onClick={() => setDialogOpen(false)}
+              data-testid="button-cancel-provider"
+            >
               Cancel
             </Button>
             <Button

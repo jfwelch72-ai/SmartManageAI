@@ -87,16 +87,25 @@ export default function AiTakeoffDashboardPage() {
   }, [data]);
 
   const windowLabel = useMemo(
-    () => WINDOW_OPTIONS.find((o) => o.value === sinceDays)?.label.toLowerCase() ?? "this window",
+    () =>
+      WINDOW_OPTIONS.find((o) => o.value === sinceDays)?.label.toLowerCase() ??
+      "this window",
     [sinceDays],
   );
 
   return (
-    <div className="min-h-screen bg-background" data-testid="page-ai-takeoff-dashboard">
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+    <div
+      className="min-h-screen bg-background"
+      data-testid="page-ai-takeoff-dashboard"
+    >
+      <main className="mx-auto max-w-full px-4 py-6 sm:px-6 sm:py-8">
         <div className="mb-4">
           <Link href="/takeoff">
-            <Button variant="ghost" size="sm" data-testid="button-back-to-takeoff">
+            <Button
+              variant="ghost"
+              size="sm"
+              data-testid="button-back-to-takeoff"
+            >
               <ArrowLeft className="w-4 h-4 mr-1" /> Back to Takeoff
             </Button>
           </Link>
@@ -293,7 +302,9 @@ export default function AiTakeoffDashboardPage() {
                             >
                               {deltaPct !== null ? (
                                 <Badge
-                                  variant={deltaPct >= 25 ? "destructive" : "outline"}
+                                  variant={
+                                    deltaPct >= 25 ? "destructive" : "outline"
+                                  }
                                   className="text-xs"
                                 >
                                   {deltaPct}%
@@ -303,7 +314,10 @@ export default function AiTakeoffDashboardPage() {
                               )}
                             </TableCell>
                             <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                              {format(new Date(sheet.createdAt), "MMM d, h:mm a")}
+                              {format(
+                                new Date(sheet.createdAt),
+                                "MMM d, h:mm a",
+                              )}
                             </TableCell>
                             <TableCell className="text-right">
                               {sheet.bidId ? (
@@ -318,7 +332,9 @@ export default function AiTakeoffDashboardPage() {
                                   </Button>
                                 </Link>
                               ) : (
-                                <span className="text-xs text-muted-foreground">—</span>
+                                <span className="text-xs text-muted-foreground">
+                                  —
+                                </span>
                               )}
                             </TableCell>
                           </TableRow>

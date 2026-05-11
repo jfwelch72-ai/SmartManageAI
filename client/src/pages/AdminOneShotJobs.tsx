@@ -112,7 +112,8 @@ function statusBadgeVariant(
 ): "default" | "secondary" | "destructive" | "outline" {
   if (status === "completed") return "default";
   if (status === "skipped_already_complete") return "secondary";
-  if (status === "failed" || status === "bookkeeping_error") return "destructive";
+  if (status === "failed" || status === "bookkeeping_error")
+    return "destructive";
   return "outline";
 }
 
@@ -132,9 +133,9 @@ function JobCard({
 }) {
   const { toast } = useToast();
   const qc = useQueryClient();
-  const [paramValues, setParamValues] = useState<Record<string, string | boolean>>(
-    () => buildInitialParamValues(job.parameters),
-  );
+  const [paramValues, setParamValues] = useState<
+    Record<string, string | boolean>
+  >(() => buildInitialParamValues(job.parameters));
 
   const hasParams = (job.parameters?.length ?? 0) > 0;
 
@@ -149,7 +150,10 @@ function JobCard({
       return (await res.json()) as RerunOutcome;
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/admin/jobs/one-shot"], exact: false });
+      qc.invalidateQueries({
+        queryKey: ["/api/admin/jobs/one-shot"],
+        exact: false,
+      });
       if (data.status === "completed") {
         toast({
           title: "Job re-run complete",
@@ -158,7 +162,8 @@ function JobCard({
       } else if (data.status === "skipped_already_complete") {
         toast({
           title: "Job skipped",
-          description: "Ledger row was re-created before the runner could clear it.",
+          description:
+            "Ledger row was re-created before the runner could clear it.",
         });
       } else {
         toast({
@@ -190,12 +195,17 @@ function JobCard({
             >
               {job.title}
               {!job.registered && (
-                <Badge variant="outline" data-testid={`badge-unregistered-${job.name}`}>
+                <Badge
+                  variant="outline"
+                  data-testid={`badge-unregistered-${job.name}`}
+                >
                   unregistered
                 </Badge>
               )}
             </CardTitle>
-            <CardDescription data-testid={`text-one-shot-description-${job.name}`}>
+            <CardDescription
+              data-testid={`text-one-shot-description-${job.name}`}
+            >
               {job.description}
             </CardDescription>
             <p
@@ -464,20 +474,19 @@ function JobCard({
                 )}
               </Button>
             )}
-            {!expanded &&
-              job.recentRuns.length === DEFAULT_RECENT_LIMIT && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-2 h-7 px-2 text-xs"
-                  onClick={onToggleExpanded}
-                  data-testid={`button-show-more-${job.name}`}
-                >
-                  <ChevronDown className="h-3.5 w-3.5 mr-1" /> Show more (load up
-                  to {EXPANDED_RECENT_LIMIT})
-                </Button>
-              )}
+            {!expanded && job.recentRuns.length === DEFAULT_RECENT_LIMIT && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-7 px-2 text-xs"
+                onClick={onToggleExpanded}
+                data-testid={`button-show-more-${job.name}`}
+              >
+                <ChevronDown className="h-3.5 w-3.5 mr-1" /> Show more (load up
+                to {EXPANDED_RECENT_LIMIT})
+              </Button>
+            )}
           </div>
         )}
         {rerun.data && (
@@ -528,11 +537,10 @@ export default function AdminOneShotJobs() {
     limit: anyExpanded ? EXPANDED_RECENT_LIMIT : undefined,
   };
 
-  const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
-    OneShotJobsResponse
-  >({
-    queryKey: ["/api/admin/jobs/one-shot", queryParams],
-  });
+  const { data, isLoading, isError, error, refetch, isFetching } =
+    useQuery<OneShotJobsResponse>({
+      queryKey: ["/api/admin/jobs/one-shot", queryParams],
+    });
 
   const filtersActive = Boolean(applied.actorEmail || applied.since);
 
@@ -563,7 +571,7 @@ export default function AdminOneShotJobs() {
   };
 
   return (
-    <div className="container max-w-5xl mx-auto p-6 space-y-6">
+    <div className="container max-w-full mx-auto p-6 space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <Link href="/admin">
@@ -580,8 +588,8 @@ export default function AdminOneShotJobs() {
           <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
             Post-deploy backfills that should run exactly once per environment.
             Each row reflects the current `one_shot_jobs` ledger entry. Use
-            "Clear ledger &amp; re-run" to re-execute a job — for example after a
-            third-party outage, a staging re-test, or to backfill data after a
+            "Clear ledger &amp; re-run" to re-execute a job — for example after
+            a third-party outage, a staging re-test, or to backfill data after a
             schema change.
           </p>
         </div>
@@ -663,11 +671,7 @@ export default function AdminOneShotJobs() {
           />
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            type="submit"
-            size="sm"
-            data-testid="button-apply-filters"
-          >
+          <Button type="submit" size="sm" data-testid="button-apply-filters">
             Apply filters
           </Button>
           {filtersActive && (
