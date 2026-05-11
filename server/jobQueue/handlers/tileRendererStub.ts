@@ -1,69 +1,49 @@
-// Task #2517 — Default `pdf_tile_prerender` renderer.
+// Task #2757 — Gated `pdf_tile_prerender` renderer.
 //
-// Server-side tile rendering is not implemented yet (every existing
-// rendering path runs in the client via `pdfTileWorker`). The job
-// handler in `pdfTilePrerender.ts` fails loudly when no renderer is
-// registered, which would DLQ a job for every plan-document upload
-// once the call sites start enqueueing.
+// Server-side tile rendering is not yet implemented (every existing
+// rendering path runs in the client via `pdfTileWorker`). The
+// `TILE_RENDERING_ENABLED` feature flag controls whether jobs are even
+// dispatched — when OFF (the default) the enqueue sites skip the call
+// entirely, so this handler should never be reached in normal operation.
 //
-// Until a real renderer ships, register a no-op-but-verifies stub:
-// resolve the plan document row to confirm the upload is real, then
-// log a structured "would render N pages" message. The job succeeds
-// so the queue path is exercised end-to-end without lying about real
-// tile work.
+// If a job does arrive (e.g. a legacy queue item from before the gate,
+// or an org that had the flag flipped ON before a renderer shipped),
+// this handler fails the job LOUDLY so it surfaces in the DLQ and
+// admin UI rather than reporting a false-positive success. There is no
+// silent "skipped: true" return here — that pattern hid the missing
+// implementation from operators.
 
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { planDocuments } from "@shared/schema";
-import { logInfo, logWarn } from "../../utils/logger";
+import { logWarn } from "../../utils/logger";
 import { registerTileRenderer, type PdfTilePrerenderPayload } from "./pdfTilePrerender";
 import type { JobContext } from "../index";
 
-async function stubRenderer(
+async function gatedRenderer(
   payload: PdfTilePrerenderPayload,
   ctx: JobContext,
-): Promise<{ skipped: true; reason: string; planDocumentId: string }> {
-  try {
-    const [doc] = await db
-      .select({
-        id: planDocuments.id,
-        title: planDocuments.title,
-        fileSize: planDocuments.fileSize,
-      })
-      .from(planDocuments)
-      .where(eq(planDocuments.id, payload.planDocumentId))
-      .limit(1);
-    if (!doc) {
-      logWarn("pdf_tile_prerender stub: plan document not found", {
-        planDocumentId: payload.planDocumentId,
-        jobId: ctx.jobId,
-      });
-      return {
-        skipped: true,
-        reason: "plan document not found (likely deleted before render)",
-        planDocumentId: payload.planDocumentId,
-      };
-    }
-    logInfo("pdf_tile_prerender stub: would prerender plan", {
-      planDocumentId: doc.id,
-      title: doc.title,
-      fileSize: doc.fileSize,
-      jobId: ctx.jobId,
-    });
-    return {
-      skipped: true,
-      reason: "no server-side renderer wired yet (stub)",
-      planDocumentId: doc.id,
-    };
-  } catch (err) {
-    logWarn("pdf_tile_prerender stub: lookup failed", {
-      planDocumentId: payload.planDocumentId,
-      error: String(err),
-    });
-    throw err;
-  }
+): Promise<never> {
+  const [doc] = await db
+    .select({ id: planDocuments.id, title: planDocuments.title })
+    .from(planDocuments)
+    .where(eq(planDocuments.id, payload.planDocumentId))
+    .limit(1);
+
+  logWarn("pdf_tile_prerender: no server-side renderer is implemented yet", {
+    planDocumentId: payload.planDocumentId,
+    title: doc?.title ?? "(not found)",
+    jobId: ctx.jobId,
+    hint: "Set TILE_RENDERING_ENABLED=false to prevent further dispatches, or implement a real renderer and call registerTileRenderer() at boot.",
+  });
+
+  throw new Error(
+    `pdf_tile_prerender: server-side tile rendering is not implemented. ` +
+    `Ensure TILE_RENDERING_ENABLED feature flag is OFF to stop dispatching these jobs. ` +
+    `planDocumentId=${payload.planDocumentId}`,
+  );
 }
 
-export function registerStubTileRenderer(): void {
-  registerTileRenderer(stubRenderer);
+export function registerGatedTileRenderer(): void {
+  registerTileRenderer(gatedRenderer);
 }

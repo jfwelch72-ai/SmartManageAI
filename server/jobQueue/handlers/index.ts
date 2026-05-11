@@ -9,7 +9,7 @@ import { registerPdfTilePrerenderJob } from "./pdfTilePrerender";
 import { registerAccountingSyncJob } from "./accountingSync";
 import { registerBulkExportJob } from "./bulkExport";
 import { registerOrganizationExportGenerator } from "./organizationExport";
-import { registerStubTileRenderer } from "./tileRendererStub";
+import { registerGatedTileRenderer } from "./tileRendererStub";
 import { registerPlanSetIngestJob } from "./planSetIngest";
 // Task #2517 — Side-effect imports register concrete `bulk_export`
 // generators for the audit, change-orders, and payroll surfaces.
@@ -31,7 +31,10 @@ export function registerAllJobHandlers(): void {
   // worker process picks them up at boot. Adding inline registration
   // from a route module would silently break the out-of-process worker.
   registerOrganizationExportGenerator();
-  // Task #2517 — Register the no-op stub renderer until a real
-  // server-side tile renderer ships, so enqueued jobs don't all DLQ.
-  registerStubTileRenderer();
+  // Task #2757 — Register the gated renderer. When the TILE_RENDERING_ENABLED
+  // feature flag is OFF (the default), jobs are never dispatched so this
+  // handler is a safety-net for any legacy queue items. When a real
+  // renderer ships, replace this with the real implementation and flip
+  // the flag ON.
+  registerGatedTileRenderer();
 }

@@ -1760,24 +1760,32 @@ export class BidStorageDrizzle implements IBidStorage {
       return createdProject;
     });
 
-    // Task #2517 — Best-effort enqueue PDF tile prerender for every
-    // plan document carried over from the bid. Runs AFTER the tx
-    // commits so the worker is guaranteed to see the new rows.
+    // Task #2757 — Best-effort enqueue PDF tile prerender for every
+    // plan document carried over from the bid, gated behind
+    // TILE_RENDERING_ENABLED. Runs AFTER the tx commits so the worker
+    // is guaranteed to see the new rows.
     const planDocIds =
       (newProject as { _planDocumentIds?: string[] })._planDocumentIds ?? [];
     if (planDocIds.length > 0) {
       try {
-        const { enqueueJob } = await import("../jobQueue");
-        for (const planDocId of planDocIds) {
-          await enqueueJob(
-            "pdf_tile_prerender",
-            { planDocumentId: planDocId },
-            {
-              organizationId: newProject.gcOrganizationId!,
-              userId: input.actorId,
-              idempotencyKey: `pdf_tile_prerender:${planDocId}`,
-            },
-          );
+        const { isFeatureEnabled } = await import("../services/featureFlagService");
+        const tileRenderingOn = await isFeatureEnabled(
+          newProject.gcOrganizationId!,
+          "TILE_RENDERING_ENABLED",
+        );
+        if (tileRenderingOn) {
+          const { enqueueJob } = await import("../jobQueue");
+          for (const planDocId of planDocIds) {
+            await enqueueJob(
+              "pdf_tile_prerender",
+              { planDocumentId: planDocId },
+              {
+                organizationId: newProject.gcOrganizationId!,
+                userId: input.actorId,
+                idempotencyKey: `pdf_tile_prerender:${planDocId}`,
+              },
+            );
+          }
         }
       } catch (enqErr) {
         logWarn("pdf_tile_prerender enqueue failed (bid conversion)", {

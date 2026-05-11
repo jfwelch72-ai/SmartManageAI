@@ -99,6 +99,16 @@ export const FEATURE_FLAG_KEYS = [
   // coi_compliance_overrides bypass the block either way. Default OFF
   // so tenants opt into the new enforcement.
   "COI_COMPLIANCE_HOLD",
+  // Task #2757 — Server-side PDF tile pre-rendering is not yet
+  // implemented; the handler is a delegation seam waiting for a real
+  // renderer. When OFF (default), the job is never dispatched so the
+  // queue produces no misleading false-positive successes. When ON, the
+  // job is enqueued after each plan-document upload/import and the
+  // registered renderer (or a future real implementation) runs. The
+  // Takeoff workspace always falls back to the client-side
+  // pdfTileWorker for rendering — this flag only controls the
+  // server-side prerender optimisation path.
+  "TILE_RENDERING_ENABLED",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -154,6 +164,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   AI_PROVIDER_GENERAL: "AI Provider — General family on Claude",
   AI_PROVIDER_EMBEDDINGS: "AI Provider — Embeddings (reserved)",
   COI_COMPLIANCE_HOLD: "COI Compliance — Block release on non-compliance",
+  TILE_RENDERING_ENABLED: "Server-side PDF Tile Pre-rendering",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -207,6 +218,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   AI_PROVIDER_GENERAL: "Route the non-Takeoff AI calls (digest, health, risk, hiring, website/social copy, document analysis, CRM) through the provider router. When ON, primary is Anthropic Claude with OpenAI automatic fallback. When OFF, primary is OpenAI with no fallback (legacy behavior).",
   AI_PROVIDER_EMBEDDINGS: "Reserved provider seam for embedding calls. No alternative embedding provider is wired in today; flipping this on currently has no effect because every call site still resolves to OpenAI text-embedding-3-large.",
   COI_COMPLIANCE_HOLD: "Block pay-app, PO, and subcontractor payable approvals when project insurance compliance is EXPIRED or MISSING. Audited overrides bypass the hold. When OFF, the dashboard still shows non-compliance but releases are not blocked.",
+  TILE_RENDERING_ENABLED: "When ON, enqueues a server-side PDF tile pre-render job after each plan-document upload or import. The job pre-generates image tiles in GCS for faster Takeoff workspace loads on large plans. When OFF (default), no job is dispatched — the Takeoff workspace falls back to client-side rendering via the PDF worker, which always works regardless of this flag.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -279,6 +291,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   AI_PROVIDER_GENERAL: "Advanced Tech",
   AI_PROVIDER_EMBEDDINGS: "Advanced Tech",
   COI_COMPLIANCE_HOLD: "Core Platform",
+  TILE_RENDERING_ENABLED: "Advanced Tech",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -345,6 +358,11 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // Task #2484: tenants opt into the new gating after they have
   // backfilled certs / project requirements.
   "COI_COMPLIANCE_HOLD",
+  // Task #2757: server-side tile pre-rendering is not yet implemented;
+  // keep flag OFF by default so no jobs are dispatched and there are no
+  // misleading false-positive successes in the queue. Flip ON only once
+  // a real renderer is registered at boot.
+  "TILE_RENDERING_ENABLED",
 ] as const;
 
 // Task #1119: audit log of trade-preset applications on the Feature Flags tab.
