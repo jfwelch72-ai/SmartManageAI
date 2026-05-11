@@ -420,6 +420,169 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0077_ai_estimator_enrichment_columns.sql": {
     skip: "(A) idempotent ADD COLUMN IF NOT EXISTS — reconcileSchemaDrift auto-adds (Task #1075). The NOT NULL DEFAULT 0 on rows_enriched is rendered by the synthesizer the same way as ratesUpdated, so fresh DBs and existing DBs converge.",
   },
+  // Task #913 — per-view default grouping for the My Work page. Adds a
+  // nullable `grouping` text column to my_work_saved_views. Column is in
+  // the Drizzle schema so reconcileSchemaDrift auto-adds on fresh DBs.
+  "0054_my_work_saved_views_grouping.sql": {
+    skip: "(A)+(B) ADD COLUMN grouping text — auto-applied by reconcileSchemaDrift (Task #913)",
+  },
+  // Task #1472 — durable per-org history of davis_bacon suppression_reset
+  // audit events (integration_suppression_resets table). Table is in the
+  // Drizzle schema so reconcileSchemaDrift auto-creates on fresh DBs.
+  "0055_integration_suppression_resets.sql": {
+    skip: "(A) CREATE TABLE auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #1472)",
+  },
+  // Task #1747 — per-type mute snooze deadline. Adds nullable muted_until
+  // timestamp to notification_type_prefs. Column is in Drizzle schema so
+  // reconcileSchemaDrift auto-adds on fresh DBs.
+  "0064_notification_type_prefs_muted_until.sql": {
+    skip: "(A)+(B) ADD COLUMN muted_until timestamp — auto-applied by reconcileSchemaDrift (Task #1747)",
+  },
+  // Task #1775 — soft-delete column on plan_document_markups. Adds nullable
+  // deleted_at timestamp. Column is in Drizzle schema; reconcileSchemaDrift
+  // auto-adds on fresh DBs.
+  "0065_plan_document_markups_deleted_at.sql": {
+    skip: "(A)+(B) ADD COLUMN deleted_at timestamp — auto-applied by reconcileSchemaDrift (Task #1775)",
+  },
+  // Task #1974 — per-notification opaque metadata jsonb column. Column is
+  // in Drizzle schema so reconcileSchemaDrift auto-adds on fresh DBs.
+  "0068_notifications_metadata.sql": {
+    skip: "(A)+(B) ADD COLUMN metadata jsonb — auto-applied by reconcileSchemaDrift (Task #1974)",
+  },
+  // Task #1955 — per-org object-storage quota (storage_quota_bytes bigint).
+  // Column is in Drizzle schema so reconcileSchemaDrift auto-adds on fresh DBs.
+  "0069_organization_storage_quota.sql": {
+    skip: "(A)+(B) ADD COLUMN storage_quota_bytes bigint — auto-applied by reconcileSchemaDrift (Task #1955)",
+  },
+  // Task #2056 — cross-replica OAuth state table for Apple Sign-In.
+  // Mirrored at boot by ensureOauthStateTable.
+  "0070_oauth_state.sql": {
+    helper: "ensureOauthStateTable",
+    note: "Task #2056 — oauth_state table for persistent, cross-replica Apple Sign-In state.",
+  },
+  // Task #2143 — self-serve "Request access" flow. Creates access_requests
+  // table. Mirrored at boot by ensureAccessRequestsTable.
+  "0072_access_requests.sql": {
+    helper: "ensureAccessRequestsTable",
+    note: "Task #2143 — access_requests table + supporting indexes.",
+  },
+  // Task #2326 — per-measurement scale lock snapshot. Adds
+  // locked_scale_px_per_foot double precision to takeoff_measurements.
+  // Column is in Drizzle schema so reconcileSchemaDrift auto-adds.
+  "0075_takeoff_measurement_scale_lock.sql": {
+    skip: "(A)+(B) ADD COLUMN locked_scale_px_per_foot — auto-applied by reconcileSchemaDrift (Task #2326)",
+  },
+  // Task #2335 — persist AI takeoff scale-mismatch evaluations. Adds
+  // columns to ai_takeoff_analyses. All in Drizzle schema.
+  "0076_ai_takeoff_scale_mismatch.sql": {
+    skip: "(A)+(B) ADD COLUMN — auto-applied by reconcileSchemaDrift (Task #2335)",
+  },
+  // Task #2466 — AI Estimator real-world upgrade Phase 1. Adds columns to
+  // takeoff_sheets (discipline, sheet_number, discipline_confidence, etc.)
+  // and creates ai_estimator_legend_symbols, ai_estimator_assemblies,
+  // ai_estimator_org_factors tables. All in Drizzle schema.
+  "0094_ai_estimator_phase1.sql": {
+    skip: "(A) ADD COLUMN + CREATE TABLE — all auto-applied by reconcileSchemaDrift from Drizzle schema (Task #2466)",
+  },
+  // Task #2464 — per-org weakest trade callout threshold. Adds
+  // weakest_trade_min_reviewed integer column to organizations.
+  // Column is in Drizzle schema so reconcileSchemaDrift auto-adds.
+  "0095_organizations_weakest_trade_min_reviewed.sql": {
+    skip: "(A)+(B) ADD COLUMN weakest_trade_min_reviewed integer — auto-applied by reconcileSchemaDrift (Task #2464)",
+  },
+  // Task #2478 — tenant isolation hardening with Postgres RLS. Enables FORCE
+  // row-level security on all multi-tenant tables. Mirrored at boot by
+  // ensureRlsPolicies so fresh dev DBs apply the policy on every boot.
+  "0096_enable_tenant_rls.sql": {
+    helper: "ensureRlsPolicies",
+    note: "Task #2478 — FORCE ROW LEVEL SECURITY + fail-closed policy on every multi-tenant table.",
+  },
+  // Task #2489 — customer support, in-app help & SLA. Creates support_tickets
+  // table. Table is in Drizzle schema so reconcileSchemaDrift auto-creates
+  // on fresh DBs. All ops use IF NOT EXISTS / DO blocks.
+  "0096_support_tickets.sql": {
+    skip: "(A) CREATE TABLE auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2489)",
+  },
+  // Task #2484 — COI & Insurance Compliance Lifecycle. Creates new enum types
+  // (insurance_coverage_type, insurance_certificate_status, coi_party_type)
+  // and tables. Enums + tables are in Drizzle schema so reconcileSchemaDrift
+  // synthesizes them on fresh DBs. DO $$ EXCEPTION blocks are idempotent.
+  "0097_coi_compliance_lifecycle.sql": {
+    skip: "(A) CREATE TYPE + CREATE TABLE — enums and tables auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2484)",
+  },
+  // Task #2487 — customer onboarding, data import/export & privacy. Creates
+  // org_csv_imports, org_exports, org_deletion_requests tables. All in
+  // Drizzle schema so reconcileSchemaDrift auto-creates on fresh DBs.
+  "0097_org_lifecycle.sql": {
+    skip: "(A) CREATE TABLE — auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2487)",
+  },
+  // Per-org link to global subcontractors directory. Creates
+  // org_subcontractor_ownership with a unique constraint. Table is in
+  // Drizzle schema so reconcileSchemaDrift auto-creates on fresh DBs.
+  "0098_org_subcontractor_ownership.sql": {
+    skip: "(A) CREATE TABLE — auto-synthesized by reconcileSchemaDrift from Drizzle schema",
+  },
+  // Task #2487 round-5 — align org_deletion_requests with retention
+  // semantics: requested_by_id DROP NOT NULL + organization_id FK changed to
+  // ON DELETE SET NULL. Fresh DBs create the table directly from the Drizzle
+  // schema with the correct nullability so no replay is needed.
+  "0099_org_deletion_request_retention.sql": {
+    skip: "(B) ALTER TABLE nullability + FK constraint change — fresh DBs create org_deletion_requests with correct schema directly from Drizzle (Task #2487)",
+  },
+  // Task #2576 — Takeoff & Estimating Phase A. Adds rollup percentage columns
+  // to ai_estimator_org_factors and scope_tag / change_order_id to
+  // takeoff_measurements. All columns are in Drizzle schema.
+  "0100_takeoff_estimating_phase_a.sql": {
+    skip: "(A)+(B) ADD COLUMN — auto-applied by reconcileSchemaDrift from Drizzle schema (Task #2576)",
+  },
+  // Task #2577 — Takeoff & Estimating Phase B. ADD COLUMN on takeoff_sheets
+  // (extracted_text_by_page, extracted_text_source, extracted_text_at) and
+  // ai_estimator_legend_symbols (review_status text). All in Drizzle schema.
+  "0101_takeoff_estimating_phase_b.sql": {
+    skip: "(A)+(B) ADD COLUMN — auto-applied by reconcileSchemaDrift from Drizzle schema (Task #2577)",
+  },
+  // Task #2578 — Takeoff & Estimating Phase C. Creates cost_book_providers,
+  // crew_templates, estimate_alternates, etc. All tables are in Drizzle schema
+  // so reconcileSchemaDrift auto-synthesizes on fresh DBs.
+  "0102_takeoff_estimating_phase_c.sql": {
+    skip: "(A) CREATE TABLE — auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2578)",
+  },
+  // Task #2626 — per-org configurable cap on AI Estimator map-reduce batches.
+  // ADD COLUMN max_discipline_batches integer on ai_estimator_org_factors.
+  // Column is in Drizzle schema so reconcileSchemaDrift auto-adds.
+  "0103_ai_estimator_max_discipline_batches.sql": {
+    skip: "(A)+(B) ADD COLUMN max_discipline_batches integer — auto-applied by reconcileSchemaDrift (Task #2626)",
+  },
+  // Task #2625 — auto-takeoff revision diff view. Creates
+  // ai_estimator_takeoff_revisions table. Table is in Drizzle schema so
+  // reconcileSchemaDrift auto-synthesizes on fresh DBs.
+  "0103_ai_takeoff_revisions.sql": {
+    skip: "(A) CREATE TABLE — auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2625)",
+  },
+  // Task #2623 — sheet classification confidence + review queue. ADD COLUMN
+  // on takeoff_sheets (discipline_confidence_score, discipline_rationale,
+  // reviewed_by_id, reviewed_at) and ai_estimator_org_factors
+  // (low_confidence_threshold). All in Drizzle schema.
+  "0103_sheet_review_queue.sql": {
+    skip: "(A)+(B) ADD COLUMN — auto-applied by reconcileSchemaDrift from Drizzle schema (Task #2623)",
+  },
+  // Task #2628 — AI takeoff calibration feedback loop. Creates
+  // ai_estimator_calibration_exemplars and ai_estimator_calibration_nudges
+  // tables. Both are in Drizzle schema so reconcileSchemaDrift auto-creates.
+  "0104_ai_takeoff_calibration_loop.sql": {
+    skip: "(A) CREATE TABLE — auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2628)",
+  },
+  // Task #2629 — takeoff workspace hardening. ADD COLUMN version integer on
+  // takeoff_measurements for optimistic concurrency. Column is in Drizzle schema.
+  "0104_takeoff_measurements_versioning.sql": {
+    skip: "(A)+(B) ADD COLUMN version integer — auto-applied by reconcileSchemaDrift (Task #2629)",
+  },
+  // Task #2668 — persist active job id + progress snapshot on
+  // ai_takeoff_analyses. ADD COLUMN active_job_id, progress_snapshot,
+  // progress_updated_at. All in Drizzle schema.
+  "0105_ai_takeoff_progress_watchdog.sql": {
+    skip: "(A)+(B) ADD COLUMN — auto-applied by reconcileSchemaDrift from Drizzle schema (Task #2668)",
+  },
   // Task #2689 — GCS-first atomic closeout export. checksum + completed_at
   // columns on closeout_packages so the package row itself is the integrity
   // oracle. Mirrored at boot by ensureCloseoutPackagesAtomicColumns.
@@ -443,11 +606,9 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   },
   // Task #2729 — proposed_actions jsonb column on ai_estimator_chat_messages
   // so Claude tool-use proposals (add/edit/delete line items) persist across
-  // page refreshes as interactive Accept/Reject cards. Auto-applied by the
-  // schema-drift reconciler on dev; migration guards prod.
+  // page refreshes as interactive Accept/Reject cards.
   "0113_ai_estimator_chat_proposed_actions.sql": {
-    helper: "reconcileSchemaDrift",
-    note: "Task #2729 — ADD COLUMN proposed_actions jsonb on ai_estimator_chat_messages.",
+    skip: "(A)+(B) ADD COLUMN proposed_actions jsonb — auto-applied by reconcileSchemaDrift on dev/fresh DBs (Task #2729); column is in Drizzle schema",
   },
   "0107_equipment_repairs_pm_idempotency.sql": {
     helper: "ensureEquipmentRepairsPmIdempotency",
@@ -471,5 +632,44 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // Task #2693's 0108_mobile_sync_events.sql, which landed concurrently.
   "0109_portal_notifications.sql": {
     skip: "(A) CREATE TABLE auto-applied by reconcileSchemaDrift (Task #2694); partial unique indexes are advisory and idempotent",
+  },
+  // Task #2703 — AI Estimator Skills System.
+  // Creates ai_estimator_skills table (global/trade/csi_division/project_type
+  // scoped methodology rules with priority ordering). Table is in the Drizzle
+  // schema so reconcileSchemaDrift + synthesizeMissingTables auto-creates it
+  // with all indexes on fresh dev DBs. No startup helper needed.
+  "0110_ai_estimator_skills.sql": {
+    skip: "(A) CREATE TABLE auto-synthesized by reconcileSchemaDrift from Drizzle schema (Task #2703)",
+  },
+  // Task #2703 — AI Estimator Skills: soft-delete column.
+  // Adds deleted_at timestamp column to ai_estimator_skills. Column is in
+  // the Drizzle schema so reconcileSchemaDrift auto-adds it on fresh dev DBs.
+  "0111_ai_estimator_skills_soft_delete.sql": {
+    skip: "(A)+(B) ADD COLUMN auto-added by reconcileSchemaDrift; fresh DBs create column directly from Drizzle schema (Task #2703)",
+  },
+  // Task #2755 — OAuth reconnect alert flow.
+  // Two ALTER TYPE ADD VALUE calls (needs_reconnect on
+  // integration_connection_status; INTEGRATION_RECONNECT_REQUIRED on
+  // notification_type). reconcileSchemaDrift creates missing enum types but
+  // never appends values to existing ones, so a startup helper is required.
+  "0114_oauth_reconnect_alert.sql": {
+    helper: "ensureOauthReconnectAlertEnumValues",
+    note: "Task #2755 / #2804 — ALTER TYPE ADD VALUE for needs_reconnect + INTEGRATION_RECONNECT_REQUIRED; enum mutations need an explicit helper.",
+  },
+  // Task #2780 — In-app demo request form (replaces Calendly external link).
+  // Creates demo_requests table with email + created_at indexes. Mirrored
+  // at boot by ensureDemoRequestsTable.
+  "0115_demo_requests.sql": {
+    helper: "ensureDemoRequestsTable",
+    note: "Task #2780 — demo_requests table for in-app booking form.",
+  },
+  // Task #2780 / #2804 — Multi-region calibration zones in Takeoff workspace.
+  // Creates takeoff_sheet_calibration_zones table (named calibration regions
+  // each with their own px-per-foot scale, FK to takeoff_sheets ON DELETE
+  // CASCADE). Mirrored at boot by ensureCalibrationZonesTable as a
+  // belt-and-suspenders safety net alongside this numbered SQL migration.
+  "0116_calibration_zones.sql": {
+    helper: "ensureCalibrationZonesTable",
+    note: "Task #2780 / #2804 — takeoff_sheet_calibration_zones table + calibration_zones_sheet_idx index.",
   },
 };

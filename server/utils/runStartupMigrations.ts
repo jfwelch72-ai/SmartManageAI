@@ -161,6 +161,7 @@ import { seedTradePackSkills } from "../services/aiEstimator/skills";
 import { ensureDemoRequestsTable } from "./ensureDemoRequestsTable";
 import { ensureCalibrationZonesTable } from "./ensureCalibrationZonesTable";
 import { ensureDemoLeadCrmConfig } from "./ensureDemoLeadCrmConfig";
+import { ensureOauthReconnectAlertEnumValues } from "./ensureOauthReconnectAlertEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -560,12 +561,18 @@ const migrations: MigrationStep[] = [
   { name: "takeoff_sheets_tile_columns", category: "ADD_COLUMN", fn: ensureTakeoffSheetsTileColumns },
   // Task #2780 — In-app demo request form (replaces Calendly external link).
   { name: "demo_requests_table", category: "CREATE_TABLE", fn: ensureDemoRequestsTable },
-  // Task #2780 — Multi-region calibration zones in Takeoff workspace.
+  // Task #2780 / #2804 — Multi-region calibration zones in Takeoff workspace.
+  // Mirrors migrations/0116_calibration_zones.sql. Kept as a belt-and-suspenders
+  // safety net alongside the numbered SQL migration.
   { name: "takeoff_sheet_calibration_zones_table", category: "CREATE_TABLE", fn: ensureCalibrationZonesTable },
   // Task #2783 — Demo lead CRM config singleton so Super Admins can configure
   // which organization/pipeline receives demo request leads without needing an
   // env var change. Env var DEMO_CRM_ORG_ID still takes precedence.
   { name: "demo_lead_crm_config", category: "CREATE_TABLE", fn: ensureDemoLeadCrmConfig },
+  // Task #2755 / #2804 — OAuth reconnect alert: two ALTER TYPE ADD VALUE calls
+  // that reconcileSchemaDrift cannot replay (it creates enum types but never
+  // appends values to existing ones). Mirrors 0114_oauth_reconnect_alert.sql.
+  { name: "oauth_reconnect_alert_enum_values", category: "ADD_ENUM", fn: ensureOauthReconnectAlertEnumValues },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
