@@ -1,9 +1,9 @@
-// prompt-injection-guard: untrusted note body — TODO(#2683-followup) wrap via quarantineUserText; current prompt is JSON-only with response_format and validateAiJsonOutput
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
+import { quarantineUserText } from "./ai/promptInjectionGuard";
 import { db } from "./db";
 import { 
   projectNotes, 
@@ -119,10 +119,10 @@ export class AINotesService {
       `[Note ${idx + 1}]
 ID: ${note.id}
 Date: ${note.createdAt.toISOString().split('T')[0]}
-Author: ${note.authorName}
-Project: ${note.projectName ? `${note.projectCode} - ${note.projectName}` : "General/Company-wide"}
+Author: ${quarantineUserText("author_name", note.authorName)}
+Project: ${note.projectName ? `${quarantineUserText("project_code", note.projectCode)} - ${quarantineUserText("project_name", note.projectName)}` : "General/Company-wide"}
 Type: ${note.sourceType}
-Text: ${note.text}
+Text: ${quarantineUserText("note_text", note.text)}
 ---`
     ).join('\n\n');
 

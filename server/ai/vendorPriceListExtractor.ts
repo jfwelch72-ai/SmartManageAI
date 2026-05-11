@@ -1,8 +1,9 @@
-// prompt-injection-guard: untrusted vendor price-list — TODO(#2683-followup) wrap via quarantineUntrustedText; current pipeline uses JSON-only response_format and validateAiJsonOutput post-call
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
 import { routedChatCompletion } from "./providers";
 import { governedAiCall, estimateCost } from "../services/aiGovernance";
 import { logInfo, logError } from "../utils/logger";
+import { quarantineDocumentBlocks, quarantineUserText } from "../ai/promptInjectionGuard";
+import type { AiContentPart } from "./providers/types";
 
 export interface ExtractedPricingItem {
   itemName: string;
@@ -88,16 +89,22 @@ Return a JSON array of items. Be thorough and extract ALL pricing items visible 
               {
                 role: "user",
                 content: [
+                  ...quarantineDocumentBlocks([
+                    {
+                      type: "image_url" as const,
+                      image_url: {
+                        url: `data:application/pdf;base64,${base64Content}`,
+                        detail: "high"
+                      }
+                    },
+                  ]).map<AiContentPart>(b =>
+                    b.type === "text"
+                      ? { type: "text", text: b.text }
+                      : { type: "image_url", image_url: { url: b.image_url?.url ?? "", detail: b.image_url?.detail } }
+                  ),
                   {
-                    type: "image_url",
-                    image_url: {
-                      url: `data:application/pdf;base64,${base64Content}`,
-                      detail: "high"
-                    }
-                  },
-                  {
-                    type: "text",
-                    text: `Extract all pricing items from this vendor price list. The effective quarter is ${effectiveQuarter}. Return as JSON array.`
+                    type: "text" as const,
+                    text: `Extract all pricing items from this vendor price list. The effective quarter is ${quarantineUserText("effective_quarter", effectiveQuarter)}. Return as JSON array.`
                   }
                 ]
               }
@@ -177,7 +184,7 @@ Units: ${UNIT_TYPES.slice(0, 10).join(", ")}`
           },
           {
             role: "user",
-            content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${effectiveQuarter}.`
+            content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${quarantineUserText("effective_quarter", effectiveQuarter)}.`
           }
         ],
         response_format: { type: "json_object" },

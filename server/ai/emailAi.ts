@@ -1,8 +1,8 @@
-// prompt-injection-guard: untrusted email body — TODO(#2683-followup) wrap via quarantineUntrustedText; prompts already use system-prompt-anchored JSON-only response_format and validateAiJsonOutput
 // ai-router-bypass: email AI pipeline (classify, summary, reply draft, daily digest) processes untrusted third-party email bodies and is paired with the prompt-injection envelope; migration deferred until quarantine is portable to AiMessage. Tracked as a dedicated follow-up under Task #2684.
 import { logError, logWarn, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
 import { governedAiCall } from "../services/aiGovernance";
+import { quarantineUntrustedText, quarantineUserText } from "../ai/promptInjectionGuard";
 import { db } from '../db';
 import { 
   emailMessages, 
@@ -150,11 +150,11 @@ export async function analyzeEmail(
 ): Promise<EmailAnalysisResult> {
   const userPrompt = `Analyze this email:
 
-From: ${fromAddress}
-Subject: ${emailSubject}
+From: ${quarantineUserText("from_address", fromAddress)}
+Subject: ${quarantineUserText("subject", emailSubject)}
 
 Body:
-${emailBody?.substring(0, 4000) || '(No body content)'} 
+${quarantineUntrustedText(emailBody?.substring(0, 4000) || '(No body content)')}
 
 Return JSON with:
 {
@@ -241,11 +241,11 @@ export async function summarizeThread(
   organizationId?: string
 ): Promise<ThreadSummaryResult> {
   const threadContent = messages
-    .map((m, i) => `[Message ${i + 1}] From: ${m.fromName || m.fromAddress}
+    .map((m, i) => `[Message ${i + 1}] From: ${quarantineUserText("from_name", m.fromName || m.fromAddress)}
 Date: ${m.receivedAt.toISOString()}
-Subject: ${m.subject}
+Subject: ${quarantineUserText("subject", m.subject)}
 
-${m.bodyText?.substring(0, 1500) || '(No content)'}
+${quarantineUntrustedText(m.bodyText?.substring(0, 1500) || '(No content)')}
 ---`)
     .join('\n\n');
 
@@ -314,11 +314,11 @@ export async function suggestReplies(
             { role: 'system', content: prompt },
             { role: 'user', content: `Generate a ${tone} reply to this email:
 
-From: ${originalEmail.fromAddress}
-Subject: ${originalEmail.subject}
+From: ${quarantineUserText("from_address", originalEmail.fromAddress)}
+Subject: ${quarantineUserText("subject", originalEmail.subject)}
 
 Body:
-${originalEmail.body?.substring(0, 3000) || '(No content)'}
+${quarantineUntrustedText(originalEmail.body?.substring(0, 3000) || '(No content)')}
 
 Return JSON with subject and body fields.` }
           ],
@@ -375,12 +375,12 @@ export async function generateEmailSummary(
     byClassification[cls] = (byClassification[cls] || 0) + 1;
   }
 
-  // Build email list for AI
+  // Build email list for AI — wrap untrusted fields before interpolation
   const emailList = emails
     .slice(0, 50) // Limit for context
-    .map((e, i) => `${i + 1}. [${e.classification || 'UNCLASSIFIED'}] From: ${e.fromAddress}
-Subject: ${e.subject}
-Preview: ${e.snippet?.substring(0, 100) || 'N/A'}
+    .map((e, i) => `${i + 1}. [${e.classification || 'UNCLASSIFIED'}] From: ${quarantineUserText("from_address", e.fromAddress)}
+Subject: ${quarantineUserText("subject", e.subject)}
+Preview: ${quarantineUserText("snippet", e.snippet?.substring(0, 100) ?? 'N/A')}
 Date: ${e.receivedAt.toISOString()}`)
     .join('\n\n');
 

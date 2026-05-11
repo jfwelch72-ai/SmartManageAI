@@ -1,4 +1,3 @@
-// prompt-injection-guard: untrusted resume content — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt is JSON-only with downstream Zod validation
 // ai-router-bypass: resume-scoring is paired with the prompt-injection quarantine envelope around untrusted resume text; migration deferred until that envelope is portable to AiMessage. Tracked as a dedicated follow-up under Task #2684.
 import { Router, type NextFunction } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
@@ -14,6 +13,7 @@ import { isFeatureEnabled } from "./services/featureFlagService";
 import { eventBus } from "./events";
 import {logError, logInfo, logWarn } from "./utils/logger";
 import { governedAiCall } from "./services/aiGovernance";
+import { quarantineUntrustedText } from "./ai/promptInjectionGuard";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import {
   hiringJobs,
@@ -1698,7 +1698,7 @@ router.post(
         }
       }
       const resumeSection = hasResume
-        ? `--- RESUME ---\n${resumeContent || "[Resume file on record]"}\n\n`
+        ? `--- RESUME ---\n${quarantineUntrustedText(resumeContent || "[Resume file on record]")}\n\n`
         : "Note: No resume on file. Evaluate based on application answers only; assign a lower confidenceScore accordingly.\n\n";
 
       const systemPrompt = `You are an expert construction HR analyst evaluating candidates for skilled trade roles in a ${orgTradeType.replace(/_/g, " ").toLowerCase()} company. Your evaluation must be based solely on job-relevant skills, certifications, experience, and answers. Do NOT consider or reference any protected characteristics such as race, gender, religion, age, nationality, disability, or any other characteristic protected by employment law. Return a JSON object with these exact keys:
@@ -1716,7 +1716,7 @@ router.post(
 - "extractedEquipment": array of strings (equipment or tools mentioned)
 - "interviewRecommendation": string, 1-2 sentences about what to probe in the interview`;
 
-      const userPrompt = `Evaluate this candidate for the role of ${jobTitle} at a ${orgTradeType.replace(/_/g, " ").toLowerCase()} firm.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}${resumeSection}--- APPLICATION ANSWERS ---\n${screeningAnswers}\n\nIMPORTANT: Base your evaluation on job-relevant skills, experience, and role requirements only. Do not reference or consider any protected characteristics.`;
+      const userPrompt = `Evaluate this candidate for the role of ${jobTitle} at a ${orgTradeType.replace(/_/g, " ").toLowerCase()} firm.\n\nSource: ${candidate.source ?? "Unknown"}\nCurrent Stage: ${candidate.currentStage}\n\n${jobContext ? `--- JOB DETAILS ---\n${jobContext}\n\n` : ""}${resumeSection}--- APPLICATION ANSWERS ---\n${quarantineUntrustedText(screeningAnswers)}\n\nIMPORTANT: Base your evaluation on job-relevant skills, experience, and role requirements only. Do not reference or consider any protected characteristics.`;
 
       const scored = await governedAiCall({
         orgId: orgId(req),

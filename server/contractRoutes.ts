@@ -1,4 +1,3 @@
-// prompt-injection-guard: untrusted contract body — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt enforces JSON output with downstream Zod validation
 // ai-router-bypass: contract clause extraction depends on long-context OpenAI request shape and downstream prompt-injection envelope. Migration tracked as a dedicated follow-up under Task #2684.
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
@@ -11,6 +10,7 @@ import { projects, domainEvents, changeOrders, users } from "@shared/schema";
 import { inArray } from "drizzle-orm";
 import { insertNotification } from "./services/notificationService";
 import { parsePagination } from "./utils/pagination";
+import { quarantineUntrustedText } from "./ai/promptInjectionGuard";
 import { z } from "zod";
 
 const createContractSchema = z.object({
@@ -1354,7 +1354,7 @@ Analyze at minimum these areas: Payment terms, Insurance, Indemnification, Scope
           model: AI_MODEL_GPT5,
           messages: [
             { role: "system", content: systemPrompt },
-            { role: "user", content: `Analyze this construction contract for risks:\n\n${contractContext}` },
+            { role: "user", content: `Analyze this construction contract for risks:\n\n${quarantineUntrustedText(contractContext)}` },
           ],
           response_format: { type: "json_object" },
           max_completion_tokens: 4096,

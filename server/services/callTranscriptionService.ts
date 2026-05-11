@@ -1,4 +1,3 @@
-// prompt-injection-guard: untrusted transcribed call body — TODO(#2683-followup) wrap via quarantineUntrustedText; current prompt forces JSON-only response with validateAiJsonOutput downstream
 /**
  * Task #921 — CRM call recording transcription.
  *
@@ -16,6 +15,7 @@ import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
 import { routedGeneralChatCompletion } from "../ai/providers";
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { safeDownload, SafeDownloadError } from "./safeDownload";
+import { quarantineUntrustedText } from "../ai/promptInjectionGuard";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -81,7 +81,7 @@ export async function summarizeTranscript(transcript: string, orgId: string): Pr
       request: {
         messages: [
           { role: "system", content: SUMMARY_SYSTEM_PROMPT },
-          { role: "user", content: `Transcript:\n\n${input}` },
+          { role: "user", content: `Transcript:\n\n${quarantineUntrustedText(input)}` },
         ],
         response_format: { type: "json_object" },
         max_completion_tokens: 1024,
