@@ -663,13 +663,13 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureDemoRequestsTable",
     note: "Task #2780 — demo_requests table for in-app booking form.",
   },
-  // Task #2780 / #2804 — Multi-region calibration zones in Takeoff workspace.
+  // Task #2780 / #2804 / #2806 — Multi-region calibration zones in Takeoff workspace.
   // Creates takeoff_sheet_calibration_zones table (named calibration regions
   // each with their own px-per-foot scale, FK to takeoff_sheets ON DELETE
-  // CASCADE). Mirrored at boot by ensureCalibrationZonesTable as a
-  // belt-and-suspenders safety net alongside this numbered SQL migration.
+  // CASCADE). Runtime helper retired in Task #2806 — numbered migration 0116
+  // guards prod deployments and reconcileSchemaDrift handles fresh-DB synthesis.
   "0116_calibration_zones.sql": {
-    helper: "ensureCalibrationZonesTable",
+    skip: "(A) CREATE TABLE auto-synthesized by reconcileSchemaDrift; numbered migration 0116 guards prod deployments (Task #2804)",
     note: "Task #2780 / #2804 — takeoff_sheet_calibration_zones table + calibration_zones_sheet_idx index.",
   },
 };

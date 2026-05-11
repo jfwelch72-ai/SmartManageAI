@@ -105,18 +105,15 @@ beforeAll(async () => {
   const express = await import("express");
   const cookieParser = await import("cookie-parser");
   const { registerRoutes } = await import("../routes");
-  const { ensureCalibrationZonesTable } = await import("../utils/ensureCalibrationZonesTable");
 
   app = express.default();
   app.use(express.default.json());
   app.use(cookieParser.default());
   server = await registerRoutes(app);
 
-  // `runStartupMigrations` is called from server/index.ts, NOT from
-  // registerRoutes — so runtime-only tables like takeoff_sheet_calibration_zones
-  // (created via ensureCalibrationZonesTable rather than drizzle-kit) must be
-  // explicitly bootstrapped here in the test harness.
-  await ensureCalibrationZonesTable();
+  // takeoff_sheet_calibration_zones is defined in the Drizzle schema and
+  // created by the vitest globalSetup (drizzle-kit export) — no manual
+  // bootstrap needed here (Task #2806 retired ensureCalibrationZonesTable).
 
   const slug = `${PREFIX}${Date.now()}`;
   const passwordHash = await bcrypt.hash("TestPass123!", 10);
