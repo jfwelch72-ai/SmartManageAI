@@ -4762,6 +4762,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     verifyPoints,
     calibrationZones,
     selectedCalibrationZoneId,
+    activeCalibrationZoneId: activeCalibrationZone?.id ?? null,
     onSelectCalibrationZone: setSelectedCalibrationZoneId,
     // Task #2793 — When the calibration drawer is open, clicking a zone
     // polygon enters vertex-drag reshape mode for that zone (and also

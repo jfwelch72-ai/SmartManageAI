@@ -180,6 +180,13 @@ export interface CanvasStageProps {
   }>;
   /** ID of the currently-selected calibration zone (highlighted on canvas). */
   selectedCalibrationZoneId?: string | null;
+  /**
+   * Task #2796 — ID of the calibration zone the cursor is currently inside
+   * (computed from pointer world-coordinates in TakeoffWorkspace). When set,
+   * the matching polygon gets a brighter outline and a slightly stronger fill
+   * so estimators can see zone boundaries without opening the drawer.
+   */
+  activeCalibrationZoneId?: string | null;
   /** Called when the user clicks a zone polygon on the canvas. */
   onSelectCalibrationZone?: (id: string | null) => void;
 
@@ -385,6 +392,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     verifyPoints,
     calibrationZones,
     selectedCalibrationZoneId,
+    activeCalibrationZoneId,
     onSelectCalibrationZone,
     currentSnap,
     runningMeasurement,
@@ -1914,10 +1922,13 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     : zone.polygon_points;
                   if (!pts || pts.length < 3) return null;
                   const isSelected = selectedCalibrationZoneId === zone.id;
+                  // Task #2796 — cursor is inside this zone (but not click-selected).
+                  // isActive drives a hover highlight: brighter outline + stronger fill.
+                  const isActive = !isSelected && activeCalibrationZoneId === zone.id;
                   const flatPts = pts.flatMap((p: { x: number; y: number }) => [p.x, p.y]);
                   const cx = pts.reduce((s: number, p: { x: number; y: number }) => s + p.x, 0) / pts.length;
                   const cy = pts.reduce((s: number, p: { x: number; y: number }) => s + p.y, 0) / pts.length;
-                  const sw = (isBeingEdited ? 2.5 : isSelected ? 2.5 : 1.5) / stageScale;
+                  const sw = (isBeingEdited ? 2.5 : isSelected ? 2.5 : isActive ? 2 : 1.5) / stageScale;
                   const labelFontSize = Math.max(9, 13 / stageScale);
                   const scaleFontSize = Math.max(8, 11 / stageScale);
                   const labelW = 160 / stageScale;
@@ -1926,10 +1937,20 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       <Line
                         points={flatPts}
                         closed={true}
-                        fill={isBeingEdited ? "rgba(245,158,11,0.18)" : isSelected ? "rgba(6,182,212,0.22)" : "rgba(6,182,212,0.10)"}
-                        stroke={isBeingEdited ? "rgba(245,158,11,1)" : isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.60)"}
+                        fill={
+                          isBeingEdited ? "rgba(245,158,11,0.18)"
+                          : isSelected  ? "rgba(6,182,212,0.22)"
+                          : isActive    ? "rgba(6,182,212,0.18)"
+                          :               "rgba(6,182,212,0.10)"
+                        }
+                        stroke={
+                          isBeingEdited ? "rgba(245,158,11,1)"
+                          : isSelected  ? "rgba(6,182,212,1)"
+                          : isActive    ? "rgba(6,182,212,0.90)"
+                          :               "rgba(6,182,212,0.60)"
+                        }
                         strokeWidth={sw}
-                        dash={isBeingEdited || isSelected ? undefined : [6 / stageScale, 3 / stageScale]}
+                        dash={isBeingEdited || isSelected || isActive ? undefined : [6 / stageScale, 3 / stageScale]}
                         listening={!isBeingEdited}
                         onClick={() => {
                           if (isBeingEdited) return;
@@ -1967,7 +1988,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         text={zone.name}
                         fontSize={labelFontSize}
                         fontStyle="bold"
-                        fill={isBeingEdited ? "rgba(245,158,11,1)" : isSelected ? "rgba(6,182,212,1)" : "rgba(6,182,212,0.90)"}
+                        fill={
+                          isBeingEdited ? "rgba(245,158,11,1)"
+                          : isSelected  ? "rgba(6,182,212,1)"
+                          : isActive    ? "rgba(6,182,212,1)"
+                          :               "rgba(6,182,212,0.90)"
+                        }
                         align="center"
                         width={labelW}
                         offsetX={labelW / 2}
@@ -1978,7 +2004,12 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         y={cy + 2 / stageScale}
                         text={`${zone.px_per_foot.toFixed(1)} px/ft`}
                         fontSize={scaleFontSize}
-                        fill={isBeingEdited ? "rgba(245,158,11,0.90)" : isSelected ? "rgba(6,182,212,0.95)" : "rgba(6,182,212,0.75)"}
+                        fill={
+                          isBeingEdited ? "rgba(245,158,11,0.90)"
+                          : isSelected  ? "rgba(6,182,212,0.95)"
+                          : isActive    ? "rgba(6,182,212,0.90)"
+                          :               "rgba(6,182,212,0.75)"
+                        }
                         align="center"
                         width={labelW}
                         offsetX={labelW / 2}
