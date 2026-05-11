@@ -269,6 +269,16 @@ export interface CanvasStageProps {
   toolToMarkupType: (tool: string) => string;
 
   collab: any;
+
+  /** Task #2784 — Zone polygon drawing mode. When true, canvas clicks
+   *  accumulate polygon vertices instead of performing normal interactions. */
+  zoneDrawingActive?: boolean;
+  /** Current in-progress polygon vertices (canvas coords). */
+  zoneDrawPoints?: Point[];
+  /** Called with the canvas-space point when the user clicks during zone drawing. */
+  onZoneCanvasClick?: (pt: Point) => void;
+  /** Called when the user double-clicks during zone drawing (closes the polygon). */
+  onZoneCanvasDblClick?: () => void;
 }
 
 function CanvasStageImpl(props: CanvasStageProps) {
@@ -391,6 +401,10 @@ function CanvasStageImpl(props: CanvasStageProps) {
     clearIssueDropTarget,
     toolToMarkupType,
     collab,
+    zoneDrawingActive,
+    zoneDrawPoints,
+    onZoneCanvasClick,
+    onZoneCanvasDblClick,
   } = props;
 
   // Visible world-coordinate rectangle — used for viewport culling so
@@ -421,6 +435,16 @@ function CanvasStageImpl(props: CanvasStageProps) {
               x={stagePosition.x}
               y={stagePosition.y}
               onMouseDown={(e) => {
+                if (zoneDrawingActive && onZoneCanvasClick) {
+                  const stage = e.target.getStage();
+                  const pos = stage?.getPointerPosition();
+                  if (stage && pos) {
+                    const transform = stage.getAbsoluteTransform().copy().invert();
+                    const point = inverseRotate(transform.point(pos));
+                    onZoneCanvasClick(point);
+                  }
+                  return;
+                }
                 if (createLinkMode?.step === "select-area") {
                   const stage = e.target.getStage();
                   const pos = stage?.getPointerPosition();
@@ -499,6 +523,11 @@ function CanvasStageImpl(props: CanvasStageProps) {
               onTouchEnd={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseUp(); } else { handleTouchEnd(e); } }}
               onTouchMove={(e) => { if (isMarkupTool(activeTool)) { handleMarkupMouseMove(); } else { handleTouchMove(e); } }}
               onDblClick={(e) => {
+                if (zoneDrawingActive && onZoneCanvasDblClick) {
+                  e.evt.preventDefault();
+                  onZoneCanvasDblClick();
+                  return;
+                }
                 if ((activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") && isDrawing && drawingPoints.length >= 3) {
                   e.evt.preventDefault();
                   completePolygon();
@@ -1890,6 +1919,67 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     </Fragment>
                   );
                 })}
+
+                {/* Task #2784 — In-progress zone polygon drawn by the user click-by-click.
+                    Renders: dashed outline of the polygon-so-far, vertex handles,
+                    a live preview line to the current cursor, and a snap-to-close
+                    ring on the first vertex when ≥3 vertices have been placed. */}
+                {zoneDrawingActive && zoneDrawPoints && zoneDrawPoints.length > 0 && (
+                  <>
+                    {zoneDrawPoints.length >= 2 && (
+                      <Line
+                        points={zoneDrawPoints.flatMap(p => [p.x, p.y])}
+                        stroke="rgba(6,182,212,1)"
+                        strokeWidth={2 / stageScale}
+                        closed={false}
+                        dash={[6 / stageScale, 3 / stageScale]}
+                        fill="rgba(6,182,212,0.08)"
+                        listening={false}
+                        perfectDrawEnabled={false}
+                      />
+                    )}
+                    {zoneDrawPoints.map((pt, i) => (
+                      <Circle
+                        key={`zdp-${i}`}
+                        x={pt.x}
+                        y={pt.y}
+                        radius={(i === 0 ? 7 : 4) / stageScale}
+                        fill={i === 0 ? "rgba(6,182,212,0.85)" : "rgba(6,182,212,0.6)"}
+                        stroke="white"
+                        strokeWidth={1.5 / stageScale}
+                        listening={false}
+                        perfectDrawEnabled={false}
+                      />
+                    ))}
+                    {cursorPosition && (
+                      <Line
+                        points={[
+                          zoneDrawPoints[zoneDrawPoints.length - 1].x,
+                          zoneDrawPoints[zoneDrawPoints.length - 1].y,
+                          cursorPosition.x,
+                          cursorPosition.y,
+                        ]}
+                        stroke="rgba(6,182,212,0.55)"
+                        strokeWidth={1.5 / stageScale}
+                        dash={[4 / stageScale, 3 / stageScale]}
+                        listening={false}
+                        perfectDrawEnabled={false}
+                      />
+                    )}
+                    {zoneDrawPoints.length >= 3 && (
+                      <Circle
+                        x={zoneDrawPoints[0].x}
+                        y={zoneDrawPoints[0].y}
+                        radius={14 / stageScale}
+                        stroke="rgba(6,182,212,1)"
+                        strokeWidth={2 / stageScale}
+                        fill="rgba(6,182,212,0.18)"
+                        listening={false}
+                        perfectDrawEnabled={false}
+                      />
+                    )}
+                  </>
+                )}
 
                 {calibrationPoints.map((point, i) => (
                   <Circle

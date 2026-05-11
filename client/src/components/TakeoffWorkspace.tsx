@@ -494,6 +494,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // interaction map). `T` opens this side-anchored Sheet so the
   // canvas stays clickable for the two-point pick.
   const [calibrationDrawerOpen, setCalibrationDrawerOpen] = useState(false);
+  // Task #2784 — Zone polygon drawing mode. zoneDrawingActive = user is
+  // clicking vertices on the canvas; zoneDrawPoints = accumulated vertices;
+  // pendingZonePoints = polygon closed, waiting for name/px-per-ft entry.
+  const [zoneDrawingActive, setZoneDrawingActive] = useState(false);
+  const [zoneDrawPoints, setZoneDrawPoints] = useState<{ x: number; y: number }[]>([]);
+  const [pendingZonePoints, setPendingZonePoints] = useState<{ x: number; y: number }[] | null>(null);
   // Task #2325 — Scale History side panel. Holds the sheet ID it was
   // opened for so callers (drift banner, calibration drawer) can target a
   // specific sheet that may differ from the currently selected one.
@@ -1938,6 +1944,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [selectedCalibrationZoneId, setSelectedCalibrationZoneId] = useState<string | null>(null);
   useEffect(() => {
     setSelectedCalibrationZoneId(null);
+    // Task #2784 — Discard any in-progress zone polygon when the sheet
+    // changes so the pending polygon cannot accidentally be saved against
+    // the wrong sheet.
+    setZoneDrawingActive(false);
+    setZoneDrawPoints([]);
+    setPendingZonePoints(null);
   }, [selectedSheet]);
 
   const getScaleForPoint = useCallback(
@@ -2730,12 +2742,52 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // Reset the per-open "default Apply to Sheet Set" hint so a
     // subsequent T-press starts unchecked again.
     setCalibrationDefaultApplyToSet(false);
+    // Task #2784 — Always discard any in-progress or pending zone polygon
+    // when the drawer closes so zone-draw mode never leaks into the canvas
+    // after the drawer is dismissed.
+    setZoneDrawingActive(false);
+    setZoneDrawPoints([]);
+    setPendingZonePoints(null);
   }, [
     setCalibrationMode,
     setCalibrationPoints,
     setCalibrationDistance,
     setActiveTool,
   ]);
+
+  // Task #2784 — Zone polygon drawing handlers. When the user clicks
+  // the "Draw Zone" button in the calibration drawer, zoneDrawingActive
+  // flips to true and every subsequent canvas click appends a vertex.
+  // Clicking near the first vertex (within 15 px in world coords) OR
+  // double-clicking closes the polygon and moves it into pendingZonePoints
+  // so the drawer can show the save form.
+  const handleZoneCanvasClick = useCallback(
+    (pt: { x: number; y: number }) => {
+      setZoneDrawPoints(prev => {
+        if (prev.length >= 3) {
+          const first = prev[0];
+          const dist = Math.sqrt((pt.x - first.x) ** 2 + (pt.y - first.y) ** 2);
+          if (dist < 15 / stageScale) {
+            setPendingZonePoints(prev);
+            setZoneDrawingActive(false);
+            return [];
+          }
+        }
+        return [...prev, pt];
+      });
+    },
+    [stageScale],
+  );
+
+  const handleZoneCanvasDblClick = useCallback(() => {
+    setZoneDrawPoints(prev => {
+      if (prev.length >= 3) {
+        setPendingZonePoints(prev);
+        setZoneDrawingActive(false);
+      }
+      return [];
+    });
+  }, []);
 
   // Task #2141 — Calibrate-set entry point: triggered when the user
   // clicks the per-set scale chip in the SheetSetsPanel. Mark the
@@ -4646,6 +4698,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     calibrationZones,
     selectedCalibrationZoneId,
     onSelectCalibrationZone: setSelectedCalibrationZoneId,
+    zoneDrawingActive,
+    zoneDrawPoints,
+    onZoneCanvasClick: handleZoneCanvasClick,
+    onZoneCanvasDblClick: handleZoneCanvasDblClick,
     currentSnap,
     runningMeasurement,
     snapStats,
@@ -6054,6 +6110,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         selectedCalibrationZoneId={selectedCalibrationZoneId}
         onSelectCalibrationZone={setSelectedCalibrationZoneId}
         activeCalibrationZoneId={activeCalibrationZone?.id ?? null}
+        zoneDrawingActive={zoneDrawingActive}
+        onStartZoneDraw={() => {
+          setZoneDrawPoints([]);
+          setZoneDrawingActive(true);
+        }}
+        onCancelZoneDraw={() => {
+          setZoneDrawingActive(false);
+          setZoneDrawPoints([]);
+        }}
+        zoneDrawPoints={zoneDrawPoints}
+        pendingZonePoints={pendingZonePoints}
+        onClearPendingZone={() => setPendingZonePoints(null)}
       />
 
       {/* Task #2325 — Scale History side panel. Mounted alongside the

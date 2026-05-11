@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { MapPin } from "lucide-react";
+import { MapPin, Hexagon } from "lucide-react";
 import { CalibrationZonesPanel } from "./CalibrationZonesPanel";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
@@ -145,6 +145,173 @@ function SaveZoneButton({
   );
 }
 
+// Task #2784 — DrawZoneSection: handles the full "draw zone polygon" flow
+// within the calibration drawer. Transitions through three states:
+//   1. Idle — shows "Draw Zone" button
+//   2. Drawing — shows vertex count + cancel button  
+//   3. Pending save — shows name + px/ft form after polygon is closed
+function DrawZoneSection({
+  sheetId,
+  zoneDrawingActive,
+  onStartZoneDraw,
+  onCancelZoneDraw,
+  zoneDrawPoints,
+  pendingZonePoints,
+  onClearPendingZone,
+  currentScalePxPerFoot,
+}: {
+  sheetId: string;
+  zoneDrawingActive: boolean;
+  onStartZoneDraw?: () => void;
+  onCancelZoneDraw?: () => void;
+  zoneDrawPoints: { x: number; y: number }[];
+  pendingZonePoints: { x: number; y: number }[] | null;
+  onClearPendingZone?: () => void;
+  currentScalePxPerFoot: number | null;
+}) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [zoneName, setZoneName] = useState("");
+  const [pxPerFoot, setPxPerFoot] = useState("");
+
+  // Pre-fill px/ft from the sheet's current scale when the form appears
+  useEffect(() => {
+    if (pendingZonePoints && currentScalePxPerFoot && currentScalePxPerFoot > 0) {
+      setPxPerFoot(currentScalePxPerFoot.toFixed(4));
+    }
+  }, [pendingZonePoints, currentScalePxPerFoot]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (!pendingZonePoints || pendingZonePoints.length < 3) throw new Error("No polygon");
+      const px = parseFloat(pxPerFoot);
+      if (!Number.isFinite(px) || px <= 0) throw new Error("Invalid px/ft");
+      return apiRequest("POST", `/api/takeoff/sheets/${sheetId}/calibration-zones`, {
+        name: zoneName.trim() || "Zone",
+        polygonPoints: pendingZonePoints,
+        pxPerFoot: px,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Zone saved", description: `Zone "${zoneName.trim() || "Zone"}" drawn and saved.` });
+      qc.invalidateQueries({ queryKey: [`/api/takeoff/sheets/${sheetId}/calibration-zones`] });
+      setZoneName("");
+      setPxPerFoot("");
+      onClearPendingZone?.();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save zone", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (pendingZonePoints) {
+    return (
+      <div
+        className="border border-cyan-300 dark:border-cyan-700 rounded-md bg-cyan-50 dark:bg-cyan-950/30 px-3 py-2.5 flex flex-col gap-2 text-xs"
+        data-testid="draw-zone-save-form"
+      >
+        <div className="flex items-center gap-1.5 text-cyan-700 dark:text-cyan-300 font-medium">
+          <Hexagon className="w-3.5 h-3.5" />
+          <span>Zone polygon ready — {pendingZonePoints.length} vertices</span>
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="draw-zone-name" className="text-[11px] text-muted-foreground">Zone name</Label>
+          <Input
+            id="draw-zone-name"
+            value={zoneName}
+            onChange={e => setZoneName(e.target.value)}
+            placeholder="e.g. Detail inset"
+            className="h-7 text-xs px-2"
+            autoFocus
+            data-testid="input-draw-zone-name"
+            onKeyDown={e => { if (e.key === "Enter") saveMutation.mutate(); if (e.key === "Escape") onClearPendingZone?.(); }}
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="draw-zone-pxperfoot" className="text-[11px] text-muted-foreground">Scale (px/ft)</Label>
+          <div className="flex items-center gap-1">
+            <Input
+              id="draw-zone-pxperfoot"
+              value={pxPerFoot}
+              onChange={e => setPxPerFoot(e.target.value)}
+              placeholder="e.g. 12.5"
+              className="h-7 text-xs px-2 flex-1 font-mono"
+              data-testid="input-draw-zone-pxperfoot"
+              onKeyDown={e => { if (e.key === "Enter") saveMutation.mutate(); if (e.key === "Escape") onClearPendingZone?.(); }}
+            />
+            <span className="text-[10px] text-muted-foreground whitespace-nowrap">px/ft</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 justify-end">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            onClick={() => { onClearPendingZone?.(); setZoneName(""); setPxPerFoot(""); }}
+            disabled={saveMutation.isPending}
+            data-testid="button-draw-zone-cancel-save"
+          >
+            Discard
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 px-2 text-xs bg-cyan-600 hover:bg-cyan-700 text-white"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !pxPerFoot.trim()}
+            data-testid="button-draw-zone-save"
+          >
+            Save zone
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (zoneDrawingActive) {
+    return (
+      <div
+        className="border border-cyan-300 dark:border-cyan-700 rounded-md bg-cyan-50 dark:bg-cyan-950/30 px-3 py-2 flex items-center gap-2 text-xs"
+        data-testid="draw-zone-active-banner"
+      >
+        <Hexagon className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+        <span className="flex-1 text-cyan-700 dark:text-cyan-300">
+          Click vertices on the plan
+          {zoneDrawPoints.length > 0 && (
+            <span className="ml-1 font-medium">{zoneDrawPoints.length} placed</span>
+          )}
+          {zoneDrawPoints.length >= 3 && " — click first point or double-click to close"}
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-6 px-2 text-xs shrink-0"
+          onClick={onCancelZoneDraw}
+          data-testid="button-draw-zone-cancel"
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      type="button"
+      variant="outline"
+      size="sm"
+      className="h-8 px-3 text-xs w-full border-cyan-300 dark:border-cyan-700 text-cyan-700 dark:text-cyan-300 hover:bg-cyan-50 dark:hover:bg-cyan-950/30"
+      onClick={onStartZoneDraw}
+      data-testid="button-draw-zone-polygon"
+    >
+      <Hexagon className="w-3.5 h-3.5 mr-1.5" />
+      Draw Zone Polygon
+    </Button>
+  );
+}
+
 export interface InlineCalibrationDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -266,6 +433,19 @@ export interface InlineCalibrationDrawerProps {
    * CalibrationZonesPanel so the active row shows a live "cursor here" indicator.
    */
   activeCalibrationZoneId?: string | null;
+
+  /** Task #2784 — True while the user is clicking polygon vertices on the canvas. */
+  zoneDrawingActive?: boolean;
+  /** Activate zone polygon drawing mode on the canvas. */
+  onStartZoneDraw?: () => void;
+  /** Cancel zone drawing and discard any picked vertices. */
+  onCancelZoneDraw?: () => void;
+  /** Current in-progress polygon vertices (picked on the canvas). */
+  zoneDrawPoints?: { x: number; y: number }[];
+  /** When non-null, the polygon has been closed and the drawer shows a save form. */
+  pendingZonePoints?: { x: number; y: number }[] | null;
+  /** Clear the pending polygon after save or cancel. */
+  onClearPendingZone?: () => void;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -1031,6 +1211,23 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
               selectedZoneId={props.selectedCalibrationZoneId}
               onSelectZone={props.onSelectCalibrationZone}
               activeZoneId={props.activeCalibrationZoneId}
+            />
+          )}
+
+          {/* Task #2784 — Draw Zone section. Shows either:
+              (a) "Draw Zone" button to start polygon drawing on the canvas,
+              (b) vertex count badge + instructions while drawing is active,
+              (c) save form once the polygon is closed (pendingZonePoints). */}
+          {props.sheetId && (
+            <DrawZoneSection
+              sheetId={props.sheetId}
+              zoneDrawingActive={!!props.zoneDrawingActive}
+              onStartZoneDraw={props.onStartZoneDraw}
+              onCancelZoneDraw={props.onCancelZoneDraw}
+              zoneDrawPoints={props.zoneDrawPoints ?? []}
+              pendingZonePoints={props.pendingZonePoints ?? null}
+              onClearPendingZone={props.onClearPendingZone}
+              currentScalePxPerFoot={currentScalePxPerFoot}
             />
           )}
 
