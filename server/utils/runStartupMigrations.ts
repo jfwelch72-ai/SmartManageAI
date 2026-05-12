@@ -62,6 +62,7 @@ import { ensureCrmOrgCertDocumentColumn } from "./ensureCrmOrgCertDocumentColumn
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
 import { ensureHeavyCivilTables } from "./ensureHeavyCivilTables";
 import { ensureProjectHealthSnapshotColumns } from "./ensureProjectHealthSnapshotColumns";
+import { ensureSupportTicketReplies } from "./ensureSupportTicketReplies";
 import { ensureCrmEnhancementTables } from "./ensureCrmEnhancementTables";
 import { ensureCrmOrganisationCertColumns } from "./ensureCrmOrganisationCertColumns";
 import { ensureEmailAccountPushColumns } from "./ensureEmailAccountPushColumns";
@@ -568,6 +569,10 @@ const migrations: MigrationStep[] = [
   // that reconcileSchemaDrift cannot replay (it creates enum types but never
   // appends values to existing ones). Mirrors 0114_oauth_reconnect_alert.sql.
   { name: "oauth_reconnect_alert_enum_values", category: "ADD_ENUM", fn: ensureOauthReconnectAlertEnumValues },
+  // Task #2816 — Support ticket reply thread. Creates support_ticket_replies
+  // and its indexes. Mirrors migrations/0117_support_ticket_replies.sql so
+  // fresh dev/staging environments converge without a manual psql step.
+  { name: "support_ticket_replies", category: "CREATE_TABLE", fn: ensureSupportTicketReplies },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
