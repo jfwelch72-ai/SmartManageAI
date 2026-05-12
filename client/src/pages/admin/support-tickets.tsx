@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isPast } from "date-fns";
 import {
@@ -7,7 +7,9 @@ import {
   ChevronLeft,
   Clock,
   Inbox,
+  MessageSquare,
   Search,
+  Send,
   ShieldAlert,
   ShieldCheck,
   TicketCheck,
@@ -23,9 +25,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { SupportTicket } from "@shared/schema";
+import type { SupportTicket, SupportTicketReply } from "@shared/schema";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
@@ -129,6 +132,118 @@ function SlaDeadlineRow({
           {isBreached ? " (breached)" : ""}
         </span>
       </span>
+    </div>
+  );
+}
+
+function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTicketUpdate: (t: SupportTicket) => void }) {
+  const { toast } = useToast();
+  const [replyText, setReplyText] = useState("");
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const { data: repliesData, isLoading: repliesLoading } = useQuery<{ replies: SupportTicketReply[] }>({
+    queryKey: ["/api/support/tickets", ticket.id, "replies"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/support/tickets/${ticket.id}/replies`);
+      return res.json();
+    },
+    refetchInterval: 30_000,
+  });
+
+  const replies = repliesData?.replies ?? [];
+
+  useEffect(() => {
+    if (replies.length > 0) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [replies.length]);
+
+  const replyMutation = useMutation({
+    mutationFn: async (body: string) => {
+      const res = await apiRequest("POST", `/api/support/tickets/${ticket.id}/replies`, { body });
+      return res.json() as Promise<{ reply: SupportTicketReply; ticket: SupportTicket }>;
+    },
+    onSuccess: ({ ticket: updatedTicket }) => {
+      setReplyText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticket.id, "replies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
+      onTicketUpdate(updatedTicket);
+      toast({ title: "Reply sent", description: "The submitter has been notified by email." });
+    },
+    onError: (e: Error) => toast({ title: "Reply failed", description: e.message, variant: "destructive" }),
+  });
+
+  const handleSend = () => {
+    const trimmed = replyText.trim();
+    if (!trimmed) return;
+    replyMutation.mutate(trimmed);
+  };
+
+  return (
+    <div className="rounded-lg border overflow-hidden">
+      <div className="px-4 py-3 bg-muted/40 flex items-center gap-2 border-b">
+        <MessageSquare className="h-4 w-4 text-muted-foreground" />
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Replies {replies.length > 0 && <span className="ml-1 normal-case font-normal">({replies.length})</span>}
+        </p>
+      </div>
+
+      <div className="p-4 space-y-3 max-h-64 overflow-y-auto">
+        {repliesLoading ? (
+          <Skeleton className="h-16 w-full" />
+        ) : replies.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-replies">
+            No replies yet. Send the first reply below.
+          </p>
+        ) : (
+          replies.map((reply) => (
+            <div key={reply.id} className="rounded-md bg-primary/5 border border-primary/10 p-3 space-y-1" data-testid={`reply-${reply.id}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-primary" data-testid={`reply-author-${reply.id}`}>
+                  {reply.authorName || "Support Team"}
+                </span>
+                <span className="text-xs text-muted-foreground" data-testid={`reply-time-${reply.id}`}>
+                  {format(new Date(reply.createdAt), "MMM d, yyyy h:mm a")}
+                  {reply.emailedAt && (
+                    <span className="ml-1 text-green-600 dark:text-green-400" title="Email delivered">✓ emailed</span>
+                  )}
+                </span>
+              </div>
+              <p className="text-sm whitespace-pre-wrap leading-relaxed" data-testid={`reply-body-${reply.id}`}>
+                {reply.body}
+              </p>
+            </div>
+          ))
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div className="px-4 pb-4 space-y-2 border-t pt-3">
+        <Textarea
+          placeholder="Type your reply… (will be emailed to the submitter)"
+          value={replyText}
+          onChange={(e) => setReplyText(e.target.value)}
+          rows={3}
+          disabled={replyMutation.isPending}
+          data-testid="textarea-reply"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSend();
+          }}
+        />
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-muted-foreground">Ctrl+Enter to send · reply is emailed to {ticket.submitterEmail}</p>
+          <Button
+            size="sm"
+            onClick={handleSend}
+            disabled={!replyText.trim() || replyMutation.isPending}
+            data-testid="button-send-reply"
+            className="gap-1"
+          >
+            <Send className="h-3.5 w-3.5" />
+            {replyMutation.isPending ? "Sending…" : "Send Reply"}
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -285,6 +400,8 @@ function TicketDetailSheet({
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Message</p>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{ticket.body}</p>
           </div>
+
+          <ReplyThread ticket={ticket} onTicketUpdate={onUpdate} />
 
           {ticket.route && (
             <div>

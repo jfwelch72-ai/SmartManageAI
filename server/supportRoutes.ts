@@ -7,8 +7,10 @@ import { db } from "./db";
 import {
   organizationSubscriptions,
   supportTickets,
+  supportTicketReplies,
   insertSupportTicketSchema,
   type SupportTicket,
+  type SupportTicketReply,
 } from "@shared/schema";
 import type { SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
@@ -321,6 +323,123 @@ router.patch(
         .returning();
       if (!row) return res.status(404).json({ error: "Ticket not found" });
       res.json(row);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Ticket replies (SUPER_ADMIN only)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const replyBodySchema = z.object({
+  body: z.string().min(1).max(20_000),
+});
+
+router.get(
+  "/api/support/tickets/:id/replies",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const rows = await db
+        .select()
+        .from(supportTicketReplies)
+        .where(eq(supportTicketReplies.ticketId, req.params.id))
+        .orderBy(supportTicketReplies.createdAt);
+      res.json({ replies: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.post(
+  "/api/support/tickets/:id/replies",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = replyBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+
+      // Verify ticket exists
+      const [ticket] = await db
+        .select()
+        .from(supportTickets)
+        .where(eq(supportTickets.id, req.params.id));
+      if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+      const authorName =
+        [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") || "Support Team";
+
+      // Insert the reply and update the ticket atomically
+      const ticketUpdates: Partial<typeof supportTickets.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      if (!ticket.firstResponseAt) {
+        ticketUpdates.firstResponseAt = new Date();
+      }
+      if (ticket.status === "open") {
+        ticketUpdates.status = "in_progress";
+      }
+
+      const { reply, updatedTicket } = await db.transaction(async (tx) => {
+        const [reply] = await tx
+          .insert(supportTicketReplies)
+          .values({
+            ticketId: ticket.id,
+            authorId: req.user?.id ?? null,
+            authorName,
+            body: parsed.data.body,
+          } as typeof supportTicketReplies.$inferInsert)
+          .returning();
+
+        const [updatedTicket] = await tx
+          .update(supportTickets)
+          .set(ticketUpdates)
+          .where(eq(supportTickets.id, ticket.id))
+          .returning();
+
+        return { reply, updatedTicket };
+      });
+
+      // Send email to submitter — best effort
+      let emailedAt: Date | null = null;
+      const emailPromise = sendEmail({
+        to: ticket.submitterEmail,
+        subject: `Re: [Ticket #${ticket.id.slice(0, 8)}] ${ticket.subject}`,
+        text: `Hello ${ticket.submitterName || ""},
+
+A member of our support team has replied to your ticket:
+
+----
+${parsed.data.body}
+----
+
+You can reply by responding to this email or by opening a new support ticket.
+
+Best regards,
+${authorName}
+SmartManageAI Support`,
+        replyTo: SUPPORT_INBOX,
+      })
+        .then(async () => {
+          emailedAt = new Date();
+          await db
+            .update(supportTicketReplies)
+            .set({ emailedAt })
+            .where(eq(supportTicketReplies.id, reply.id));
+        })
+        .catch((err) => logError("support reply email failed", err));
+
+      void emailPromise;
+
+      logInfo(`[support] reply ${reply.id} added to ticket ${ticket.id} by ${req.user?.id}`);
+      res.status(201).json({ reply, ticket: updatedTicket });
     } catch (err) {
       next(err);
     }

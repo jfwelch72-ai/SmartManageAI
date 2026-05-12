@@ -59,6 +59,36 @@ export const supportTickets = pgTable(
   }),
 );
 
+export const supportTicketReplies = pgTable(
+  "support_ticket_replies",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    ticketId: varchar("ticket_id")
+      .notNull()
+      .references(() => supportTickets.id, { onDelete: "cascade" }),
+    authorId: varchar("author_id").references(() => users.id, { onDelete: "set null" }),
+    authorName: text("author_name"),
+    body: text("body").notNull(),
+    emailedAt: timestamp("emailed_at"),
+    createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  },
+  (t) => ({
+    ticketIdx: index("support_ticket_replies_ticket_idx").on(t.ticketId),
+    createdIdx: index("support_ticket_replies_created_idx").on(t.createdAt),
+  }),
+);
+
+export const insertSupportTicketReplySchema = createInsertSchema(supportTicketReplies).omit({
+  id: true,
+  authorId: true,
+  authorName: true,
+  emailedAt: true,
+  createdAt: true,
+});
+
+export type InsertSupportTicketReply = z.infer<typeof insertSupportTicketReplySchema>;
+export type SupportTicketReply = typeof supportTicketReplies.$inferSelect;
+
 export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({
   id: true,
   organizationId: true,
