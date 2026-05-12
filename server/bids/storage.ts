@@ -300,7 +300,8 @@ export interface IBidStorage {
   updateHandoffPacketByProject(
     projectId: string,
     data: UpsertHandoffPacketByBidInput,
-  ): Promise<HandoffPacket | null>;
+    createdById?: string,
+  ): Promise<HandoffPacket>;
 
   // ===== Bid documents =====
   listBidDocuments(bidId: string): Promise<BidDocument[]>;

@@ -94,8 +94,14 @@ const createTmTicketSchema = z.object({
   workTypeCode: z.string().max(100).optional().nullable(),
   workTypeName: z.string().max(500).optional().nullable(),
   categoryName: z.string().max(500).optional().nullable(),
-  scopeModifierIds: z.array(z.string()).optional().nullable(),
-  scopeModifierNames: z.array(z.string()).optional().nullable(),
+  scopeModifierIds: z.preprocess(
+    (v) => { if (typeof v === "string") { try { return JSON.parse(v); } catch { return null; } } return v; },
+    z.array(z.string()).optional().nullable()
+  ),
+  scopeModifierNames: z.preprocess(
+    (v) => { if (typeof v === "string") { try { return JSON.parse(v); } catch { return null; } } return v; },
+    z.array(z.string()).optional().nullable()
+  ),
   canonicalName: z.string().max(500).optional().nullable(),
   scopeUnit: z.string().max(100).optional().nullable(),
   scopeQuantity: z.union([z.string(), z.number()]).optional().nullable(),
@@ -116,8 +122,14 @@ const updateTmTicketSchema = z.object({
   workTypeCode: z.string().max(100).optional().nullable(),
   workTypeName: z.string().max(500).optional().nullable(),
   categoryName: z.string().max(500).optional().nullable(),
-  scopeModifierIds: z.array(z.string()).optional().nullable(),
-  scopeModifierNames: z.array(z.string()).optional().nullable(),
+  scopeModifierIds: z.preprocess(
+    (v) => { if (typeof v === "string") { try { return JSON.parse(v); } catch { return null; } } return v; },
+    z.array(z.string()).optional().nullable()
+  ),
+  scopeModifierNames: z.preprocess(
+    (v) => { if (typeof v === "string") { try { return JSON.parse(v); } catch { return null; } } return v; },
+    z.array(z.string()).optional().nullable()
+  ),
   canonicalName: z.string().max(500).optional().nullable(),
   scopeUnit: z.string().max(100).optional().nullable(),
   scopeQuantity: z.union([z.string(), z.number()]).optional().nullable(),

@@ -1534,14 +1534,10 @@ router.put(
       }
 
       const existing = await storage.getHandoffPacketByProject(project.id);
-      if (!existing) {
-        return res
-          .status(404)
-          .json({ error: "Handoff packet not found for this project" });
-      }
 
       // Merge `?? existing.x` semantics — every field is opt-in patchable.
-      const e: any = existing;
+      // If no packet exists yet `existing` is null; defaults fall through to undefined.
+      const e: any = existing ?? {};
       const b: any = req.body;
       const updateData: any = {
         gcName: b.gcName ?? e.gcName,
@@ -1593,7 +1589,7 @@ router.put(
         safetyContact: b.safetyContact ?? e.safetyContact,
       };
 
-      const result = await storage.updateHandoffPacketByProject(project.id, updateData);
+      const result = await storage.updateHandoffPacketByProject(project.id, updateData, req.user!.id);
       res.json(result);
     } catch (error) {
       if (handleStorageError(error, res, next)) return;

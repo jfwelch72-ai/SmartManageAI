@@ -710,16 +710,24 @@ export class BidStorageDrizzle implements IBidStorage {
   async updateHandoffPacketByProject(
     projectId: string,
     data: UpsertHandoffPacketByBidInput,
-  ): Promise<HandoffPacket | null> {
+    createdById?: string,
+  ): Promise<HandoffPacket> {
     const existing = await this.getHandoffPacketByProject(projectId);
-    if (!existing) return null;
     const { handoffPackets } = await import("@shared/schema");
+    if (existing) {
+      const [row] = await db
+        .update(handoffPackets)
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(handoffPackets.id, existing.id))
+        .returning();
+      return row;
+    }
+    // No packet yet — create one (upsert behaviour)
     const [row] = await db
-      .update(handoffPackets)
-      .set({ ...data, updatedAt: new Date() })
-      .where(eq(handoffPackets.id, existing.id))
+      .insert(handoffPackets)
+      .values({ ...data, projectId, createdById: createdById ?? "system", updatedAt: new Date() })
       .returning();
-    return row ?? null;
+    return row;
   }
 
   // ---------------------------------------------------------------------------

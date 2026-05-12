@@ -564,7 +564,7 @@ async function generateTocPdf(project: { name: string; code: string }, items: Cl
       let n = 1;
       for (const it of list) {
         const status = it.status;
-        const fileCount = (it.attachments?.length ?? 0) + (it.sources?.filter((s) => s.url).length ?? 0);
+        const fileCount = safeArray(it.attachments).length + safeArray(it.sources).filter((s: any) => s.url).length;
         doc.fontSize(10).fillColor("#334155")
           .text(`   ${section}.${n}  ${it.title}  —  ${status}${fileCount ? `  (${fileCount} file${fileCount !== 1 ? "s" : ""})` : ""}`, { continued: false });
         if (it.notes) {
@@ -704,6 +704,19 @@ function safeFilename(s: string): string {
   return s.replace(/[^a-z0-9._-]+/gi, "_").slice(0, 120);
 }
 
+/**
+ * Safely coerce a value that may be a JSONB array, a JSON string, or null/undefined
+ * into a typed array.  Drizzle returns jsonb columns as parsed JS values, but
+ * legacy rows or driver edge-cases can occasionally surface a raw JSON string.
+ */
+function safeArray<T>(val: unknown): T[] {
+  if (Array.isArray(val)) return val as T[];
+  if (typeof val === "string") {
+    try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch { return []; }
+  }
+  return [];
+}
+
 router.post(
   "/api/projects/:code/closeout/export",
   requireAuth,
@@ -766,9 +779,12 @@ router.post(
         const checksum = createHash("sha256").update(buffer).digest("hex");
 
         // ── 4) Upload to TEMP key, then promote (copy) to FINAL key ────────
-        const slashIdx = privateDir.indexOf("/");
-        const bucketName = slashIdx > 0 ? privateDir.substring(0, slashIdx) : privateDir;
-        const dirPrefix = slashIdx > 0 ? privateDir.substring(slashIdx + 1) : "";
+        // Use getPrivateBucketParts() which correctly strips leading slashes
+        // before splitting on "/" — the inline slashIdx > 0 guard misses the
+        // edge case where PRIVATE_OBJECT_DIR starts with "/" (slashIdx === 0).
+        const bucketParts = getPrivateBucketParts();
+        if (!bucketParts) throw new Error("PRIVATE_OBJECT_DIR is not properly configured");
+        const { bucket: bucketName, prefix: dirPrefix } = bucketParts;
         const finalObjectName = `${dirPrefix ? dirPrefix + "/" : ""}${exportOrgId}/closeout/${pkg.id}-${filename}`;
         const tempObjectName = `${dirPrefix ? dirPrefix + "/" : ""}${exportOrgId}/closeout/.tmp/${pkg.id}-${filename}`;
         const finalKey = `${bucketName}/${finalObjectName}`;
@@ -969,10 +985,12 @@ async function buildCloseoutZipBuffer(opts: {
       if (it.description) lines.push(`Description: ${it.description}`);
       if (it.notes) lines.push(`Notes: ${it.notes}`);
       if (it.dueDate) lines.push(`Due: ${new Date(it.dueDate).toLocaleDateString()}`);
-      if (it.sources?.length) {
+      const itemSources = safeArray<{ type: string; label: string; url?: string }>(it.sources);
+      const itemAttachments = safeArray<{ url: string; filename?: string }>(it.attachments);
+      if (itemSources.length) {
         lines.push("");
         lines.push("Linked references:");
-        for (const s of it.sources) {
+        for (const s of itemSources) {
           lines.push(`  - [${s.type}] ${s.label}${s.url ? ` (${s.url})` : ""}`);
         }
       }
@@ -980,14 +998,14 @@ async function buildCloseoutZipBuffer(opts: {
       archive.append(lines.join("\n"), { name: `${itemFolder}/README.txt` });
       fileCount += 1;
 
-      for (const att of (it.attachments ?? [])) {
+      for (const att of itemAttachments) {
         const buf = await downloadObjectByUrl(att.url, orgId);
         if (buf) {
           archive.append(buf, { name: `${itemFolder}/${safeFilename(att.filename || "file")}` });
           fileCount += 1;
         }
       }
-      for (const src of (it.sources ?? [])) {
+      for (const src of itemSources) {
         if (!src.url) continue;
         const buf = await downloadObjectByUrl(src.url, orgId);
         if (buf) {
