@@ -1,4 +1,5 @@
 import { useState } from "react";
+import SafetyTrainingPage from "./safety-training";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -634,11 +635,13 @@ export default function SafetyHubPage() {
           <TabsTrigger value="observations" data-testid="tab-observations">Observations</TabsTrigger>
           <TabsTrigger value="osha" data-testid="tab-osha">OSHA Logs</TabsTrigger>
           <TabsTrigger value="modules" data-testid="tab-modules">Modules</TabsTrigger>
+          <TabsTrigger value="training" data-testid="tab-safety-training">Training</TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard"><SafetyDashboard /></TabsContent>
         <TabsContent value="observations"><ObservationsTab /></TabsContent>
         <TabsContent value="osha"><OshaLogTab /></TabsContent>
         <TabsContent value="modules"><ModulesTab /></TabsContent>
+        <TabsContent value="training"><SafetyTrainingPage /></TabsContent>
       </Tabs>
     </div>
   );

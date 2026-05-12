@@ -41,6 +41,7 @@ import PayStubView from "@/components/payroll/PayStubView";
 import { CertifiedPayrollButton } from "@/components/payroll/CertifiedPayrollReport";
 import { MissingWageDecisionsBanner } from "@/components/payroll/MissingWageDecisionsBanner";
 import { SuppressedWageDecisionsBanner } from "@/components/payroll/SuppressedWageDecisionsBanner";
+import CertifiedPayrollHistoryPage from "./certified-payroll-history";
 
 interface PayrollOverview {
   currentPeriod: { start: string; end: string; workWeekStart: string };
@@ -143,7 +144,7 @@ export default function PayrollManagementPage() {
   });
 
   useEffect(() => {
-    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "deductions", "archived"].includes(urlTab)) {
+    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "deductions", "archived", "certified-payroll"].includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);
@@ -283,6 +284,9 @@ export default function PayrollManagementPage() {
               <SelectItem value="archived" data-testid="select-tab-archived">
                 <span className="flex items-center gap-1.5"><Archive className="w-4 h-4" /> Archived</span>
               </SelectItem>
+              <SelectItem value="certified-payroll" data-testid="select-tab-certified-payroll">
+                <span className="flex items-center gap-1.5"><FileText className="w-4 h-4" /> Certified Payroll</span>
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -310,6 +314,10 @@ export default function PayrollManagementPage() {
           <TabsTrigger value="archived" className="flex-1" data-testid="tab-archived">
             <Archive className="w-4 h-4 mr-1.5" />
             Archived
+          </TabsTrigger>
+          <TabsTrigger value="certified-payroll" className="flex-1" data-testid="tab-certified-payroll">
+            <FileText className="w-4 h-4 mr-1.5" />
+            Certified Payroll
           </TabsTrigger>
         </TabsList>
 
@@ -840,6 +848,10 @@ export default function PayrollManagementPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="certified-payroll" className="mt-6">
+          <CertifiedPayrollHistoryPage />
         </TabsContent>
       </Tabs>
 

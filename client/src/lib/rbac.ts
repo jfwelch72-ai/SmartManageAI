@@ -585,10 +585,11 @@ export const NavigationConfig = {
 };
 
 export type SidebarSection =
-  | 'portfolio' | 'home' | 'sales' | 'projects' | 'team' | 'time' | 'finance'
-  | 'field_ops' | 'field_compliance' | 'settings' | 'marketing' | 'tools'
-  | 'today' | 'crew' | 'jobsite' | 'review' | 'reference'
-  | 'bids' | 'costs' | 'reports' | 'info';
+  | 'portfolio' | 'home' | 'win_work' | 'projects' | 'workforce' | 'finance'
+  | 'field_ops' | 'safety_compliance' | 'administration' | 'marketing' | 'tools'
+  | 'today' | 'jobsite' | 'reference'
+  | 'estimating' | 'compliance_section' | 'safety_section' | 'communication'
+  | 'reports';
 
 export interface WorkflowGroup {
   key: SidebarSection;
@@ -597,16 +598,16 @@ export interface WorkflowGroup {
 }
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
-  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio', '/executive-digest'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
-  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
-  { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
-  { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
-  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
-  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/cost-book', '/crew-templates', '/ai-settings', '/ai-estimator/admin', '/audit-logs', '/reports', '/admin/log-email-failures'] },
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest', '/portfolio'] },
+  { key: 'win_work', label: 'Win Work', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
+  { key: 'workforce', label: 'Workforce', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
+  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/payroll-management', '/payroll/certified-history', '/tm-billing', '/progress-billing', '/cost-rates', '/subcontractor-payables'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/lidar-scans', '/permits'] },
+  { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/compliance', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
+  { key: 'administration', label: 'Administration', itemHrefs: ['/company-settings', '/cost-book', '/crew-templates', '/ai-estimator/admin', '/audit-logs'] },
+  { key: 'reports', label: 'Reports', itemHrefs: ['/reports', '/admin/log-email-failures'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
@@ -617,45 +618,43 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/marketplace'] },
-  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
-  { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
-  { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
-  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
-  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/cost-book', '/crew-templates', '/reports'] },
+  { key: 'win_work', label: 'Win Work', itemHrefs: ['/crm', '/bids', '/marketplace'] },
+  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
+  { key: 'workforce', label: 'Workforce', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
+  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/overhead-costs', '/subcontractor-payables'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/lidar-scans', '/permits'] },
+  { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/compliance', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
+  { key: 'administration', label: 'Administration', itemHrefs: ['/company-settings', '/cost-book', '/crew-templates', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
-  { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/safety', '/safety-training'] },
-  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits', '/compliance'] },
-  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'review', label: 'Review', itemHrefs: ['/approvals', '/reports'] },
-  { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications'] },
+  { key: 'workforce', label: 'Workforce', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management'] },
+  { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits', '/compliance', '/approvals'] },
+  { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications', '/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
 const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
-  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
-  { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/cost-book', '/crew-templates', '/production-rates', '/scope-settings'] },
+  { key: 'estimating', label: 'Estimating', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'reference', label: 'Reference', itemHrefs: ['/cost-rates', '/cost-book', '/crew-templates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
-  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
+  { key: 'compliance_section', label: 'Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/tasks', '/calendar'] },
-  { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/dashboard'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/safety-training', '/procurement-module', '/tm-daily', '/reports', '/lidar-scans'] },
-  { key: 'crew', label: 'Crew', itemHrefs: ['/manage-workers', '/crews'] },
-  { key: 'info', label: 'Communication', itemHrefs: ['/leave-management', '/communications', '/messages'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/equipment', '/tm-daily', '/lidar-scans', '/procurement-module'] },
+  { key: 'safety_section', label: 'Safety', itemHrefs: ['/safety-training'] },
+  { key: 'communication', label: 'Communication', itemHrefs: ['/leave-management', '/communications', '/messages'] },
+  { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
 
@@ -702,16 +701,16 @@ export const PlatformAdminNavConfig = {
 
 export const VendorPortalNavConfig = {
   mainNav: [
-    { href: "/dashboard", label: "Dashboard", testId: "nav-vendor-dashboard", visible: () => true },
-    { href: "/vendor/analytics", label: "Analytics", testId: "nav-vendor-analytics", visible: () => true },
-    { href: "/vendor/pricing", label: "Pricing", testId: "nav-vendor-pricing", visible: () => true },
-    { href: "/vendor/clients", label: "Clients", testId: "nav-vendor-clients", visible: () => true },
+    { href: "/bid-inbox", label: "Bid Inbox", testId: "nav-vendor-bid-inbox", visible: () => true },
     { href: "/vendor/messages", label: "Messages", testId: "nav-vendor-messages", visible: () => true },
-    { href: "/vendor/documents", label: "Documents", testId: "nav-vendor-documents", visible: () => true },
-    { href: "/vendor/compliance", label: "Compliance", testId: "nav-vendor-compliance", visible: () => true },
+    { href: "/dashboard", label: "Dashboard", testId: "nav-vendor-dashboard", visible: () => true },
+    { href: "/vendor/clients", label: "Clients", testId: "nav-vendor-clients", visible: () => true },
+    { href: "/vendor/pricing", label: "Pricing", testId: "nav-vendor-pricing", visible: () => true },
     { href: "/vendor/purchase-orders", label: "Purchase Orders", testId: "nav-vendor-purchase-orders", visible: () => true },
     { href: "/vendor/schedule", label: "Schedule", testId: "nav-vendor-schedule", visible: () => true },
-    { href: "/bid-inbox", label: "Bid Inbox", testId: "nav-vendor-bid-inbox", visible: () => true },
+    { href: "/vendor/documents", label: "Documents", testId: "nav-vendor-documents", visible: () => true },
+    { href: "/vendor/compliance", label: "Compliance", testId: "nav-vendor-compliance", visible: () => true },
+    { href: "/vendor/analytics", label: "Analytics", testId: "nav-vendor-analytics", visible: () => true },
   ],
 };
 

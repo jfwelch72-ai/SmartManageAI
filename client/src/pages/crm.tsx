@@ -74,6 +74,7 @@ import { CrmTasksView } from "@/components/crm/CrmTasksView";
 import { CrmQuotesView } from "@/components/crm/CrmQuotesView";
 import { CrmCallsView } from "@/components/crm/CrmCallsView";
 import { CrmAnalyticsView } from "@/components/crm/CrmAnalyticsView";
+import SequencesPage from "./sequences";
 import type {
   CrmOrganisation as CrmOrganization,
   CrmContact,
@@ -636,7 +637,7 @@ export default function CRMPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics" | "sequences">("orgs");
   const [contactSearch, setContactSearch] = useState("");
   // Task #701: filter contacts table by owner. "all" = no filter, "me" = current
   // user, "__unassigned__" = no owner, otherwise a specific user id.
@@ -916,7 +917,7 @@ export default function CRMPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
-    const tabMap: Record<string, "orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics"> = {
+    const tabMap: Record<string, "orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics" | "sequences"> = {
       orgs: "orgs",
       organisations: "orgs",
       organizations: "orgs",
@@ -932,6 +933,7 @@ export default function CRMPage() {
       quotes: "quotes",
       reports: "reports",
       analytics: "analytics",
+      sequences: "sequences",
     };
     if (tabParam && tabMap[tabParam]) {
       setCrmTab(tabMap[tabParam]);
@@ -1541,6 +1543,14 @@ export default function CRMPage() {
               <BarChart2 className="w-4 h-4 inline mr-1.5 -mt-0.5" />
               <span className="whitespace-nowrap">Reports</span>
             </button>
+            <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "sequences" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("sequences")}
+              data-testid="tab-sequences"
+            >
+              <Mail className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              <span className="whitespace-nowrap">Sequences</span>
+            </button>
           </div>
 
           {crmTab === "pipeline" && (
@@ -1558,6 +1568,7 @@ export default function CRMPage() {
 
           {crmTab === "analytics" && <CrmAnalyticsView />}
           {crmTab === "reports" && <CrmPipelineReports />}
+          {crmTab === "sequences" && <SequencesPage />}
 
           {crmTab === "contacts" && (
             <>
