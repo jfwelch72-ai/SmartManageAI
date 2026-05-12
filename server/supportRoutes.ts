@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte, sql } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { db } from "./db";
@@ -263,13 +263,16 @@ router.get(
       }
 
       const rows = await db
-        .select()
+        .select({
+          ticket: supportTickets,
+          replyCount: sql<number>`(select count(*) from support_ticket_replies where ticket_id = ${supportTickets.id})::int`.as("reply_count"),
+        })
         .from(supportTickets)
         .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(desc(supportTickets.createdAt))
         .limit(limit);
 
-      res.json({ tickets: rows });
+      res.json({ tickets: rows.map((r) => ({ ...r.ticket, replyCount: Number(r.replyCount) })) });
     } catch (err) {
       next(err);
     }

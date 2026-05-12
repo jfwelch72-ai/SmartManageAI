@@ -30,6 +30,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { SupportTicket, SupportTicketReply } from "@shared/schema";
 
+type TicketWithReplyCount = SupportTicket & { replyCount: number };
+
 const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
   { value: "open", label: "Open" },
@@ -522,7 +524,7 @@ export default function AdminSupportTicketsPage() {
     refetchInterval: 60_000,
   });
 
-  const { data, isLoading } = useQuery<{ tickets: SupportTicket[] }>({
+  const { data, isLoading } = useQuery<{ tickets: TicketWithReplyCount[] }>({
     queryKey: ["/api/support/tickets", statusFilter, priorityFilter, "admin-200"],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/support/tickets?${queryString}`);
@@ -665,6 +667,7 @@ export default function AdminSupportTicketsPage() {
                       <TableHead>Status</TableHead>
                       <TableHead className="hidden sm:table-cell">Priority</TableHead>
                       <TableHead className="hidden sm:table-cell">Tier</TableHead>
+                      <TableHead className="hidden sm:table-cell">Replies</TableHead>
                       <TableHead>SLA</TableHead>
                       <TableHead className="hidden md:table-cell">Created</TableHead>
                     </TableRow>
@@ -698,6 +701,16 @@ export default function AdminSupportTicketsPage() {
                           </TableCell>
                           <TableCell className="hidden sm:table-cell" data-testid={`badge-ticket-tier-${ticket.id}`}>
                             {tierBadge(ticket.tier)}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell" data-testid={`badge-reply-count-${ticket.id}`}>
+                            {ticket.replyCount > 0 ? (
+                              <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                                <MessageSquare className="h-3 w-3" />
+                                {ticket.replyCount}
+                              </Badge>
+                            ) : (
+                              <span className="text-xs text-muted-foreground italic">No reply</span>
+                            )}
                           </TableCell>
                           <TableCell data-testid={`sla-ticket-${ticket.id}`}>
                             <SlaIndicator ticket={ticket} />
