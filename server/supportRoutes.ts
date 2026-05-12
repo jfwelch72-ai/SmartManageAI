@@ -449,6 +449,128 @@ SmartManageAI Support`,
   },
 );
 
+// ──────────────────────────────────────────────────────────────────────────────
+// My-tickets endpoints — authenticated user can view their own tickets + thread
+// and post a customer reply. No admin role required; ownership is enforced by
+// comparing userId on the ticket to req.user.id (fail-closed 404 on mismatch).
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get("/api/support/my-tickets", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const rows = await db
+      .select()
+      .from(supportTickets)
+      .where(eq(supportTickets.userId, userId))
+      .orderBy(desc(supportTickets.createdAt))
+      .limit(limit);
+
+    res.json({ tickets: rows });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/support/my-tickets/:id/replies", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [ticket] = await db
+      .select({ id: supportTickets.id, userId: supportTickets.userId })
+      .from(supportTickets)
+      .where(eq(supportTickets.id, req.params.id));
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (ticket.userId !== userId) return res.status(404).json({ error: "Ticket not found" });
+
+    const replies = await db
+      .select()
+      .from(supportTicketReplies)
+      .where(eq(supportTicketReplies.ticketId, ticket.id))
+      .orderBy(supportTicketReplies.createdAt);
+
+    res.json({ replies });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/support/my-tickets/:id/replies", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const parsed = replyBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    }
+
+    const [ticket] = await db
+      .select()
+      .from(supportTickets)
+      .where(eq(supportTickets.id, req.params.id));
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+    if (ticket.userId !== userId) return res.status(404).json({ error: "Ticket not found" });
+
+    const authorName =
+      [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") ||
+      ticket.submitterName ||
+      "Customer";
+
+    const ticketUpdates: Partial<typeof supportTickets.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    // A customer reply moves the ticket back to "waiting on support"
+    if (ticket.status === "waiting_on_customer") {
+      ticketUpdates.status = "in_progress";
+    }
+
+    const { reply, updatedTicket } = await db.transaction(async (tx) => {
+      const [reply] = await tx
+        .insert(supportTicketReplies)
+        .values({
+          ticketId: ticket.id,
+          authorId: userId,
+          authorName,
+          body: parsed.data.body,
+        } as typeof supportTicketReplies.$inferInsert)
+        .returning();
+
+      const [updatedTicket] = await tx
+        .update(supportTickets)
+        .set(ticketUpdates)
+        .where(eq(supportTickets.id, ticket.id))
+        .returning();
+
+      return { reply, updatedTicket };
+    });
+
+    // Notify support inbox — best effort
+    void sendEmail({
+      to: SUPPORT_INBOX,
+      subject: `Re: [Ticket #${ticket.id.slice(0, 8)}] ${ticket.subject}`,
+      text: `Customer reply from ${authorName} <${ticket.submitterEmail}>:
+
+----
+${parsed.data.body}
+----
+
+Ticket ID: ${ticket.id}`,
+      replyTo: ticket.submitterEmail,
+    }).catch((err) => logError("customer reply email failed", err));
+
+    logInfo(`[support] customer reply ${reply.id} added to ticket ${ticket.id} by user ${userId}`);
+    res.status(201).json({ reply, ticket: updatedTicket });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // SLA breach sweep — flips the breach flags so the weekly report can pick
 // them up. Locked to SUPER_ADMIN because the sweep mutates platform-wide
 // support state across every tenant. The hourly background scheduler

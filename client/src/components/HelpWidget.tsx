@@ -1,15 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { HelpCircle, Search, X, ExternalLink, Loader2, Send, CheckCircle2, Activity } from "lucide-react";
+import {
+  HelpCircle,
+  Search,
+  X,
+  ExternalLink,
+  Loader2,
+  Send,
+  CheckCircle2,
+  Activity,
+  ChevronLeft,
+  MessageSquare,
+  Clock,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { SupportTicket, SupportTicketReply } from "@shared/schema";
 
 interface HelpSummary {
   slug: string;
@@ -46,6 +60,245 @@ function ArticleView({ slug, onBack }: { slug: string; onBack: () => void }) {
           <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed bg-transparent p-0">{data.body}</pre>
         </article>
       )}
+    </div>
+  );
+}
+
+const STATUS_COLORS: Record<SupportTicket["status"], string> = {
+  open: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  in_progress: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  waiting_on_customer: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  resolved: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  closed: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+};
+
+const STATUS_LABELS: Record<SupportTicket["status"], string> = {
+  open: "Open",
+  in_progress: "In Progress",
+  waiting_on_customer: "Awaiting Reply",
+  resolved: "Resolved",
+  closed: "Closed",
+};
+
+function TicketThreadView({
+  ticket,
+  onBack,
+  currentUserId,
+}: {
+  ticket: SupportTicket;
+  onBack: () => void;
+  currentUserId: string;
+}) {
+  const { toast } = useToast();
+  const [replyBody, setReplyBody] = useState("");
+
+  const repliesQuery = useQuery<{ replies: SupportTicketReply[] }>({
+    queryKey: ["/api/support/my-tickets", ticket.id, "replies"],
+    queryFn: () => apiRequest("GET", `/api/support/my-tickets/${ticket.id}/replies`).then((r) => r.json()),
+  });
+
+  const replyMutation = useMutation({
+    mutationFn: async () => {
+      return await apiRequest("POST", `/api/support/my-tickets/${ticket.id}/replies`, {
+        body: replyBody,
+      });
+    },
+    onSuccess: () => {
+      setReplyBody("");
+      queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets", ticket.id, "replies"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets"] });
+      toast({ title: "Reply sent", description: "Your reply has been sent to the support team." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Could not send reply", description: err.message || "Please try again.", variant: "destructive" });
+    },
+  });
+
+  const replies = repliesQuery.data?.replies ?? [];
+  const isClosedOrResolved = ticket.status === "resolved" || ticket.status === "closed";
+
+  return (
+    <div className="space-y-3" data-testid="ticket-thread-view">
+      <button
+        type="button"
+        className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+        onClick={onBack}
+        data-testid="button-ticket-back"
+      >
+        <ChevronLeft className="h-3 w-3" /> Back to my tickets
+      </button>
+
+      <div className="rounded-md border border-border p-3 space-y-1">
+        <div className="flex items-start justify-between gap-2">
+          <div className="text-sm font-semibold leading-snug">{ticket.subject}</div>
+          <span
+            className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${STATUS_COLORS[ticket.status]}`}
+            data-testid="text-ticket-status"
+          >
+            {STATUS_LABELS[ticket.status]}
+          </span>
+        </div>
+        <div className="text-xs text-muted-foreground flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {new Date(ticket.createdAt).toLocaleDateString()}
+        </div>
+        <div className="text-sm text-foreground whitespace-pre-wrap mt-2 pt-2 border-t border-border">
+          {ticket.body}
+        </div>
+      </div>
+
+      {repliesQuery.isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Loading replies…
+        </div>
+      ) : replies.length === 0 ? (
+        <div className="text-xs text-muted-foreground text-center py-3">
+          No replies yet — we'll respond within your plan's SLA window.
+        </div>
+      ) : (
+        <div className="space-y-2" data-testid="ticket-replies-list">
+          {replies.map((reply) => {
+            const isCustomer = reply.authorId === currentUserId;
+            return (
+              <div
+                key={reply.id}
+                className={`rounded-md p-3 text-sm ${
+                  isCustomer
+                    ? "bg-primary/10 ml-4"
+                    : "bg-muted mr-4"
+                }`}
+                data-testid={`ticket-reply-${reply.id}`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-medium text-xs">
+                    {isCustomer ? "You" : "Support Team"}
+                  </span>
+                  {!isCustomer && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">
+                      Support
+                    </Badge>
+                  )}
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    {new Date(reply.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="whitespace-pre-wrap">{reply.body}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!isClosedOrResolved && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!replyBody.trim()) return;
+            replyMutation.mutate();
+          }}
+          className="space-y-2 pt-2 border-t border-border"
+        >
+          <Label htmlFor="reply-body" className="text-xs">Reply to Support Team</Label>
+          <Textarea
+            id="reply-body"
+            value={replyBody}
+            onChange={(e) => setReplyBody(e.target.value)}
+            placeholder="Type your reply…"
+            rows={3}
+            required
+            minLength={1}
+            data-testid="input-ticket-reply-body"
+          />
+          <Button
+            type="submit"
+            size="sm"
+            disabled={replyMutation.isPending || !replyBody.trim()}
+            className="w-full"
+            data-testid="button-ticket-reply-submit"
+          >
+            {replyMutation.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <>
+                <Send className="h-3 w-3 mr-1" /> Send Reply
+              </>
+            )}
+          </Button>
+        </form>
+      )}
+
+      {isClosedOrResolved && (
+        <div className="text-xs text-center text-muted-foreground py-2">
+          This ticket is {STATUS_LABELS[ticket.status].toLowerCase()}. Open a new ticket if you need further help.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MyTicketsTab({ currentUserId }: { currentUserId: string }) {
+  const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
+
+  const ticketsQuery = useQuery<{ tickets: SupportTicket[] }>({
+    queryKey: ["/api/support/my-tickets"],
+    queryFn: () => apiRequest("GET", "/api/support/my-tickets").then((r) => r.json()),
+  });
+
+  const tickets = ticketsQuery.data?.tickets ?? [];
+
+  if (selectedTicket) {
+    return (
+      <TicketThreadView
+        ticket={selectedTicket}
+        onBack={() => setSelectedTicket(null)}
+        currentUserId={currentUserId}
+      />
+    );
+  }
+
+  if (ticketsQuery.isLoading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-4">
+        <Loader2 className="h-4 w-4 animate-spin" /> Loading your tickets…
+      </div>
+    );
+  }
+
+  if (tickets.length === 0) {
+    return (
+      <div className="text-center py-8 space-y-2" data-testid="my-tickets-empty">
+        <MessageSquare className="h-8 w-8 text-muted-foreground mx-auto" />
+        <div className="text-sm text-muted-foreground">No tickets yet.</div>
+        <div className="text-xs text-muted-foreground">Submit a ticket via the "Contact us" tab.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2" data-testid="my-tickets-list">
+      {tickets.map((ticket) => (
+        <button
+          key={ticket.id}
+          type="button"
+          onClick={() => setSelectedTicket(ticket)}
+          className="w-full text-left rounded-md border border-border p-3 hover:bg-muted/50 transition-colors space-y-1"
+          data-testid={`ticket-item-${ticket.id}`}
+        >
+          <div className="flex items-start justify-between gap-2">
+            <div className="text-sm font-medium leading-snug line-clamp-1">{ticket.subject}</div>
+            <span
+              className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${STATUS_COLORS[ticket.status]}`}
+            >
+              {STATUS_LABELS[ticket.status]}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground line-clamp-2">{ticket.body}</div>
+          <div className="text-xs text-muted-foreground flex items-center gap-1">
+            <Clock className="h-3 w-3" />
+            {new Date(ticket.createdAt).toLocaleDateString()}
+          </div>
+        </button>
+      ))}
     </div>
   );
 }
@@ -96,6 +349,7 @@ export default function HelpWidget() {
       setSubject("");
       setBody("");
       queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets"] });
       toast({ title: "Ticket submitted", description: "Our team will respond per your plan SLA." });
     },
     onError: (err: Error) => {
@@ -159,9 +413,10 @@ export default function HelpWidget() {
 
           <div className="p-3 max-h-[70vh] overflow-y-auto">
             <Tabs value={tab} onValueChange={setTab}>
-              <TabsList className="grid grid-cols-2 w-full">
+              <TabsList className="grid grid-cols-3 w-full">
                 <TabsTrigger value="articles" data-testid="tab-help-articles">Articles</TabsTrigger>
                 <TabsTrigger value="ticket" data-testid="tab-help-ticket">Contact us</TabsTrigger>
+                <TabsTrigger value="my-tickets" data-testid="tab-help-my-tickets">My Tickets</TabsTrigger>
               </TabsList>
 
               <TabsContent value="articles" className="space-y-3 mt-3">
@@ -248,9 +503,19 @@ export default function HelpWidget() {
                         See SLA
                       </a>
                     </p>
-                    <Button size="sm" variant="outline" onClick={() => setSubmitted(false)} data-testid="button-help-ticket-new">
-                      Submit another ticket
-                    </Button>
+                    <div className="flex gap-2 justify-center flex-wrap">
+                      <Button size="sm" variant="outline" onClick={() => setSubmitted(false)} data-testid="button-help-ticket-new">
+                        Submit another ticket
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => { setTab("my-tickets"); setSubmitted(false); }}
+                        data-testid="button-help-view-tickets"
+                      >
+                        View my tickets
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <form
@@ -320,6 +585,10 @@ export default function HelpWidget() {
                     </Button>
                   </form>
                 )}
+              </TabsContent>
+
+              <TabsContent value="my-tickets" className="mt-3">
+                <MyTicketsTab currentUserId={user.id} />
               </TabsContent>
             </Tabs>
           </div>
