@@ -101,6 +101,8 @@ export const inventoryTransactions = pgTable("inventory_transactions", {
   // Pairs RECEIPT+ISSUE legs of a transfer for reversal/audit
   pairId: varchar("pair_id"),
   cycleCountId: varchar("cycle_count_id"),
+  approvalStatus: text("approval_status").$type<"PENDING_APPROVAL" | "APPROVED" | "REJECTED">(),
+  approvalRequestId: varchar("approval_request_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("inventory_transactions_org_idx").on(table.organizationId),

@@ -378,6 +378,10 @@ export const hiringPipelineStages = pgTable("hiring_pipeline_stages", {
   displayOrder: integer("display_order").notNull().default(0),
   isDefault: boolean("is_default").notNull().default(false),
   isTerminal: boolean("is_terminal").notNull().default(false),
+  /** Idle-threshold in days for processIdleHiringCandidates sweep (supersedes static in-memory map). */
+  slaDays: integer("sla_days"),
+  /** Roles to notify (in-app) when a candidate enters this stage. NULL = no automatic notifications. */
+  notifyOnEnterRoles: text("notify_on_enter_roles").array(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

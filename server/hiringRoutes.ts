@@ -1,6 +1,6 @@
 // ai-router-bypass: resume-scoring is paired with the prompt-injection quarantine envelope around untrusted resume text; migration deferred until that envelope is portable to AiMessage. Tracked as a dedicated follow-up under Task #2684.
 import { Router, type NextFunction } from "express";
-import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
+import { eq, and, desc, sql, count, or, ilike, gte, isNotNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
 import { requireAuth, requireRole, requireFeaturePermission } from "./auth";
@@ -32,6 +32,7 @@ import {
   hiringActivityLogs,
   organizations,
   tasks,
+  users,
   insertHiringJobSchema,
   insertHiringJobTemplateSchema,
   insertHiringCandidateSchema,
@@ -752,6 +753,81 @@ router.put(
           relatedEntityType: "hiring_candidate",
         });
       }
+
+      // Task #2833 — notify the job's assigned owner when the candidate enters
+      // a new pipeline stage so the accountable person is always kept in the loop.
+      if (existing.jobId) {
+        void (async () => {
+          try {
+            const [jobRow] = await db
+              .select({ assignedOwnerUserId: hiringJobs.assignedOwnerUserId })
+              .from(hiringJobs)
+              .where(eq(hiringJobs.id, existing.jobId!))
+              .limit(1);
+            const ownerUserId = jobRow?.assignedOwnerUserId;
+            if (ownerUserId && ownerUserId !== userId(req) && ownerUserId !== existing.reviewerUserId) {
+              void insertNotification({
+                userId: ownerUserId,
+                organizationId: orgId(req),
+                type: "GENERAL",
+                title: "Candidate Entered Your Stage",
+                message: `${existing.fullName} has moved to the ${stage.replace(/_/g, " ")} stage.`,
+                relatedEntityId: existing.id,
+                relatedEntityType: "hiring_candidate",
+              });
+            }
+          } catch {
+            // best-effort — never crash the stage change on notification failure
+          }
+        })();
+      }
+
+      // Consume notifyOnEnterRoles from the pipeline stage config so each
+      // stage can have its own configurable notification recipients beyond
+      // the hardcoded reviewer / job-owner paths above.
+      void (async () => {
+        try {
+          const [pipelineStage] = await db
+            .select({ notifyOnEnterRoles: hiringPipelineStages.notifyOnEnterRoles })
+            .from(hiringPipelineStages)
+            .where(and(
+              eq(hiringPipelineStages.organizationId, orgId(req)),
+              eq(hiringPipelineStages.key, stage),
+            ))
+            .limit(1);
+          const rolesToNotify = pipelineStage?.notifyOnEnterRoles ?? [];
+          if (rolesToNotify.length > 0) {
+            const roleUsers = await db
+              .select({ id: users.id })
+              .from(users)
+              .where(and(
+                eq(users.organizationId, orgId(req)),
+                inArray(users.role, rolesToNotify as Array<typeof users.$inferSelect["role"]>),
+                eq(users.isActive, true),
+              ));
+            const alreadyNotified = new Set([
+              userId(req),
+              existing.reviewerUserId ?? "",
+            ]);
+            const targetUserIds = roleUsers
+              .map(u => u.id)
+              .filter(id => !alreadyNotified.has(id));
+            for (const targetId of targetUserIds) {
+              void insertNotification({
+                userId: targetId,
+                organizationId: orgId(req),
+                type: "GENERAL",
+                title: "Candidate Stage Update",
+                message: `${existing.fullName} has entered the ${stage.replace(/_/g, " ")} stage.`,
+                relatedEntityId: existing.id,
+                relatedEntityType: "hiring_candidate",
+              });
+            }
+          }
+        } catch {
+          // best-effort — never crash the stage change on notification failure
+        }
+      })();
 
       // Auto-create a follow-up task in the unified tasks table when hiringAutoTasksEnabled org setting is on
       const [orgSettings] = await db

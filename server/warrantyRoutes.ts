@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
 import { Router, type Response, NextFunction } from "express";
+import { startWorkflow, delegateEntityTransition } from "./services/workflowEngine";
 import { db } from "./db";
 import {
   warrantyCases, warrantyTasks, warrantyDocuments, projects,
@@ -226,6 +227,12 @@ router.post(
         newValue: JSON.stringify({ caseNumber, title: wc.title, projectId: project.id }),
       }, req);
 
+      if (orgId) {
+        void startWorkflow(orgId, "WARRANTY_CASE", wc.id, userId).catch((wfErr) => {
+          logError("Failed to start warranty case workflow", { warrantyCaseId: wc.id, error: String(wfErr) });
+        });
+      }
+
       res.status(201).json(enrichCase(wc));
     } catch (err) {
       next(err);
@@ -258,6 +265,7 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
     if (!project || project.id !== wc.projectId) return res.status(404).json({ error: "Warranty case not found" });
 
     const userId = req.user!.id;
+    const { orgId: reqOrgId } = getOrgIdForFilter(req);
     const update: Partial<WarrantyCase> & { updatedAt: Date } = { updatedAt: new Date() };
 
     // Determine whether the caller is editing protected fields (requires management role)
@@ -315,6 +323,44 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
         return res.status(403).json({ error: `Role '${role}' cannot transition from '${fromStatus}' to '${newStatus}'.` });
       }
 
+      // Task #2833 — Terminal-state governance: REPAIRED requires ADMIN/MANAGER
+      // workflow approval BEFORE the DB commit (the approval step lives on the
+      // "In Repair" stage so validateTransition fires when leaving it).
+      // CLOSED is an administrative closure with no separate approval stage in
+      // the default template, so it proceeds directly to the DB update.
+      const isTerminal = newStatus === "REPAIRED";
+      if (isTerminal && reqOrgId) {
+        const wfGate = await delegateEntityTransition(
+          reqOrgId,
+          "WARRANTY_CASE",
+          wc.id,
+          userId,
+          getUserRole(req),
+          newStatus,
+        ).catch((wfErr) => {
+          logError("Failed to check warranty workflow gate before terminal transition", {
+            warrantyCaseId: wc.id,
+            newStatus,
+            error: String(wfErr),
+          });
+          // Fail-closed: treat infrastructure errors as a blocking failure so a
+          // broken workflow service cannot be used to bypass the approval gate.
+          return { delegated: true, success: false, needsMoreApprovals: false, error: "Workflow approval service error. Please retry." };
+        });
+
+        if (wfGate.delegated && wfGate.needsMoreApprovals) {
+          return res.status(202).json({
+            error: wfGate.error ?? "Additional workflow approvals are required before this status can be committed.",
+            needsMoreApprovals: true,
+          });
+        }
+        if (wfGate.delegated && !wfGate.success && !wfGate.needsMoreApprovals) {
+          return res.status(403).json({
+            error: wfGate.error ?? `Workflow approval gate prevents transition to '${newStatus}'.`,
+          });
+        }
+      }
+
       update.status = newStatus;
 
       const historyEntry: StatusEntry = {
@@ -351,6 +397,28 @@ router.patch("/projects/:code/warranty/cases/:id", requireAuth, async (req: Auth
       entityId: updated.id,
       newValue: JSON.stringify({ changes: Object.keys(update), projectCode: req.params.code }),
     }, req);
+
+    // Non-terminal status transitions advance the workflow instance
+    // asynchronously (best-effort — terminal transitions already ran the gate
+    // synchronously above and advanced the instance at that point).
+    const changedStatus = req.body.status !== undefined && req.body.status !== wc.status;
+    const committedIsTerminal = updated.status === "REPAIRED" || updated.status === "CLOSED";
+    if (changedStatus && !committedIsTerminal && reqOrgId) {
+      void delegateEntityTransition(
+        reqOrgId,
+        "WARRANTY_CASE",
+        updated.id,
+        userId,
+        getUserRole(req),
+        updated.status ?? String(req.body.status),
+      ).catch((wfErr) => {
+        logError("Failed to advance warranty case workflow on status change", {
+          warrantyCaseId: updated.id,
+          newStatus: updated.status,
+          error: String(wfErr),
+        });
+      });
+    }
 
     res.json(enrichCase(updated));
   } catch (err) {

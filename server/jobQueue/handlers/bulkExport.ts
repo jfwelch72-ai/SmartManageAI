@@ -7,8 +7,14 @@
 // records a metric and returns when no generator is registered for the
 // export type.
 
-import { defineJob, type JobContext } from "../index";
-import { logInfo } from "../../utils/logger";
+import { defineJob, onJobFailed, type JobContext } from "../index";
+import { logInfo, logWarn } from "../../utils/logger";
+import { recordJobMetrics } from "../../utils/jobMetrics";
+import { sendEmail } from "../../services/emailService";
+import { db } from "../../db";
+import { withSystemJobContext } from "../../dbContext";
+import { users } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export interface BulkExportPayload {
   exportType: string;
@@ -43,6 +49,59 @@ export function registerExportGenerator(
 }
 
 export function registerBulkExportJob(): void {
+  onJobFailed("bulk_export", async (job) => {
+    const data = (job.data as Record<string, unknown> | null) ?? {};
+    const payload = (data.payload as BulkExportPayload | undefined);
+    const exportType = payload?.exportType ?? (data.exportType as string | undefined) ?? "unknown";
+    const orgId = (data.organizationId ?? (payload?.params as Record<string, unknown> | undefined)?.organizationId) as string | undefined;
+    const userId = data.userId as string | undefined;
+    const errMsg = (data.lastError as string | undefined)
+      ?? `bulk_export for type "${exportType}" failed permanently after ${job.retryCount + 1} attempt(s).`;
+    logWarn("bulk_export permanently failed after all retries", {
+      jobId: job.id,
+      exportType,
+      retryCount: job.retryCount,
+    });
+    // Explicit per-job-type final-failure counter for the job metrics dashboard.
+    recordJobMetrics("bulk_export", { final_failure: 1 });
+    if (userId && orgId) {
+      const subject = "Export Failed";
+      const message = `Your "${exportType}" export failed permanently. Error: ${errMsg.slice(0, 300)} — check the Job Queue for details.`;
+      // In-app notification.
+      try {
+        const { insertNotification } = await import("../../services/notificationService");
+        await insertNotification({
+          userId,
+          organizationId: orgId,
+          type: "GENERAL",
+          title: subject,
+          message,
+          relatedEntityType: "system",
+          relatedEntityId: job.id,
+        });
+      } catch (_notifErr) {
+        logWarn(`Could not send failure notification for bulk_export job ${job.id}`, {});
+      }
+      // Email the submitting user directly so the failure is not lost in the
+      // notification tray (email is the escalation path for permanent failures).
+      try {
+        const [userRow] = await withSystemJobContext("bulk_export:failure-email", async () =>
+          db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1),
+        );
+        if (userRow?.email) {
+          await sendEmail({
+            to: userRow.email,
+            subject,
+            text: message,
+            html: `<p>${message.replace(/\n/g, "<br>")}</p>`,
+          });
+        }
+      } catch (_emailErr) {
+        logWarn(`Could not send failure email for bulk_export job ${job.id}`, {});
+      }
+    }
+  });
+
   defineJob<BulkExportPayload>(
     "bulk_export",
     async (payload, ctx: JobContext) => {

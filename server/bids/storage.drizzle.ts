@@ -1830,6 +1830,50 @@ export class BidStorageDrizzle implements IBidStorage {
       logError(`[Bid Conversion] Failed to auto-create contract: ${errMsg}`);
     }
 
+    // Task #2833 — BID_CONVERSION_AUTO_ESIGN: when the flag is on and the
+    // draft contract was successfully created, immediately queue an ESIGN_SEND
+    // approval request so PMs can send for signature without a manual trigger.
+    if (draftContractCreated && newProject.gcOrganizationId) {
+      try {
+        const { isFeatureEnabled } = await import("../services/featureFlagService");
+        const autoEsign = await isFeatureEnabled(newProject.gcOrganizationId, "BID_CONVERSION_AUTO_ESIGN");
+        if (autoEsign) {
+          const { createApprovalRequest } = await import("../services/approvalService");
+          // Create one ESIGN_SEND approval per subcontractor contract in PENDING status
+          // generated for this project — not a single project-level approval.
+          const { subcontractorContracts: subContracts } = await import("@shared/schema");
+          const { eq: deqEq, and: deqAnd } = await import("drizzle-orm");
+          const { db: deqDb } = await import("../db");
+          const pendingContracts = await deqDb
+            .select({ id: subContracts.id, contractNumber: subContracts.contractNumber })
+            .from(subContracts)
+            .where(deqAnd(
+              deqEq(subContracts.projectId, newProject.id),
+              deqEq(subContracts.status, "PENDING"),
+            ));
+          let esignCreated = 0;
+          for (const contract of pendingContracts) {
+            await createApprovalRequest(
+              newProject.gcOrganizationId,
+              "ESIGN_SEND",
+              contract.id,
+              actorId,
+              `Auto e-sign for subcontractor contract ${contract.contractNumber ?? contract.id} on project ${newProject.code}`,
+            );
+            // Transition the contract to ESIGN_PENDING immediately so the
+            // e-sign workflow is visible without a separate manual trigger.
+            await deqDb.update(subContracts)
+              .set({ status: "ESIGN_PENDING", updatedAt: new Date() })
+              .where(deqEq(subContracts.id, contract.id));
+            esignCreated++;
+          }
+          logInfo(`[Bid Conversion] Created ${esignCreated} ESIGN_SEND approval request(s) and transitioned contracts to ESIGN_PENDING for project ${newProject.code}`);
+        }
+      } catch (esignErr) {
+        logError(`[Bid Conversion] BID_CONVERSION_AUTO_ESIGN wiring failed: ${esignErr instanceof Error ? esignErr.message : String(esignErr)}`);
+      }
+    }
+
     // Project assignment notifications.
     const notifTargets: Array<{ id: string; role: string }> = [];
     if (params.superintendentId)

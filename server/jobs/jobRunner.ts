@@ -12,7 +12,7 @@ import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetent
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { withJobOrgContext } from "../dbContext";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification, type UserRole } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, changeOrders, hiringCandidates, hiringJobs, hiringPipelineStages, type InsertNotification, type UserRole } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -168,6 +168,12 @@ let aiTakeoffStallWatchdogTask: ReturnType<typeof cron.schedule> | null = null;
 // duplicate active rows that would have collided with the partial unique
 // index. Should always log zero in steady state — non-zero is a bug.
 let pmDuplicateAuditTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2833 — stuck pg-boss job watchdog (every 5 min)
+let stuckJobWatchdogTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2833 — daily Change Order overdue sweep (07:30)
+let changeOrderOverdueTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2833 — daily workflow SLA breach sweep
+let workflowSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -679,6 +685,18 @@ export function startJobRunner() {
     } catch (err) {
       recordJobOutcome("idle_opportunity_check", false);
       logError("Idle opportunity check failed", { error: String(err) });
+    }
+  });
+
+  scheduleCron("idle_hiring_candidates", "0 0 8 * * *", async () => {
+    try {
+      await withSchedulerLock("job:idleHiringCandidates", async () => {
+        await processIdleHiringCandidates();
+        recordJobOutcome("idle_hiring_candidates", true);
+      });
+    } catch (err) {
+      recordJobOutcome("idle_hiring_candidates", false);
+      logError("Idle hiring candidate check failed", { error: String(err) });
     }
   });
 
@@ -1510,7 +1528,52 @@ export function startJobRunner() {
     }
   });
 
-  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, equipment PM generation, and AI takeoff stall watchdog schedulers)");
+  // Task #2833 — every 5 minutes, scan for pg-boss jobs that have been
+  // stuck in 'active' state longer than STUCK_JOB_THRESHOLD_MS (default 30 min).
+  // Logs a WARN and increments a counter so the job-metric alert engine can page.
+  stuckJobWatchdogTask = scheduleCron("stuck_job_watchdog", "*/5 * * * *", async () => {
+    try {
+      await withSchedulerLock("job:stuckJobWatchdog", async () => {
+        await processStuckJobWatchdog();
+        recordJobOutcome("stuck_job_watchdog", true);
+      });
+    } catch (err) {
+      recordJobOutcome("stuck_job_watchdog", false);
+      logJobErrorWithKind("stuck_job_watchdog", "Stuck job watchdog failed", err);
+    }
+  });
+
+  // Task #2833 — daily change order overdue notification sweep (07:30)
+  changeOrderOverdueTask = scheduleCron("change_order_overdue_notifications", "0 30 7 * * *", async () => {
+    try {
+      await withSchedulerLock("job:changeOrderOverdueNotifications", async () => {
+        await processChangeOrderOverdueNotifications();
+        recordJobOutcome("change_order_overdue_notifications", true);
+      });
+    } catch (err) {
+      recordJobOutcome("change_order_overdue_notifications", false);
+      logJobErrorWithKind("change_order_overdue_notifications", "Change order overdue notifications failed", err);
+    }
+  });
+
+  // Task #2833 — daily workflow SLA breach sweep
+  workflowSlaBreachTask = scheduleCron("workflow_sla_breach_sweep", "0 0 7 * * *", async () => {
+    try {
+      await withSchedulerLock("job:workflowSlaBreachSweep", async () => {
+        const { processWorkflowSlaBreach } = await import("../services/workflowEngine");
+        const result = await processWorkflowSlaBreach();
+        recordJobOutcome("workflow_sla_breach_sweep", true);
+        if (result.breached > 0) {
+          logInfo("Workflow SLA breach sweep complete", result);
+        }
+      });
+    } catch (err) {
+      recordJobOutcome("workflow_sla_breach_sweep", false);
+      logJobErrorWithKind("workflow_sla_breach_sweep", "Workflow SLA breach sweep failed", err);
+    }
+  });
+
+  logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, equipment PM generation, AI takeoff stall watchdog, stuck job watchdog, change order overdue notifications, and workflow SLA breach sweep schedulers)");
 }
 
 // Task #2668 — sweep helper. Exported so tests can drive it directly
@@ -1643,6 +1706,231 @@ export async function processAiTakeoffStallWatchdog(): Promise<AiTakeoffStallWat
   }
 
   return { scanned: stalled.length, flagged, stallTimeoutMs, skippedJobActive };
+}
+
+// Task #2833 — Stuck pg-boss job watchdog.
+// Per-job-type stall counters — incremented each time a job name appears in the
+// pg-boss active-but-stalled query.  Exposed as job_stall_total{jobType=...}
+// on the /metrics endpoint via getJobStallCounterSnapshot().
+const _jobStallCounters = new Map<string, number>();
+
+export function getJobStallCounterSnapshot(): Array<{ jobType: string; value: number }> {
+  return Array.from(_jobStallCounters.entries()).map(([jobType, value]) => ({ jobType, value }));
+}
+
+// Scans for jobs stuck in 'active' state longer than JOB_STALL_MINUTES
+// (preferred) or STUCK_JOB_THRESHOLD_MS (legacy fallback).
+export async function processStuckJobWatchdog(): Promise<{ found: number }> {
+  const thresholdMs = Math.max(
+    60_000,
+    // JOB_STALL_MINUTES is the canonical env var; STUCK_JOB_THRESHOLD_MS kept
+    // as a legacy alias so existing deployments don't break.
+    (Number(process.env.JOB_STALL_MINUTES) * 60_000) ||
+    Number(process.env.STUCK_JOB_THRESHOLD_MS) ||
+    30 * 60 * 1000, // default 30 min
+  );
+  const cutoff = new Date(Date.now() - thresholdMs);
+  // Query pgboss schema directly — pg-boss does not expose a getDb() helper
+  // so we use the same pool that powers Drizzle (same DATABASE_URL, same schema).
+  let found = 0;
+  try {
+    const result = await db.execute(
+      sql`SELECT id::text, name, state, started_on, data FROM pgboss.job WHERE state = 'active' AND started_on < ${cutoff} LIMIT 100`
+    );
+    const rows = result.rows as Array<{ id: string; name: string; state: string; started_on: Date; data: Record<string, unknown> | null }>;
+    found = rows.length;
+    if (rows.length > 0) {
+      logWarn("Stuck pg-boss jobs detected", {
+        count: rows.length,
+        thresholdMs,
+        jobs: rows.map(r => ({ id: r.id, name: r.name, startedOn: r.started_on })),
+      });
+      // Emit per-job-type stall counters so ops dashboards can alert on
+      // specific job types that are chronically stuck.
+      for (const row of rows) {
+        _jobStallCounters.set(row.name, (_jobStallCounters.get(row.name) ?? 0) + 1);
+      }
+
+      // Notify org admins per stuck job so the problem is surfaced in-app.
+      const byOrg = new Map<string, string[]>();
+      for (const row of rows) {
+        const d = row.data ?? {};
+        const orgId = (d.orgId ?? d.organizationId) as string | undefined;
+        if (!orgId) continue;
+        const names = byOrg.get(orgId) ?? [];
+        names.push(row.name);
+        byOrg.set(orgId, names);
+      }
+      if (byOrg.size > 0) {
+        const stuckNotifs: InsertNotification[] = [];
+        const minutesStuck = Math.round(thresholdMs / 60_000);
+        for (const [orgId, jobNames] of byOrg) {
+          const adminRows = await db.select({ id: users.id, email: users.email })
+            .from(users)
+            .where(and(
+              eq(users.organizationId, orgId),
+              inArray(users.role, ["ADMIN", "SUPER_ADMIN"]),
+              eq(users.isActive, true),
+            ))
+            .limit(5);
+          const label = jobNames.slice(0, 3).join(", ") + (jobNames.length > 3 ? ` (+${jobNames.length - 3} more)` : "");
+          const msgBody = `${jobNames.length} background job(s) have been active for more than ${minutesStuck} min: ${label}. Log in to the Job Queue admin page to investigate.`;
+          for (const admin of adminRows) {
+            stuckNotifs.push({
+              userId: admin.id,
+              organizationId: orgId,
+              type: "GENERAL" as const,
+              title: "Stuck Background Jobs Detected",
+              message: msgBody,
+            });
+            // Also send email so the alert is not silently missed if the admin
+            // isn't actively viewing the in-app notification panel.
+            if (admin.email) {
+              sendEmail({
+                to: admin.email,
+                subject: `[SmartManageAI] Stuck background job(s) detected`,
+                html: `<p>${msgBody}</p><p><strong>Job names:</strong> ${label}</p><p>Visit the Job Queue admin page to retry or cancel stuck jobs.</p>`,
+              }).catch((eErr) => {
+                logWarn("Stuck job watchdog: email send failed", { error: String(eErr), adminId: admin.id });
+              });
+            }
+          }
+        }
+        if (stuckNotifs.length > 0) {
+          await insertNotifications(stuckNotifs).catch((nErr) => {
+            logWarn("Stuck job watchdog: failed to insert admin notifications", { error: String(nErr) });
+          });
+        }
+      }
+    }
+  } catch (queryErr) {
+    // pgboss schema may not exist in environments without the queue running —
+    // log and swallow so the watchdog tick doesn't crash the cron runner.
+    logWarn("Stuck job watchdog: pgboss schema query failed (queue may not be started)", {
+      error: queryErr instanceof Error ? queryErr.message : String(queryErr),
+    });
+  }
+  return { found };
+}
+
+// Task #2833 — Change order overdue notification sweep.
+// Mirrors processRfiOverdueNotifications pattern for change orders.
+export async function processChangeOrderOverdueNotifications(): Promise<{ notified: number }> {
+  const now = new Date();
+
+  // Per-org cap + interval — mirrors processRfiOverdueNotifications (Task #1599 pattern).
+  // COALESCE guards against NULL despite NOT NULL DEFAULT on both org columns.
+  const orgCapExpr = sql<number>`COALESCE(${organizations.docOverdueReminderMaxCount}, ${DOC_OVERDUE_REMINDER_DEFAULT_CAP})`;
+  const orgIntervalExpr = sql<number>`COALESCE(${organizations.docOverdueReminderIntervalHours}, ${DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS})`;
+
+  // changeOrders has no organizationId column; derive it via the project join.
+  // There is also no `title` column — `changeOrderNumber` + `description` serve as the label.
+  const overdueRows = await db
+    .select({
+      id: changeOrders.id,
+      organizationId: projects.gcOrganizationId,
+      projectManagerId: projects.projectManagerId,
+      changeOrderNumber: changeOrders.changeOrderNumber,
+      description: changeOrders.description,
+      projectId: changeOrders.projectId,
+      requestedById: changeOrders.requestedById,
+      requiredResponseDate: changeOrders.requiredResponseDate,
+      lastOverdueNotifiedAt: changeOrders.lastOverdueNotifiedAt,
+      overdueReminderCount: changeOrders.overdueReminderCount,
+      reminderMaxCount: orgCapExpr,
+      reminderIntervalHours: orgIntervalExpr,
+    })
+    .from(changeOrders)
+    .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+    .leftJoin(organizations, eq(projects.gcOrganizationId, organizations.id))
+    .where(
+      and(
+        isNotNull(changeOrders.requiredResponseDate),
+        lt(changeOrders.requiredResponseDate, now),
+        or(
+          isNull(changeOrders.lastOverdueNotifiedAt),
+          and(
+            sql`${changeOrders.overdueReminderCount} < ${orgCapExpr}`,
+            sql`${changeOrders.lastOverdueNotifiedAt} <= (${now}::timestamp - (${orgIntervalExpr} * interval '1 hour'))`,
+          ),
+        ),
+        inArray(changeOrders.status, ["SUBMITTED", "PENDING_APPROVAL"]),
+      ),
+    )
+    .limit(200);
+
+  if (overdueRows.length === 0) return { notified: 0 };
+
+  const notifs: InsertNotification[] = [];
+  const notifiedIds: string[] = [];
+
+  for (const co of overdueRows) {
+    // gcOrganizationId is nullable on projects; skip rows that have no GC org.
+    const orgId = co.organizationId;
+    if (!orgId) continue;
+
+    const reminderNum = (co.overdueReminderCount ?? 0) + 1;
+    const title = reminderNum === 1
+      ? `Change Order Response Overdue`
+      : `Change Order Response Overdue (Reminder #${reminderNum})`;
+    const message = `Change Order ${co.changeOrderNumber ?? ""}${co.description ? ` – ${co.description.slice(0, 80)}` : ""} has passed its required response date and awaits client action.`;
+
+    // Notify the CO author and project manager — not a broad org-wide broadcast.
+    const recipientIds = new Set<string>();
+    if (co.requestedById) recipientIds.add(co.requestedById);
+    if (co.projectManagerId) recipientIds.add(co.projectManagerId);
+
+    // Fallback: if neither is set (legacy rows), notify org ADMIN/MANAGER.
+    if (recipientIds.size === 0) {
+      const fallbackRows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, orgId),
+          inArray(users.role, ["ADMIN", "MANAGER"]),
+          eq(users.isActive, true),
+        ))
+        .limit(5);
+      fallbackRows.forEach((r) => recipientIds.add(r.id));
+    }
+
+    for (const uid of recipientIds) {
+      notifs.push({
+        userId: uid,
+        organizationId: orgId,
+        type: "GENERAL" as const,
+        title,
+        message,
+        relatedEntityType: "changeOrder",
+        relatedEntityId: co.id,
+      });
+    }
+    notifiedIds.push(co.id);
+  }
+
+  if (notifs.length > 0) {
+    await insertNotifications(notifs);
+  }
+  // Always increment overdueReminderCount so the cap logic is effective and
+  // subsequent sweeps correctly classify follow-up vs initial notifications.
+  if (notifiedIds.length > 0) {
+    await db
+      .update(changeOrders)
+      .set({
+        lastOverdueNotifiedAt: now,
+        overdueReminderCount: sql`${changeOrders.overdueReminderCount} + 1`,
+      })
+      .where(inArray(changeOrders.id, notifiedIds));
+  }
+
+  if (notifs.length > 0) {
+    logInfo("Change order overdue notifications sent", {
+      notifications: notifs.length,
+      cos: notifiedIds.length,
+    });
+  }
+
+  return { notified: notifiedIds.length };
 }
 
 // Task #2496 — daily PM auto-WO generation. Walks every active org that
@@ -1975,6 +2263,18 @@ export function stopJobRunner() {
     aiEstimatorIngestionTask.stop();
     aiEstimatorIngestionTask = null;
   }
+  if (stuckJobWatchdogTask) {
+    stuckJobWatchdogTask.stop();
+    stuckJobWatchdogTask = null;
+  }
+  if (changeOrderOverdueTask) {
+    changeOrderOverdueTask.stop();
+    changeOrderOverdueTask = null;
+  }
+  if (workflowSlaBreachTask) {
+    workflowSlaBreachTask.stop();
+    workflowSlaBreachTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -1987,7 +2287,8 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   compliance:          { fn: () => processComplianceExpirations(),     description: "Check compliance/cert expirations",       schedule: "0 7 * * *" },
   profitability:       { fn: () => processProfitabilityMonitor(),      description: "Monitor project profitability",           schedule: "*/15 * * * *" },
   portfolio_kpi_snapshot: { fn: async () => { await captureWeeklyKpiSnapshots(); }, description: "Capture per-project weekly KPI snapshots (health/SPI/CPI/burn)", schedule: "15 2 * * *" },
-  idle_opportunities:  { fn: () => processIdleOpportunities(),         description: "Flag idle CRM opportunities",            schedule: "0 8 * * *" },
+  idle_opportunities:  { fn: () => processIdleOpportunities(),         description: "Flag idle CRM opportunities with per-stage thresholds (ESTIMATING=7d, NEGOTIATION=3d)", schedule: "0 8 * * *" },
+  idle_hiring_candidates: { fn: async () => { await processIdleHiringCandidates(); },  description: "Notify reviewers of hiring candidates idle in pipeline stage past per-stage SLA", schedule: "0 8 * * *" },
   orphan_uploads:      { fn: () => processOrphanUploads(),             description: "Clean up orphaned file uploads",          schedule: "*/30 * * * *" },
   bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },
   imap_sync:           { fn: () => processImapEmailSync(),             description: "Sync IMAP email accounts",               schedule: "*/15 * * * *" },
@@ -2079,6 +2380,12 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // page without grepping logs.
   ai_estimator_ingestion: { fn: async () => { await processAiEstimatorScheduledIngestion(); }, description: "Refresh the AI Estimator learning pipeline (knowledge index + learned rates) for every AI_ESTIMATOR-enabled org; skips orgs with a successful run inside the cooldown window", schedule: "45 2 * * *" },
   ai_takeoff_calibration_aggregator: { fn: async () => { const { runCalibrationAggregator } = await import("../services/aiEstimator/calibrationLoop"); await runCalibrationAggregator(); }, description: "Task #2628: rebuild per-(org, trade) few-shot exemplars from recent ai_takeoff_suggestions reviews, propose per-trade quantity-bias nudges, and write a daily accuracy snapshot row.", schedule: "0 4 * * *" },
+  // Task #2833: stuck pg-boss job watchdog
+  stuck_job_watchdog: { fn: async () => { await processStuckJobWatchdog(); }, description: "Scan pg-boss active jobs older than STUCK_JOB_THRESHOLD_MS (default 30 min) and emit WARN + metric so the alert engine can page on chronic stalls", schedule: "*/5 * * * *" },
+  // Task #2833: change order overdue sweep
+  change_order_overdue_notifications: { fn: async () => { await processChangeOrderOverdueNotifications(); }, description: "Notify project managers when a change order's required response date has passed, with daily reminder cap", schedule: "30 7 * * *" },
+  // Task #2833: workflow SLA breach sweep
+  workflow_sla_breach_sweep: { fn: async () => { const { processWorkflowSlaBreach } = await import("../services/workflowEngine"); await processWorkflowSlaBreach(); }, description: "Fire stage notification rules for IN_PROGRESS workflow instances whose current stage has exceeded its slaDurationHours SLA", schedule: "0 7 * * *" },
 };
 
 async function processOutbox() {
@@ -3264,9 +3571,28 @@ async function processProfitabilityMonitor() {
   logInfo("Profitability monitor run complete", { projectsChecked: profitabilityResults.length });
 }
 
+// Global idle-opportunity sweep threshold. Per-stage idle behaviour is owned
+// by the org-configured crmAutomations (IDLE_DAYS trigger) which `processCrmIdleAutomations`
+// already handles with per-automation `triggerConfig.idleDays`.  This sweep is
+// a simpler catch-all for orgs that have not configured automations; it uses a
+// single configurable default.
+const CRM_DEFAULT_IDLE_DAYS = Number(process.env.CRM_DEFAULT_IDLE_DAYS ?? 14);
+
+// Per-stage idle thresholds (days) for processIdleOpportunities.
+// ESTIMATING and NEGOTIATION are mid-funnel stages requiring tighter SLAs
+// because stalled deals at these stages signal active revenue risk.
+const CRM_STAGE_IDLE_DAYS: Record<string, number> = {
+  ESTIMATING: Number(process.env.CRM_ESTIMATING_IDLE_DAYS ?? 7),
+  NEGOTIATION: Number(process.env.CRM_NEGOTIATION_IDLE_DAYS ?? 3),
+};
+
 async function processIdleOpportunities() {
-  const IDLE_DAYS = 14;
-  const cutoff = new Date(Date.now() - IDLE_DAYS * 24 * 60 * 60 * 1000);
+  // Use the smallest configured threshold as the candidate window so a
+  // single DB query fetches all possibly-idle opps; per-opp stage filtering
+  // applies the correct threshold below.
+  const now = Date.now();
+  const minThresholdDays = Math.min(CRM_DEFAULT_IDLE_DAYS, ...Object.values(CRM_STAGE_IDLE_DAYS));
+  const broadCutoff = new Date(now - minThresholdDays * 24 * 60 * 60 * 1000);
 
   const openOpps = await db
     .select({
@@ -3282,7 +3608,7 @@ async function processIdleOpportunities() {
     .where(
       and(
         sql`${crmOpportunities.stage} NOT IN ('WON', 'LOST')`,
-        lt(crmOpportunities.updatedAt, cutoff)
+        lt(crmOpportunities.updatedAt, broadCutoff)
       )
     );
 
@@ -3298,12 +3624,20 @@ async function processIdleOpportunities() {
     .where(
       and(
         inArray(crmOpportunityActivities.opportunityId, oppIds),
-        sql`${crmOpportunityActivities.createdAt} >= ${cutoff}`
+        sql`${crmOpportunityActivities.createdAt} >= ${broadCutoff}`
       )
     );
 
   const activeOppIds = new Set(recentActivities.map(a => a.opportunityId));
-  const idleOpps = openOpps.filter(o => !activeOppIds.has(o.id));
+
+  // Apply per-stage idle threshold: ESTIMATING=7d, NEGOTIATION=3d,
+  // all other non-terminal stages fall back to CRM_DEFAULT_IDLE_DAYS.
+  const idleOpps = openOpps.filter(o => {
+    if (activeOppIds.has(o.id)) return false;
+    const stageDays = CRM_STAGE_IDLE_DAYS[o.stage as string] ?? CRM_DEFAULT_IDLE_DAYS;
+    const stageCutoff = new Date(now - stageDays * 24 * 60 * 60 * 1000);
+    return o.updatedAt < stageCutoff;
+  });
 
   if (idleOpps.length === 0) {
     logInfo("Idle opportunity check: all open deals had recent activity");
@@ -3384,7 +3718,7 @@ async function processIdleOpportunities() {
       organizationId: entry.orgId || null,
       type: "CRM_IDLE_OPPORTUNITY",
       title: `${count} pipeline deal${count !== 1 ? "s" : ""} need attention`,
-      message: `No activity in ${IDLE_DAYS}+ days: ${preview}${extra}. Open the pipeline to follow up.`,
+      message: `No activity in ${CRM_DEFAULT_IDLE_DAYS}+ days: ${preview}${extra}. Open the pipeline to follow up.`,
       relatedEntityType: "CRM_OPPORTUNITY",
     });
   }
@@ -3395,6 +3729,100 @@ async function processIdleOpportunities() {
   } else {
     logInfo("Idle opportunity check: all assignees already notified today or in-app disabled");
   }
+}
+
+// Per-hiring-stage idle thresholds (days). Shorter windows on later stages
+// because offers and final reviews must move quickly.
+const HIRING_STAGE_IDLE_DAYS: Record<string, number> = {
+  APPLIED: 7,
+  SCREENED: 5,
+  REVIEW: 3,
+  PHONE_SCREEN: 3,
+  INTERVIEW: 5,
+  FINAL_REVIEW: 3,
+  OFFER: 2,
+};
+const HIRING_DEFAULT_IDLE_DAYS = 7;
+
+export async function processIdleHiringCandidates(): Promise<{ checked: number; alerted: number }> {
+  // Broad pre-filter cutoff uses the MINIMUM threshold so we fetch candidates
+  // stale for the shortest-SLA stage (e.g. OFFER=2d, PHONE_SCREEN=3d).
+  // Using max would cause the DB query to miss those short-SLA stages entirely.
+  // In-memory filtering below then applies the correct per-stage threshold.
+  const minIdleDays = Math.min(...Object.values(HIRING_STAGE_IDLE_DAYS), HIRING_DEFAULT_IDLE_DAYS);
+  const broadCutoff = new Date(Date.now() - minIdleDays * 24 * 60 * 60 * 1000);
+
+  // Join hiringPipelineStages to pull per-stage slaDays configured in the DB.
+  // leftJoin so candidates without a matching custom stage still appear.
+  const staleCandidates = await db
+    .select({
+      id: hiringCandidates.id,
+      fullName: hiringCandidates.fullName,
+      organizationId: hiringCandidates.organizationId,
+      currentStage: hiringCandidates.currentStage,
+      updatedAt: hiringCandidates.updatedAt,
+      reviewerUserId: hiringCandidates.reviewerUserId,
+      slaDays: hiringPipelineStages.slaDays,
+    })
+    .from(hiringCandidates)
+    .leftJoin(
+      hiringPipelineStages,
+      and(
+        eq(hiringCandidates.organizationId, hiringPipelineStages.organizationId),
+        eq(hiringCandidates.currentStage, hiringPipelineStages.key),
+      ),
+    )
+    .where(
+      and(
+        sql`${hiringCandidates.currentStage} NOT IN ('HIRED','REJECTED','ARCHIVED')`,
+        eq(hiringCandidates.status, "active"),
+        lt(hiringCandidates.updatedAt, broadCutoff),
+      )
+    );
+
+  if (staleCandidates.length === 0) return { checked: 0, alerted: 0 };
+
+  // Apply per-stage thresholds in memory.
+  // DB slaDays takes precedence; fall back to static map then global default.
+  const now = Date.now();
+  const idleCandidates = staleCandidates.filter(c => {
+    const stageDays = c.slaDays ?? HIRING_STAGE_IDLE_DAYS[c.currentStage ?? ""] ?? HIRING_DEFAULT_IDLE_DAYS;
+    return c.updatedAt.getTime() < now - stageDays * 24 * 60 * 60 * 1000;
+  });
+
+  if (idleCandidates.length === 0) return { checked: staleCandidates.length, alerted: 0 };
+
+  // Notify each reviewer with a digest; if no reviewer, silently skip
+  // (on-call runbook: assign reviewers to prevent silent accumulation).
+  const reviewerMap = new Map<string, { orgId: string; names: string[] }>();
+  for (const c of idleCandidates) {
+    if (!c.reviewerUserId) continue;
+    const entry = reviewerMap.get(c.reviewerUserId) ?? { orgId: c.organizationId, names: [] };
+    entry.names.push(c.fullName);
+    reviewerMap.set(c.reviewerUserId, entry);
+  }
+
+  const toInsert: InsertNotification[] = [];
+  for (const [userId, entry] of reviewerMap) {
+    const count = entry.names.length;
+    const preview = entry.names.slice(0, 3).join(", ");
+    const extra = count > 3 ? ` and ${count - 3} more` : "";
+    toInsert.push({
+      userId,
+      organizationId: entry.orgId || null,
+      type: "REMINDER",
+      title: `${count} hiring candidate${count !== 1 ? "s" : ""} need follow-up`,
+      message: `Candidates idle in their pipeline stage: ${preview}${extra}. Review and advance or close.`,
+      relatedEntityType: "hiring_candidate",
+    });
+  }
+
+  if (toInsert.length > 0) {
+    await insertNotifications(toInsert);
+  }
+
+  logInfo("Idle hiring candidate notifications sent", { checked: staleCandidates.length, alerted: toInsert.length });
+  return { checked: staleCandidates.length, alerted: toInsert.length };
 }
 
 async function processOrphanUploads() {
@@ -4163,6 +4591,7 @@ async function processCrmIdleAutomations() {
         .select({
           id: crmOpportunities.id,
           updatedAt: crmOpportunities.updatedAt,
+          stage: crmOpportunities.stage,
         })
         .from(crmOpportunities)
         .where(and(
@@ -4194,12 +4623,12 @@ async function processCrmIdleAutomations() {
         if (r.latest) latestActivityByOpp.set(r.opportunityId, new Date(r.latest as any));
       }
 
-      type EnrichedOpp = { id: string; latestActivityAt: Date; idleDays: number };
+      type EnrichedOpp = { id: string; stage: string | null; latestActivityAt: Date; idleDays: number };
       const enriched: EnrichedOpp[] = candidates.map((c) => {
         const fromActivity = latestActivityByOpp.get(c.id);
         const latestActivityAt = fromActivity && fromActivity > c.updatedAt ? fromActivity : c.updatedAt;
         const idleDays = Math.floor((now - latestActivityAt.getTime()) / (24 * 60 * 60 * 1000));
-        return { id: c.id, latestActivityAt, idleDays };
+        return { id: c.id, stage: c.stage, latestActivityAt, idleDays };
       }).filter((o) => o.idleDays >= minThreshold);
 
       if (enriched.length === 0) continue;
@@ -4235,6 +4664,14 @@ async function processCrmIdleAutomations() {
           const auto = orgAutomations[i];
           const threshold = thresholds[i];
           if (opp.idleDays < threshold) continue;
+
+          // Honor triggerConfig.stage: if the automation targets a specific
+          // pipeline stage (e.g. ESTIMATING or NEGOTIATION), skip opps that
+          // are in a different stage. This is the automation-engine parallel
+          // of the env-based per-stage idle thresholds in processIdleOpportunities.
+          const autoCfg = (auto.triggerConfig as Record<string, any>) || {};
+          const stageFilter = autoCfg.stage as string | undefined;
+          if (stageFilter && opp.stage !== stageFilter) continue;
 
           // Skip if a prior run for THIS automation+opp is newer than the
           // deal's last activity. A new idle stretch (after fresh activity)

@@ -888,7 +888,7 @@ export const integrationProviderEnum = pgEnum("integration_provider", ["qbo", "g
 export const integrationConnectionStatusEnum = pgEnum("integration_connection_status", ["pending", "active", "error", "disconnected", "needs_reconnect"]);
 export const integrationEventStatusEnum = pgEnum("integration_event_status", ["queued", "processing", "sent", "failed", "dead_letter"]);
 export const approvalStatusEnum = pgEnum("approval_status_v2", ["pending", "approved", "rejected"]);
-export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT", "CRM_QUOTE", "CRM_OPPORTUNITY"]);
+export const approvalEntityTypeEnum = pgEnum("approval_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "VENDOR_BILL", "ESIGN_SEND", "QBO_EXPORT", "CRM_QUOTE", "CRM_OPPORTUNITY", "INVENTORY_ADJUSTMENT"]);
 
 // CRM Upgrade enums (lead forms, meeting booking, automation, imports)
 export const crmLeadFormStatusEnum = pgEnum("crm_lead_form_status", ["DRAFT", "PUBLISHED", "ARCHIVED"]);
@@ -978,7 +978,7 @@ export const maintenanceSystemEnum = pgEnum("maintenance_system", ["HVAC", "PLUM
 export const recurringFrequencyEnum = pgEnum("recurring_frequency", ["WEEKLY", "MONTHLY", "QUARTERLY", "SEMI_ANNUAL", "ANNUAL"]);
 export const geofenceEnforcementEnum = pgEnum("geofence_enforcement", ["OFF", "WARN", "BLOCK"]);
 
-export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "HAUL_TICKET", "INSPECTOR_REPORT", "MATERIAL_CERT", "SURETY_BOND"]);
+export const workflowEntityTypeEnum = pgEnum("workflow_entity_type", ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "HAUL_TICKET", "INSPECTOR_REPORT", "MATERIAL_CERT", "SURETY_BOND", "SUBMITTAL", "WARRANTY_CASE"]);
 export const workflowTemplateStatusEnum = pgEnum("workflow_template_status", ["ACTIVE", "INACTIVE", "DRAFT"]);
 export const workflowInstanceStatusEnum = pgEnum("workflow_instance_status", ["IN_PROGRESS", "COMPLETED", "CANCELLED"]);
 export const workflowNotificationChannelEnum = pgEnum("workflow_notification_channel", ["EMAIL", "PUSH", "SMS", "SLACK", "TEAMS"]);

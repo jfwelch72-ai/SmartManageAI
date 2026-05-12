@@ -1,9 +1,11 @@
 import { db } from "../db";
 import { notifications, users, notificationTypeEnum } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { logInfo, logError } from "../utils/logger";
+import { logInfo, logError, logWarn } from "../utils/logger";
 import { deliverNotifications, type NotificationRecord } from "./notificationDelivery";
 
+// Roles that can approve general requests. Inventory adjustments use the
+// narrower ADMIN/MANAGER gate enforced at the call site.
 const APPROVER_ROLES = ["ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
 type ApproverRole = typeof APPROVER_ROLES[number];
 
@@ -17,12 +19,46 @@ export interface NotificationParams {
   relatedEntityType: string;
 }
 
+// In-process counter for zero-recipient skip events, exposed on /metrics as
+// `workflow_notification_no_recipient_total{type,entityType}`.
+// Incremented both by notifyUsers() (approval paths) and by
+// recordZeroRecipientSkip() (workflow-engine fireNotifications paths), so
+// every zero-recipient miss from any call site lands in the same Prometheus
+// counter surfaced by getZeroRecipientMetricsSnapshot().
+const _zeroRecipientCounters = new Map<string, number>();
+
+export function getZeroRecipientMetricsSnapshot(): Array<{ type: string; entityType: string; value: number }> {
+  return Array.from(_zeroRecipientCounters.entries()).map(([k, v]) => {
+    const [type, entityType] = k.split("|");
+    return { type, entityType, value: v };
+  });
+}
+
+/**
+ * Record a zero-recipient skip from any call site (e.g. workflowEngine
+ * fireNotifications) so it lands in the same Prometheus counter as the
+ * zero-recipient path inside notifyUsers().
+ */
+export function recordZeroRecipientSkip(type: string, entityType: string): void {
+  const k = `${type}|${entityType}`;
+  _zeroRecipientCounters.set(k, (_zeroRecipientCounters.get(k) ?? 0) + 1);
+}
+
 export async function notifyUsers(
   userIds: string[],
   params: NotificationParams,
   organizationId?: string
 ): Promise<void> {
-  if (userIds.length === 0) return;
+  if (userIds.length === 0) {
+    const k = `${params.type}|${params.relatedEntityType}`;
+    _zeroRecipientCounters.set(k, (_zeroRecipientCounters.get(k) ?? 0) + 1);
+    logWarn("notifyUsers called with zero recipients — notification skipped", {
+      type: params.type,
+      entityId: params.relatedEntityId,
+      entityType: params.relatedEntityType,
+    });
+    return;
+  }
 
   try {
     const records = userIds.map(userId => ({

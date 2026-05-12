@@ -4,14 +4,15 @@ import { eq, and, sql } from "drizzle-orm";
 import { logInfo, logError } from "../utils/logger";
 import { notifyApprovers } from "./approvalNotificationService";
 
-export type ApprovalEntityType = "CHANGE_ORDER" | "SOV_PAY_APP" | "TIME_APPROVAL" | "VENDOR_BILL" | "ESIGN_SEND" | "QBO_EXPORT" | "CRM_QUOTE" | "CRM_OPPORTUNITY";
+export type ApprovalEntityType = "CHANGE_ORDER" | "SOV_PAY_APP" | "TIME_APPROVAL" | "VENDOR_BILL" | "ESIGN_SEND" | "QBO_EXPORT" | "CRM_QUOTE" | "CRM_OPPORTUNITY" | "INVENTORY_ADJUSTMENT";
 
 export async function createApprovalRequest(
   orgId: string,
   entityType: ApprovalEntityType,
   entityId: string,
   requestedByUserId: string,
-  notes?: string
+  notes?: string,
+  approverRoles?: readonly string[]
 ) {
   const [request] = await db.insert(approvalRequests).values({
     organizationId: orgId,
@@ -31,33 +32,94 @@ export async function createApprovalRequest(
     message: `A ${entityLabel} requires your approval`,
     relatedEntityId: entityId,
     relatedEntityType: entityType,
-  });
+  }, approverRoles);
 
   return request;
 }
 
+// Downstream sync is called inside the same DB transaction as the approval-
+// status update so that a downstream failure (e.g. insufficient stock) rolls
+// back the approval stamp atomically — no orphaned "approved" records.
+// The `client` parameter receives the transaction object from the caller;
+// errors are re-thrown so the outer transaction can roll back.
 async function syncDownstreamAfterDecision(
   request: { entityType: string; entityId: string; organizationId: string },
-  decision: "approved" | "rejected"
+  decision: "approved" | "rejected",
+  client: typeof db
 ): Promise<void> {
-  try {
-    const { crmQuotes, crmOpportunities } = await import("@shared/schema");
-    if (request.entityType === "CRM_QUOTE") {
-      await db.update(crmQuotes).set({
-        approvalStatus: decision === "approved" ? "APPROVED" : "REJECTED",
+  const { crmQuotes, crmOpportunities } = await import("@shared/schema");
+  if (request.entityType === "CRM_QUOTE") {
+    await client.update(crmQuotes).set({
+      approvalStatus: decision === "approved" ? "APPROVED" : "REJECTED",
+      updatedAt: new Date(),
+    } as any).where(eq(crmQuotes.id, request.entityId));
+  } else if (request.entityType === "CRM_OPPORTUNITY") {
+    if (decision === "approved") {
+      await client.update(crmOpportunities).set({
+        stage: "WON" as any,
+        wonAt: new Date(),
         updatedAt: new Date(),
-      } as any).where(eq(crmQuotes.id, request.entityId));
-    } else if (request.entityType === "CRM_OPPORTUNITY") {
-      if (decision === "approved") {
-        await db.update(crmOpportunities).set({
-          stage: "WON" as any,
-          wonAt: new Date(),
-          updatedAt: new Date(),
-        } as any).where(eq(crmOpportunities.id, request.entityId));
-      }
+      } as any).where(eq(crmOpportunities.id, request.entityId));
     }
-  } catch (e) {
-    logError("Approval downstream sync failed", { entityType: request.entityType, entityId: request.entityId }, e as Error);
+  } else if (request.entityType === "INVENTORY_ADJUSTMENT") {
+    // entityId is the pending inventoryTransaction row.
+    const { inventoryTransactions, inventoryStockLevels } = await import("@shared/schema");
+    const [txn] = await client
+      .select()
+      .from(inventoryTransactions)
+      .where(and(eq(inventoryTransactions.id, request.entityId), eq(inventoryTransactions.organizationId, request.organizationId)))
+      .limit(1);
+
+    if (!txn) {
+      // Re-throw so the outer transaction rolls back the approval stamp.
+      throw new Error(`INVENTORY_ADJUSTMENT downstream sync: transaction not found (entityId=${request.entityId})`);
+    }
+
+    if (decision === "approved") {
+      // Post the stock change and mark the transaction APPROVED inside a
+      // nested savepoint (client.transaction inside an outer transaction uses
+      // PostgreSQL SAVEPOINTs, ensuring full atomicity with the approval stamp).
+      const qty = Number(txn.quantity);
+      await client.transaction(async (tx) => {
+        const { sql: dsql } = await import("drizzle-orm");
+        const [existing] = await tx
+          .select({ id: inventoryStockLevels.id, onHand: inventoryStockLevels.onHand })
+          .from(inventoryStockLevels)
+          .where(and(
+            eq(inventoryStockLevels.organizationId, request.organizationId),
+            eq(inventoryStockLevels.materialId, txn.materialId!),
+            eq(inventoryStockLevels.locationId, txn.locationId!),
+          ))
+          .limit(1);
+
+        if (existing) {
+          if (Number(existing.onHand) + qty < 0) {
+            throw new Error(`Insufficient stock after approval for material ${txn.materialId}`);
+          }
+          await tx.update(inventoryStockLevels)
+            .set({ onHand: dsql`${inventoryStockLevels.onHand} + ${String(qty)}` })
+            .where(eq(inventoryStockLevels.id, existing.id));
+        } else {
+          if (qty < 0) throw new Error(`Insufficient stock after approval for material ${txn.materialId}`);
+          await tx.insert(inventoryStockLevels).values({
+            organizationId: request.organizationId,
+            materialId: txn.materialId!,
+            locationId: txn.locationId!,
+            onHand: String(qty),
+          });
+        }
+        await tx.update(inventoryTransactions)
+          .set({ approvalStatus: "APPROVED" })
+          .where(eq(inventoryTransactions.id, txn.id));
+      });
+      logInfo("INVENTORY_ADJUSTMENT approved — stock updated", { transactionId: txn.id, qty });
+    } else {
+      // Rejected: mark the pending transaction without moving stock.
+      await client.update(inventoryTransactions)
+        .set({ approvalStatus: "REJECTED" })
+        .where(eq(inventoryTransactions.id, txn.id));
+      logInfo("INVENTORY_ADJUSTMENT rejected — no stock movement", { transactionId: txn.id });
+    }
   }
 }
 
@@ -68,27 +130,34 @@ export async function approveRequest(
   approverRole: string,
   notes?: string
 ) {
-  const [updated] = await db.update(approvalRequests)
-    .set({
-      status: "approved" as any,
-      approverUserId,
-      approverRole,
-      notes: notes || undefined,
-      decidedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(
-      eq(approvalRequests.id, requestId),
-      eq(approvalRequests.organizationId, orgId),
-      eq(approvalRequests.status, "pending")
-    ))
-    .returning();
+  return db.transaction(async (tx) => {
+    const [updated] = await tx.update(approvalRequests)
+      .set({
+        status: "approved" as any,
+        approverUserId,
+        approverRole,
+        notes: notes || undefined,
+        decidedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(approvalRequests.id, requestId),
+        eq(approvalRequests.organizationId, orgId),
+        eq(approvalRequests.status, "pending")
+      ))
+      .returning();
 
-  if (updated) {
-    logInfo("Approval request approved", { requestId, orgId, approverUserId });
-    await syncDownstreamAfterDecision(updated, "approved");
-  }
-  return updated || null;
+    if (updated) {
+      logInfo("Approval request approved", { requestId, orgId, approverUserId });
+      // syncDownstreamAfterDecision errors propagate up and roll back the
+      // approval stamp via the enclosing transaction.
+      await syncDownstreamAfterDecision(updated, "approved", tx as unknown as typeof db);
+    }
+    return updated || null;
+  }).catch((e) => {
+    logError("approveRequest transaction failed — approval stamp rolled back", { requestId, orgId }, e as Error);
+    throw e;
+  });
 }
 
 export async function rejectRequest(
@@ -98,27 +167,32 @@ export async function rejectRequest(
   approverRole: string,
   notes?: string
 ) {
-  const [updated] = await db.update(approvalRequests)
-    .set({
-      status: "rejected" as any,
-      approverUserId,
-      approverRole,
-      notes: notes || undefined,
-      decidedAt: new Date(),
-      updatedAt: new Date(),
-    })
-    .where(and(
-      eq(approvalRequests.id, requestId),
-      eq(approvalRequests.organizationId, orgId),
-      eq(approvalRequests.status, "pending")
-    ))
-    .returning();
+  return db.transaction(async (tx) => {
+    const [updated] = await tx.update(approvalRequests)
+      .set({
+        status: "rejected" as any,
+        approverUserId,
+        approverRole,
+        notes: notes || undefined,
+        decidedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(and(
+        eq(approvalRequests.id, requestId),
+        eq(approvalRequests.organizationId, orgId),
+        eq(approvalRequests.status, "pending")
+      ))
+      .returning();
 
-  if (updated) {
-    logInfo("Approval request rejected", { requestId, orgId, approverUserId });
-    await syncDownstreamAfterDecision(updated, "rejected");
-  }
-  return updated || null;
+    if (updated) {
+      logInfo("Approval request rejected", { requestId, orgId, approverUserId });
+      await syncDownstreamAfterDecision(updated, "rejected", tx as unknown as typeof db);
+    }
+    return updated || null;
+  }).catch((e) => {
+    logError("rejectRequest transaction failed — rejection stamp rolled back", { requestId, orgId }, e as Error);
+    throw e;
+  });
 }
 
 export async function getApprovalById(requestId: string, orgId: string) {

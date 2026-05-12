@@ -41,6 +41,8 @@ export const workflowStages = pgTable("workflow_stages", {
   allowedTransitions: json("allowed_transitions").$type<string[]>().default([]),
   isInitial: boolean("is_initial").notNull().default(false),
   isFinal: boolean("is_final").notNull().default(false),
+  slaDurationHours: integer("sla_duration_hours"),
+  autoEscalateRole: text("auto_escalate_role"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

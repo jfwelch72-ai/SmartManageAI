@@ -109,6 +109,13 @@ export const FEATURE_FLAG_KEYS = [
   // pdfTileWorker for rendering — this flag only controls the
   // server-side prerender optimisation path.
   "TILE_RENDERING_ENABLED",
+  // Task #2833: when ON, large inventory adjustments (≥ INVENTORY_ADJUSTMENT_APPROVAL_THRESHOLD
+  // units, default 50) are routed through an APPROVAL request before stock is moved.
+  "INVENTORY_ADJUSTMENT_APPROVAL",
+  // Task #2833: when ON, convertBidToProject automatically creates an ESIGN_SEND
+  // approval request for the auto-generated draft contract so it can be sent for
+  // e-signature without a PM needing to initiate it manually.
+  "BID_CONVERSION_AUTO_ESIGN",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -165,6 +172,8 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   AI_PROVIDER_EMBEDDINGS: "AI Provider — Embeddings (reserved)",
   COI_COMPLIANCE_HOLD: "COI Compliance — Block release on non-compliance",
   TILE_RENDERING_ENABLED: "Server-side PDF Tile Pre-rendering",
+  INVENTORY_ADJUSTMENT_APPROVAL: "Inventory – Approval Gate for Large Adjustments",
+  BID_CONVERSION_AUTO_ESIGN: "Bid Conversion – Auto E-Sign Draft Contract",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -219,6 +228,8 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   AI_PROVIDER_EMBEDDINGS: "Reserved provider seam for embedding calls. No alternative embedding provider is wired in today; flipping this on currently has no effect because every call site still resolves to OpenAI text-embedding-3-large.",
   COI_COMPLIANCE_HOLD: "Block pay-app, PO, and subcontractor payable approvals when project insurance compliance is EXPIRED or MISSING. Audited overrides bypass the hold. When OFF, the dashboard still shows non-compliance but releases are not blocked.",
   TILE_RENDERING_ENABLED: "When ON, enqueues a server-side PDF tile pre-render job after each plan-document upload or import. The job renders tiles using pdfjs-dist + canvas on the server and uploads PNGs to GCS for faster Takeoff workspace loads on large plans. Safe to flip ON per-org — the Takeoff workspace always falls back to client-side rendering when tiles are unavailable. When OFF (default), no job is dispatched and rendering remains entirely client-side.",
+  INVENTORY_ADJUSTMENT_APPROVAL: "When ON, inventory adjustments of ≥ INVENTORY_ADJUSTMENT_APPROVAL_THRESHOLD units (default 50) are routed through an approval request before stock is moved. Approvers are notified immediately; the adjustment executes only after the request is approved.",
+  BID_CONVERSION_AUTO_ESIGN: "When ON, converting a bid to a project automatically creates an ESIGN_SEND approval request for the auto-generated draft contract, allowing a PM to send it for e-signature without a manual trigger.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -292,6 +303,8 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   AI_PROVIDER_EMBEDDINGS: "Advanced Tech",
   COI_COMPLIANCE_HOLD: "Core Platform",
   TILE_RENDERING_ENABLED: "Advanced Tech",
+  INVENTORY_ADJUSTMENT_APPROVAL: "Core Platform",
+  BID_CONVERSION_AUTO_ESIGN: "Core Platform",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -363,6 +376,10 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // misleading false-positive successes in the queue. Flip ON only once
   // a real renderer is registered at boot.
   "TILE_RENDERING_ENABLED",
+  // Task #2833: both approval gates default OFF so existing tenants see no
+  // behaviour change on upgrade.
+  "INVENTORY_ADJUSTMENT_APPROVAL",
+  "BID_CONVERSION_AUTO_ESIGN",
 ] as const;
 
 // Task #1119: audit log of trade-preset applications on the Feature Flags tab.

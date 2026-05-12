@@ -54,6 +54,8 @@ import { getAllJobMetrics } from './utils/jobMetrics';
 import { getWebVitalsSnapshot } from './webVitalsRoutes';
 import { getPromptInjectionMetricsSnapshot } from './ai/promptInjectionGuard';
 import { getCronMissedTicksSnapshot } from './utils/cronMissedTicks';
+import { getZeroRecipientMetricsSnapshot } from './services/approvalNotificationService';
+import { getJobStallCounterSnapshot } from './jobs/jobRunner';
 
 const router = Router();
 
@@ -358,6 +360,45 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
     }
   } catch (err) {
     logError('Failed to read prompt-injection metrics for /metrics', {}, err as Error);
+  }
+
+  // Task #2833 — Workflow zero-recipient counter. Incremented by
+  // `notifyUsers()` in approvalNotificationService whenever a workflow
+  // notification call resolves zero recipients. Surfaced here so
+  // on-call can alert when notifications are silently dropped.
+  // See `docs/runbooks/observability.md` for triage steps.
+  try {
+    const zrSnap = getZeroRecipientMetricsSnapshot();
+    if (zrSnap.length) {
+      lines.push('# HELP workflow_notification_no_recipient_total Workflow notifications silently skipped due to zero resolved recipients, by notification type and entity type.');
+      lines.push('# TYPE workflow_notification_no_recipient_total counter');
+      for (const row of zrSnap) {
+        const safeType = String(row.type).replace(/[^A-Za-z0-9_]/g, '_');
+        const safeEntityType = String(row.entityType).replace(/[^A-Za-z0-9_]/g, '_');
+        lines.push(`workflow_notification_no_recipient_total{type="${safeType}",entityType="${safeEntityType}"} ${row.value}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read zero-recipient workflow metrics for /metrics', {}, err as Error);
+  }
+
+  // Task #2833 — Per-job-type stall counters.  Incremented by
+  // processStuckJobWatchdog() for every pg-boss job found stuck in 'active'
+  // beyond the JOB_STALL_MINUTES threshold.  Surfaced as
+  // job_stall_total{jobType=...} so alert rules can fire on specific job
+  // types rather than just an aggregate count.
+  try {
+    const stallSnap = getJobStallCounterSnapshot();
+    if (stallSnap.length) {
+      lines.push('# HELP job_stall_total Number of times each pg-boss job type has been found stuck in active state beyond the stall threshold, since process start.');
+      lines.push('# TYPE job_stall_total counter');
+      for (const { jobType, value } of stallSnap) {
+        const safeType = jobType.replace(/[^A-Za-z0-9_]/g, '_');
+        lines.push(`job_stall_total{jobType="${safeType}"} ${value}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read job stall counters for /metrics', {}, err as Error);
   }
 
   // Task #2753 — Cron missed-tick counter. Emitted by `scheduleCron()`

@@ -8,7 +8,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { z } from "zod";
 import * as workflowEngine from "./services/workflowEngine";
 
-const ENTITY_TYPES = ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"] as const;
+const ENTITY_TYPES = ["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "SUBMITTAL", "WARRANTY_CASE"] as const;
 type WorkflowEntityType = (typeof ENTITY_TYPES)[number];
 const TEMPLATE_STATUSES = ["ACTIVE", "INACTIVE", "DRAFT"] as const;
 type TemplateStatus = (typeof TEMPLATE_STATUSES)[number];
@@ -20,7 +20,7 @@ const router = Router();
 const createTemplateSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
-  entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"]),
+  entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "SUBMITTAL", "WARRANTY_CASE"]),
   isDefault: z.boolean().optional(),
   stages: z.array(z.object({
     name: z.string().min(1),
@@ -29,6 +29,8 @@ const createTemplateSchema = z.object({
     color: z.string().optional(),
     isInitial: z.boolean().optional(),
     isFinal: z.boolean().optional(),
+    slaDurationHours: z.number().int().min(1).optional(),
+    autoEscalateRole: z.string().optional(),
     approvalSteps: z.array(z.object({
       requiredRole: z.string().optional(),
       requiredUserId: z.string().optional(),
@@ -211,6 +213,8 @@ router.post("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req: A
         allowedTransitions: [],
         isInitial: stageData.isInitial || false,
         isFinal: stageData.isFinal || false,
+        slaDurationHours: stageData.slaDurationHours ?? null,
+        autoEscalateRole: stageData.autoEscalateRole ?? null,
       }).returning();
 
       const approvalSteps = [];
@@ -309,6 +313,8 @@ router.put("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), async (req:
         allowedTransitions: [],
         isInitial: stageData.isInitial || false,
         isFinal: stageData.isFinal || false,
+        slaDurationHours: stageData.slaDurationHours ?? null,
+        autoEscalateRole: stageData.autoEscalateRole ?? null,
       }).returning();
 
       if (stageData.approvalSteps) {
@@ -521,7 +527,7 @@ router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), asyn
 router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const schema = z.object({
-      entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET"]),
+      entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "SUBMITTAL", "WARRANTY_CASE"]),
       entityId: z.string().min(1),
     });
     const validation = schema.safeParse(req.body);

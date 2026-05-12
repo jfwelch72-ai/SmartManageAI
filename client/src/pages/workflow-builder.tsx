@@ -54,6 +54,8 @@ interface StageForm {
   color: string;
   isInitial: boolean;
   isFinal: boolean;
+  slaDurationHours: number | null;
+  autoEscalateRole: string;
   approvalSteps: ApprovalStepForm[];
   notificationRules: NotificationRuleForm[];
 }
@@ -83,6 +85,8 @@ function defaultStage(order: number): StageForm {
     color: STAGE_COLORS[order % STAGE_COLORS.length],
     isInitial: order === 0,
     isFinal: false,
+    slaDurationHours: null,
+    autoEscalateRole: "",
     approvalSteps: [],
     notificationRules: [],
   };
@@ -181,6 +185,8 @@ export default function WorkflowBuilderPage({ embedded }: { embedded?: boolean }
           color: s.color || STAGE_COLORS[i % STAGE_COLORS.length],
           isInitial: s.isInitial,
           isFinal: s.isFinal,
+          slaDurationHours: s.slaDurationHours ?? null,
+          autoEscalateRole: s.autoEscalateRole || "",
           approvalSteps: s.approvalSteps?.map((a: any) => ({
             requiredRole: a.requiredRole || "",
             requiredUserId: a.requiredUserId || "",
@@ -561,6 +567,39 @@ export default function WorkflowBuilderPage({ embedded }: { embedded?: boolean }
                               data-testid={`switch-final-${stageIdx}`}
                             />
                             <Label>Final Stage</Label>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label className="text-xs text-muted-foreground">SLA (hours)</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              value={stage.slaDurationHours ?? ""}
+                              onChange={e => updateStage(stageIdx, { slaDurationHours: e.target.value ? Number(e.target.value) : null })}
+                              placeholder="No SLA"
+                              className="mt-1 text-sm"
+                              data-testid={`input-sla-hours-${stageIdx}`}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs text-muted-foreground">Auto-Escalate Role</Label>
+                            <Select
+                              value={stage.autoEscalateRole || "__none__"}
+                              onValueChange={val => updateStage(stageIdx, { autoEscalateRole: val === "__none__" ? "" : val })}
+                            >
+                              <SelectTrigger className="mt-1 text-sm" data-testid={`select-escalate-role-${stageIdx}`}>
+                                <SelectValue placeholder="None" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">None</SelectItem>
+                                <SelectItem value="MANAGER">Manager</SelectItem>
+                                <SelectItem value="ADMIN">Admin</SelectItem>
+                                <SelectItem value="SUPERINTENDENT">Superintendent</SelectItem>
+                                <SelectItem value="ESTIMATOR">Estimator</SelectItem>
+                              </SelectContent>
+                            </Select>
                           </div>
                         </div>
 

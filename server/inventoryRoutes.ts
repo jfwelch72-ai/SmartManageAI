@@ -7,7 +7,7 @@ import {
   inventoryTransactions, inventoryCycleCounts, inventoryCycleCountLines,
   insertInventoryLocationSchema, insertInventoryMaterialSchema,
   purchaseOrders, purchaseOrderItems,
-  projects,
+  projects, organizations,
   mobileDevices, users,
   userSettings,
   DEFAULT_LABEL_SHEET_TEMPLATE,
@@ -24,6 +24,8 @@ type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { logAudit } from "./auditLogger";
+import { isFeatureEnabled } from "./services/featureFlagService";
+import { createApprovalRequest } from "./services/approvalService";
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { inArray } from "drizzle-orm";
 import PDFDocument from "pdfkit";
@@ -797,6 +799,64 @@ router.post("/api/inventory/adjust", requireAuth, requireRole(...APPROVE_ROLES),
     const [loc] = await db.select().from(inventoryLocations)
       .where(and(eq(inventoryLocations.id, data.locationId), eq(inventoryLocations.organizationId, orgId)));
     if (!loc) return res.status(404).json({ error: "Location not found" });
+
+    // Task #2833: gate large adjustments behind an approval workflow when
+    // INVENTORY_ADJUSTMENT_APPROVAL feature flag is on.
+    // Threshold is DOLLAR-BASED: |qty| × unit_cost >= per-org VALUE_THRESHOLD
+    // (stored in organizations.inventoryAdjustmentApprovalThreshold, default $500).
+    const requiresApproval = await isFeatureEnabled(orgId, "INVENTORY_ADJUSTMENT_APPROVAL");
+    let needsApproval = false;
+    if (requiresApproval) {
+      const [orgRow] = await db.select({ thresh: organizations.inventoryAdjustmentApprovalThreshold })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      const VALUE_THRESHOLD = orgRow?.thresh ? Number(orgRow.thresh) : 500;
+      // Look up current average cost from stock levels; fall back to the material's listed unit cost.
+      const [stockRow] = await db.select({ averageCost: inventoryStockLevels.averageCost })
+        .from(inventoryStockLevels)
+        .where(and(
+          eq(inventoryStockLevels.organizationId, orgId),
+          eq(inventoryStockLevels.materialId, data.materialId),
+          eq(inventoryStockLevels.locationId, data.locationId),
+        ))
+        .limit(1);
+      const unitCostNum = stockRow?.averageCost
+        ? Number(stockRow.averageCost)
+        : mat.unitCost ? Number(mat.unitCost) : 0;
+      const adjustmentValue = Math.abs(data.quantity) * unitCostNum;
+      needsApproval = adjustmentValue >= VALUE_THRESHOLD;
+    }
+
+    if (needsApproval) {
+      // Persist a PENDING transaction first so the approval request entityId
+      // points to a unique, auditable record (not the materialId which is
+      // ambiguous across multiple in-flight adjustments).
+      const [pendingTxn] = await db.insert(inventoryTransactions).values({
+        organizationId: orgId,
+        type: "ADJUSTMENT",
+        materialId: data.materialId,
+        locationId: data.locationId,
+        adjustReason: data.adjustReason,
+        quantity: String(data.quantity),
+        notes: data.notes,
+        performedById: req.user!.id,
+        approvalStatus: "PENDING_APPROVAL",
+      }).returning();
+
+      const approvalNotes = `qty=${data.quantity} reason=${data.adjustReason} notes=${data.notes}`;
+      // INVENTORY_ADJUSTMENT approvals are restricted to ADMIN/MANAGER only
+      // (not SUPERINTENDENT) per task #2833 requirement.
+      const approvalRequest = await createApprovalRequest(orgId, "INVENTORY_ADJUSTMENT", pendingTxn.id, req.user!.id, approvalNotes, ["ADMIN", "MANAGER"]);
+
+      // Back-fill the approvalRequestId on the pending transaction.
+      await db.update(inventoryTransactions)
+        .set({ approvalRequestId: approvalRequest.id })
+        .where(eq(inventoryTransactions.id, pendingTxn.id));
+
+      await logAudit({ userId: req.user!.id, action: "CREATE", entityType: "inventoryTransaction", entityId: pendingTxn.id, newValue: JSON.stringify({ type: "ADJUSTMENT_PENDING_APPROVAL", qty: data.quantity, reason: data.adjustReason }) }, req);
+      return res.status(202).json({ status: "pending_approval", transactionId: pendingTxn.id, approvalRequestId: approvalRequest.id, message: "Adjustment queued for approval" });
+    }
 
     const txn = await db.transaction(async (tx) => {
       await adjustStock(tx, orgId, data.materialId, data.locationId, data.quantity);

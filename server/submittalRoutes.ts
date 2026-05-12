@@ -407,7 +407,8 @@
  *     responses:
  *       200: { description: Submittal resubmitted }
  */
-import {logError, logWarn } from "./utils/logger";
+import {logError, logWarn, logInfo } from "./utils/logger";
+import { startWorkflow, delegateEntityTransition } from "./services/workflowEngine";
 import { safeJsonParse } from "./responseHelper";
 import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
@@ -679,6 +680,10 @@ router.post("/submittals", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "AD
       userId: user.id,
       userName: `${user.firstName} ${user.lastName}`,
       action: "Submittal Created",
+    });
+
+    void startWorkflow(organizationId, "SUBMITTAL", newSubmittal.id, user.id).catch((wfErr) => {
+      logInfo("No workflow template for SUBMITTAL or workflow start failed", { submittalId: newSubmittal.id, error: String(wfErr) });
     });
 
     res.status(201).json(newSubmittal);
@@ -2160,6 +2165,43 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
       return res.status(403).json({ error: "Only the assigned reviewer or an admin/manager can stamp this review" });
     }
 
+    // Governed actions require a workflow approval gate to be cleared BEFORE the
+    // stamp is committed. REVISE_AND_RESUBMIT and REJECTED are the only stamp
+    // outcomes that force re-work, so they go through the gate synchronously.
+    // APPROVED / APPROVED_AS_NOTED advance the chain without a mandatory hold.
+    const GOVERNED_ACTIONS = ["REVISE_AND_RESUBMIT", "REJECTED"] as const;
+    let wfAlreadyTransitioned = false;
+    if (userOrgId && (GOVERNED_ACTIONS as readonly string[]).includes(action)) {
+      const wfGate = await delegateEntityTransition(
+        userOrgId,
+        "SUBMITTAL",
+        id,
+        user.id,
+        user.role,
+        action,
+        comments ?? undefined,
+      ).catch((wfErr) => {
+        logError("Submittal workflow gate check failed before stamp", { submittalId: id, action, error: String(wfErr) });
+        // Fail-closed: an infrastructure error must not silently bypass the gate.
+        return { delegated: true, success: false, needsMoreApprovals: false, error: "Workflow approval service error. Please retry." };
+      });
+
+      if (wfGate.delegated && wfGate.needsMoreApprovals) {
+        return res.status(202).json({
+          error: wfGate.error ?? "Additional workflow approvals are required before this stamp can be committed.",
+          needsMoreApprovals: true,
+        });
+      }
+      if (wfGate.delegated && !wfGate.success && !wfGate.needsMoreApprovals) {
+        return res.status(403).json({
+          error: wfGate.error ?? `Workflow approval gate prevents the '${action}' stamp action.`,
+        });
+      }
+      // delegated && success: the workflow instance was already transitioned by
+      // the gate call above — skip the redundant post-stamp call for this action.
+      wfAlreadyTransitioned = wfGate.delegated === true && wfGate.success === true;
+    }
+
     const [updatedReview] = await db
       .update(submittalReviews)
       .set({
@@ -2180,6 +2222,24 @@ router.post("/submittals/:id/reviews/:reviewId/stamp", requireAuth, async (req: 
     });
 
     await advanceChain(id, user.id, userOrgId);
+
+    // For non-governed actions (APPROVED / APPROVED_AS_NOTED), advance the
+    // workflow instance asynchronously after the stamp is committed.
+    // For governed actions that cleared the gate above, the instance was already
+    // transitioned during the gate check — skip the redundant call.
+    if (userOrgId && !wfAlreadyTransitioned) {
+      delegateEntityTransition(
+        userOrgId,
+        "SUBMITTAL",
+        id,
+        user.id,
+        user.role,
+        action,
+        comments ?? undefined,
+      ).catch((wfErr) => {
+        logError("Submittal workflow transition failed after stamp", { submittalId: id, action, error: String(wfErr) });
+      });
+    }
 
     res.json(updatedReview);
   } catch (error) {

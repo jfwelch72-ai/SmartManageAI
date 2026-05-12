@@ -32,6 +32,7 @@ export const organizations = pgTable("organizations", {
   matchTolerancePct: decimal("match_tolerance_pct", { precision: 5, scale: 2 }).default("5"),
   isActive: boolean("is_active").notNull().default(true),
   hiringAutoTasksEnabled: boolean("hiring_auto_tasks_enabled").notNull().default(false),
+  inventoryAdjustmentApprovalThreshold: decimal("inventory_adjustment_approval_threshold", { precision: 12, scale: 2 }).notNull().default("500"),
   annualRevenueTarget: decimal("annual_revenue_target", { precision: 15, scale: 2 }),
   defaultOverheadPercent: decimal("default_overhead_percent", { precision: 8, scale: 4 }).default("15"),
   overheadWarningThreshold: decimal("overhead_warning_threshold", { precision: 8, scale: 4 }),

@@ -925,6 +925,9 @@ const _changeOrders = pgTable("change_orders", {
   voidedAt: timestamp("voided_at"),
   voidedById: varchar("voided_by_id").references(() => users.id, { onDelete: "set null" }),
   voidReason: text("void_reason"),
+  requiredResponseDate: timestamp("required_response_date"),
+  lastOverdueNotifiedAt: timestamp("last_overdue_notified_at"),
+  overdueReminderCount: integer("overdue_reminder_count").notNull().default(0),
   // Standardized Scope of Work fields (matches estimating sheets for production rate tracking)
   workTypeId: varchar("work_type_id"),
   workTypeCode: text("work_type_code"),

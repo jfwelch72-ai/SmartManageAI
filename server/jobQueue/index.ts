@@ -79,6 +79,20 @@ interface InternalJobPayload<TPayload> {
   idempotencyKey: string;
 }
 
+export type OnJobFailedCallback = (job: { id: string; retryCount: number; data: unknown }) => void;
+const failureHooks = new Map<JobName, OnJobFailedCallback[]>();
+
+/**
+ * Register a callback that fires when a named job exhausts all of its retries
+ * (i.e. when the attempt count reaches the retry limit). Fire-and-forget from
+ * the worker's perspective — failures inside the callback are swallowed.
+ */
+export function onJobFailed(name: JobName, callback: OnJobFailedCallback): void {
+  const existing = failureHooks.get(name) ?? [];
+  existing.push(callback);
+  failureHooks.set(name, existing);
+}
+
 const handlers = new Map<JobName, { handler: JobHandler<unknown>; perTenantConcurrency: number }>();
 let boss: PgBoss | null = null;
 let started = false;
@@ -382,6 +396,48 @@ async function runJobWithContext(
       progress: 0,
       message: error.message,
     });
+    // Fire registered onJobFailed hooks when the job has exhausted its retry budget.
+    // pg-boss sets retry_count = retryLimit - 1 on the last attempt — when they match,
+    // no more retries will occur and this is a permanent failure.
+    const retryCount = (job as unknown as { retry_count?: number; retrycount?: number }).retry_count
+      ?? (job as unknown as { retrycount?: number }).retrycount
+      ?? 0;
+    const retryLimit = (job as unknown as { retry_limit?: number; retrylimit?: number }).retry_limit
+      ?? (job as unknown as { retrylimit?: number }).retrylimit
+      ?? 5;
+    if (retryCount >= retryLimit - 1) {
+      const hooks = failureHooks.get(name) ?? [];
+      for (const hook of hooks) {
+        try {
+          hook({ id: job.id, retryCount, data: job.data });
+        } catch (hookErr) {
+          logError(`onJobFailed hook threw for ${name}`, { jobId: job.id }, hookErr instanceof Error ? hookErr : new Error(String(hookErr)));
+        }
+      }
+      // Send an in-app notification to the affected user so failures surface in the UI.
+      const jobData = (job.data as unknown as Record<string, unknown> | null) ?? {};
+      const notifUserId = jobData.userId as string | undefined;
+      const notifOrgId = (jobData.orgId ?? jobData.organizationId) as string | undefined;
+      if (notifUserId && notifOrgId) {
+        void (async () => {
+          try {
+            const { insertNotification } = await import("../services/notificationService");
+            const errMsg = err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200);
+            await insertNotification({
+              userId: notifUserId,
+              organizationId: notifOrgId,
+              type: "GENERAL",
+              title: "Background Job Failed",
+              message: `Your "${name}" job failed permanently after ${retryCount + 1} attempt(s). Error: ${errMsg}. Please retry or contact support if the issue persists.`,
+              relatedEntityType: "system",
+              relatedEntityId: job.id,
+            });
+          } catch (_notifErr) {
+            logWarn(`Could not send failure notification for job ${job.id}`, { name });
+          }
+        })();
+      }
+    }
     throw err;
   } finally {
     const v = tenantInFlight.get(key) ?? 1;
