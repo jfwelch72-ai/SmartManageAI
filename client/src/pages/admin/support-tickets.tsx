@@ -8,6 +8,8 @@ import {
   Clock,
   Inbox,
   Search,
+  ShieldAlert,
+  ShieldCheck,
   TicketCheck,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -295,6 +297,92 @@ function TicketDetailSheet({
   );
 }
 
+interface TicketMetrics {
+  windowDays: number;
+  total: number;
+  open: number;
+  resolved: number;
+  firstResponseBreached: number;
+  resolutionBreached: number;
+  adherence?: number;
+}
+
+function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefined; isLoading: boolean }) {
+  const breachedCount = (metrics?.firstResponseBreached ?? 0) + (metrics?.resolutionBreached ?? 0);
+  const adherencePct = metrics?.adherence !== undefined ? Math.round(metrics.adherence * 100) : null;
+
+  const cards = [
+    {
+      label: "Total (7d)",
+      value: metrics?.total ?? 0,
+      icon: <TicketCheck className="h-5 w-5 text-muted-foreground" />,
+      className: "",
+      testId: "metric-total",
+    },
+    {
+      label: "Open",
+      value: metrics?.open ?? 0,
+      icon: <Clock className="h-5 w-5 text-blue-500" />,
+      className: "",
+      testId: "metric-open",
+    },
+    {
+      label: "Resolved",
+      value: metrics?.resolved ?? 0,
+      icon: <CheckCircle2 className="h-5 w-5 text-green-500" />,
+      className: "",
+      testId: "metric-resolved",
+    },
+    {
+      label: "SLA Adherence",
+      value: adherencePct !== null ? `${adherencePct}%` : "—",
+      icon: <ShieldCheck className="h-5 w-5 text-indigo-500" />,
+      className: "",
+      testId: "metric-adherence",
+    },
+    {
+      label: "SLA Breached",
+      value: breachedCount,
+      icon: <ShieldAlert className={`h-5 w-5 ${breachedCount > 0 ? "text-destructive" : "text-muted-foreground"}`} />,
+      className: breachedCount > 0 ? "border-destructive/50 bg-destructive/5" : "",
+      testId: "metric-breached",
+    },
+  ] as const;
+
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      {cards.map((card) => (
+        <Card key={card.label} className={card.className} data-testid={card.testId}>
+          <CardContent className="p-4">
+            {isLoading ? (
+              <Skeleton className="h-12 w-full" />
+            ) : (
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
+                    {card.label}
+                  </span>
+                  {card.icon}
+                </div>
+                <span
+                  className={`text-2xl font-bold leading-none ${
+                    card.testId === "metric-breached" && breachedCount > 0
+                      ? "text-destructive"
+                      : ""
+                  }`}
+                  data-testid={`${card.testId}-value`}
+                >
+                  {card.value}
+                </span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 export default function AdminSupportTicketsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -307,6 +395,15 @@ export default function AdminSupportTicketsPage() {
   if (priorityFilter !== "all") queryParams.set("priority", priorityFilter);
   queryParams.set("limit", "200");
   const queryString = queryParams.toString();
+
+  const { data: metricsData, isLoading: metricsLoading } = useQuery<TicketMetrics>({
+    queryKey: ["/api/support/tickets/metrics"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/support/tickets/metrics");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
 
   const { data, isLoading } = useQuery<{ tickets: SupportTicket[] }>({
     queryKey: ["/api/support/tickets", statusFilter, priorityFilter, "admin-200"],
@@ -365,6 +462,8 @@ export default function AdminSupportTicketsPage() {
             <p className="text-muted-foreground text-sm">All submitted support tickets across every organization</p>
           </div>
         </div>
+
+        <MetricCards metrics={metricsData} isLoading={metricsLoading} />
 
         {breachedCount > 0 && (
           <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="alert-sla-breached">
