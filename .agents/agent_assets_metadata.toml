@@ -24,3 +24,9 @@ id = "9Wcap-3NawQOpkGJ_EHYH"
 uri = "file://test-results/takeoff-tile-renderer-rend-8ce48-et-1-the-same-way-every-run-chromium/test-failed-1.png"
 type = "image"
 title = "Bucket 1 failure capture"
+
+[[outputs]]
+id = "aErNxUXAx8BE3phIiRi6G"
+uri = "file://.local/tasks/smartmanageai-business-flow.md"
+type = "text"
+title = "SmartManageAI Business Flow"
