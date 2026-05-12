@@ -236,6 +236,7 @@ router.get(
   async (req: AuthRequest, res, next) => {
     try {
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
+      const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
       const limit = Math.min(Number(req.query.limit) || 50, 200);
       const orgId = req.user?.organizationId || null;
       const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
@@ -254,6 +255,9 @@ router.get(
       }
       if (status) {
         conditions.push(eq(supportTickets.status, status as SupportTicket["status"]));
+      }
+      if (priority) {
+        conditions.push(eq(supportTickets.priority, priority as SupportTicket["priority"]));
       }
 
       const rows = await db

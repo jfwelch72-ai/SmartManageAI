@@ -199,6 +199,7 @@ const PortfolioPdfHealth = lazy(() => import("@/pages/PortfolioPdfHealth"));
 const JobMetricsHealth = lazy(() => import("@/pages/JobMetricsHealth"));
 const AdminOneShotJobs = lazy(() => import("@/pages/AdminOneShotJobs"));
 const JobQueueAdminPage = lazy(() => import("@/pages/admin/job-queue"));
+const AdminSupportTicketsPage = lazy(() => import("@/pages/admin/support-tickets"));
 const JobMetricsDashboard = lazy(() => import("@/pages/JobMetricsDashboard"));
 // Task #1962 — Super Admin DOT pay-item refresh history + manual trigger.
 const DotPayItemsRefreshAdminPage = lazy(
@@ -652,6 +653,7 @@ function Router() {
       <Route path="/admin/job-metrics" component={() => <ProtectedRoute component={JobMetricsHealth} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/one-shot-jobs" component={() => <ProtectedRoute component={AdminOneShotJobs} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/job-queue" component={() => <ProtectedRoute component={JobQueueAdminPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/support-tickets" component={() => <ProtectedRoute component={AdminSupportTicketsPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/jobs/metrics" component={() => <ProtectedRoute component={JobMetricsDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       {/* Task #1962 — DOT pay-item refresh history + Run-now (Super Admin). */}
       <Route path="/admin/jobs/dot-pay-items-refresh" component={() => <ProtectedRoute component={DotPayItemsRefreshAdminPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
