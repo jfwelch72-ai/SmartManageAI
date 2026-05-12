@@ -297,7 +297,7 @@ export default function CertifiedPayrollHistoryPage() {
   };
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
+    <div className="container max-w-full mx-auto p-6 space-y-6">
       <title>Certified Payroll History | SmartManageAI</title>
       <meta
         name="description"
