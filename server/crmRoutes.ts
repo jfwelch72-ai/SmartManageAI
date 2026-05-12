@@ -2881,8 +2881,16 @@ router.post("/api/crm/opportunities/:id/activities", requireAuth, requireRole(..
     const [opp] = await db.select().from(crmOpportunities).where(and(...oppConditions)).limit(1);
     if (!opp) return res.status(404).json({ error: "Opportunity not found" });
 
+    const body = { ...req.body };
+    if (body.scheduledAt && typeof body.scheduledAt === "string") {
+      body.scheduledAt = new Date(body.scheduledAt);
+    }
+    if (body.completedAt && typeof body.completedAt === "string") {
+      body.completedAt = new Date(body.completedAt);
+    }
+
     const parsed = insertCrmOpportunityActivitySchema.safeParse({
-      ...req.body,
+      ...body,
       opportunityId: req.params.id,
       createdById: req.user!.id,
     });
