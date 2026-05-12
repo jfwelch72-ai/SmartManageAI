@@ -92,10 +92,10 @@ export function AIInsights({
 
   // Determine which endpoint to use
   const endpoint = projectId
-    ? `/api/ai-notes/insights/project/${projectId}?limit=${limit}`
+    ? `/api/insights/project/${projectId}?limit=${limit}`
     : roleFiltered
-    ? `/api/ai-notes/insights/role?limit=${limit}`
-    : `/api/ai-notes/insights?limit=${limit}`;
+    ? `/api/insights/role?limit=${limit}`
+    : `/api/insights?limit=${limit}`;
 
   const { data, isLoading, error } = useQuery<{ insights: AIInsight[] }>({
     queryKey: ["ai-insights", projectId, roleFiltered, limit],
@@ -113,7 +113,7 @@ export function AIInsights({
   // Mutation for triggering manual AI analysis
   const triggerAnalysisMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/ai-notes/analyze", { hoursBack: 24 });
+      return await apiRequest("POST", "/api/analyze", { hoursBack: 24 });
     },
     onSuccess: (data: any) => {
       toast({
