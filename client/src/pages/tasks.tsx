@@ -698,7 +698,7 @@ export default function Tasks() {
           }}
         />
       ) : tasksView === "calendar" ? (
-        <EntityCalendarView<TaskItem>
+        <EntityCalendarView
           items={filteredTasks
             .filter((t) => !!t.dueDate)
             .map<CalendarEntityItem<TaskItem>>((t) => ({
