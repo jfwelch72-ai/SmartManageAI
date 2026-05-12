@@ -122,13 +122,17 @@ const STATUS_LABELS: Record<string, string> = {
   ARCHIVED: "Archived",
 };
 
+const PAYROLL_TABS = ["overview", "time-entries", "workers", "pay-runs", "deductions", "archived", "certified-payroll"] as const;
+
 export default function PayrollManagementPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const searchString = useSearch();
   const urlTab = useMemo(() => new URLSearchParams(searchString).get("tab"), [searchString]);
-  const [activeTab, setActiveTab] = useState(urlTab || "overview");
+  const [activeTab, setActiveTab] = useState(
+    (PAYROLL_TABS as readonly string[]).includes(urlTab ?? "") ? urlTab! : "overview"
+  );
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedPayRun, setSelectedPayRun] = useState<string | null>(null);
@@ -144,7 +148,7 @@ export default function PayrollManagementPage() {
   });
 
   useEffect(() => {
-    if (urlTab && ["overview", "time-entries", "workers", "pay-runs", "deductions", "archived", "certified-payroll"].includes(urlTab)) {
+    if (urlTab && (PAYROLL_TABS as readonly string[]).includes(urlTab)) {
       setActiveTab(urlTab);
     }
   }, [urlTab]);

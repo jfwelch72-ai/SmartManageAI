@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import SafetyTrainingPage from "./safety-training";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   Card,
@@ -1120,7 +1120,22 @@ function OshaLogTab() {
   );
 }
 
+const SAFETY_TABS = ["dashboard", "observations", "osha", "modules", "training"] as const;
+type SafetyTab = typeof SAFETY_TABS[number];
+
 export default function SafetyHubPage() {
+  const searchString = useSearch();
+  const urlTab = useMemo(() => new URLSearchParams(searchString).get("tab"), [searchString]);
+  const [activeTab, setActiveTab] = useState<SafetyTab>(
+    (SAFETY_TABS as readonly string[]).includes(urlTab ?? "") ? (urlTab as SafetyTab) : "dashboard"
+  );
+
+  useEffect(() => {
+    if (urlTab && (SAFETY_TABS as readonly string[]).includes(urlTab)) {
+      setActiveTab(urlTab as SafetyTab);
+    }
+  }, [urlTab]);
+
   return (
     <div className="container max-w-full mx-auto p-4 md:p-6 space-y-4">
       <div className="flex items-center gap-3">
@@ -1136,7 +1151,7 @@ export default function SafetyHubPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="dashboard" className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as SafetyTab)} className="space-y-4">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="dashboard" data-testid="tab-dashboard">
             Dashboard
