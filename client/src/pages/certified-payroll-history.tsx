@@ -1,8 +1,24 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Archive, ArchiveRestore, ClipboardCheck, Download, FileSpreadsheet, FileText, History, Loader2, Trash2 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Archive,
+  ArchiveRestore,
+  ClipboardCheck,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  History,
+  Loader2,
+  Trash2,
+} from "lucide-react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -10,8 +26,21 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import {
   Dialog,
   DialogContent,
@@ -80,14 +109,22 @@ function formatBytes(bytes: number): string {
 // Task #1116: weekly digest emails deep-link here with `?startDate=...&endDate=...`
 // (and optionally `projectId` / `variant`) so payroll admins land on the
 // pre-filtered view that matches the digest they just opened.
-function readInitialFilters(): { projectId: string; variant: string; startDate: string; endDate: string } {
-  if (typeof window === "undefined") return { projectId: ALL, variant: ALL, startDate: "", endDate: "" };
+function readInitialFilters(): {
+  projectId: string;
+  variant: string;
+  startDate: string;
+  endDate: string;
+} {
+  if (typeof window === "undefined")
+    return { projectId: ALL, variant: ALL, startDate: "", endDate: "" };
   const params = new URLSearchParams(window.location.search);
   const isIsoDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
   return {
     projectId: params.get("projectId") || ALL,
     variant: params.get("variant") || ALL,
-    startDate: isIsoDate(params.get("startDate")) ? params.get("startDate")! : "",
+    startDate: isIsoDate(params.get("startDate"))
+      ? params.get("startDate")!
+      : "",
     endDate: isIsoDate(params.get("endDate")) ? params.get("endDate")! : "",
   };
 }
@@ -101,11 +138,16 @@ export default function CertifiedPayrollHistoryPage() {
   const [endDate, setEndDate] = useState<string>(initial.endDate);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [ackExportFormat, setAckExportFormat] = useState<"csv" | "json" | "pdf" | null>(null);
+  const [ackExportFormat, setAckExportFormat] = useState<
+    "csv" | "json" | "pdf" | null
+  >(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [archiveDialog, setArchiveDialog] = useState<CertifiedPayrollReportRow | null>(null);
-  const [deleteDialog, setDeleteDialog] = useState<CertifiedPayrollReportRow | null>(null);
-  const [historyDialog, setHistoryDialog] = useState<CertifiedPayrollReportRow | null>(null);
+  const [archiveDialog, setArchiveDialog] =
+    useState<CertifiedPayrollReportRow | null>(null);
+  const [deleteDialog, setDeleteDialog] =
+    useState<CertifiedPayrollReportRow | null>(null);
+  const [historyDialog, setHistoryDialog] =
+    useState<CertifiedPayrollReportRow | null>(null);
   const [reasonText, setReasonText] = useState("");
 
   // Task #1179: load the per-report archive/restore/delete timeline only when the
@@ -114,12 +156,17 @@ export default function CertifiedPayrollHistoryPage() {
     reportExists: boolean;
     entries: AuditHistoryEntry[];
   }>({
-    queryKey: ["/api/payroll/certified-reports", historyDialog?.id, "audit-history"],
+    queryKey: [
+      "/api/payroll/certified-reports",
+      historyDialog?.id,
+      "audit-history",
+    ],
     enabled: !!historyDialog,
   });
 
   const { permissionRole } = useAuth();
-  const isAdmin = permissionRole === "ADMIN" || permissionRole === "SUPER_ADMIN";
+  const isAdmin =
+    permissionRole === "ADMIN" || permissionRole === "SUPER_ADMIN";
   // Task #1515: defense-in-depth gate for the org-wide acknowledgement export
   // button. The route itself is already guarded by `canManagePayroll`, but
   // checking the same flag locally lets us hide the control if the
@@ -163,14 +210,18 @@ export default function CertifiedPayrollHistoryPage() {
   const handleDownload = async (id: string) => {
     setDownloadingId(id);
     try {
-      const res = await apiRequest("GET", `/api/payroll/certified-reports/${id}/download-url`);
+      const res = await apiRequest(
+        "GET",
+        `/api/payroll/certified-reports/${id}/download-url`,
+      );
       const body = (await res.json()) as { url: string };
       if (!body?.url) throw new Error("No download URL returned");
       window.open(body.url, "_blank", "noopener,noreferrer");
     } catch (err) {
       toast({
         title: "Download failed",
-        description: err instanceof Error ? err.message : "Could not get download link",
+        description:
+          err instanceof Error ? err.message : "Could not get download link",
         variant: "destructive",
       });
     } finally {
@@ -182,9 +233,12 @@ export default function CertifiedPayrollHistoryPage() {
     setExporting(true);
     try {
       const params = new URLSearchParams({ ...filterParams, format: "csv" });
-      const res = await fetch(`/api/payroll/certified-reports?${params.toString()}`, {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/payroll/certified-reports?${params.toString()}`,
+        {
+          credentials: "include",
+        },
+      );
       if (!res.ok) throw new Error(`Export failed (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -198,7 +252,8 @@ export default function CertifiedPayrollHistoryPage() {
     } catch (err) {
       toast({
         title: "Export failed",
-        description: err instanceof Error ? err.message : "Could not export CSV",
+        description:
+          err instanceof Error ? err.message : "Could not export CSV",
         variant: "destructive",
       });
     } finally {
@@ -226,7 +281,10 @@ export default function CertifiedPayrollHistoryPage() {
     } catch (err) {
       toast({
         title: "Export failed",
-        description: err instanceof Error ? err.message : "Could not export acknowledgement history",
+        description:
+          err instanceof Error
+            ? err.message
+            : "Could not export acknowledgement history",
         variant: "destructive",
       });
     } finally {
@@ -236,18 +294,23 @@ export default function CertifiedPayrollHistoryPage() {
 
   const archiveMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      await apiRequest("POST", `/api/payroll/certified-reports/${id}/archive`, { reason });
+      await apiRequest("POST", `/api/payroll/certified-reports/${id}/archive`, {
+        reason,
+      });
     },
     onSuccess: () => {
       toast({ title: "Report archived" });
       setArchiveDialog(null);
       setReasonText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/payroll/certified-reports"],
+      });
     },
     onError: (err: unknown) => {
       toast({
         title: "Archive failed",
-        description: err instanceof Error ? err.message : "Could not archive report",
+        description:
+          err instanceof Error ? err.message : "Could not archive report",
         variant: "destructive",
       });
     },
@@ -255,16 +318,22 @@ export default function CertifiedPayrollHistoryPage() {
 
   const unarchiveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("POST", `/api/payroll/certified-reports/${id}/unarchive`);
+      await apiRequest(
+        "POST",
+        `/api/payroll/certified-reports/${id}/unarchive`,
+      );
     },
     onSuccess: () => {
       toast({ title: "Report restored" });
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/payroll/certified-reports"],
+      });
     },
     onError: (err: unknown) => {
       toast({
         title: "Restore failed",
-        description: err instanceof Error ? err.message : "Could not restore report",
+        description:
+          err instanceof Error ? err.message : "Could not restore report",
         variant: "destructive",
       });
     },
@@ -272,18 +341,26 @@ export default function CertifiedPayrollHistoryPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
-      await apiRequest("DELETE", `/api/payroll/certified-reports/${id}`, { reason });
+      await apiRequest("DELETE", `/api/payroll/certified-reports/${id}`, {
+        reason,
+      });
     },
     onSuccess: () => {
-      toast({ title: "Report deleted", description: "PDF removed from object storage." });
+      toast({
+        title: "Report deleted",
+        description: "PDF removed from object storage.",
+      });
       setDeleteDialog(null);
       setReasonText("");
-      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/payroll/certified-reports"],
+      });
     },
     onError: (err: unknown) => {
       toast({
         title: "Delete failed",
-        description: err instanceof Error ? err.message : "Could not delete report",
+        description:
+          err instanceof Error ? err.message : "Could not delete report",
         variant: "destructive",
       });
     },
@@ -306,12 +383,16 @@ export default function CertifiedPayrollHistoryPage() {
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-certified-history">
+          <h1
+            className="text-3xl font-bold tracking-tight"
+            data-testid="heading-certified-history"
+          >
             Certified Payroll History
           </h1>
           <p className="text-muted-foreground">
-            Audit every certified payroll PDF generated across all projects in your organization.
-            State and federal compliance teams frequently request these for prevailing-wage audits.
+            Audit every certified payroll PDF generated across all projects in
+            your organization. State and federal compliance teams frequently
+            request these for prevailing-wage audits.
           </p>
         </div>
         {canManagePayroll && (
@@ -357,14 +438,19 @@ export default function CertifiedPayrollHistoryPage() {
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
-          <CardDescription>Narrow the archive by project, form variant, or date range.</CardDescription>
+          <CardDescription>
+            Narrow the archive by project, form variant, or date range.
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="space-y-2">
               <Label htmlFor="filter-project">Project</Label>
               <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger id="filter-project" data-testid="select-filter-project">
+                <SelectTrigger
+                  id="filter-project"
+                  data-testid="select-filter-project"
+                >
                   <SelectValue placeholder="All projects" />
                 </SelectTrigger>
                 <SelectContent>
@@ -381,7 +467,10 @@ export default function CertifiedPayrollHistoryPage() {
             <div className="space-y-2">
               <Label htmlFor="filter-variant">Form variant</Label>
               <Select value={variant} onValueChange={setVariant}>
-                <SelectTrigger id="filter-variant" data-testid="select-filter-variant">
+                <SelectTrigger
+                  id="filter-variant"
+                  data-testid="select-filter-variant"
+                >
                   <SelectValue placeholder="All variants" />
                 </SelectTrigger>
                 <SelectContent>
@@ -426,7 +515,10 @@ export default function CertifiedPayrollHistoryPage() {
                     onCheckedChange={setShowArchived}
                     data-testid="switch-show-archived"
                   />
-                  <Label htmlFor="toggle-show-archived" className="text-sm whitespace-nowrap">
+                  <Label
+                    htmlFor="toggle-show-archived"
+                    className="text-sm whitespace-nowrap"
+                  >
                     Show archived
                   </Label>
                 </div>
@@ -467,8 +559,8 @@ export default function CertifiedPayrollHistoryPage() {
             )}
           </CardTitle>
           <CardDescription>
-            Signed download links are valid for 5 minutes. Each report is an immutable PDF
-            generated at the timestamp shown.
+            Signed download links are valid for 5 minutes. Each report is an
+            immutable PDF generated at the timestamp shown.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -503,7 +595,9 @@ export default function CertifiedPayrollHistoryPage() {
                 <TableBody>
                   {reports.map((r) => {
                     const generatedBy =
-                      [r.generatedByFirstName, r.generatedByLastName].filter(Boolean).join(" ") ||
+                      [r.generatedByFirstName, r.generatedByLastName]
+                        .filter(Boolean)
+                        .join(" ") ||
                       r.generatedByEmail ||
                       "Unknown";
                     return (
@@ -514,7 +608,10 @@ export default function CertifiedPayrollHistoryPage() {
                       >
                         <TableCell data-testid={`text-generated-at-${r.id}`}>
                           <div className="flex items-center gap-2">
-                            {format(new Date(r.generatedAt), "MMM d, yyyy h:mm a")}
+                            {format(
+                              new Date(r.generatedAt),
+                              "MMM d, yyyy h:mm a",
+                            )}
                             {r.archivedAt && (
                               <Badge
                                 variant="outline"
@@ -529,7 +626,9 @@ export default function CertifiedPayrollHistoryPage() {
                         </TableCell>
                         <TableCell data-testid={`text-project-${r.id}`}>
                           {r.projectName || (
-                            <span className="text-muted-foreground italic">All projects</span>
+                            <span className="text-muted-foreground italic">
+                              All projects
+                            </span>
                           )}
                         </TableCell>
                         <TableCell>
@@ -537,14 +636,23 @@ export default function CertifiedPayrollHistoryPage() {
                             ? `${r.payPeriodStart} – ${r.payPeriodEnd}`
                             : "—"}
                         </TableCell>
-                        <TableCell>{r.payRunNumber || r.payRunId.slice(0, 8)}</TableCell>
                         <TableCell>
-                          <Badge variant="secondary" data-testid={`badge-variant-${r.id}`}>
+                          {r.payRunNumber || r.payRunId.slice(0, 8)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant="secondary"
+                            data-testid={`badge-variant-${r.id}`}
+                          >
                             {r.variant}
                           </Badge>
                         </TableCell>
-                        <TableCell data-testid={`text-generated-by-${r.id}`}>{generatedBy}</TableCell>
-                        <TableCell className="text-right">{formatBytes(r.fileSize)}</TableCell>
+                        <TableCell data-testid={`text-generated-by-${r.id}`}>
+                          {generatedBy}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {formatBytes(r.fileSize)}
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button
@@ -637,9 +745,9 @@ export default function CertifiedPayrollHistoryPage() {
           <DialogHeader>
             <DialogTitle>Archive certified payroll report</DialogTitle>
             <DialogDescription>
-              The report will be hidden from the default list but the underlying PDF stays in
-              storage so you can still download or restore it later. The reason is recorded in
-              the audit log.
+              The report will be hidden from the default list but the underlying
+              PDF stays in storage so you can still download or restore it
+              later. The reason is recorded in the audit log.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -667,12 +775,21 @@ export default function CertifiedPayrollHistoryPage() {
             <Button
               onClick={() =>
                 archiveDialog &&
-                archiveMutation.mutate({ id: archiveDialog.id, reason: reasonText.trim() })
+                archiveMutation.mutate({
+                  id: archiveDialog.id,
+                  reason: reasonText.trim(),
+                })
               }
-              disabled={reasonText.trim().length < 3 || archiveMutation.isPending}
+              disabled={
+                reasonText.trim().length < 3 || archiveMutation.isPending
+              }
               data-testid="button-archive-confirm"
             >
-              {archiveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+              {archiveMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Archive className="h-4 w-4" />
+              )}
               <span className="ml-2">Archive</span>
             </Button>
           </DialogFooter>
@@ -690,10 +807,13 @@ export default function CertifiedPayrollHistoryPage() {
       >
         <DialogContent data-testid="dialog-delete-report">
           <DialogHeader>
-            <DialogTitle>Permanently delete certified payroll report</DialogTitle>
+            <DialogTitle>
+              Permanently delete certified payroll report
+            </DialogTitle>
             <DialogDescription>
-              This deletes the row and the PDF in object storage. It cannot be undone. The
-              report ID, pay run, and your reason are recorded in the audit log.
+              This deletes the row and the PDF in object storage. It cannot be
+              undone. The report ID, pay run, and your reason are recorded in
+              the audit log.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2 py-2">
@@ -722,12 +842,21 @@ export default function CertifiedPayrollHistoryPage() {
               variant="destructive"
               onClick={() =>
                 deleteDialog &&
-                deleteMutation.mutate({ id: deleteDialog.id, reason: reasonText.trim() })
+                deleteMutation.mutate({
+                  id: deleteDialog.id,
+                  reason: reasonText.trim(),
+                })
               }
-              disabled={reasonText.trim().length < 3 || deleteMutation.isPending}
+              disabled={
+                reasonText.trim().length < 3 || deleteMutation.isPending
+              }
               data-testid="button-delete-confirm"
             >
-              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
               <span className="ml-2">Delete permanently</span>
             </Button>
           </DialogFooter>
@@ -740,12 +869,15 @@ export default function CertifiedPayrollHistoryPage() {
           if (!open) setHistoryDialog(null);
         }}
       >
-        <DialogContent className="max-w-2xl" data-testid="dialog-report-history">
+        <DialogContent
+          className="max-w-2xl"
+          data-testid="dialog-report-history"
+        >
           <DialogHeader>
             <DialogTitle>Archive &amp; delete history</DialogTitle>
             <DialogDescription>
-              Every archive, restore, and delete action recorded against this certified payroll
-              report — newest first.
+              Every archive, restore, and delete action recorded against this
+              certified payroll report — newest first.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto">
@@ -760,12 +892,17 @@ export default function CertifiedPayrollHistoryPage() {
                 className="text-center py-8 text-muted-foreground text-sm"
                 data-testid="text-empty-report-history"
               >
-                No archive, restore, or delete actions have been recorded for this report yet.
+                No archive, restore, or delete actions have been recorded for
+                this report yet.
               </div>
             ) : (
               <ul className="space-y-3">
                 {historyData.entries.map((entry) => {
-                  const variant: "default" | "secondary" | "destructive" | "outline" =
+                  const variant:
+                    | "default"
+                    | "secondary"
+                    | "destructive"
+                    | "outline" =
                     entry.action === "DELETE"
                       ? "destructive"
                       : entry.action === "ARCHIVE"
@@ -778,21 +915,34 @@ export default function CertifiedPayrollHistoryPage() {
                       data-testid={`row-history-entry-${entry.id}`}
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <Badge variant={variant} data-testid={`badge-history-action-${entry.id}`}>
+                        <Badge
+                          variant={variant}
+                          data-testid={`badge-history-action-${entry.id}`}
+                        >
                           {entry.action}
                         </Badge>
                         <span
                           className="text-xs text-muted-foreground"
                           data-testid={`text-history-time-${entry.id}`}
                         >
-                          {format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}
+                          {format(
+                            new Date(entry.createdAt),
+                            "MMM d, yyyy h:mm a",
+                          )}
                         </span>
                       </div>
-                      <div className="text-sm" data-testid={`text-history-actor-${entry.id}`}>
+                      <div
+                        className="text-sm"
+                        data-testid={`text-history-actor-${entry.id}`}
+                      >
                         <span className="font-medium">{entry.actorName}</span>
-                        {entry.actorEmail && entry.actorEmail !== entry.actorName && (
-                          <span className="text-muted-foreground"> ({entry.actorEmail})</span>
-                        )}
+                        {entry.actorEmail &&
+                          entry.actorEmail !== entry.actorName && (
+                            <span className="text-muted-foreground">
+                              {" "}
+                              ({entry.actorEmail})
+                            </span>
+                          )}
                       </div>
                       {entry.reason && (
                         <div
