@@ -14,10 +14,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Link, useLocation } from "wouter";
 import {
   ShieldCheck, Plus, Pencil, Trash2, UserPlus, CheckCircle2, Clock, AlertCircle,
   Download, BookOpen, Users, X, MessageSquare, ClipboardList, FileWarning,
-  Calendar, Eye,
+  Calendar, Eye, ArrowLeft,
 } from "lucide-react";
 
 const CATEGORIES = [
@@ -143,6 +144,9 @@ type MainTab = "programs" | "assignments" | "toolbox-talks" | "checklists" | "os
 
 export default function SafetyTrainingPage() {
   const { user } = useAuth();
+  const [location] = useLocation();
+  const isStandalone = location.split("?")[0] === "/safety-training";
+  const showBackToHub = isStandalone && user?.role !== "FIELD_WORKER";
   const { toast } = useToast();
   const [tab, setTab] = useState<MainTab>("programs");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -225,6 +229,14 @@ export default function SafetyTrainingPage() {
 
   return (
     <div className="p-4 md:p-6 space-y-6" data-testid="safety-training-page">
+      {showBackToHub && (
+        <Link href="/safety" data-testid="link-back-to-safety-hub">
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+            <ArrowLeft className="h-4 w-4" />
+            Back to Safety Hub
+          </span>
+        </Link>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">

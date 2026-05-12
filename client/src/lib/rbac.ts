@@ -508,7 +508,9 @@ export const NavItems: Record<string, NavItem> = {
   '/executive-digest': { href: '/executive-digest', label: 'Executive Digest', testId: 'nav-executive-digest', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER" },
   '/portfolio': { href: '/portfolio', label: 'Portfolio Rollup', testId: 'nav-portfolio', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewPortfolio : role === "ADMIN" || role === "MANAGER" || role === "SUPER_ADMIN" || role === "HUSTLER" },
   '/crm': { href: '/crm', label: 'CRM', testId: 'nav-crm', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
-  '/sequences': { href: '/sequences', label: 'Sequences', testId: 'nav-sequences', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
+  // /sequences is embedded as a tab inside /crm and not in any workflow sidebar group.
+  // It is omitted from NavItems so it never appears as a standalone sidebar link.
+  // The route in App.tsx still allows direct deep-linking to /sequences.
   '/bids': { href: '/bids', label: 'Bids', testId: 'nav-bids', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
   // Task #2067 — Standalone Takeoff tool (full-page workspace).
   '/takeoff': { href: '/takeoff', label: 'Takeoff', testId: 'nav-takeoff', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
@@ -528,6 +530,10 @@ export const NavItems: Record<string, NavItem> = {
   '/payroll-management': { href: '/payroll-management', label: 'Payroll Management', testId: 'nav-payroll-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
   '/payroll/certified-history': { href: '/payroll/certified-history', label: 'Certified Payroll History', testId: 'nav-certified-payroll-history', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManagePayroll : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
   '/leave-management': { href: '/leave-management', label: 'Leave Management', testId: 'nav-leave-management', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role) },
+  // /safety-training is retained in NavItems as the primary safety entry point for FIELD_WORKER users
+  // (surfaced via FIELD_WORKER_WORKFLOW safety_section group). It is intentionally excluded from
+  // ADMIN/MANAGER/SUPERINTENDENT workflow groups because those roles use /safety (Safety Hub) which
+  // embeds SafetyTrainingPage as a tab. Do not add it to non-field-worker workflow groups.
   '/safety-training': { href: '/safety-training', label: 'Safety Training', testId: 'nav-safety-training', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
   '/safety': { href: '/safety', label: 'Safety & Compliance', testId: 'nav-safety-hub', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
   '/time-clock': { href: '/time-clock', label: 'My Time Clock', testId: 'nav-my-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role) },
@@ -573,7 +579,7 @@ export const NavigationConfig = {
   projectsMenu: [NavItems['/calendar'], NavItems['/email-assistant'], NavItems['/projects'], NavItems['/tasks'], NavItems['/messages']],
   preconstructionMenu: [NavItems['/bids'], NavItems['/bid-network'], NavItems['/historical-costs']],
   operationsMenu: [NavItems['/equipment'], NavItems['/procurement-module'], NavItems['/permits']],
-  workforceMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily'], NavItems['/crews'], NavItems['/manage-workers'], NavItems['/payroll-management'], NavItems['/payroll/certified-history'], NavItems['/safety-training'], NavItems['/leave-management']],
+  workforceMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily'], NavItems['/crews'], NavItems['/manage-workers'], NavItems['/payroll-management'], NavItems['/payroll/certified-history'], NavItems['/leave-management']],
   financialsMenu: [NavItems['/cfo-dashboard'], NavItems['/tm-billing'], NavItems['/progress-billing'], NavItems['/cost-rates'], NavItems['/production-rates'], NavItems['/subcontractor-payables'], NavItems['/overhead-costs']],
   crmMenu: [NavItems['/crm']],
   marketplaceMenu: [NavItems['/marketplace']],

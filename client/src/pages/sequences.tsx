@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Inbox, Plus, Copy, Archive, Trash2, Mail, Phone, ListChecks, MessageSquare } from "lucide-react";
+import { Inbox, Plus, Copy, Archive, Trash2, Mail, Phone, ListChecks, MessageSquare, ArrowLeft } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface SequenceRow {
@@ -40,6 +40,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function SequencesPage() {
   const { toast } = useToast();
+  const [location] = useLocation();
+  const isStandalone = location.split("?")[0] === "/sequences";
   const [filter, setFilter] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [tab, setTab] = useState<"library" | "inbox">("library");
@@ -89,6 +91,14 @@ export default function SequencesPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="page-sequences">
+      {isStandalone && (
+        <Link href="/crm" data-testid="link-back-to-crm">
+          <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors cursor-pointer">
+            <ArrowLeft className="h-4 w-4" />
+            Back to CRM
+          </span>
+        </Link>
+      )}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Sequences</h1>
