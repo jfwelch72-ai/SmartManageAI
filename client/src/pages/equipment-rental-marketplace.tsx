@@ -346,6 +346,7 @@ export default function EquipmentRentalMarketplacePage() {
   >({
     queryKey: ["/api/marketplace/equipment/my"],
     enabled: activeTab === "my-listings",
+    staleTime: 0,
   });
 
   const { data: myRequests, isLoading: isMyRequestsLoading } = useQuery<
@@ -382,6 +383,9 @@ export default function EquipmentRentalMarketplacePage() {
         queryKey: ["/api/marketplace/equipment"],
         exact: false,
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment/my"],
+      });
       toast({ title: "Listing created successfully" });
       setShowCreateDialog(false);
       resetCreateForm();
@@ -398,6 +402,9 @@ export default function EquipmentRentalMarketplacePage() {
         queryKey: ["/api/marketplace/equipment"],
         exact: false,
       });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment/my"],
+      });
       toast({ title: "Listing updated" });
       setEditingListing(null);
     },
@@ -412,6 +419,9 @@ export default function EquipmentRentalMarketplacePage() {
       queryClient.invalidateQueries({
         queryKey: ["/api/marketplace/equipment"],
         exact: false,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/marketplace/equipment/my"],
       });
       toast({ title: "Listing deleted" });
       setSelectedMyListing(null);

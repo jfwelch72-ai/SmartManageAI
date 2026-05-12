@@ -1412,6 +1412,40 @@ router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedReq
   }
 });
 
+// GET /api/marketplace/equipment/requests/my - Requester sees their own requests
+// NOTE: must be registered BEFORE /equipment/:id/requests to avoid "requests" matching :id
+router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  try {
+    const requesterOrgId = req.user!.organizationId;
+
+    const requests = await db
+      .select({
+        request: equipmentRentalRequests,
+        listing: {
+          id: equipmentListings.id,
+          name: equipmentListings.name,
+          category: equipmentListings.category,
+          dailyRate: equipmentListings.dailyRate,
+          location: equipmentListings.location,
+          organizationId: equipmentListings.organizationId,
+        },
+        ownerOrg: {
+          id: organizations.id,
+          name: organizations.name,
+        },
+      })
+      .from(equipmentRentalRequests)
+      .leftJoin(equipmentListings, eq(equipmentRentalRequests.listingId, equipmentListings.id))
+      .leftJoin(organizations, eq(equipmentListings.organizationId, organizations.id))
+      .where(eq(equipmentRentalRequests.requesterOrgId, requesterOrgId))
+      .orderBy(desc(equipmentRentalRequests.createdAt));
+
+    res.json(requests);
+  } catch (error) {
+    next(error);
+  }
+});
+
 // GET /api/marketplace/equipment/:id/requests - Owner sees requests for their listing
 router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
@@ -1439,39 +1473,6 @@ router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequ
       .from(equipmentRentalRequests)
       .leftJoin(organizations, eq(equipmentRentalRequests.requesterOrgId, organizations.id))
       .where(eq(equipmentRentalRequests.listingId, listingId))
-      .orderBy(desc(equipmentRentalRequests.createdAt));
-
-    res.json(requests);
-  } catch (error) {
-    next(error);
-  }
-});
-
-// GET /api/marketplace/equipment/requests/my - Requester sees their own requests
-router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  try {
-    const requesterOrgId = req.user!.organizationId;
-
-    const requests = await db
-      .select({
-        request: equipmentRentalRequests,
-        listing: {
-          id: equipmentListings.id,
-          name: equipmentListings.name,
-          category: equipmentListings.category,
-          dailyRate: equipmentListings.dailyRate,
-          location: equipmentListings.location,
-          organizationId: equipmentListings.organizationId,
-        },
-        ownerOrg: {
-          id: organizations.id,
-          name: organizations.name,
-        },
-      })
-      .from(equipmentRentalRequests)
-      .leftJoin(equipmentListings, eq(equipmentRentalRequests.listingId, equipmentListings.id))
-      .leftJoin(organizations, eq(equipmentListings.organizationId, organizations.id))
-      .where(eq(equipmentRentalRequests.requesterOrgId, requesterOrgId))
       .orderBy(desc(equipmentRentalRequests.createdAt));
 
     res.json(requests);
