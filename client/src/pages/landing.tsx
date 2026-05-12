@@ -371,8 +371,8 @@ const features = [
     category: "Enterprise & Security",
     items: [
       { name: "SSO / SAML 2.0", description: "Single sign-on for enterprise organizations", icon: Lock },
-      { name: "8-Role RBAC", description: "Granular permissions with custom role labels", icon: Shield },
-      { name: "Feature Permissions", description: "Per-user access control with 30+ built-in presets", icon: Settings },
+      { name: "8-Role RBAC", description: "Role-specific navigation workflows — each role sees only the sections relevant to their job", icon: Shield },
+      { name: "Feature Permissions", description: "Per-user access control with 73+ feature flags and custom role labels", icon: Settings },
       { name: "No-Code Workflows", description: "Visual pipeline editor for custom approval chains", icon: Workflow },
       { name: "Data Retention & GDPR", description: "Configurable retention policies and compliance", icon: ShieldCheck },
       { name: "PWA & Offline Sync", description: "Works offline with automatic data sync", icon: Smartphone }

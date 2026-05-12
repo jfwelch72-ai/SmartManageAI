@@ -52,18 +52,42 @@ the same way CI does:
 scripts/ci.sh
 ```
 
-## Typecheck backlog
+## Typecheck
 
-`npm run check` currently reports a backlog of pre-existing TypeScript
-errors (see Task #2477 drift notes and the follow-up cleanup task).
-Until the backlog reaches zero, the rule is:
+`npm run check` exits at **zero errors** (restored in Task #2647).
+All new code must keep it there.
 
 * **Do not add new errors.** Run `npm run check` before and after your
-  change and confirm the error count did not increase.
-* **Do not paper over errors with `// @ts-ignore` or `as any`.** Fix
-  them properly or leave them for the cleanup task.
-* When you touch a file that already has typecheck errors, prefer to
-  fix the errors in that file as part of your change.
+  change and confirm the error count is still zero.
+* **Never paper over errors with `// @ts-ignore`, `// @ts-expect-error`,
+  or `as any`.** Fix them properly.
+* When you touch a file, leave it with no more errors than you found.
+
+Run `npm run check 2>&1 | grep -c "error TS"` before and after to confirm.
+
+### JSX generic type arguments and the Replit metadata injector
+
+Replit's development environment injects `data-replit-metadata` and
+`data-component-name` attributes into JSX elements. This injection breaks
+when a JSX element uses an explicit generic type argument, e.g.
+`<MyComponent<Item> .../>`, because the injector inserts attributes
+before the `<Item>` token, producing invalid syntax.
+
+**Rule:** Never write explicit generic type arguments directly on a JSX
+element. Instead, let TypeScript infer the type from the props, or
+assign a typed alias before the JSX:
+
+```tsx
+// BAD — breaks the Replit metadata injector
+<EntityCalendarView<TaskItem> items={...} />
+
+// GOOD — TypeScript infers TaskItem from the items prop
+<EntityCalendarView items={...} />
+
+// GOOD — explicit alias if inference is not possible
+const TypedView = EntityCalendarView as typeof EntityCalendarView<TaskItem>;
+<TypedView items={...} />
+```
 
 ## Where things live
 
