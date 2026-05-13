@@ -53,6 +53,7 @@ import {
 import { EstimateSummaryCards } from "@/components/estimate/EstimateSummaryCards";
 import { MarkupCalculatorCard } from "@/components/estimate/MarkupCalculator";
 import { EstimateFactorsOverrideDrawer } from "@/components/estimate/EstimateFactorsOverrideDrawer";
+import { OrgMarkupBreakdownCard } from "@/components/estimate/OrgMarkupBreakdownCard";
 import { LineItemFormDialog } from "@/components/estimate/LineItemForm";
 import { LineItemsTable } from "@/components/estimate/LineItemsTable";
 import { AssemblyInsertDialog } from "@/components/estimate/AssemblyInsertDialog";
@@ -814,6 +815,8 @@ export default function BidEstimate() {
           overheadPercent={overheadPercent}
           profitMarginPercent={profitMarginPercent}
         />
+
+        <OrgMarkupBreakdownCard estimateId={estimate.id} showOverrideDrawer={false} />
 
         <MaterialJobTotals lineItems={estimate.lineItems} />
 

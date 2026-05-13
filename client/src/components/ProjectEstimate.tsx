@@ -13,6 +13,8 @@ import { LaborRateSelector } from "@/components/LaborRateSelector";
 import MaterialCalculator, { getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { EstimatePdfExportButton } from "@/components/EstimatePdfExportButton";
 import { EstimateExcelExportButton } from "@/components/EstimateExcelExportButton";
+import { EstimateFactorsOverrideDrawer } from "@/components/estimate/EstimateFactorsOverrideDrawer";
+import { OrgMarkupBreakdownCard } from "@/components/estimate/OrgMarkupBreakdownCard";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { shouldAutoShowMaterialCalc } from "@/lib/estimate-utils";
@@ -395,6 +397,7 @@ export default function ProjectEstimate() {
         </div>
         <div className="flex items-center gap-3">
           {getStatusBadge(estimate.status)}
+          <EstimateFactorsOverrideDrawer estimateId={estimate.id} />
           <EstimatePdfExportButton
             estimateId={estimate.id}
             disabled={estimate.lineItems.length === 0}
@@ -483,6 +486,9 @@ export default function ProjectEstimate() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Org Markup Breakdown */}
+      <OrgMarkupBreakdownCard estimateId={estimate.id} showOverrideDrawer={false} />
 
       {/* Profit Margin Calculator */}
       {estimate.status === "DRAFT" && estimate.lineItems.length > 0 && (
