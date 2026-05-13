@@ -198,7 +198,7 @@ export const queryClient = new QueryClient({
         return await res.json();
       },
       refetchInterval: false,
-      refetchOnWindowFocus: true,
+      refetchOnWindowFocus: false,
       staleTime: Infinity,
       retry: false,
     },

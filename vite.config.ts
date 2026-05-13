@@ -67,13 +67,19 @@ export default defineConfig({
             if (
               id.match(/[\\/]node_modules[\\/](react|react-dom|scheduler|react-reconciler|react-is|use-sync-external-store)[\\/]/)
             ) return "vendor-react";
-            if (id.includes("@tanstack")) return "vendor-tanstack";
-            if (id.includes("@radix-ui")) return "vendor-radix";
-            if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
-            if (id.includes("konva") || id.includes("react-konva")) return "vendor-canvas";
             if (id.includes("pdfjs-dist")) return "vendor-pdf";
+            if (id.includes("konva") || id.includes("react-konva")) return "vendor-canvas";
             if (id.includes("xlsx")) return "vendor-xlsx";
-            if (id.includes("lucide-react")) return "vendor-icons";
+            if (id.includes("recharts") || id.includes("d3-")) return "vendor-charts";
+            if (id.includes("@tanstack")) return "vendor-data";
+            if (id.includes("@radix-ui") || id.includes("lucide-react") || id.includes("cmdk") || id.includes("vaul")) return "vendor-ui";
+            if (
+              id.includes("react-hook-form") ||
+              id.includes("@hookform") ||
+              id.includes("/zod/") ||
+              id.includes("zod-")
+            ) return "vendor-forms";
+            if (id.includes("date-fns")) return "vendor-dates";
           }
         },
       },

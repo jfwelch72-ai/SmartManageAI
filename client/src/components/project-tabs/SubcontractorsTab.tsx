@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,6 +72,8 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
     retentionPercent: string | null;
     notes: string | null;
     createdAt: string;
+    totalPaid: number;
+    remainingBalance: number;
     subcontractor: {
       id: string;
       companyName: string;
@@ -83,41 +85,6 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
     queryKey: ["/api/projects", projectCode, "subcontractors"],
     enabled: !!projectCode,
   });
-
-  const { data: allPayables = [] } = useQuery<Array<{
-    paymentId: string;
-    amount: string;
-    status: string;
-    remainingBalance: string;
-    contract: {
-      id: string;
-      contractAmount: string;
-    };
-    project: {
-      code: string;
-    };
-  }>>({
-    queryKey: ["/api/subcontractor-payables"],
-    enabled: !!projectCode,
-  });
-
-  const payablesByContract = useMemo(() => {
-    const filtered = allPayables.filter(p => p.project && p.project.code === projectCode);
-    const grouped = new Map<string, { totalPaid: number; remainingBalance: number }>();
-    
-    filtered.forEach(payable => {
-      const contractId = payable.contract.id;
-      if (!grouped.has(contractId)) {
-        grouped.set(contractId, { totalPaid: 0, remainingBalance: parseFloat(payable.remainingBalance) });
-      }
-      const current = grouped.get(contractId)!;
-      if (payable.status === 'PAID') {
-        current.totalPaid += parseFloat(payable.amount);
-      }
-    });
-    
-    return grouped;
-  }, [allPayables, projectCode]);
 
   const { data: pendingQuotes } = useQuery<{
     subcontractorQuotes: PendingSubQuote[];
@@ -275,13 +242,13 @@ export default function SubcontractorsTab({ projectCode }: SubcontractorsTabProp
                             {contract.retentionPercent}% retention
                           </p>
                         )}
-                        {payablesByContract.has(contract.id) && (
+                        {(contract.totalPaid > 0 || contract.remainingBalance !== Number(contract.contractAmount)) && (
                           <div className="mt-2 text-sm">
                             <p className="text-green-600 dark:text-green-500">
-                              Paid: ${payablesByContract.get(contract.id)!.totalPaid.toLocaleString()}
+                              Paid: ${contract.totalPaid.toLocaleString()}
                             </p>
-                            <p className={`${payablesByContract.get(contract.id)!.remainingBalance > 0 ? 'text-yellow-600 dark:text-yellow-500' : 'text-muted-foreground'}`}>
-                              Balance: ${payablesByContract.get(contract.id)!.remainingBalance.toLocaleString()}
+                            <p className={`${contract.remainingBalance > 0 ? 'text-yellow-600 dark:text-yellow-500' : 'text-muted-foreground'}`}>
+                              Balance: ${contract.remainingBalance.toLocaleString()}
                             </p>
                           </div>
                         )}

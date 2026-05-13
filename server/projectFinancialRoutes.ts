@@ -1,7 +1,7 @@
 import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { projects, users, procurementItems, subcontractorContracts, tmDailySheets, tmTickets, estimates, estimateLineItems, timeEntries, insertTimeEntrySchema, insertTMDailySheetSchema, insertEstimateSchema, insertProcurementItemSchema, subcontractors, bidSubcontractorQuotes, bidMaterialQuotes } from "@shared/schema";
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql, desc, getTableColumns } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
@@ -71,34 +71,28 @@ router.get("/api/time-entries", requireAuth, async (req: AuthRequest, res, next)
       conditions.push(eq(timeEntries.projectId, projectId as string));
     }
 
-    const totalResult = await db
-      .select({ count: sql<number>`count(*)::int` })
-      .from(timeEntries)
-      .where(conditions.length > 0 ? and(...conditions) : sql`true`);
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const [totalResult, entries] = await Promise.all([
+      db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(timeEntries)
+        .where(whereClause),
+      db
+        .select({
+          entry: timeEntries,
+          userName: sql<string>`COALESCE(${users.firstName} || ' ' || ${users.lastName}, 'Unknown')`,
+        })
+        .from(timeEntries)
+        .leftJoin(users, eq(timeEntries.userId, users.id))
+        .where(whereClause)
+        .orderBy(desc(timeEntries.date))
+        .limit(limitNum)
+        .offset(offset),
+    ]);
+
     const totalCount = totalResult[0]?.count || 0;
-
-    let query = db.select().from(timeEntries);
-    if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
-    }
-
-    const entries = await query
-      .orderBy(desc(timeEntries.date))
-      .limit(limitNum)
-      .offset(offset);
-
-    const userIds = [...new Set(entries.map(e => e.userId))];
-    const userRows = userIds.length > 0
-      ? await db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
-          .from(users)
-          .where(sql`${users.id} IN (${sql.join(userIds.map(id => sql`${id}`), sql`, `)})`)
-      : [];
-    const userMap = new Map(userRows.map(u => [u.id, `${u.firstName} ${u.lastName}`]));
-
-    const enrichedEntries = entries.map(e => ({
-      ...e,
-      userName: userMap.get(e.userId) || 'Unknown',
-    }));
+    const enrichedEntries = entries.map(r => ({ ...r.entry, userName: r.userName }));
 
     res.json({
       data: enrichedEntries,
@@ -474,8 +468,9 @@ router.get("/api/projects/:code/estimates", requireAuth, async (req: AuthRequest
 
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
+    const { altPricesJson, costBreakdownJson, ...estimateListCols } = getTableColumns(estimates);
     const projectEstimates = await db
-      .select()
+      .select(estimateListCols)
       .from(estimates)
       .where(eq(estimates.projectId, project.id))
       .orderBy(desc(estimates.versionNumber));

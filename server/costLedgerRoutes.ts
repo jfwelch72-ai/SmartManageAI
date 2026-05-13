@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { projects, budgetLineItems, insertBudgetLineItemSchema, orgCostCodes, organizations, forecastAdjustments, budgetAlerts } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
@@ -54,10 +54,25 @@ router.get("/api/projects/:code/budget-lines", requireAuth, async (req: AuthRequ
     if (!project) return res.status(404).json({ error: "Project not found" });
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
-    const lines = await db.select().from(budgetLineItems)
-      .where(eq(budgetLineItems.projectId, project.id));
+    const [lines, [summary]] = await Promise.all([
+      db.select().from(budgetLineItems).where(eq(budgetLineItems.projectId, project.id)),
+      db.select({
+        totalLabor: sql<string>`COALESCE(SUM(${budgetLineItems.laborBudget}::numeric), 0)`,
+        totalMaterial: sql<string>`COALESCE(SUM(${budgetLineItems.materialBudget}::numeric), 0)`,
+        totalSubcontractor: sql<string>`COALESCE(SUM(${budgetLineItems.subcontractorBudget}::numeric), 0)`,
+        totalEquipment: sql<string>`COALESCE(SUM(${budgetLineItems.equipmentBudget}::numeric), 0)`,
+        totalOther: sql<string>`COALESCE(SUM(${budgetLineItems.otherBudget}::numeric), 0)`,
+        grandTotal: sql<string>`COALESCE(SUM(${budgetLineItems.totalBudget}::numeric), 0)`,
+      }).from(budgetLineItems).where(eq(budgetLineItems.projectId, project.id)),
+    ]);
 
-    res.json(lines);
+    res.json({
+      lines,
+      summary: summary ?? {
+        totalLabor: "0", totalMaterial: "0", totalSubcontractor: "0",
+        totalEquipment: "0", totalOther: "0", grandTotal: "0",
+      },
+    });
   } catch (error) {
     next(error);
   }

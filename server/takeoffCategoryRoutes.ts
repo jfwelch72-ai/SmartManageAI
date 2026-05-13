@@ -35,34 +35,52 @@ router.get("/api/projects/:code/subcontractors", requireAuth, async (req: AuthRe
     }
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
-    // Get contracts with subcontractor details
-    const contracts = await db
-      .select({
-        id: subcontractorContracts.id,
-        contractNumber: subcontractorContracts.contractNumber,
-        scopeOfWork: subcontractorContracts.scopeOfWork,
-        contractAmount: subcontractorContracts.contractAmount,
-        startDate: subcontractorContracts.startDate,
-        completionDate: subcontractorContracts.completionDate,
-        status: subcontractorContracts.status,
-        paymentTerms: subcontractorContracts.paymentTerms,
-        retentionPercent: subcontractorContracts.retentionPercent,
-        notes: subcontractorContracts.notes,
-        createdAt: subcontractorContracts.createdAt,
-        subcontractor: {
-          id: subcontractors.id,
-          companyName: subcontractors.companyName,
-          contactName: subcontractors.contactName,
-          email: subcontractors.email,
-          phone: subcontractors.phone,
-        },
-      })
-      .from(subcontractorContracts)
-      .leftJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
-      .where(eq(subcontractorContracts.projectId, project.id))
-      .orderBy(desc(subcontractorContracts.createdAt));
+    // Get contracts with subcontractor details and payment totals in parallel
+    const [contracts, paymentTotals] = await Promise.all([
+      db
+        .select({
+          id: subcontractorContracts.id,
+          contractNumber: subcontractorContracts.contractNumber,
+          scopeOfWork: subcontractorContracts.scopeOfWork,
+          contractAmount: subcontractorContracts.contractAmount,
+          startDate: subcontractorContracts.startDate,
+          completionDate: subcontractorContracts.completionDate,
+          status: subcontractorContracts.status,
+          paymentTerms: subcontractorContracts.paymentTerms,
+          retentionPercent: subcontractorContracts.retentionPercent,
+          notes: subcontractorContracts.notes,
+          createdAt: subcontractorContracts.createdAt,
+          subcontractor: {
+            id: subcontractors.id,
+            companyName: subcontractors.companyName,
+            contactName: subcontractors.contactName,
+            email: subcontractors.email,
+            phone: subcontractors.phone,
+          },
+        })
+        .from(subcontractorContracts)
+        .leftJoin(subcontractors, eq(subcontractorContracts.subcontractorId, subcontractors.id))
+        .where(eq(subcontractorContracts.projectId, project.id))
+        .orderBy(desc(subcontractorContracts.createdAt)),
+      db
+        .select({
+          contractId: subcontractorPayments.contractId,
+          totalPaid: sql<number>`COALESCE(SUM(CASE WHEN ${subcontractorPayments.status} = 'PAID' THEN ${subcontractorPayments.amount}::numeric ELSE 0 END), 0)`,
+        })
+        .from(subcontractorPayments)
+        .innerJoin(subcontractorContracts, eq(subcontractorPayments.contractId, subcontractorContracts.id))
+        .where(eq(subcontractorContracts.projectId, project.id))
+        .groupBy(subcontractorPayments.contractId),
+    ]);
 
-    res.json(contracts);
+    const payMap = new Map(paymentTotals.map(p => [p.contractId, Number(p.totalPaid)]));
+    const result = contracts.map(c => ({
+      ...c,
+      totalPaid: payMap.get(c.id) ?? 0,
+      remainingBalance: Number(c.contractAmount) - (payMap.get(c.id) ?? 0),
+    }));
+
+    res.json(result);
   } catch (error) {
   next(error);
   }

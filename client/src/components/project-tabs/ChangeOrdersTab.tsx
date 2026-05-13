@@ -133,7 +133,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
     },
     onSuccess: (data: { summary?: { succeeded?: number; total?: number } }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
       toast({ title: "Bulk Submit Complete", description: `${data.summary?.succeeded || 0} of ${data.summary?.total || 0} submitted successfully` });
       setSelectedIds(new Set());
     },
@@ -220,7 +220,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
         recipientEmails: submitRecipientEmails.length > 0 ? submitRecipientEmails : undefined,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "change-orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode] });
       toast({ title: "Success", description: "Change order submitted to client" });
       setShowSubmitDialog(false);
       setPendingSubmitId(null);

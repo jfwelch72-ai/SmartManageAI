@@ -474,7 +474,11 @@ export default function BudgetTab({ projectCode, projectId, userRole, projectBud
 
   const canEdit = userRole === "ADMIN" || userRole === "MANAGER";
 
-  const { data: serverLines, isLoading } = useQuery<BudgetLineItem[]>({
+  type BudgetSummary = {
+    totalLabor: string; totalMaterial: string; totalSubcontractor: string;
+    totalEquipment: string; totalOther: string; grandTotal: string;
+  };
+  const { data: serverData, isLoading } = useQuery<{ lines: BudgetLineItem[]; summary: BudgetSummary }>({
     queryKey: ["/api/projects", projectCode, "budget-lines"],
     enabled: !!projectCode,
   });
@@ -484,11 +488,11 @@ export default function BudgetTab({ projectCode, projectId, userRole, projectBud
   });
 
   useEffect(() => {
-    if (serverLines && !initialized) {
-      setLines(serverLines.map(serverLineToLocal));
+    if (serverData && !initialized) {
+      setLines(serverData.lines.map(serverLineToLocal));
       setInitialized(true);
     }
-  }, [serverLines, initialized]);
+  }, [serverData, initialized]);
 
   const saveRowMutation = useMutation({
     mutationFn: async ({ line, idx }: { line: LocalLine; idx: number }) => {
@@ -605,15 +609,28 @@ export default function BudgetTab({ projectCode, projectId, userRole, projectBud
     saveRowMutation.mutate({ line, idx });
   };
 
-  const grandTotal = lines.reduce((sum, l) => sum + lineTotal(l), 0);
-  const totals = {
-    labor: lines.reduce((s, l) => s + parseNum(l.laborBudget), 0),
-    material: lines.reduce((s, l) => s + parseNum(l.materialBudget), 0),
-    sub: lines.reduce((s, l) => s + parseNum(l.subcontractorBudget), 0),
-    equipment: lines.reduce((s, l) => s + parseNum(l.equipmentBudget), 0),
-    other: lines.reduce((s, l) => s + parseNum(l.otherBudget), 0),
-  };
   const hasDirty = lines.some(l => l.isDirty);
+  // Use SQL-aggregated totals from the server when there are no unsaved edits;
+  // fall back to local reduce during active editing for live feedback.
+  const serverSummary = serverData?.summary;
+  const grandTotal = hasDirty
+    ? lines.reduce((sum, l) => sum + lineTotal(l), 0)
+    : parseNum(serverSummary?.grandTotal ?? "0");
+  const totals = hasDirty
+    ? {
+        labor: lines.reduce((s, l) => s + parseNum(l.laborBudget), 0),
+        material: lines.reduce((s, l) => s + parseNum(l.materialBudget), 0),
+        sub: lines.reduce((s, l) => s + parseNum(l.subcontractorBudget), 0),
+        equipment: lines.reduce((s, l) => s + parseNum(l.equipmentBudget), 0),
+        other: lines.reduce((s, l) => s + parseNum(l.otherBudget), 0),
+      }
+    : {
+        labor: parseNum(serverSummary?.totalLabor ?? "0"),
+        material: parseNum(serverSummary?.totalMaterial ?? "0"),
+        sub: parseNum(serverSummary?.totalSubcontractor ?? "0"),
+        equipment: parseNum(serverSummary?.totalEquipment ?? "0"),
+        other: parseNum(serverSummary?.totalOther ?? "0"),
+      };
 
   const isSeededLine = (l: LocalLine) => l.description.includes("Seeded from estimate on");
   const seededLines = lines.filter(isSeededLine);
