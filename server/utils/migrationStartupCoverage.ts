@@ -672,4 +672,29 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     skip: "(A) CREATE TABLE auto-synthesized by reconcileSchemaDrift; numbered migration 0116 guards prod deployments (Task #2804)",
     note: "Task #2780 / #2804 — takeoff_sheet_calibration_zones table + calibration_zones_sheet_idx index.",
   },
+  // Task #2831 — Support ticket reply threads. Creates support_ticket_replies
+  // table + two indexes. reconcileSchemaDrift (category A) synthesizes the
+  // CREATE TABLE IF NOT EXISTS and indexes on fresh dev DBs.
+  "0117_support_ticket_replies.sql": {
+    skip: "(A) CREATE TABLE IF NOT EXISTS + indexes auto-synthesized by reconcileSchemaDrift on fresh dev DBs.",
+  },
+  // Task #2833 — Workflow & lifecycle gap remediation. Adds enum values to
+  // workflow_entity_type and approval_entity_type, SLA columns on
+  // workflow_stages, overdue columns on change_orders, approval columns on
+  // inventory_transactions, and a per-org adjustment threshold on organizations.
+  // The ALTER TYPE ADD VALUE calls are not replayed by reconcileSchemaDrift;
+  // however the migration file itself is idempotent (IF NOT EXISTS) and is
+  // applied by Drizzle's migration runner on every deployment, so fresh dev DBs
+  // that start from a full schema snapshot already have the values. A dedicated
+  // startup helper is deferred to the owning task.
+  "0118_workflow_lifecycle_gaps.sql": {
+    skip: "(B) ALTER TABLE ADD COLUMN IF NOT EXISTS handled by reconcileSchemaDrift; ALTER TYPE ADD VALUE IF NOT EXISTS applied by numbered migration runner on deployment (Task #2833).",
+  },
+  // Task #2843 — Composite indexes to speed up filtered time-entry and estimate
+  // queries. CREATE INDEX IF NOT EXISTS is idempotent; reconcileSchemaDrift
+  // (category A) will re-create the indexes on fresh dev DBs if they are
+  // missing. No structural schema change; no startup helper required.
+  "0119_time_entry_and_estimate_indexes.sql": {
+    skip: "(A) CREATE INDEX IF NOT EXISTS — idempotent DDL, applied by numbered migration runner; reconcileSchemaDrift re-creates missing indexes on fresh dev DBs (Task #2843).",
+  },
 };
