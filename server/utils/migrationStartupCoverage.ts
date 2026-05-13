@@ -678,17 +678,16 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0117_support_ticket_replies.sql": {
     skip: "(A) CREATE TABLE IF NOT EXISTS + indexes auto-synthesized by reconcileSchemaDrift on fresh dev DBs.",
   },
-  // Task #2833 — Workflow & lifecycle gap remediation. Adds enum values to
-  // workflow_entity_type and approval_entity_type, SLA columns on
-  // workflow_stages, overdue columns on change_orders, approval columns on
-  // inventory_transactions, and a per-org adjustment threshold on organizations.
-  // The ALTER TYPE ADD VALUE calls are not replayed by reconcileSchemaDrift;
-  // however the migration file itself is idempotent (IF NOT EXISTS) and is
-  // applied by Drizzle's migration runner on every deployment, so fresh dev DBs
-  // that start from a full schema snapshot already have the values. A dedicated
-  // startup helper is deferred to the owning task.
+  // Task #2833 / #2848 — Workflow & lifecycle gap remediation. Adds enum values
+  // to workflow_entity_type (SUBMITTAL, WARRANTY_CASE) and approval_entity_type
+  // (INVENTORY_ADJUSTMENT), plus SLA columns on workflow_stages, overdue columns
+  // on change_orders, approval columns on inventory_transactions, and a per-org
+  // adjustment threshold on organizations. The ALTER TYPE ADD VALUE calls are
+  // covered by ensureWorkflowLifecycleEnumValues; ADD COLUMN IF NOT EXISTS
+  // statements are idempotent and handled by reconcileSchemaDrift.
   "0118_workflow_lifecycle_gaps.sql": {
-    skip: "(B) ALTER TABLE ADD COLUMN IF NOT EXISTS handled by reconcileSchemaDrift; ALTER TYPE ADD VALUE IF NOT EXISTS applied by numbered migration runner on deployment (Task #2833).",
+    helper: "ensureWorkflowLifecycleEnumValues",
+    note: "ALTER TYPE ADD VALUE IF NOT EXISTS for workflow_entity_type (SUBMITTAL, WARRANTY_CASE) and approval_entity_type (INVENTORY_ADJUSTMENT); reconcileSchemaDrift handles the ADD COLUMN IF NOT EXISTS statements.",
   },
   // Task #2843 — Composite indexes to speed up filtered time-entry and estimate
   // queries. CREATE INDEX IF NOT EXISTS is idempotent; reconcileSchemaDrift

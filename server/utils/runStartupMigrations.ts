@@ -162,6 +162,7 @@ import { seedTradePackSkills } from "../services/aiEstimator/skills";
 import { ensureDemoRequestsTable } from "./ensureDemoRequestsTable";
 import { ensureDemoLeadCrmConfig } from "./ensureDemoLeadCrmConfig";
 import { ensureOauthReconnectAlertEnumValues } from "./ensureOauthReconnectAlertEnumValues";
+import { ensureWorkflowLifecycleEnumValues } from "./ensureWorkflowLifecycleEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -573,6 +574,11 @@ const migrations: MigrationStep[] = [
   // and its indexes. Mirrors migrations/0117_support_ticket_replies.sql so
   // fresh dev/staging environments converge without a manual psql step.
   { name: "support_ticket_replies", category: "CREATE_TABLE", fn: ensureSupportTicketReplies },
+  // Task #2848 / #2833 — Workflow & Lifecycle Gap Remediation: three ALTER TYPE
+  // ADD VALUE calls that reconcileSchemaDrift cannot replay (it creates enum
+  // types but never appends values to existing ones). Mirrors the enum-only
+  // portions of 0118_workflow_lifecycle_gaps.sql.
+  { name: "workflow_lifecycle_enum_values", category: "ADD_ENUM", fn: ensureWorkflowLifecycleEnumValues },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
