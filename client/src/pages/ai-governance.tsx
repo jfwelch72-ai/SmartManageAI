@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Brain, Zap, DollarSign, Activity, Loader2, ChevronLeft, ChevronRight, BarChart3, User } from "lucide-react";
+import { Brain, Zap, DollarSign, Activity, Loader2, ChevronLeft, ChevronRight, BarChart3, User, Cpu, ArrowRight, ShieldCheck } from "lucide-react";
 
 interface UsageLimitsData {
   tier: string;
@@ -51,12 +51,27 @@ interface CostBreakdownEntry {
   totalTokensOut: number;
 }
 
+interface AiModelConfigData {
+  primaryModel: { name: string; model: string; provider: string };
+  fallbackModel: { name: string; model: string; provider: string };
+  routing: {
+    takeoffEnabled: boolean;
+    generalEnabled: boolean;
+    takeoffActive: boolean;
+    generalActive: boolean;
+  };
+}
+
 const PAGE_SIZE = 20;
 
 export default function AIGovernancePage() {
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("today");
   const [page, setPage] = useState(1);
+
+  const { data: modelConfig } = useQuery<AiModelConfigData>({
+    queryKey: ["/api/feature-flags/ai-model-config"],
+  });
 
   const { data: usageData, isLoading: usageLoading } = useQuery<UsageLimitsData>({
     queryKey: ["/api/ai-governance/usage"],
@@ -155,6 +170,77 @@ export default function AIGovernancePage() {
           {tier.charAt(0).toUpperCase() + tier.slice(1)} Plan
         </Badge>
       </div>
+
+      <Card data-testid="card-ai-model-config">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Cpu className="h-4 w-4" />
+            AI Model Configuration
+          </CardTitle>
+          <CardDescription>
+            Active provider routing for all AI features in this organization
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <div className="flex-1 min-w-0 p-3 rounded-lg border bg-muted/30" data-testid="section-primary-model">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Primary Model</p>
+                <Badge
+                  variant={modelConfig?.routing.takeoffActive || modelConfig?.routing.generalActive ? "default" : "secondary"}
+                  className="text-xs"
+                  data-testid="badge-primary-model-status"
+                >
+                  {modelConfig?.routing.takeoffActive || modelConfig?.routing.generalActive ? "Active" : "Inactive"}
+                </Badge>
+              </div>
+              <p className="font-semibold" data-testid="text-primary-model-name">
+                {modelConfig?.primaryModel.name ?? "Claude (Anthropic)"}
+              </p>
+              <p className="text-xs text-muted-foreground" data-testid="text-primary-model-id">
+                {modelConfig?.primaryModel.model ?? "claude-sonnet-4-5"}
+              </p>
+            </div>
+
+            <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0 rotate-90 sm:rotate-0" />
+
+            <div className="flex-1 min-w-0 p-3 rounded-lg border bg-muted/30" data-testid="section-fallback-model">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Fallback Model</p>
+                <Badge variant="outline" className="text-xs" data-testid="badge-fallback-model-status">
+                  Auto-fallback
+                </Badge>
+              </div>
+              <p className="font-semibold" data-testid="text-fallback-model-name">
+                {modelConfig?.fallbackModel.name ?? "GPT-4o (OpenAI)"}
+              </p>
+              <p className="text-xs text-muted-foreground" data-testid="text-fallback-model-id">
+                {modelConfig?.fallbackModel.model ?? "gpt-4o"}
+              </p>
+            </div>
+
+            <div className="flex-1 min-w-0 p-3 rounded-lg border bg-muted/30" data-testid="section-routing-status">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Routing Status</p>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm" data-testid="status-takeoff-routing">
+                  <ShieldCheck className={`h-3.5 w-3.5 ${modelConfig?.routing.takeoffActive ? "text-green-500" : "text-muted-foreground"}`} />
+                  <span className="text-muted-foreground">Takeoff / Estimator</span>
+                  <Badge variant={modelConfig?.routing.takeoffActive ? "default" : "secondary"} className="text-xs ml-auto">
+                    {modelConfig?.routing.takeoffActive ? "Claude" : "GPT"}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2 text-sm" data-testid="status-general-routing">
+                  <ShieldCheck className={`h-3.5 w-3.5 ${modelConfig?.routing.generalActive ? "text-green-500" : "text-muted-foreground"}`} />
+                  <span className="text-muted-foreground">General AI</span>
+                  <Badge variant={modelConfig?.routing.generalActive ? "default" : "secondary"} className="text-xs ml-auto">
+                    {modelConfig?.routing.generalActive ? "Claude" : "GPT"}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
         {limitCards.map((card) => {

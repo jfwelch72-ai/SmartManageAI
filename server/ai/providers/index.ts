@@ -64,11 +64,14 @@ async function resolveRouting(
   orgId: string,
   flagKey: FeatureFlagKey = "AI_PROVIDER_TAKEOFF",
 ): Promise<ResolvedRouting> {
-  let preferAnthropic = false;
+  // Task #2851: default to Claude (Anthropic) primary. If the flag lookup
+  // fails, we still prefer Anthropic — the fallback chain will recover to
+  // OpenAI automatically on any retryable provider error.
+  let preferAnthropic = true;
   try {
     preferAnthropic = await isFeatureEnabled(orgId, flagKey);
   } catch (err) {
-    logWarn("AI provider flag lookup failed; defaulting to OpenAI", {
+    logWarn("AI provider flag lookup failed; defaulting to Claude (Anthropic)", {
       orgId,
       flagKey,
       error: String(err),

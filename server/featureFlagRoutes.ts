@@ -19,6 +19,45 @@ router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), asy
   }
 });
 
+/**
+ * Task #2851 — Read-only AI model configuration endpoint.
+ * Returns the active provider flags for the calling user's org so the AI
+ * Governance page can show a live "Primary Model / Fallback Model" summary.
+ * IMPORTANT: this must stay above the /:orgId wildcard route.
+ */
+router.get("/ai-model-config", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization required" });
+    }
+    const flags = await flagService.getFeatureFlags(orgId);
+    const takeoffEnabled = flags["AI_PROVIDER_TAKEOFF"] === true;
+    const generalEnabled = flags["AI_PROVIDER_GENERAL"] === true;
+    res.json({
+      primaryModel: {
+        name: "Claude (Anthropic)",
+        model: "claude-sonnet-4-5",
+        provider: "anthropic",
+      },
+      fallbackModel: {
+        name: "GPT-4o (OpenAI)",
+        model: "gpt-4o",
+        provider: "openai",
+      },
+      routing: {
+        takeoffEnabled,
+        generalEnabled,
+        takeoffActive: takeoffEnabled,
+        generalActive: generalEnabled,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:orgId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;

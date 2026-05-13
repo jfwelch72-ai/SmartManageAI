@@ -137,15 +137,18 @@ wired in. The flag exists so we can A/B a new provider when one lands.
 
 ## Operational levers
 
-- **Per-org Anthropic opt-in (Takeoff)**: set `AI_PROVIDER_TAKEOFF=true`
-  on the org via Super Admin → Feature Flags. Requires
-  `ANTHROPIC_API_KEY` env var.
-- **Per-org Anthropic opt-in (General-family)**: set
-  `AI_PROVIDER_GENERAL=true` on the org. Same `ANTHROPIC_API_KEY`
-  requirement.
+- **Default primary (Task #2851)**: `AI_PROVIDER_TAKEOFF` and
+  `AI_PROVIDER_GENERAL` are **ON by default** for all new orgs.
+  Claude (Anthropic) is the primary for both families; OpenAI is the
+  automatic fallback. The flag lookup error path also defaults to
+  Anthropic. Existing orgs that stored an explicit `false` for either
+  flag continue routing to OpenAI for that family.
+- **Per-org Claude opt-out**: set `AI_PROVIDER_TAKEOFF=false` or
+  `AI_PROVIDER_GENERAL=false` on the org via Super Admin → Feature Flags
+  to revert that family to OpenAI-primary with no fallback.
 - **Anthropic outage fallback**: automatic — the router catches
   retryable errors and silently retries on OpenAI. Manual override:
-  flip the per-org flag back to OFF.
+  flip the per-org flag to OFF.
 - **Quota gating**: `checkBillingQuota` returns HTTP 402 before the
   provider call when the org has run out of `ai_jobs` and has no
   Stripe metered price configured.

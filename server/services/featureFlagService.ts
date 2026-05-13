@@ -12,8 +12,15 @@ import {logInfo, logWarn } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
 
+// Task #2851: DEFAULT_FLAGS now reflects DISABLED_BY_DEFAULT_FLAGS so that
+// any key NOT in that set defaults to true. This means absent keys in a
+// stored featureFlags JSON are treated as "on" rather than "off", which is
+// the correct semantic for flags like AI_PROVIDER_TAKEOFF / AI_PROVIDER_GENERAL
+// that were removed from DISABLED_BY_DEFAULT_FLAGS to make Claude the default.
+// Explicit stored values (including explicit false) always win via the spread.
+const _DISABLED_DEFAULT_SET = new Set<string>(DISABLED_BY_DEFAULT_FLAGS);
 const DEFAULT_FLAGS: FeatureFlagsMap = Object.fromEntries(
-  FEATURE_FLAG_KEYS.map(key => [key, false])
+  FEATURE_FLAG_KEYS.map(key => [key, !_DISABLED_DEFAULT_SET.has(key)])
 ) as FeatureFlagsMap;
 
 export async function getFeatureFlags(orgId: string): Promise<FeatureFlagsMap> {

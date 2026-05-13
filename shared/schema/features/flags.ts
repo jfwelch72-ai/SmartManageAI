@@ -167,8 +167,8 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   EXTERNAL_DOC_EMAIL: "External Document Email Delivery",
   AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
   AI_ESTIMATOR: "AI Estimator (takeoff, estimate, chat)",
-  AI_PROVIDER_TAKEOFF: "AI Provider — Takeoff family on Claude",
-  AI_PROVIDER_GENERAL: "AI Provider — General family on Claude",
+  AI_PROVIDER_TAKEOFF: "Takeoff AI: Claude (Anthropic) + GPT Fallback",
+  AI_PROVIDER_GENERAL: "General AI: Claude (Anthropic) + GPT Fallback",
   AI_PROVIDER_EMBEDDINGS: "AI Provider — Embeddings (reserved)",
   COI_COMPLIANCE_HOLD: "COI Compliance — Block release on non-compliance",
   TILE_RENDERING_ENABLED: "Server-side PDF Tile Pre-rendering",
@@ -358,13 +358,10 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // Task #2324: AI Estimator is off by default; org admins enable per
   // org and then per user.
   "AI_ESTIMATOR",
-  // Task #2410: Existing orgs stay on OpenAI GPT-5.2 until a Super Admin
-  // explicitly flips them to Claude. Default-OFF preserves the current
-  // behavior for every tenant on rollout day.
-  "AI_PROVIDER_TAKEOFF",
-  // Task #2684: Default OFF — when OFF the General router selects OpenAI as
-  // primary with no fallback, byte-for-byte identical to legacy behavior.
-  "AI_PROVIDER_GENERAL",
+  // Task #2851: AI_PROVIDER_TAKEOFF and AI_PROVIDER_GENERAL are no longer in
+  // DISABLED_BY_DEFAULT_FLAGS — Claude (Anthropic) is now the default primary
+  // for both families. Orgs that explicitly stored false keep their setting;
+  // new orgs and orgs with missing flag data get Claude+GPT fallback by default.
   // Task #2684: Default OFF — embedding provider seam is reserved; flipping
   // it has no observable effect today (only OpenAI provider is wired in).
   "AI_PROVIDER_EMBEDDINGS",
