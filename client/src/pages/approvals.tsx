@@ -70,6 +70,12 @@ export default function ApprovalsPage() {
     },
   });
 
+  const actingOnId = approveMutation.isPending
+    ? approveMutation.variables
+    : rejectMutation.isPending
+      ? rejectMutation.variables
+      : null;
+
   const isLoading = approvalsLoading || statsLoading;
 
   if (isLoading) {
@@ -162,10 +168,10 @@ export default function ApprovalsPage() {
                     <Button
                       variant="outline"
                       onClick={() => rejectMutation.mutate(approval.id)}
-                      disabled={rejectMutation.isPending || approveMutation.isPending}
+                      disabled={actingOnId !== null}
                       data-testid={`button-reject-${approval.id}`}
                     >
-                      {rejectMutation.isPending ? (
+                      {rejectMutation.isPending && actingOnId === approval.id ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : (
                         <XCircle className="h-4 w-4 mr-2" />
@@ -174,10 +180,10 @@ export default function ApprovalsPage() {
                     </Button>
                     <Button
                       onClick={() => approveMutation.mutate(approval.id)}
-                      disabled={approveMutation.isPending || rejectMutation.isPending}
+                      disabled={actingOnId !== null}
                       data-testid={`button-approve-${approval.id}`}
                     >
-                      {approveMutation.isPending ? (
+                      {approveMutation.isPending && actingOnId === approval.id ? (
                         <Loader2 className="h-4 w-4 animate-spin mr-2" />
                       ) : (
                         <CheckCircle className="h-4 w-4 mr-2" />

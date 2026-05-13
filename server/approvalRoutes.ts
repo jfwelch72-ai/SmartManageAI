@@ -25,8 +25,8 @@ router.get("/", requireAuth, async (req: AuthRequest, res, next) => {
 router.get("/stats", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const user = req.user!;
-    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
-      return res.status(403).json({ error: "Admin access required" });
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
     }
     const orgId = requireOrgUser(req, res);
     if (!orgId) return;
