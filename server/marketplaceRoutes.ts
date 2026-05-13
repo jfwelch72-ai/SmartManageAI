@@ -1358,6 +1358,10 @@ router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedReq
     const requesterOrgId = req.user!.organizationId;
     const { id: listingId } = req.params;
 
+    if (!requesterOrgId) {
+      return res.status(400).json({ error: "You must be part of an organization to request a rental" });
+    }
+
     const [listing] = await db
       .select()
       .from(equipmentListings)

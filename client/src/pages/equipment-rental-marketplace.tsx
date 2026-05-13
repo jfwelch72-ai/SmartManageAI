@@ -456,8 +456,8 @@ export default function EquipmentRentalMarketplacePage() {
         message: "",
       });
     },
-    onError: () =>
-      toast({ title: "Failed to submit request", variant: "destructive" }),
+    onError: (err: Error) =>
+      toast({ title: err.message || "Failed to submit request", variant: "destructive" }),
   });
 
   const respondMutation = useMutation({
