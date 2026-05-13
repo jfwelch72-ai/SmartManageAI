@@ -163,6 +163,7 @@ import { ensureDemoRequestsTable } from "./ensureDemoRequestsTable";
 import { ensureDemoLeadCrmConfig } from "./ensureDemoLeadCrmConfig";
 import { ensureOauthReconnectAlertEnumValues } from "./ensureOauthReconnectAlertEnumValues";
 import { ensureWorkflowLifecycleEnumValues } from "./ensureWorkflowLifecycleEnumValues";
+import { ensureWebsitePageTypeEnumValues } from "./ensureWebsitePageTypeEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -579,6 +580,12 @@ const migrations: MigrationStep[] = [
   // types but never appends values to existing ones). Mirrors the enum-only
   // portions of 0118_workflow_lifecycle_gaps.sql.
   { name: "workflow_lifecycle_enum_values", category: "ADD_ENUM", fn: ensureWorkflowLifecycleEnumValues },
+  // Task #2849 — drizzle-kit baseline 0002_clumsy_jackpot.sql adds CAREERS to
+  // website_page_type via ALTER TYPE ADD VALUE. reconcileSchemaDrift creates
+  // missing enum types but never appends values to existing ones, so a long-
+  // lived dev DB provisioned before CAREERS was added would silently be missing
+  // the value until a CAREERS-page insert crashed.
+  { name: "website_page_type_enum_values", category: "ADD_ENUM", fn: ensureWebsitePageTypeEnumValues },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

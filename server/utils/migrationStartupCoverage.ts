@@ -38,11 +38,27 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // --- drizzle-kit auto-generated baseline (random animal names) ----------
   // These are part of the initial drizzle-kit snapshot and are applied via
   // `npx drizzle-kit migrate` / `push`, not via runtime startup helpers.
-  "0001_marvelous_anita_blake.sql": { skip: "drizzle-kit baseline snapshot" },
-  "0002_clumsy_jackpot.sql": { skip: "drizzle-kit baseline snapshot" },
-  "0003_tricky_captain_flint.sql": { skip: "drizzle-kit baseline snapshot" },
-  "0004_sweet_vargas.sql": { skip: "drizzle-kit baseline snapshot" },
-  "0005_dusty_kulan_gath.sql": { skip: "drizzle-kit baseline snapshot" },
+  // Exception: files that contain `ALTER TYPE … ADD VALUE` are promoted to a
+  // `{ helper }` entry so long-lived dev DBs that pre-date the value addition
+  // also converge at startup (reconcileSchemaDrift creates missing enum *types*
+  // but never appends values to existing ones).
+  "0001_marvelous_anita_blake.sql": { skip: "drizzle-kit baseline snapshot — no enum mutations" },
+  // Task #2849 — adds CAREERS to website_page_type via ALTER TYPE ADD VALUE.
+  // Must be a helper entry so long-lived dev DBs that pre-date the value
+  // addition also converge at startup.
+  "0002_clumsy_jackpot.sql": {
+    helper: "ensureWebsitePageTypeEnumValues",
+    note: "Task #2849 — drizzle-kit baseline that adds CAREERS to website_page_type via ALTER TYPE ADD VALUE; reconcileSchemaDrift creates enum types but never adds values to existing ones",
+  },
+  // Task #2849 — adds TM_INVOICE_AUTO_CREATED + DOCUMENT_REVISION_CREATED to
+  // notification_type via ALTER TYPE ADD VALUE. Both values are already
+  // covered by ensureNotificationEnumValues (Task #1144).
+  "0003_tricky_captain_flint.sql": {
+    helper: "ensureNotificationEnumValues",
+    note: "Task #2849 — drizzle-kit baseline that adds TM_INVOICE_AUTO_CREATED + DOCUMENT_REVISION_CREATED to notification_type; both values are already in ensureNotificationEnumValues (Task #1144)",
+  },
+  "0004_sweet_vargas.sql": { skip: "drizzle-kit baseline snapshot — no enum mutations" },
+  "0005_dusty_kulan_gath.sql": { skip: "drizzle-kit baseline snapshot — no enum mutations" },
 
   // --- pre-existing custom migrations (baseline before Task #1127) --------
   // Task #1144 audit: every `skip` below documents *why* a startup helper is
