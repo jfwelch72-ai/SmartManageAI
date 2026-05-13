@@ -3,8 +3,9 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowRight, CheckCircle2, Circle, Clock, GitBranch } from "lucide-react";
+import { ArrowRight, CheckCircle2, Circle, Clock, GitBranch, AlertTriangle, UserCog } from "lucide-react";
 
 interface WorkflowStage {
   id: string;
@@ -12,6 +13,8 @@ interface WorkflowStage {
   color: string | null;
   stageOrder: number;
   allowedTransitions: string[];
+  slaDurationHours?: number | null;
+  autoEscalateRole?: string | null;
 }
 
 interface WorkflowHistoryEntry {
@@ -26,6 +29,7 @@ interface WorkflowInstance {
   currentStageId: string;
   status: "IN_PROGRESS" | "COMPLETED" | "CANCELLED";
   history: WorkflowHistoryEntry[];
+  updatedAt: string;
 }
 
 interface WorkflowTemplate {
@@ -37,12 +41,26 @@ interface WorkflowInstanceResponse {
   stages: WorkflowStage[];
   currentStage: WorkflowStage | null;
   template: WorkflowTemplate | null;
+  slaBreached: boolean;
 }
 
 interface WorkflowTrackerProps {
   entityType: string;
   entityId: string;
   compact?: boolean;
+}
+
+function formatRole(role: string) {
+  const ROLE_MAP: Record<string, string> = {
+    ADMIN: "Admin",
+    MANAGER: "Manager",
+    SUPERINTENDENT: "Superintendent",
+    ESTIMATOR: "Estimator",
+    FIELD_WORKER: "Field Worker",
+    HUSTLER: "Hustler",
+    VENDOR: "Vendor",
+  };
+  return ROLE_MAP[role] || role;
 }
 
 export function WorkflowTracker({ entityType, entityId, compact }: WorkflowTrackerProps) {
@@ -85,13 +103,16 @@ export function WorkflowTracker({ entityType, entityId, compact }: WorkflowTrack
 
   if (!data) return null;
 
-  const { instance, stages, currentStage, template } = data;
+  const { instance, stages, currentStage, template, slaBreached } = data;
 
   if (!instance || !stages) return null;
 
   const currentStageIndex = stages.findIndex((s) => s.id === instance.currentStageId);
   const allowedTransitions = currentStage?.allowedTransitions || [];
   const nextStages = stages.filter((s) => allowedTransitions.includes(s.id));
+  const isInProgress = instance.status === "IN_PROGRESS";
+  const showSlaAlert = slaBreached && isInProgress;
+  const escalationRole = showSlaAlert ? (currentStage?.autoEscalateRole ?? null) : null;
 
   if (compact) {
     return (
@@ -120,6 +141,12 @@ export function WorkflowTracker({ entityType, entityId, compact }: WorkflowTrack
         {instance.status === "COMPLETED" && (
           <Badge variant="default" className="bg-green-600 text-xs">Completed</Badge>
         )}
+        {showSlaAlert && (
+          <Badge variant="destructive" className="text-xs gap-1" data-testid="badge-sla-breached-compact">
+            <AlertTriangle className="w-3 h-3" />
+            SLA Breached
+          </Badge>
+        )}
       </div>
     );
   }
@@ -132,17 +159,46 @@ export function WorkflowTracker({ entityType, entityId, compact }: WorkflowTrack
             <GitBranch className="w-4 h-4" />
             {template?.name || "Workflow"}
           </CardTitle>
-          <Badge
-            variant={instance.status === "COMPLETED" ? "default" : instance.status === "CANCELLED" ? "destructive" : "secondary"}
-            data-testid="badge-workflow-status"
-          >
-            {instance.status === "IN_PROGRESS" && <Clock className="w-3 h-3 mr-1" />}
-            {instance.status === "COMPLETED" && <CheckCircle2 className="w-3 h-3 mr-1" />}
-            {instance.status}
-          </Badge>
+          <div className="flex items-center gap-2">
+            {showSlaAlert && (
+              <Badge variant="destructive" className="text-xs gap-1" data-testid="badge-sla-breached">
+                <AlertTriangle className="w-3 h-3" />
+                SLA Breached
+              </Badge>
+            )}
+            <Badge
+              variant={instance.status === "COMPLETED" ? "default" : instance.status === "CANCELLED" ? "destructive" : "secondary"}
+              data-testid="badge-workflow-status"
+            >
+              {instance.status === "IN_PROGRESS" && <Clock className="w-3 h-3 mr-1" />}
+              {instance.status === "COMPLETED" && <CheckCircle2 className="w-3 h-3 mr-1" />}
+              {instance.status}
+            </Badge>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
+        {showSlaAlert && (
+          <Alert variant="destructive" data-testid="alert-sla-breach">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription className="flex items-center justify-between">
+              <span>
+                This workflow has exceeded its{" "}
+                <strong>{currentStage?.slaDurationHours}h</strong> SLA deadline.
+                {escalationRole && (
+                  <> Escalated to <strong>{formatRole(escalationRole)}</strong>.</>
+                )}
+              </span>
+              {escalationRole && (
+                <Badge variant="outline" className="ml-2 border-orange-400 text-orange-600 dark:text-orange-400 gap-1 shrink-0" data-testid="badge-escalated-role">
+                  <UserCog className="w-3 h-3" />
+                  {formatRole(escalationRole)} required
+                </Badge>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="flex items-center gap-1 overflow-x-auto pb-2">
           {stages.map((stage, i) => {
             const isPast = i < currentStageIndex;
@@ -170,7 +226,7 @@ export function WorkflowTracker({ entityType, entityId, compact }: WorkflowTrack
           })}
         </div>
 
-        {instance.status === "IN_PROGRESS" && nextStages.length > 0 && (
+        {isInProgress && nextStages.length > 0 && (
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">Move to:</span>
             {nextStages.map((stage) => (

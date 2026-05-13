@@ -608,7 +608,13 @@ export async function getInstanceForEntity(orgId: string, entityType: string, en
     .where(eq(workflowTemplates.id, instance.templateId))
     .limit(1);
 
-  return { instance, stages, currentStage, template };
+  const now = new Date();
+  const slaBreached =
+    currentStage?.slaDurationHours != null
+      ? new Date(instance.updatedAt.getTime() + currentStage.slaDurationHours * 60 * 60 * 1000) < now
+      : false;
+
+  return { instance, stages, currentStage, template, slaBreached };
 }
 
 /**

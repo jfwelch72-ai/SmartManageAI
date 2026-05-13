@@ -122,6 +122,138 @@ router.get("/", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), asy
   }
 });
 
+router.get("/instances", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.json([]);
+
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (shouldFilter && orgId) {
+      conditions.push(eq(workflowInstances.organizationId, orgId));
+    }
+
+    const statusFilter = req.query.status as string | undefined;
+    if (statusFilter) {
+      conditions.push(eq(workflowInstances.status, statusFilter as typeof workflowInstances.status.enumValues[number]));
+    }
+
+    const rows = await db
+      .select({
+        id: workflowInstances.id,
+        templateId: workflowInstances.templateId,
+        organizationId: workflowInstances.organizationId,
+        entityType: workflowInstances.entityType,
+        entityId: workflowInstances.entityId,
+        status: workflowInstances.status,
+        startedAt: workflowInstances.startedAt,
+        updatedAt: workflowInstances.updatedAt,
+        completedAt: workflowInstances.completedAt,
+        currentStageId: workflowInstances.currentStageId,
+        stageName: workflowStages.name,
+        stageColor: workflowStages.color,
+        slaDurationHours: workflowStages.slaDurationHours,
+        autoEscalateRole: workflowStages.autoEscalateRole,
+        templateName: workflowTemplates.name,
+      })
+      .from(workflowInstances)
+      .leftJoin(workflowStages, eq(workflowInstances.currentStageId, workflowStages.id))
+      .leftJoin(workflowTemplates, eq(workflowInstances.templateId, workflowTemplates.id))
+      .where(conditions.length > 0 ? and(...conditions) : undefined)
+      .orderBy(desc(workflowInstances.updatedAt));
+
+    const now = new Date();
+    const instancesWithBreachFlag = rows.map(row => ({
+      ...row,
+      slaBreached:
+        row.slaDurationHours != null
+          ? new Date(new Date(row.updatedAt).getTime() + row.slaDurationHours * 60 * 60 * 1000) < now
+          : false,
+      slaDeadline:
+        row.slaDurationHours != null
+          ? new Date(new Date(row.updatedAt).getTime() + row.slaDurationHours * 60 * 60 * 1000).toISOString()
+          : null,
+    }));
+
+    res.json(instancesWithBreachFlag);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const schema = z.object({
+      entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "SUBMITTAL", "WARRANTY_CASE"]),
+      entityId: z.string().min(1),
+    });
+    const validation = schema.safeParse(req.body);
+    if (!validation.success) return res.status(400).json({ error: "Validation failed" });
+
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const instance = await workflowEngine.startWorkflow(
+      orgId,
+      validation.data.entityType,
+      validation.data.entityId,
+      req.user!.id
+    );
+
+    if (!instance) return res.status(404).json({ error: "No workflow template found for this entity type" });
+
+    res.status(201).json(instance);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const schema = z.object({
+      targetStageId: z.string().min(1),
+      notes: z.string().optional(),
+    });
+    const validation = schema.safeParse(req.body);
+    if (!validation.success) return res.status(400).json({ error: "Validation failed" });
+
+    const result = await workflowEngine.transitionStage(
+      req.params.id,
+      validation.data.targetStageId,
+      req.user!.id,
+      orgId,
+      req.user!.role || "WORKER",
+      validation.data.notes
+    );
+
+    if (!result.success) return res.status(400).json({ error: result.error });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const data = await workflowEngine.getInstanceForEntity(
+      orgId,
+      req.params.entityType,
+      req.params.entityId
+    );
+
+    if (!data) return res.json(null);
+    res.json(data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/:id", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -519,80 +651,6 @@ router.post("/:id/clone", requireAuth, requireRole("ADMIN", "SUPER_ADMIN"), asyn
       .orderBy(asc(workflowStages.stageOrder));
 
     res.status(201).json({ ...clone, stages: allStages });
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/instances/start", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const schema = z.object({
-      entityType: z.enum(["CHANGE_ORDER", "SOV_PAY_APP", "TIME_APPROVAL", "PURCHASE_ORDER", "PURCHASE_REQUEST", "VENDOR_BILL", "TM_TICKET", "SUBMITTAL", "WARRANTY_CASE"]),
-      entityId: z.string().min(1),
-    });
-    const validation = schema.safeParse(req.body);
-    if (!validation.success) return res.status(400).json({ error: "Validation failed" });
-
-    const orgId = req.user?.organizationId;
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const instance = await workflowEngine.startWorkflow(
-      orgId,
-      validation.data.entityType,
-      validation.data.entityId,
-      req.user!.id
-    );
-
-    if (!instance) return res.status(404).json({ error: "No workflow template found for this entity type" });
-
-    res.status(201).json(instance);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.post("/instances/:id/transition", requireAuth, requireRole("ADMIN", "SUPER_ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const orgId = req.user?.organizationId;
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const schema = z.object({
-      targetStageId: z.string().min(1),
-      notes: z.string().optional(),
-    });
-    const validation = schema.safeParse(req.body);
-    if (!validation.success) return res.status(400).json({ error: "Validation failed" });
-
-    const result = await workflowEngine.transitionStage(
-      req.params.id,
-      validation.data.targetStageId,
-      req.user!.id,
-      orgId,
-      req.user!.role || "WORKER",
-      validation.data.notes
-    );
-
-    if (!result.success) return res.status(400).json({ error: result.error });
-
-    res.json(result);
-  } catch (error) {
-    next(error);
-  }
-});
-
-router.get("/instances/entity/:entityType/:entityId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    const orgId = req.user?.organizationId;
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
-
-    const data = await workflowEngine.getInstanceForEntity(
-      orgId,
-      req.params.entityType,
-      req.params.entityId
-    );
-
-    if (!data) return res.json(null);
-    res.json(data);
   } catch (error) {
     next(error);
   }
