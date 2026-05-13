@@ -4064,6 +4064,25 @@ function AiSpendCard() {
 
           {spendQuery.isLoading ? (
             <Loader2 className="animate-spin h-5 w-5" />
+          ) : spendQuery.isError ? (
+            <div className="flex items-center gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive" data-testid="text-spend-error">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                Failed to load spend data.{" "}
+                {(spendQuery.error as Error)?.message
+                  ? `(${(spendQuery.error as Error).message})`
+                  : "Check your permissions or try again."}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="ml-auto"
+                onClick={() => spendQuery.refetch()}
+                data-testid="button-spend-retry"
+              >
+                <RefreshCcw className="h-3 w-3 mr-1" /> Retry
+              </Button>
+            </div>
           ) : (
             <>
               <h3 className="text-sm font-semibold mt-2 mb-2">
