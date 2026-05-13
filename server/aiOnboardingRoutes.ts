@@ -1064,6 +1064,12 @@ router.post("/ai/onboarding/chat", sensitiveLimiter, requireAuth, async (req: Au
     }
 
     const parsed = JSON.parse(responseText);
+    // The AI prompt instructs the model to return extracted fields under the key "data",
+    // but the client consumes them as "extractedData". Remap here so the client works.
+    if (parsed.data !== undefined && parsed.extractedData === undefined) {
+      parsed.extractedData = parsed.data;
+      delete parsed.data;
+    }
     res.json(parsed);
   } catch (error: any) {
     next(error);
