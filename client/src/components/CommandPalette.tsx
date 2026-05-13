@@ -37,6 +37,25 @@ import {
   Phone,
   Sparkles,
   Search as SearchIcon,
+  ClipboardCheck,
+  ShieldAlert,
+  ShieldCheck,
+  Package,
+  Receipt,
+  ShoppingCart,
+  FilePlus,
+  HelpCircle,
+  Send,
+  UserCheck,
+  CheckSquare,
+  UserPlus,
+  DollarSign,
+  BarChart2,
+  HardDrive,
+  AlertTriangle,
+  Star,
+  FileSearch,
+  Warehouse,
 } from "lucide-react";
 import {
   hasContractorAccess,
@@ -44,6 +63,8 @@ import {
   hasCrmAccess,
   canAccessBids,
   hasEquipmentAccess,
+  hasSafetyAccess,
+  hasProcurementAccess,
   RoutePermissions,
   type FeaturePerms,
 } from "@/lib/rbac";
@@ -56,7 +77,21 @@ export type SearchResultType =
   | "bid"
   | "vendor"
   | "subcontractor"
-  | "call";
+  | "call"
+  | "equipment"
+  | "task"
+  | "change_order"
+  | "rfi"
+  | "submittal"
+  | "purchase_order"
+  | "vendor_invoice"
+  | "team_member"
+  | "punch_list_item"
+  | "inspection"
+  | "safety_observation"
+  | "inventory_material"
+  | "warranty_case"
+  | "hiring_job";
 
 export interface SearchResult {
   id: string;
@@ -81,6 +116,20 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
   vendor: "Vendors",
   subcontractor: "Subcontractors",
   call: "Call Transcripts",
+  equipment: "Equipment",
+  task: "Tasks",
+  change_order: "Change Orders",
+  rfi: "RFIs",
+  submittal: "Submittals",
+  purchase_order: "Purchase Orders",
+  vendor_invoice: "Vendor Invoices",
+  team_member: "Team Members",
+  punch_list_item: "Punch List",
+  inspection: "Inspections",
+  safety_observation: "Safety Observations",
+  inventory_material: "Inventory Materials",
+  warranty_case: "Warranty Cases",
+  hiring_job: "Job Postings",
 };
 
 const TYPE_BADGE: Record<SearchResultType, string> = {
@@ -92,6 +141,20 @@ const TYPE_BADGE: Record<SearchResultType, string> = {
   vendor: "Vendor",
   subcontractor: "Sub",
   call: "Call",
+  equipment: "Equip",
+  task: "Task",
+  change_order: "CO",
+  rfi: "RFI",
+  submittal: "Sub",
+  purchase_order: "PO",
+  vendor_invoice: "Invoice",
+  team_member: "Member",
+  punch_list_item: "Punch",
+  inspection: "Insp",
+  safety_observation: "Safety",
+  inventory_material: "Material",
+  warranty_case: "Warranty",
+  hiring_job: "Job",
 };
 
 const TYPE_ORDER: SearchResultType[] = [
@@ -103,6 +166,20 @@ const TYPE_ORDER: SearchResultType[] = [
   "vendor",
   "subcontractor",
   "call",
+  "equipment",
+  "task",
+  "change_order",
+  "rfi",
+  "submittal",
+  "purchase_order",
+  "vendor_invoice",
+  "team_member",
+  "punch_list_item",
+  "inspection",
+  "safety_observation",
+  "inventory_material",
+  "warranty_case",
+  "hiring_job",
 ];
 
 function iconFor(type: SearchResultType) {
@@ -123,6 +200,34 @@ function iconFor(type: SearchResultType) {
       return <HardHat className="h-4 w-4" />;
     case "call":
       return <Phone className="h-4 w-4" />;
+    case "equipment":
+      return <Wrench className="h-4 w-4" />;
+    case "task":
+      return <ClipboardList className="h-4 w-4" />;
+    case "change_order":
+      return <FilePlus className="h-4 w-4" />;
+    case "rfi":
+      return <HelpCircle className="h-4 w-4" />;
+    case "submittal":
+      return <Send className="h-4 w-4" />;
+    case "purchase_order":
+      return <ShoppingCart className="h-4 w-4" />;
+    case "vendor_invoice":
+      return <Receipt className="h-4 w-4" />;
+    case "team_member":
+      return <UserCheck className="h-4 w-4" />;
+    case "punch_list_item":
+      return <CheckSquare className="h-4 w-4" />;
+    case "inspection":
+      return <ClipboardCheck className="h-4 w-4" />;
+    case "safety_observation":
+      return <ShieldAlert className="h-4 w-4" />;
+    case "inventory_material":
+      return <Package className="h-4 w-4" />;
+    case "warranty_case":
+      return <ShieldCheck className="h-4 w-4" />;
+    case "hiring_job":
+      return <UserPlus className="h-4 w-4" />;
   }
 }
 
@@ -147,7 +252,21 @@ const PAGES: CatalogItem[] = [
   { id: "calendar", label: "Calendar", url: "/calendar", icon: <CalendarDays className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "schedule events" },
   { id: "tasks", label: "Tasks", url: "/tasks", icon: <ClipboardList className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "todo punchlist" },
   { id: "messages", label: "Messages", url: "/messages", icon: <MessageSquare className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "chat inbox" },
-  { id: "equipment", label: "Equipment", url: "/equipment", icon: <Wrench className="h-4 w-4" />, visible: allowAll(hasEquipmentAccess), keywords: "tools fleet" },
+  { id: "equipment", label: "Equipment", url: "/equipment", icon: <Wrench className="h-4 w-4" />, visible: allowAll(hasEquipmentAccess), keywords: "tools fleet machinery" },
+  { id: "procurement", label: "Procurement", url: "/procurement-module", icon: <ShoppingCart className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || hasProcurementAccess(role, perms), keywords: "purchase orders PO vendors invoices buying" },
+  { id: "payroll", label: "Payroll", url: "/payroll-management", icon: <DollarSign className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || RoutePermissions.PAYROLL_MANAGEMENT(role, perms), keywords: "wages salary time certified payroll" },
+  { id: "safety", label: "Safety Hub", url: "/safety", icon: <ShieldAlert className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || hasSafetyAccess(role, perms), keywords: "osha incidents observations compliance" },
+  { id: "safety-training", label: "Safety Training", url: "/safety-training", icon: <ShieldCheck className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || hasSafetyAccess(role, perms), keywords: "training courses certifications" },
+  { id: "inventory", label: "Inventory", url: "/inventory", icon: <Warehouse className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "materials stock warehouse" },
+  { id: "workforce", label: "Workforce", url: "/manage-workers", icon: <Users className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "employees team members crew hr" },
+  { id: "hiring", label: "Hiring", url: "/hiring", icon: <UserPlus className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || !!perms?.canManageHiring || role === "ADMIN" || role === "MANAGER", keywords: "jobs candidates recruitment ats" },
+  { id: "reports", label: "Reports & Analytics", url: "/reports", icon: <BarChart2 className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "analytics charts financial cfo forecasting" },
+  { id: "help", label: "Help Center", url: "/help", icon: <HelpCircle className="h-4 w-4" />, visible: () => true, keywords: "support documentation articles faq" },
+  { id: "marketplace", label: "Contractor Marketplace", url: "/marketplace", icon: <Star className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || !!perms?.canAccessMarketplace || hasManagementAccess(role), keywords: "marketplace contractors vendors browse" },
+  { id: "crew-marketplace", label: "Crew Marketplace", url: "/crew-marketplace", icon: <Users className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "talent pool crew workers hire" },
+  { id: "warranty", label: "Warranty", url: "/projects?tab=warranty", icon: <ShieldCheck className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "warranty cases defects repairs" },
+  { id: "closeout", label: "Project Closeout", url: "/projects?tab=closeout", icon: <ClipboardCheck className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "closeout punch list final handover" },
+  { id: "sla", label: "SLA & Support", url: "/sla", icon: <FileSearch className="h-4 w-4" />, visible: () => true, keywords: "service level agreement support tiers" },
   {
     id: "ai-estimator-admin",
     label: "AI Estimator",
@@ -156,7 +275,9 @@ const PAGES: CatalogItem[] = [
     visible: (role, perms) => RoutePermissions.AI_ESTIMATOR_ADMIN(role, perms),
     keywords: "ai estimator admin learned rates ingest feedback",
   },
-  { id: "settings", label: "Settings", url: "/settings", icon: <Settings className="h-4 w-4" />, visible: () => true, keywords: "profile preferences" },
+  { id: "settings", label: "Settings", url: "/settings", icon: <Settings className="h-4 w-4" />, visible: () => true, keywords: "profile preferences organization" },
+  { id: "notifications", label: "Notifications", url: "/notifications", icon: <AlertTriangle className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "alerts inbox activity" },
+  { id: "equipment-rental-marketplace", label: "Equipment Rental Marketplace", url: "/equipment-rental-marketplace", icon: <HardDrive className="h-4 w-4" />, visible: allowAll(hasEquipmentAccess), keywords: "rent equipment rental marketplace" },
 ];
 
 const QUICK_ACTIONS: CatalogItem[] = [
@@ -167,8 +288,15 @@ const QUICK_ACTIONS: CatalogItem[] = [
   { id: "new-organization", label: "New Organization", url: "/crm?tab=orgs&new=true", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasCrmAccess), keywords: "create add client company" },
   { id: "new-task", label: "Create Task", url: "/tasks?new=true", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "create add todo punchlist" },
   { id: "log-call", label: "Log Call", url: "/crm?tab=tasks", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasCrmAccess), keywords: "phone activity note" },
-  { id: "go-projects", label: "Go to Projects", url: "/projects", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "open list jump" },
-  { id: "go-tasks", label: "Go to Tasks", url: "/tasks", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "open list jump" },
+  { id: "new-purchase-order", label: "New Purchase Order", url: "/procurement-module?tab=purchase-orders&new=true", icon: <PlusCircle className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || hasProcurementAccess(role, perms), keywords: "create add PO purchase procurement" },
+  { id: "new-rfi", label: "New RFI", url: "/projects?action=new-rfi", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "create add request information" },
+  { id: "new-submittal", label: "New Submittal", url: "/projects?action=new-submittal", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "create add submittal document" },
+  { id: "new-change-order", label: "New Change Order", url: "/projects?action=new-change-order", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "create add CO change order" },
+  { id: "new-safety-observation", label: "New Safety Observation", url: "/safety?tab=observations&new=true", icon: <PlusCircle className="h-4 w-4" />, visible: (role, perms) => isSuper(role) || hasSafetyAccess(role, perms), keywords: "create add safety report hazard" },
+  { id: "new-equipment", label: "New Equipment", url: "/equipment?new=true", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasEquipmentAccess), keywords: "create add equipment tool machine" },
+  { id: "new-inspection", label: "New Inspection", url: "/projects?action=new-inspection", icon: <PlusCircle className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "create add inspection quality" },
+  { id: "go-projects", label: "Go to Projects", url: "/projects", icon: <ArrowRight className="h-4 w-4" />, visible: allowAll(hasManagementAccess), keywords: "open list jump" },
+  { id: "go-tasks", label: "Go to Tasks", url: "/tasks", icon: <ArrowRight className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "open list jump" },
 ];
 
 const RECENTS_KEY_PREFIX = "smartmanage-cmdk-recents:";
@@ -260,7 +388,6 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const visiblePages = useMemo(() => PAGES.filter((p) => p.visible(role, featurePerms)), [role, featurePerms]);
   const visibleActions = useMemo(() => QUICK_ACTIONS.filter((a) => a.visible(role, featurePerms)), [role, featurePerms]);
 
-  // While typing, also include matching Pages and Quick Actions
   const matchingPages = useMemo(() => {
     if (!debounced) return [];
     return visiblePages.filter((p) =>
@@ -299,7 +426,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     >
       <div data-testid="dialog-command-palette" className="flex flex-col h-full">
         <CommandInput
-          placeholder="Search projects, bids, deals, contacts, vendors…"
+          placeholder="Search projects, equipment, RFIs, people, and more…"
           value={rawQuery}
           onValueChange={setRawQuery}
           data-testid="input-command-palette"
@@ -471,7 +598,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         >
           <VisuallyHidden>
             <DialogTitle>Command Palette</DialogTitle>
-            <DialogDescription>Search projects, bids, deals, contacts, vendors, and navigate the app.</DialogDescription>
+            <DialogDescription>Search projects, equipment, RFIs, people, and navigate the app.</DialogDescription>
           </VisuallyHidden>
           {body}
         </SheetContent>
@@ -484,7 +611,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       <DialogContent className="overflow-hidden p-0 shadow-lg">
         <VisuallyHidden>
           <DialogTitle>Command Palette</DialogTitle>
-          <DialogDescription>Search projects, bids, deals, contacts, vendors, and navigate the app.</DialogDescription>
+          <DialogDescription>Search projects, equipment, RFIs, people, and navigate the app.</DialogDescription>
         </VisuallyHidden>
         {body}
       </DialogContent>

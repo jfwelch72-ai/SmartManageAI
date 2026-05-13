@@ -9,6 +9,20 @@ import {
   crmOpportunities,
   crmCalls,
   crmCallRecordings,
+  equipment,
+  tasks,
+  changeOrders,
+  rfis,
+  submittals,
+  purchaseOrders,
+  vendorInvoices,
+  users,
+  punchListItems,
+  projectInspections,
+  safetyObservations,
+  inventoryMaterials,
+  warrantyCases,
+  hiringJobs,
 } from "@shared/schema";
 import { and, eq, ilike, or, sql, desc, inArray, type SQL, type AnyColumn } from "drizzle-orm";
 import { z } from "zod";
@@ -34,7 +48,21 @@ export type SearchResultType =
   | "bid"
   | "vendor"
   | "subcontractor"
-  | "call";
+  | "call"
+  | "equipment"
+  | "task"
+  | "change_order"
+  | "rfi"
+  | "submittal"
+  | "purchase_order"
+  | "vendor_invoice"
+  | "team_member"
+  | "punch_list_item"
+  | "inspection"
+  | "safety_observation"
+  | "inventory_material"
+  | "warranty_case"
+  | "hiring_job";
 
 export interface SearchResult {
   id: string;
@@ -80,13 +108,15 @@ router.get(
     const allowProjects = perms.canAccessProjects === true;
     const allowBids = perms.canViewBids === true;
     const allowCrm = perms.canAccessCRM === true;
-    // Call transcripts are gated more tightly than the rest of CRM data: the
-    // dedicated /api/crm/calls/transcripts/search endpoint is restricted to
-    // pipeline roles (ADMIN/HUSTLER/MANAGER/ESTIMATOR), so global search must
-    // honour the same gate to avoid widening transcript access.
     const TRANSCRIPT_ROLES = new Set(["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPER_ADMIN"]);
     const allowCallTranscripts = allowCrm && TRANSCRIPT_ROLES.has(effectiveRole);
     const projectScope = perms.projectScope === "ACTIVE_ONLY" ? "ACTIVE_ONLY" : "ALL";
+
+    const allowEquipment = perms.canManageEquipment === true;
+    const allowProcurement = perms.canManageProcurement === true;
+    const allowSafety = perms.canViewSafety === true;
+    const allowHiring = perms.canManageHiring === true;
+    const allowWorkforce = perms.canManageWorkforce === true;
 
     const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
 
@@ -99,6 +129,11 @@ router.get(
       if (filtered.length === 1) return filtered[0];
       return and(...filtered);
     };
+
+    // Project scope filter for project-based queries
+    const projectScopeFilter = projectScope === "ACTIVE_ONLY"
+      ? inArray(projects.status, [...ACTIVE_PROJECT_STATUSES])
+      : undefined;
 
     const projectsQuery = allowProjects
       ? db
@@ -328,6 +363,364 @@ router.get(
           organisationName: string | null;
         }>);
 
+    // ─── New entity queries ───────────────────────────────────────────────────
+
+    const equipmentQuery = allowEquipment
+      ? db
+          .select({
+            id: equipment.id,
+            name: equipment.name,
+            equipmentCode: equipment.equipmentCode,
+            make: equipment.make,
+            model: equipment.model,
+            status: equipment.status,
+          })
+          .from(equipment)
+          .where(
+            compose(
+              orgFilter(equipment.organizationId),
+              or(
+                ilike(equipment.name, like),
+                ilike(equipment.equipmentCode, like),
+                ilike(equipment.make, like),
+                ilike(equipment.model, like),
+              ),
+            ),
+          )
+          .orderBy(desc(equipment.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; name: string; equipmentCode: string; make: string | null; model: string | null; status: string }>);
+
+    const tasksQuery = allowProjects
+      ? db
+          .select({
+            id: tasks.id,
+            title: tasks.title,
+            description: tasks.description,
+            status: tasks.status,
+            priority: tasks.priority,
+          })
+          .from(tasks)
+          .where(
+            compose(
+              orgFilter(tasks.organizationId),
+              or(
+                ilike(tasks.title, like),
+                ilike(tasks.description, like),
+              ),
+            ),
+          )
+          .orderBy(desc(tasks.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; title: string; description: string | null; status: string; priority: string }>);
+
+    const changeOrdersQuery = allowProjects
+      ? db
+          .select({
+            id: changeOrders.id,
+            changeOrderNumber: changeOrders.changeOrderNumber,
+            description: changeOrders.description,
+            status: changeOrders.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(changeOrders)
+          .innerJoin(projects, eq(changeOrders.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(projects.gcOrganizationId),
+              projectScopeFilter,
+              or(
+                ilike(changeOrders.changeOrderNumber, like),
+                ilike(changeOrders.description, like),
+              ),
+            ),
+          )
+          .orderBy(desc(changeOrders.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; changeOrderNumber: string; description: string; status: string; projectCode: string; projectName: string }>);
+
+    const rfisQuery = allowProjects
+      ? db
+          .select({
+            id: rfis.id,
+            rfiNumber: rfis.rfiNumber,
+            subject: rfis.subject,
+            status: rfis.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(rfis)
+          .innerJoin(projects, eq(rfis.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(rfis.organizationId),
+              projectScopeFilter,
+              or(
+                ilike(rfis.rfiNumber, like),
+                ilike(rfis.subject, like),
+                ilike(rfis.question, like),
+              ),
+            ),
+          )
+          .orderBy(desc(rfis.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; rfiNumber: string; subject: string; status: string; projectCode: string; projectName: string }>);
+
+    const submittalsQuery = allowProjects
+      ? db
+          .select({
+            id: submittals.id,
+            submittalNumber: submittals.submittalNumber,
+            subject: submittals.subject,
+            status: submittals.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(submittals)
+          .innerJoin(projects, eq(submittals.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(submittals.organizationId),
+              projectScopeFilter,
+              or(
+                ilike(submittals.submittalNumber, like),
+                ilike(submittals.subject, like),
+                ilike(submittals.description, like),
+              ),
+            ),
+          )
+          .orderBy(desc(submittals.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; submittalNumber: string; subject: string; status: string; projectCode: string; projectName: string }>);
+
+    const purchaseOrdersQuery = allowProcurement
+      ? db
+          .select({
+            id: purchaseOrders.id,
+            poNumber: purchaseOrders.poNumber,
+            status: purchaseOrders.status,
+            notes: purchaseOrders.notes,
+          })
+          .from(purchaseOrders)
+          .where(
+            compose(
+              isSuper || !orgId ? undefined : eq(purchaseOrders.orgId, orgId),
+              or(
+                ilike(purchaseOrders.poNumber, like),
+                ilike(purchaseOrders.notes, like),
+              ),
+            ),
+          )
+          .orderBy(desc(purchaseOrders.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; poNumber: string; status: string; notes: string | null }>);
+
+    const vendorInvoicesQuery = allowProcurement
+      ? db
+          .select({
+            id: vendorInvoices.id,
+            invoiceNumber: vendorInvoices.invoiceNumber,
+            status: vendorInvoices.status,
+            notes: vendorInvoices.notes,
+            totalAmount: vendorInvoices.totalAmount,
+          })
+          .from(vendorInvoices)
+          .where(
+            compose(
+              isSuper || !orgId ? undefined : eq(vendorInvoices.orgId, orgId),
+              or(
+                ilike(vendorInvoices.invoiceNumber, like),
+                ilike(vendorInvoices.notes, like),
+              ),
+            ),
+          )
+          .orderBy(desc(vendorInvoices.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; invoiceNumber: string; status: string; notes: string | null; totalAmount: string }>);
+
+    const teamMembersQuery = allowWorkforce
+      ? db
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            role: users.role,
+          })
+          .from(users)
+          .where(
+            compose(
+              isSuper || !orgId ? undefined : eq(users.organizationId, orgId),
+              eq(users.isActive, true),
+              or(
+                ilike(users.firstName, like),
+                ilike(users.lastName, like),
+                ilike(users.email, like),
+                sql`(${users.firstName} || ' ' || ${users.lastName}) ILIKE ${like}`,
+              ),
+            ),
+          )
+          .orderBy(desc(users.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; firstName: string | null; lastName: string | null; email: string; role: string }>);
+
+    const punchListQuery = allowProjects
+      ? db
+          .select({
+            id: punchListItems.id,
+            title: punchListItems.title,
+            description: punchListItems.description,
+            location: punchListItems.location,
+            status: punchListItems.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(punchListItems)
+          .innerJoin(projects, eq(punchListItems.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(projects.gcOrganizationId),
+              projectScopeFilter,
+              or(
+                ilike(punchListItems.title, like),
+                ilike(punchListItems.description, like),
+                ilike(punchListItems.location, like),
+              ),
+            ),
+          )
+          .orderBy(desc(punchListItems.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; title: string; description: string | null; location: string | null; status: string; projectCode: string; projectName: string }>);
+
+    const inspectionsQuery = allowProjects
+      ? db
+          .select({
+            id: projectInspections.id,
+            title: projectInspections.title,
+            inspectionNumber: projectInspections.inspectionNumber,
+            inspectorName: projectInspections.inspectorName,
+            status: projectInspections.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(projectInspections)
+          .innerJoin(projects, eq(projectInspections.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(projects.gcOrganizationId),
+              projectScopeFilter,
+              or(
+                ilike(projectInspections.title, like),
+                ilike(projectInspections.inspectionNumber, like),
+                ilike(projectInspections.inspectorName, like),
+              ),
+            ),
+          )
+          .orderBy(desc(projectInspections.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; title: string; inspectionNumber: string; inspectorName: string | null; status: string; projectCode: string; projectName: string }>);
+
+    const safetyObsQuery = allowSafety
+      ? db
+          .select({
+            id: safetyObservations.id,
+            description: safetyObservations.description,
+            location: safetyObservations.location,
+            observationType: safetyObservations.observationType,
+            severity: safetyObservations.severity,
+            status: safetyObservations.status,
+          })
+          .from(safetyObservations)
+          .where(
+            compose(
+              orgFilter(safetyObservations.organizationId),
+              or(
+                ilike(safetyObservations.description, like),
+                ilike(safetyObservations.location, like),
+              ),
+            ),
+          )
+          .orderBy(desc(safetyObservations.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; description: string; location: string | null; observationType: string; severity: string; status: string }>);
+
+    const inventoryQuery = allowProjects || allowProcurement
+      ? db
+          .select({
+            id: inventoryMaterials.id,
+            name: inventoryMaterials.name,
+            sku: inventoryMaterials.sku,
+            category: inventoryMaterials.category,
+          })
+          .from(inventoryMaterials)
+          .where(
+            compose(
+              orgFilter(inventoryMaterials.organizationId),
+              eq(inventoryMaterials.isActive, true),
+              or(
+                ilike(inventoryMaterials.name, like),
+                ilike(inventoryMaterials.sku, like),
+                ilike(inventoryMaterials.category, like),
+              ),
+            ),
+          )
+          .orderBy(desc(inventoryMaterials.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; name: string; sku: string; category: string | null }>);
+
+    const warrantyCasesQuery = allowProjects
+      ? db
+          .select({
+            id: warrantyCases.id,
+            caseNumber: warrantyCases.caseNumber,
+            title: warrantyCases.title,
+            description: warrantyCases.description,
+            status: warrantyCases.status,
+            projectCode: projects.code,
+            projectName: projects.name,
+          })
+          .from(warrantyCases)
+          .innerJoin(projects, eq(warrantyCases.projectId, projects.id))
+          .where(
+            compose(
+              orgFilter(projects.gcOrganizationId),
+              projectScopeFilter,
+              or(
+                ilike(warrantyCases.caseNumber, like),
+                ilike(warrantyCases.title, like),
+                ilike(warrantyCases.description, like),
+              ),
+            ),
+          )
+          .orderBy(desc(warrantyCases.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; caseNumber: string; title: string; description: string | null; status: string; projectCode: string; projectName: string }>);
+
+    const hiringJobsQuery = allowHiring
+      ? db
+          .select({
+            id: hiringJobs.id,
+            title: hiringJobs.title,
+            trade: hiringJobs.trade,
+            department: hiringJobs.department,
+            status: hiringJobs.status,
+          })
+          .from(hiringJobs)
+          .where(
+            compose(
+              orgFilter(hiringJobs.organizationId),
+              or(
+                ilike(hiringJobs.title, like),
+                ilike(hiringJobs.trade, like),
+                ilike(hiringJobs.department, like),
+              ),
+            ),
+          )
+          .orderBy(desc(hiringJobs.updatedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{ id: string; title: string; trade: string | null; department: string | null; status: string }>);
+
     try {
       const [
         projectRows,
@@ -338,6 +731,20 @@ router.get(
         vendorRows,
         subRows,
         callRows,
+        equipmentRows,
+        taskRows,
+        changeOrderRows,
+        rfiRows,
+        submittalRows,
+        purchaseOrderRows,
+        vendorInvoiceRows,
+        teamMemberRows,
+        punchListRows,
+        inspectionRows,
+        safetyObsRows,
+        inventoryRows,
+        warrantyCaseRows,
+        hiringJobRows,
       ] = await Promise.all([
         projectsQuery,
         bidsQuery,
@@ -347,6 +754,20 @@ router.get(
         vendorsQuery,
         subsQuery,
         callsQuery,
+        equipmentQuery,
+        tasksQuery,
+        changeOrdersQuery,
+        rfisQuery,
+        submittalsQuery,
+        purchaseOrdersQuery,
+        vendorInvoicesQuery,
+        teamMembersQuery,
+        punchListQuery,
+        inspectionsQuery,
+        safetyObsQuery,
+        inventoryQuery,
+        warrantyCasesQuery,
+        hiringJobsQuery,
       ]);
 
       const results: SearchResult[] = [];
@@ -466,6 +887,162 @@ router.get(
           subtitle: [[s.city, s.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
           url: `/crm?tab=orgs&organisationId=${encodeURIComponent(s.id)}`,
           icon: "hard-hat",
+        });
+      }
+
+      // ─── New entity results ────────────────────────────────────────────────
+
+      for (const e of equipmentRows) {
+        results.push({
+          id: e.id,
+          type: "equipment",
+          title: e.name,
+          subtitle: [e.equipmentCode, [e.make, e.model].filter(Boolean).join(" "), e.status].filter(Boolean).join(" · "),
+          url: `/equipment/${encodeURIComponent(e.id)}`,
+          icon: "wrench",
+        });
+      }
+
+      for (const t of taskRows) {
+        results.push({
+          id: t.id,
+          type: "task",
+          title: t.title,
+          subtitle: [t.priority, t.status].filter(Boolean).join(" · "),
+          url: `/tasks`,
+          icon: "clipboard-list",
+        });
+      }
+
+      for (const co of changeOrderRows) {
+        results.push({
+          id: co.id,
+          type: "change_order",
+          title: co.description,
+          subtitle: [co.changeOrderNumber, co.projectName, co.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(co.projectCode)}?tab=change-orders`,
+          icon: "file-plus",
+        });
+      }
+
+      for (const r of rfiRows) {
+        results.push({
+          id: r.id,
+          type: "rfi",
+          title: r.subject,
+          subtitle: [r.rfiNumber, r.projectName, r.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(r.projectCode)}?tab=rfis`,
+          icon: "help-circle",
+        });
+      }
+
+      for (const s of submittalRows) {
+        results.push({
+          id: s.id,
+          type: "submittal",
+          title: s.subject,
+          subtitle: [s.submittalNumber, s.projectName, s.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(s.projectCode)}?tab=submittals`,
+          icon: "send",
+        });
+      }
+
+      for (const po of purchaseOrderRows) {
+        results.push({
+          id: po.id,
+          type: "purchase_order",
+          title: po.poNumber,
+          subtitle: [po.status, po.notes].filter(Boolean).join(" · "),
+          url: `/procurement-module?tab=purchase-orders`,
+          icon: "shopping-cart",
+        });
+      }
+
+      for (const vi of vendorInvoiceRows) {
+        results.push({
+          id: vi.id,
+          type: "vendor_invoice",
+          title: vi.invoiceNumber,
+          subtitle: [vi.status, vi.totalAmount ? `$${vi.totalAmount}` : null].filter(Boolean).join(" · "),
+          url: `/procurement-module?tab=vendor-invoices`,
+          icon: "receipt",
+        });
+      }
+
+      for (const tm of teamMemberRows) {
+        results.push({
+          id: tm.id,
+          type: "team_member",
+          title: [`${tm.firstName ?? ""} ${tm.lastName ?? ""}`.trim() || tm.email].filter(Boolean).join(""),
+          subtitle: [tm.role, tm.email].filter(Boolean).join(" · "),
+          url: `/manage-workers`,
+          icon: "user-check",
+        });
+      }
+
+      for (const pl of punchListRows) {
+        results.push({
+          id: pl.id,
+          type: "punch_list_item",
+          title: pl.title,
+          subtitle: [pl.location, pl.projectName, pl.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(pl.projectCode)}?tab=punch-list`,
+          icon: "check-square",
+        });
+      }
+
+      for (const insp of inspectionRows) {
+        results.push({
+          id: insp.id,
+          type: "inspection",
+          title: insp.title,
+          subtitle: [insp.inspectionNumber, insp.projectName, insp.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(insp.projectCode)}?tab=inspections`,
+          icon: "clipboard-check",
+        });
+      }
+
+      for (const obs of safetyObsRows) {
+        results.push({
+          id: obs.id,
+          type: "safety_observation",
+          title: obs.description.length > 80 ? obs.description.slice(0, 80) + "…" : obs.description,
+          subtitle: [obs.observationType, obs.location, obs.severity].filter(Boolean).join(" · "),
+          url: `/safety?tab=observations`,
+          icon: "shield-alert",
+        });
+      }
+
+      for (const mat of inventoryRows) {
+        results.push({
+          id: mat.id,
+          type: "inventory_material",
+          title: mat.name,
+          subtitle: [mat.sku, mat.category].filter(Boolean).join(" · "),
+          url: `/inventory`,
+          icon: "package",
+        });
+      }
+
+      for (const wc of warrantyCaseRows) {
+        results.push({
+          id: wc.id,
+          type: "warranty_case",
+          title: wc.title,
+          subtitle: [wc.caseNumber, wc.projectName, wc.status].filter(Boolean).join(" · "),
+          url: `/projects/${encodeURIComponent(wc.projectCode)}?tab=warranty`,
+          icon: "shield-check",
+        });
+      }
+
+      for (const job of hiringJobRows) {
+        results.push({
+          id: job.id,
+          type: "hiring_job",
+          title: job.title,
+          subtitle: [job.trade, job.department, job.status].filter(Boolean).join(" · "),
+          url: `/hiring`,
+          icon: "user-plus",
         });
       }
 
