@@ -1,11 +1,16 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
 import { Brain, Zap, DollarSign, Activity, Loader2, ChevronLeft, ChevronRight, BarChart3, User, Cpu, ArrowRight, ShieldCheck } from "lucide-react";
 
 interface UsageLimitsData {
@@ -68,9 +73,52 @@ export default function AIGovernancePage() {
   const [actionFilter, setActionFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<string>("today");
   const [page, setPage] = useState(1);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const canToggleRouting = user?.role === "ADMIN" || user?.role === "SUPER_ADMIN";
 
   const { data: modelConfig } = useQuery<AiModelConfigData>({
     queryKey: ["/api/feature-flags/ai-model-config"],
+  });
+
+  const routingMutation = useMutation({
+    mutationFn: async (update: { takeoffEnabled?: boolean; generalEnabled?: boolean }) => {
+      const res = await apiRequest("PATCH", "/api/feature-flags/ai-model-config", update);
+      return res.json() as Promise<AiModelConfigData>;
+    },
+    onMutate: async (update) => {
+      await queryClient.cancelQueries({ queryKey: ["/api/feature-flags/ai-model-config"] });
+      const previous = queryClient.getQueryData<AiModelConfigData>(["/api/feature-flags/ai-model-config"]);
+      queryClient.setQueryData<AiModelConfigData>(["/api/feature-flags/ai-model-config"], (old) => {
+        if (!old) return old;
+        const newTakeoff = update.takeoffEnabled !== undefined ? update.takeoffEnabled : old.routing.takeoffEnabled;
+        const newGeneral = update.generalEnabled !== undefined ? update.generalEnabled : old.routing.generalEnabled;
+        return {
+          ...old,
+          routing: {
+            takeoffEnabled: newTakeoff,
+            generalEnabled: newGeneral,
+            takeoffActive: newTakeoff,
+            generalActive: newGeneral,
+          },
+        };
+      });
+      return { previous };
+    },
+    onError: (_err, _update, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["/api/feature-flags/ai-model-config"], context.previous);
+      }
+      toast({ title: "Failed to update routing", description: "Please try again.", variant: "destructive" });
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/feature-flags/ai-model-config"], data);
+      toast({ title: "AI routing updated" });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags/ai-model-config"] });
+    },
   });
 
   const { data: usageData, isLoading: usageLoading } = useQuery<UsageLimitsData>({
@@ -220,21 +268,63 @@ export default function AIGovernancePage() {
             </div>
 
             <div className="flex-1 min-w-0 p-3 rounded-lg border bg-muted/30" data-testid="section-routing-status">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Routing Status</p>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-sm" data-testid="status-takeoff-routing">
-                  <ShieldCheck className={`h-3.5 w-3.5 ${modelConfig?.routing.takeoffActive ? "text-green-500" : "text-muted-foreground"}`} />
-                  <span className="text-muted-foreground">Takeoff / Estimator</span>
-                  <Badge variant={modelConfig?.routing.takeoffActive ? "default" : "secondary"} className="text-xs ml-auto">
-                    {modelConfig?.routing.takeoffActive ? "Claude" : "GPT"}
-                  </Badge>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">
+                {canToggleRouting ? "Routing Controls" : "Routing Status"}
+              </p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2" data-testid="status-takeoff-routing">
+                  <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${modelConfig?.routing.takeoffActive ? "text-green-500" : "text-muted-foreground"}`} />
+                  {canToggleRouting ? (
+                    <>
+                      <Label htmlFor="toggle-takeoff-routing" className="flex-1 text-sm cursor-pointer">
+                        <span className="block">Takeoff / Estimator</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          {modelConfig?.routing.takeoffActive ? "Claude (Anthropic)" : "GPT-4o (OpenAI)"}
+                        </span>
+                      </Label>
+                      <Switch
+                        id="toggle-takeoff-routing"
+                        checked={modelConfig?.routing.takeoffActive ?? false}
+                        disabled={routingMutation.isPending}
+                        onCheckedChange={(checked) => routingMutation.mutate({ takeoffEnabled: checked })}
+                        data-testid="switch-takeoff-routing"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm text-muted-foreground">Takeoff / Estimator</span>
+                      <Badge variant={modelConfig?.routing.takeoffActive ? "default" : "secondary"} className="text-xs">
+                        {modelConfig?.routing.takeoffActive ? "Claude" : "GPT"}
+                      </Badge>
+                    </>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 text-sm" data-testid="status-general-routing">
-                  <ShieldCheck className={`h-3.5 w-3.5 ${modelConfig?.routing.generalActive ? "text-green-500" : "text-muted-foreground"}`} />
-                  <span className="text-muted-foreground">General AI</span>
-                  <Badge variant={modelConfig?.routing.generalActive ? "default" : "secondary"} className="text-xs ml-auto">
-                    {modelConfig?.routing.generalActive ? "Claude" : "GPT"}
-                  </Badge>
+                <div className="flex items-center gap-2" data-testid="status-general-routing">
+                  <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${modelConfig?.routing.generalActive ? "text-green-500" : "text-muted-foreground"}`} />
+                  {canToggleRouting ? (
+                    <>
+                      <Label htmlFor="toggle-general-routing" className="flex-1 text-sm cursor-pointer">
+                        <span className="block">General AI</span>
+                        <span className="text-xs text-muted-foreground font-normal">
+                          {modelConfig?.routing.generalActive ? "Claude (Anthropic)" : "GPT-4o (OpenAI)"}
+                        </span>
+                      </Label>
+                      <Switch
+                        id="toggle-general-routing"
+                        checked={modelConfig?.routing.generalActive ?? false}
+                        disabled={routingMutation.isPending}
+                        onCheckedChange={(checked) => routingMutation.mutate({ generalEnabled: checked })}
+                        data-testid="switch-general-routing"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-sm text-muted-foreground">General AI</span>
+                      <Badge variant={modelConfig?.routing.generalActive ? "default" : "secondary"} className="text-xs">
+                        {modelConfig?.routing.generalActive ? "Claude" : "GPT"}
+                      </Badge>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

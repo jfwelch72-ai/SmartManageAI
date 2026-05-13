@@ -20,6 +20,60 @@ router.get("/", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "HUSTLER"), asy
 });
 
 /**
+ * Task #2852 — Org-admin AI model routing toggle.
+ * Allows ADMIN (or above) to flip AI_PROVIDER_TAKEOFF and AI_PROVIDER_GENERAL
+ * for their own org directly from the AI Governance page, without needing
+ * Super Admin access to the feature flags panel.
+ * IMPORTANT: this must stay above the /:orgId wildcard route.
+ */
+router.patch("/ai-model-config", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization required" });
+    }
+
+    const { takeoffEnabled, generalEnabled } = req.body ?? {};
+
+    if (typeof takeoffEnabled !== "boolean" && typeof generalEnabled !== "boolean") {
+      return res.status(400).json({ error: "Provide at least one of: takeoffEnabled (boolean), generalEnabled (boolean)" });
+    }
+
+    if (typeof takeoffEnabled === "boolean") {
+      await flagService.setFeatureFlag(orgId, "AI_PROVIDER_TAKEOFF", takeoffEnabled, user.id);
+    }
+    if (typeof generalEnabled === "boolean") {
+      await flagService.setFeatureFlag(orgId, "AI_PROVIDER_GENERAL", generalEnabled, user.id);
+    }
+
+    const flags = await flagService.getFeatureFlags(orgId);
+    const newTakeoffEnabled = flags["AI_PROVIDER_TAKEOFF"] === true;
+    const newGeneralEnabled = flags["AI_PROVIDER_GENERAL"] === true;
+    res.json({
+      primaryModel: {
+        name: "Claude (Anthropic)",
+        model: "claude-sonnet-4-5",
+        provider: "anthropic",
+      },
+      fallbackModel: {
+        name: "GPT-4o (OpenAI)",
+        model: "gpt-4o",
+        provider: "openai",
+      },
+      routing: {
+        takeoffEnabled: newTakeoffEnabled,
+        generalEnabled: newGeneralEnabled,
+        takeoffActive: newTakeoffEnabled,
+        generalActive: newGeneralEnabled,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * Task #2851 — Read-only AI model configuration endpoint.
  * Returns the active provider flags for the calling user's org so the AI
  * Governance page can show a live "Primary Model / Fallback Model" summary.
