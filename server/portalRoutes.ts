@@ -804,10 +804,11 @@ router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermissi
       return res.status(403).json({ error: "Access denied" });
     }
 
-    const portalUserId = `portal_${token.id}`;
+    // user_id is nullable (migration 0120) — portal tokens have no real user
+    // row, so we insert NULL there and rely on user_name for display.
     await db.execute(sql`
       INSERT INTO rfi_activity (id, rfi_id, user_id, user_name, action, comment, created_at)
-      VALUES (gen_random_uuid(), ${id}, ${portalUserId}, ${token.contactName}, 'COMMENT', ${comment}, NOW())
+      VALUES (gen_random_uuid(), ${id}, NULL, ${token.contactName}, 'COMMENT', ${comment}, NOW())
     `);
 
     await logPortalActivity(token.id, "commented_on_rfi", "rfi", id, req.ip);

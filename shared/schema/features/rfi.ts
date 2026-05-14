@@ -83,7 +83,7 @@ export const rfis: typeof _rfis = _rfis;
 export const rfiActivity = pgTable("rfi_activity", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   rfiId: varchar("rfi_id").notNull().references(() => rfis.id, { onDelete: "cascade" }),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").references(() => users.id),
   userName: text("user_name"),
   action: text("action").notNull(),
   comment: text("comment"),
