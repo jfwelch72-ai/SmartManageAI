@@ -1,5 +1,6 @@
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { isDevSeedEnabled } from "./utils/devSeedFlag";
+import { getBetaReadinessControls, isBetaReady } from "./utils/betaReadiness";
 import { initSentry, captureRequestException } from "./sentry";
 import { correlationIdMiddleware } from "./middleware/correlationId";
 import { installCorrelatedFetch } from "./utils/correlatedFetch";
@@ -126,6 +127,39 @@ const isProduction = process.env.NODE_ENV === "production";
     );
   } else {
     logInfo("[boot] STRICT_TENANT_RLS is ON — fail-closed tenant isolation active.");
+  }
+}
+
+// Beta-readiness boot-time check (Task #2875)
+// Logs a structured summary of every critical security/operational control.
+// In non-development environments, exits immediately if any control is off.
+{
+  const controls = getBetaReadinessControls();
+  const ready = isBetaReady(controls);
+  const summary = controls.map((c) => `${c.name}=${c.value}[${c.ok ? "OK" : "FAIL"}]`).join(" ");
+
+  if (ready) {
+    logWarn(`[boot] beta-readiness: ALL controls OK — ${summary}`);
+  } else {
+    const failing = controls.filter((c) => !c.ok).map((c) => c.name).join(", ");
+    const isDevelopment = process.env.NODE_ENV === "development";
+    if (!isDevelopment) {
+      // Any non-development environment (production, staging, beta, test) must
+      // have all controls active. Fail fast so misconfigured deployments are
+      // caught at boot, not after real users are onboarded.
+      // eslint-disable-next-line no-console
+      console.error(
+        `[boot] FATAL: beta-readiness check FAILED — the following critical controls are off: ${failing}. ` +
+          `Full status: ${summary}. ` +
+          "Fix the missing configuration and redeploy. See docs/architecture/tenant-isolation.md and the ops runbook.",
+      );
+      process.exit(1);
+    } else {
+      logWarn(
+        `[boot] beta-readiness: controls NOT all active — ${summary}. ` +
+          `Failing: ${failing}. This is acceptable in development but WILL cause a hard exit in any non-development environment.`,
+      );
+    }
   }
 }
 

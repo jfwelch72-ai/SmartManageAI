@@ -48,6 +48,8 @@ import rateLimit from 'express-rate-limit';
 import { db } from './db';
 import { sql } from 'drizzle-orm';
 import { logInfo, logError } from './utils/logger';
+import { requireAuth, requireRole } from './auth';
+import { getBetaReadinessControls, isBetaReady } from './utils/betaReadiness';
 import { getMonitoringStatus } from './utils/monitoring';
 import { getPoolStats } from './utils/poolHealth';
 import { getAllJobMetrics } from './utils/jobMetrics';
@@ -422,6 +424,35 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
 
   res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
   res.send(lines.join('\n') + '\n');
+});
+
+/**
+ * GET /api/ops/beta-readiness — Beta-environment readiness report (Task #2875)
+ *
+ * Returns the status of every critical security/operational control that must
+ * be active before the platform is safe for real beta users. Requires
+ * SUPER_ADMIN authentication so this endpoint cannot be probed anonymously.
+ *
+ * Response shape:
+ *   { ready: boolean, environment: string, controls: BetaControl[], checkedAt: string }
+ */
+router.get('/api/ops/beta-readiness', opsRateLimiter, requireAuth, requireRole('SUPER_ADMIN'), (_req, res) => {
+  const controls = getBetaReadinessControls();
+  const ready = isBetaReady(controls);
+
+  if (ready) {
+    logInfo('[ops] beta-readiness check requested — all controls OK');
+  } else {
+    const failing = controls.filter((c) => !c.ok).map((c) => c.name).join(', ');
+    logInfo(`[ops] beta-readiness check requested — FAILING controls: ${failing}`);
+  }
+
+  res.status(ready ? 200 : 503).json({
+    ready,
+    environment: process.env.NODE_ENV ?? 'development',
+    controls,
+    checkedAt: new Date().toISOString(),
+  });
 });
 
 export default router;
