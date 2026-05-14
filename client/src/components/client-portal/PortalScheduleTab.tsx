@@ -139,13 +139,13 @@ export function PortalScheduleTab({ schedule }: PortalScheduleTabProps) {
                       <TableCell className="font-medium">{task.name}</TableCell>
                       <TableCell>
                         {task.startDate
-                          ? format(new Date(task.startDate), "MMM d")
-                          : "TBD"}
+                          ? format(new Date(task.startDate), "MMM d, yyyy")
+                          : <span className="text-muted-foreground italic text-sm">No date scheduled</span>}
                       </TableCell>
                       <TableCell>
                         {task.endDate
-                          ? format(new Date(task.endDate), "MMM d")
-                          : "TBD"}
+                          ? format(new Date(task.endDate), "MMM d, yyyy")
+                          : <span className="text-muted-foreground italic text-sm">No date scheduled</span>}
                       </TableCell>
                       <TableCell>
                         <span className={STATUS_COLORS[task.status || ""] || "text-muted-foreground"}>
