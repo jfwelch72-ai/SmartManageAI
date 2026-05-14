@@ -52,6 +52,7 @@ jobs:
       # begins.  The actions/cache post-step saves the updated .tsbuildinfo
       # automatically at job end.
       - name: Restore TypeScript incremental build cache
+        id: ts-cache
         uses: actions/cache@v4
         with:
           path: node_modules/.cache/typecheck
@@ -64,8 +65,40 @@ jobs:
       # PR gate exercises the same command developers run locally. The
       # tsconfig now includes `**/*.test.ts` (Task #2428), so test code is
       # typechecked alongside production code and can no longer drift.
+      #
+      # Task #2866 — Wrap the tsc invocation in a timing harness so gradual
+      # slowdowns (e.g. a large new file landing on main) are surfaced on
+      # every PR rather than discovered only after the step becomes noticeably
+      # slow. Elapsed wall-clock time and cache hit/miss status are written to
+      # $GITHUB_STEP_SUMMARY. If elapsed time exceeds TYPECHECK_BUDGET_SECONDS
+      # (60 s) a ::warning:: annotation is emitted, visible on the PR checks
+      # page without failing the build.
       - name: Run TypeScript type checking
-        run: npm run check
+        env:
+          CACHE_HIT: ${{ steps.ts-cache.outputs.cache-hit }}
+          TYPECHECK_BUDGET_SECONDS: "60"
+        run: |
+          set -euo pipefail
+          _ts_start=$SECONDS
+          npm run check
+          _ts_elapsed=$(( SECONDS - _ts_start ))
+
+          _cache_status="miss"
+          if [ "${CACHE_HIT:-}" = "true" ]; then
+            _cache_status="hit"
+          fi
+
+          echo "## TypeScript type-check timing" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Elapsed (s) | ${_ts_elapsed} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| tsbuildinfo cache | ${_cache_status} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Budget (s) | ${TYPECHECK_BUDGET_SECONDS} |" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "${_ts_elapsed}" -gt "${TYPECHECK_BUDGET_SECONDS}" ]; then
+            echo "::warning::TypeScript type-check took ${_ts_elapsed}s, which exceeds the ${TYPECHECK_BUDGET_SECONDS}s budget (cache ${_cache_status}). Consider investigating recent large file additions or tsconfig changes."
+          fi
 
       # Task #1294 — run the jsdom-based estimate-component vitest suite on
       # every PR so regressions to the BidTabImportDialog suggestion-reason
