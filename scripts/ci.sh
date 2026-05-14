@@ -83,6 +83,14 @@ run_step "ai router bypass guard self-test (scripts/check-ai-router-bypass.mjs -
 run_step "ai router bypass lint (scripts/check-ai-router-bypass.mjs)" \
   node scripts/check-ai-router-bypass.mjs
 
+# Task #2874 — block new SSE route files from emitting text/event-stream
+# without either calling withOrgContext or carrying an approved
+# `// sse-org-context: <reason>` annotation. The org-context middleware
+# intentionally bypasses RLS context setup for SSE routes; this guard
+# ensures every SSE handler documents how it handles tenant isolation.
+run_step "SSE org-context lint (scripts/check-sse-org-context.mjs)" \
+  node scripts/check-sse-org-context.mjs
+
 # Task #2685 — block new duplicate 4-digit prefixes in migrations/ from
 # slipping into main. Historical duplicates (Task #2435) are allowlisted
 # inside the script. Cheap (<1s).

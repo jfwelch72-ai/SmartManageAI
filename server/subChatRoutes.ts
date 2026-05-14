@@ -1,3 +1,8 @@
+// sse-org-context: /portal/chat/events uses pure in-memory fan-out via
+// registerPortalSseClient — no per-tenant DB queries execute inside the SSE
+// handler body. Tenant isolation is enforced upstream by requirePortalAuth
+// (validates the signed portal token) and at the emitter layer (events are
+// keyed by portal identifier, never broadcast cross-tenant).
 import { logError } from "./utils/logger";
 import { Router, Response, NextFunction } from "express";
 import { db } from "./db";

@@ -256,9 +256,59 @@ All five `for (const org of orgs)` loops are wrapped:
 - `processCertifiedPayrollWeeklyDigest` (loop ~4725) →
   `withJobOrgContext("payroll.certifiedPayrollDigest", org.id, …)`
 
+## SSE bypass and tenant isolation
+
+Long-lived Server-Sent Events (SSE) routes are listed in
+`SSE_BYPASS_PATHS` inside `server/middleware/orgContext.ts` and are
+intentionally excluded from the automatic per-request `withOrgContext`
+wrap. The reason is pool safety: pinning a pg client to a long-lived
+stream under moderate load would exhaust the connection pool (max 60).
+
+This creates a gap: a developer adding a new SSE route without
+explicitly considering tenant isolation could silently expose
+cross-tenant data. The CI guard below closes that gap.
+
+### Policy for SSE handlers
+
+Every `.ts` file under `server/` that emits `text/event-stream` must
+satisfy **one** of the following:
+
+| Condition | How to meet it |
+| --- | --- |
+| The handler executes per-tenant DB queries during the stream | Import and call `withOrgContext` for each query. |
+| The handler performs no per-tenant DB queries (pure in-memory fan-out, SUPER_ADMIN-gated, etc.) | Add a `// sse-org-context: <reason>` annotation (top-of-file or inline near the handler). |
+
+The annotation text after the colon is the auditable justification.
+Reviewers must inspect every new annotation in PR — the annotation is
+the deliberate, reviewable acknowledgement, not a silent bypass.
+
+### Adding a new SSE route (checklist)
+
+1. Register the path in `SSE_BYPASS_PATHS` in
+   `server/middleware/orgContext.ts`.
+2. Decide whether the handler needs per-tenant DB access:
+   - **Yes** → import `withOrgContext` from `./dbContext` and wrap
+     every per-query DB call inside the handler with it.
+   - **No** → add a `// sse-org-context: <reason>` annotation at the
+     top of the file explaining why no per-tenant DB access is needed
+     (e.g. "pure in-memory fan-out keyed by userId/orgId at
+     registration time").
+3. Run `node scripts/check-sse-org-context.mjs` to confirm the guard
+   passes before opening a PR.
+
+### Existing SSE routes and their compliance
+
+| Route | File | Approach |
+| --- | --- | --- |
+| `/api/messaging/events` | `server/messagingRoutes.ts` | `// sse-org-context:` annotation — pure in-memory fan-out, org-scoped at `registerSseClient(userId, orgId, res)` call. |
+| `/api/admin/dev/email-outbox/stream` | `server/devEmailRoutes.ts` | `// sse-org-context:` annotation — SUPER_ADMIN only, process-global noop outbox, no per-tenant data. |
+| `/portal/chat/events` | `server/subChatRoutes.ts` | `// sse-org-context:` annotation — pure in-memory fan-out, keyed by portal token identifier. |
+| `/client-portal/chat/events` | `server/clientChatRoutes.ts` | `withOrgContext` imported and used for pre-stream DB lookup. |
+| `/vendor/notifications/stream` | `server/portalNotificationRoutes.ts` | `withOrgContext` imported and used for pre-stream DB lookups. |
+
 ## Lint guards (CI)
 
-Both run in `scripts/ci.sh` (cheap, <1s each).
+All run in `scripts/ci.sh` (cheap, <1s each).
 
 - `scripts/check-db-imports.mjs` (Task #2478) — fails when a new
   `server/` file imports `drizzle-orm/node-postgres`, builds its own
@@ -273,6 +323,10 @@ Both run in `scripts/ci.sh` (cheap, <1s each).
   Allowlist: `server/jobs/jobRunner.ts` (wraps at the
   `withSchedulerLock` layer) and `server/jobQueue/index.ts` (wraps
   every handler invocation).
+- `scripts/check-sse-org-context.mjs` (Task #2874) — fails when a
+  `server/` file emits `text/event-stream` without either importing
+  `withOrgContext` or carrying a `// sse-org-context: <reason>`
+  annotation. Ensures every SSE bypass is deliberate and reviewable.
 
 ## Periodic strict-mode audit
 

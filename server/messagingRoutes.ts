@@ -1,3 +1,9 @@
+// sse-org-context: /api/messaging/events uses pure in-memory fan-out via
+// registerSseClient(userId, orgId, res). The registration call itself is
+// org-scoped (orgId comes from req.user, validated by requireAuth), and events
+// are dispatched only to clients whose orgId matches the publishing org. No
+// per-tenant DB queries execute inside the SSE handler body; the middleware
+// bypass is intentional to avoid pinning a pg pool client for the stream.
 /**
  * @openapi
  * /api/conversations:

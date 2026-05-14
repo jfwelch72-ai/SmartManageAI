@@ -1,3 +1,8 @@
+// sse-org-context: /api/admin/dev/email-outbox/stream is gated to SUPER_ADMIN
+// and streams from a process-global noop-transport outbox. There is no
+// per-tenant data: the outbox captures dev-mode emails regardless of org, and
+// access is restricted to platform administrators only. No per-tenant DB
+// queries execute inside the SSE handler body.
 import { Router, type Response, type NextFunction } from "express";
 import {
   type AuthRequest,
