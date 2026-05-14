@@ -542,14 +542,65 @@ function getTourStepsForRole(role: string): TourStep[] {
   }
 }
 
+const WHATS_NEXT_BY_ROLE: Record<string, string[]> = {
+  ADMIN: [
+    "Configure your company settings and branding",
+    "Create your first bid in the Win Work section",
+    "Invite team members and assign them roles",
+    "Set up Safety & Compliance before your first project",
+    "Check out the Finance section to configure billing and payroll",
+  ],
+  MANAGER: [
+    "Configure your company settings and branding",
+    "Create your first bid in the Win Work section",
+    "Invite team members and assign them roles",
+    "Set up Safety & Compliance before your first project",
+    "Check out the Finance section to configure billing and payroll",
+  ],
+  ESTIMATOR: [
+    "Open the Bids section and start your first estimate",
+    "Build out your scope library with reusable line items",
+    "Run the trade calculator on a live project",
+    "Review takeoff drawings attached to an active bid",
+    "Explore the Assemblies catalog to speed up future estimates",
+  ],
+  SUPERINTENDENT: [
+    "Clock in and start tracking your time",
+    "Review crew assignments and daily schedules",
+    "Check open items in the Jobsite section",
+    "Log a daily field report for today",
+    "Review any open punch list items on your active project",
+  ],
+  FIELD_WORKER: [
+    "Clock in to start tracking your hours",
+    "View today's tasks and assignments",
+    "Check your Safety Training status and complete any pending modules",
+    "Submit a daily field report",
+    "Review any open punch list items assigned to you",
+  ],
+  VENDOR: [
+    "Update your pricing catalog with current material costs",
+    "Check your bid inbox for new invitations",
+    "Review any open RFIs that need a response",
+    "Upload your compliance documents and certifications",
+    "Connect with the procurement team on active projects",
+  ],
+};
+
+const DEFAULT_WHATS_NEXT = WHATS_NEXT_BY_ROLE["ADMIN"];
+
 function TourCompletionModal({ onClose }: { onClose: () => void }) {
   const [, setLocation] = useLocation();
-  
+  const { permissionRole } = useAuth();
+
   const handleGoToDashboard = () => {
     onClose();
     setLocation("/dashboard");
   };
-  
+
+  const role = permissionRole?.toUpperCase() ?? "";
+  const nextSteps = WHATS_NEXT_BY_ROLE[role] ?? DEFAULT_WHATS_NEXT;
+
   return (
     <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <Card className="w-full max-w-lg mx-4 border-2 border-primary/20 shadow-2xl">
@@ -570,12 +621,10 @@ function TourCompletionModal({ onClose }: { onClose: () => void }) {
           </p>
           <div className="bg-muted/50 rounded-lg p-4 text-left space-y-2">
             <p className="font-medium text-sm">What's Next:</p>
-            <ul className="text-sm text-muted-foreground space-y-1">
-              <li>• Complete the Setup Wizard to configure your account</li>
-              <li>• Explore your Win Work section to create your first bid</li>
-              <li>• Add your team members and assign them roles</li>
-              <li>• Set up your Safety & Compliance section before your first project</li>
-              <li>• Check out the Finance section to configure billing and payroll</li>
+            <ul className="text-sm text-muted-foreground space-y-1" data-testid="tour-whats-next-list">
+              {nextSteps.map((step, i) => (
+                <li key={i} data-testid={`tour-whats-next-item-${i}`}>• {step}</li>
+              ))}
             </ul>
           </div>
           <Button 
