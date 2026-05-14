@@ -48,5 +48,10 @@
   { "slug": "notifications", "title": "Tune your notification preferences", "module": "Notifications", "tags": ["notifications"], "routes": ["/notifications", "/profile"] },
   { "slug": "sso-security", "title": "Enable SSO and security policies", "module": "Security", "tags": ["sso", "security"], "routes": ["/company-settings"] },
   { "slug": "billing-plans", "title": "Manage billing and plan tier", "module": "Billing", "tags": ["billing", "plan"], "routes": ["/billing"] },
-  { "slug": "support-and-sla", "title": "Get support and read the SLA", "module": "Support", "tags": ["support", "sla", "help"], "routes": ["/help", "/sla"] }
+  { "slug": "support-and-sla", "title": "Get support and read the SLA", "module": "Support", "tags": ["support", "sla", "help"], "routes": ["/help", "/sla"] },
+  { "slug": "inventory-overview", "title": "Materials Inventory overview", "module": "Inventory", "tags": ["inventory", "materials", "stock", "warehouse", "cycle-count"], "routes": ["/inventory"] },
+  { "slug": "project-closeout", "title": "Close out a project with the Closeout Package", "module": "Projects", "tags": ["closeout", "handover", "lien", "warranty", "punch-list"], "routes": ["/projects/"] },
+  { "slug": "equipment-work-orders", "title": "Generate and manage PM work orders", "module": "Equipment", "tags": ["equipment", "pm", "work-orders", "maintenance", "preventive"], "routes": ["/equipment"] },
+  { "slug": "ai-estimator-assemblies", "title": "Use assemblies and org factors in the AI Estimator", "module": "AI Estimator", "tags": ["ai", "estimator", "assemblies", "factors", "sheet-index"], "routes": ["/ai-estimator", "/bid"] },
+  { "slug": "billing-portal", "title": "Manage your plan via the self-serve billing portal", "module": "Billing", "tags": ["billing", "stripe", "plan", "portal", "upgrade"], "routes": ["/billing"] }
 ]

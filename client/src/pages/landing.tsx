@@ -209,6 +209,18 @@ const solutions = [
     solution: "AI-Powered Hiring",
     description: "AI posts jobs, scores resumes, flags top candidates, and schedules interviews automatically. Find skilled workers faster without the manual grind.",
     icon: UserCheck
+  },
+  {
+    problem: "Inventory Chaos",
+    solution: "Materials Inventory Engine",
+    description: "Track stock across every warehouse, yard, jobsite, and truck. Receive against POs, issue to projects with cost burden, run cycle counts, and get automatic low-stock alerts.",
+    icon: Box
+  },
+  {
+    problem: "Project Closeout Delays",
+    solution: "Automated Closeout Package",
+    description: "Auto-pull warranties, lien waivers, permits, and inspection records into a checklist. Generate a verified ZIP export in one click — delivered via signed URL with sha256 integrity check.",
+    icon: CheckCircle2
   }
 ];
 
@@ -217,7 +229,7 @@ const features = [
     category: "Project Lifecycle",
     items: [
       { name: "Bid Management", description: "Track opportunities from lead to win with 6-step workflow", icon: Target },
-      { name: "Estimating Engine", description: "Interactive takeoff, assembly expansion, and production rates", icon: Calculator },
+      { name: "Estimating Engine", description: "Interactive takeoff, assemblies catalog, org-level factors, AI plan-sheet classifier (G/A/S/M/E/P discipline tagging), and production rates", icon: Calculator },
       { name: "Project Dashboard", description: "Real-time status, health scores, and KPIs across all projects", icon: Building2 },
       { name: "Change Orders", description: "AI-suggested PCOs with revision history and multi-level approvals", icon: FileText },
       { name: "Schedule of Values", description: "AIA progress billing and SOV scope alignment", icon: DollarSign },
@@ -280,6 +292,28 @@ const features = [
     ]
   },
   {
+    category: "Inventory Management",
+    items: [
+      { name: "Multi-Location Inventory", description: "Track stock across warehouse, yard, jobsite, and truck locations", icon: Box },
+      { name: "Barcode & QR Scanning", description: "Instant material lookup and receiving via barcode or QR scan", icon: Scan },
+      { name: "Receive / Issue / Transfer", description: "Full stock movement ledger with PO-linked receipts and project cost burden", icon: Truck },
+      { name: "Stock Levels & Low-Stock Alerts", description: "Real-time on-hand quantities with reorder point notifications", icon: AlertTriangle },
+      { name: "Cycle Counts", description: "Scheduled physical counts with variance review and approval workflow", icon: ClipboardList },
+      { name: "Inventory Reports", description: "Low-stock, slow-moving, and transaction history reports by location", icon: BarChart3 }
+    ]
+  },
+  {
+    category: "Project Closeout & Handover",
+    items: [
+      { name: "Closeout Templates", description: "Org-level reusable checklists scoped to project type", icon: ClipboardList },
+      { name: "Auto-Pull", description: "One-click import of warranties, lien waivers, permits, and inspection records", icon: Zap },
+      { name: "Closeout Checklist", description: "Per-project status tracking across O&M, as-builts, punch, and more", icon: ListChecks },
+      { name: "Verified ZIP Export", description: "Integrity-checked closeout package with sha256 checksum and signed download URL", icon: FileText },
+      { name: "Walkthrough Mode", description: "Punch list grouped by location for efficient site walks", icon: MapPin },
+      { name: "Handover Tracking", description: "Asset handover items linked to warranty and O&M documents", icon: Award }
+    ]
+  },
+  {
     category: "Contract Management",
     items: [
       { name: "Contract Lifecycle", description: "Draft, negotiate, execute, and track contracts", icon: FileSignature },
@@ -306,7 +340,7 @@ const features = [
     items: [
       { name: "Fleet Tracking", description: "Monitor equipment across jobsites", icon: Truck },
       { name: "Tool Management", description: "Track tools by project and employee", icon: Wrench },
-      { name: "Maintenance Scheduling", description: "Preventive maintenance alerts", icon: Calendar },
+      { name: "PM Work Order Engine", description: "Auto-generates preventive maintenance work orders from schedules; idempotent per-cycle deduplication", icon: Calendar },
       { name: "Hour Logging", description: "Track equipment usage and fuel", icon: Clock },
       { name: "Repair Workflows", description: "Document and track repairs", icon: HardHat },
       { name: "Cost Allocation", description: "Equipment costs by project with depreciation", icon: DollarSign }
@@ -372,10 +406,10 @@ const features = [
     items: [
       { name: "SSO / SAML 2.0", description: "Single sign-on for enterprise organizations", icon: Lock },
       { name: "8-Role RBAC", description: "Role-specific navigation workflows — each role sees only the sections relevant to their job", icon: Shield },
-      { name: "Feature Permissions", description: "Per-user access control with 73+ feature flags and custom role labels", icon: Settings },
+      { name: "Tenant Isolation (Row-Level Security)", description: "Postgres RLS enforced on every multi-tenant table; fail-closed by default in production — zero cross-tenant data leakage", icon: ShieldCheck },
+      { name: "SOC 2-Grade Superadmin Audit Log", description: "Every cross-tenant elevation is recorded in a dedicated audit table before it executes; full money-path action trail", icon: Eye },
       { name: "No-Code Workflows", description: "Visual pipeline editor for custom approval chains", icon: Workflow },
-      { name: "Data Retention & GDPR", description: "Configurable retention policies and compliance", icon: ShieldCheck },
-      { name: "PWA & Offline Sync", description: "Works offline with automatic data sync", icon: Smartphone }
+      { name: "Data Retention & GDPR", description: "Configurable retention policies, GDPR DPA, and sub-processor disclosure", icon: ShieldCheck }
     ]
   }
 ];
@@ -1246,13 +1280,13 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {[
-                    "AI-powered estimating with takeoff workspace",
+                    "AI-powered estimating with takeoff workspace & assemblies catalog",
                     "GPS time clock with production tracking",
                     "Automated change order detection & billing",
-                    "QuickBooks, Google, Microsoft integrations",
+                    "Materials inventory across all locations with cycle counts",
+                    "Automated project closeout package with verified ZIP export",
                     "Built-in approval workflows & e-signatures",
                     "Real-time team messaging & video calls",
-                    "AI hiring assistant with candidate scoring",
                     "Document control with versioning & compliance"
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
@@ -1359,6 +1393,18 @@ export default function LandingPage() {
               </div>
             </div>
           </RevealSection>
+
+          <RevealSection>
+            <div className="mt-10 max-w-2xl mx-auto text-center rounded-lg border border-primary/20 bg-primary/5 px-6 py-5" data-testid="callout-billing-portal">
+              <div className="flex items-center justify-center gap-2 mb-2">
+                <CreditCard className="w-5 h-5 text-primary" />
+                <span className="font-semibold text-sm">Self-Serve Billing Portal</span>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Manage your plan, upgrade or downgrade, update payment details, and download invoices directly — no sales call required. Access the billing portal any time from your account settings.
+              </p>
+            </div>
+          </RevealSection>
         </div>
       </section>
 
@@ -1440,10 +1486,11 @@ export default function LandingPage() {
               </ul>
             </div>
             <div>
-              <h4 className="font-semibold mb-4">Company</h4>
+              <h4 className="font-semibold mb-4">Support</h4>
               <ul className="space-y-2 text-sm text-muted-foreground">
-                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-about">About</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-contact">Contact</a></li>
+                <li><Link href="/help" className="hover:text-foreground transition-colors" data-testid="link-footer-help">Help Center</Link></li>
+                <li><Link href="/sla" className="hover:text-foreground transition-colors" data-testid="link-footer-sla">SLA &amp; Uptime</Link></li>
+                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-contact">Contact Us</a></li>
                 <li><Link href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</Link></li>
                 <li><Link href="/dpa" className="hover:text-foreground transition-colors" data-testid="link-footer-dpa">Data Processing Addendum</Link></li>
