@@ -733,6 +733,11 @@ export function SubmittalDetailDialog({
     enabled: !!detail?.id && open,
   });
 
+  const { data: submittalAttachments = [] } = useQuery<SubmittalAttachment[]>({
+    queryKey: ["/api/submittals", detail?.id, "attachments"],
+    enabled: !!detail?.id && open,
+  });
+
   const { data: orgUsers = [] } = useQuery<{ id: string; firstName: string; lastName: string; role: string }[]>({
     queryKey: ["/api/users"],
     enabled: !!detail?.id && open && canManageChain && detail?.status === "DRAFT",
@@ -1169,7 +1174,8 @@ export function SubmittalDetailDialog({
                     <>
                       <Button
                         onClick={() => mutations.submitMutation.mutate(detail.id)}
-                        disabled={mutations.submitMutation.isPending}
+                        disabled={mutations.submitMutation.isPending || submittalAttachments.length === 0}
+                        title={submittalAttachments.length === 0 ? "Add at least one attachment before submitting" : undefined}
                         data-testid={`${testIdPrefix}button-action-submit`}
                       >
                         <Send className="h-4 w-4 mr-2" />
