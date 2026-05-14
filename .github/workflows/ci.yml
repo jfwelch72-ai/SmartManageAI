@@ -24,6 +24,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Task #2864 — Persist the two .tsbuildinfo files (client + server)
+      # across CI runs so TypeScript's incremental checker only re-examines
+      # files that changed since the last green run, rather than checking all
+      # 2,100+ source files from scratch every time.
+      #
+      # Key strategy:
+      #   exact key  = OS + tsconfig hash + commit SHA
+      #     → exact hit on re-runs of the same commit (zero incremental work)
+      #   restore-key 1 = OS + tsconfig hash
+      #     → picks up the most recent cache whose tsconfigs match; TypeScript
+      #       then only re-checks files changed since that run
+      #   restore-key 2 = OS-only fallback
+      #     → brand-new branch or tsconfig change; still faster than pure cold
+      #
+      # Placement: AFTER `npm ci` (which wipes node_modules/ in full, clearing
+      # any pre-existing .tsbuildinfo), so the restored cache is laid back into
+      # the freshly created node_modules/.cache/typecheck/ directory before tsc
+      # begins.  The actions/cache post-step saves the updated .tsbuildinfo
+      # automatically at job end.
+      - name: Restore TypeScript incremental build cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/typecheck
+          key: typecheck-${{ runner.os }}-${{ hashFiles('tsconfig*.json') }}-${{ github.sha }}
+          restore-keys: |
+            typecheck-${{ runner.os }}-${{ hashFiles('tsconfig*.json') }}-
+            typecheck-${{ runner.os }}-
+
       # Task #2428 — Use the canonical `npm run check` script (= `tsc`) so the
       # PR gate exercises the same command developers run locally. The
       # tsconfig now includes `**/*.test.ts` (Task #2428), so test code is
