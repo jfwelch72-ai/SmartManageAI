@@ -1364,6 +1364,55 @@ router.post("/portal/manage/revoke/:tokenId", requireAuth, requireRole("SUPER_AD
   }
 });
 
+router.patch("/portal/manage/tokens/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { tokenId } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const [existing] = await db
+      .select()
+      .from(subcontractorPortalTokens)
+      .where(eq(subcontractorPortalTokens.id, tokenId))
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: "Token not found" });
+    }
+
+    if (shouldFilter && orgId && existing.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const updates: Record<string, any> = {};
+    if (req.body.expiresAt !== undefined) {
+      if (req.body.expiresAt) {
+        const parsed = new Date(req.body.expiresAt);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "expiresAt must be a valid ISO date string" });
+        }
+        updates.expiresAt = parsed;
+      } else {
+        updates.expiresAt = null;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: "No updatable fields provided" });
+    }
+
+    const [updated] = await db
+      .update(subcontractorPortalTokens)
+      .set(updates)
+      .where(eq(subcontractorPortalTokens.id, tokenId))
+      .returning();
+
+    res.json({ id: updated.id, expiresAt: updated.expiresAt });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { tokenId } = req.params;

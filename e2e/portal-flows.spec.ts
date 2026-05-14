@@ -232,6 +232,51 @@ test.describe("Client Portal", () => {
     );
     expect(res.status()).toBe(400);
   });
+
+  test("expired client portal access is rejected with 403 on all public endpoints", async ({
+    page,
+  }) => {
+    const project = await createProject(page);
+    const email = `expired-client-${Date.now()}@owner.test`;
+    const { accessId } = await createClientPortalAccess(page, project.id, email);
+
+    // Confirm both endpoints work while the token is unexpired
+    const verifyBefore = await page.request.post(
+      `${CLIENT_PORTAL_BASE}/client-portal/public/verify`,
+      { data: { projectId: project.id, email } },
+    );
+    expect(verifyBefore.status(), "verify should succeed before expiry").toBe(200);
+
+    const dataBefore = await page.request.post(
+      `${CLIENT_PORTAL_BASE}/client-portal/public/data`,
+      { data: { projectId: project.id, email } },
+    );
+    expect(dataBefore.status(), "data should succeed before expiry").toBe(200);
+
+    // Back-date the tokenExpiresAt to the past via the admin PATCH endpoint
+    const pastDate = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+    const patchRes = await page.request.patch(
+      `${CLIENT_PORTAL_BASE}/client-portal/access/${accessId}`,
+      { data: { tokenExpiresAt: pastDate } },
+    );
+    expect(
+      patchRes.status(),
+      `PATCH to back-date tokenExpiresAt failed: ${await patchRes.text()}`,
+    ).toBe(200);
+
+    // Both endpoints must now be rejected with 403
+    const verifyRes = await page.request.post(
+      `${CLIENT_PORTAL_BASE}/client-portal/public/verify`,
+      { data: { projectId: project.id, email } },
+    );
+    expect(verifyRes.status(), "Expired client portal token must be rejected by /verify with 403").toBe(403);
+
+    const dataRes = await page.request.post(
+      `${CLIENT_PORTAL_BASE}/client-portal/public/data`,
+      { data: { projectId: project.id, email } },
+    );
+    expect(dataRes.status(), "Expired client portal token must be rejected by /data with 403").toBe(403);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -361,6 +406,39 @@ test.describe("Subcontractor Portal", () => {
       headers: { "x-portal-token": rawToken },
     });
     expect(infoRes.status()).toBe(401);
+  });
+
+  test("expired sub portal token is rejected with 401", async ({ page }) => {
+    const project = await createProject(page);
+    const org = await createCrmOrg(page);
+    const { rawToken, tokenId } = await createSubPortalInvite(
+      page,
+      project.id,
+      org.id,
+    );
+
+    // Confirm the token works while unexpired
+    const beforeRes = await page.request.get(`${BASE_URL}/api/portal/info`, {
+      headers: { "x-portal-token": rawToken },
+    });
+    expect(beforeRes.status(), "Token should be valid before expiry").toBe(200);
+
+    // Back-date the expiresAt to the past via the admin PATCH endpoint
+    const pastDate = new Date(Date.now() - 60 * 60 * 1000).toISOString(); // 1 hour ago
+    const patchRes = await page.request.patch(
+      `${BASE_URL}/api/portal/manage/tokens/${tokenId}`,
+      { data: { expiresAt: pastDate } },
+    );
+    expect(
+      patchRes.status(),
+      `PATCH to back-date expiresAt failed: ${await patchRes.text()}`,
+    ).toBe(200);
+
+    // Expired token should now be rejected with 401
+    const afterRes = await page.request.get(`${BASE_URL}/api/portal/info`, {
+      headers: { "x-portal-token": rawToken },
+    });
+    expect(afterRes.status(), "Expired sub portal token must be rejected with 401").toBe(401);
   });
 });
 

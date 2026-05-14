@@ -410,6 +410,17 @@ router.patch("/client-portal/access/:id", requireAuth, requireRole("ADMIN", "MAN
     if (req.body.permissions) updates.permissionsJson = JSON.stringify(req.body.permissions);
     if (typeof req.body.isActive === "boolean") updates.isActive = req.body.isActive;
     if (req.body.name) updates.name = req.body.name;
+    if (req.body.tokenExpiresAt !== undefined) {
+      if (req.body.tokenExpiresAt) {
+        const parsed = new Date(req.body.tokenExpiresAt);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ error: "tokenExpiresAt must be a valid ISO date string" });
+        }
+        updates.tokenExpiresAt = parsed;
+      } else {
+        updates.tokenExpiresAt = null;
+      }
+    }
 
     const [updated] = await db
       .update(clientPortalAccess)
@@ -494,6 +505,10 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res, next) 
       return res.status(403).json({ error: "No portal access found for this email" });
     }
 
+    if (access.access.tokenExpiresAt && new Date(access.access.tokenExpiresAt) <= new Date()) {
+      return res.status(403).json({ error: "Portal access has expired" });
+    }
+
     let permissions = {
       viewProgress: true,
       viewPhotos: true,
@@ -549,6 +564,10 @@ router.post("/client-portal/public/data", authLimiter, async (req, res, next) =>
 
     if (!access) {
       return res.status(403).json({ error: "No portal access" });
+    }
+
+    if (access.tokenExpiresAt && new Date(access.tokenExpiresAt) <= new Date()) {
+      return res.status(403).json({ error: "Portal access has expired" });
     }
 
     let permissions = {
@@ -808,6 +827,10 @@ async function verifyPortalAccess(projectId: string, email: string) {
     .limit(1);
 
   if (!access) return null;
+
+  if (access.tokenExpiresAt && new Date(access.tokenExpiresAt) <= new Date()) {
+    return null;
+  }
 
   let permissions = {
     viewProgress: true,
