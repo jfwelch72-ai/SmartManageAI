@@ -393,22 +393,26 @@ export default function AISettingsPage() {
             <CardHeader>
               <CardTitle>AI Model</CardTitle>
               <CardDescription>
-                Configure which OpenAI model to use
+                Configure the default AI model. Supports both OpenAI (GPT) and Anthropic (Claude) models — the active provider is controlled by the AI routing toggles on the AI Governance page.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-2">
-                <Label htmlFor="model">Model Name</Label>
-                <Input
-                  id="model"
-                  value={formData.modelName}
-                  onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
-                  placeholder="gpt-5"
-                  data-testid="input-model-name"
-                />
-                <p className="text-sm text-muted-foreground">
-                  Recommended: gpt-5 (latest) or gpt-4o
-                </p>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="model">Model Name</Label>
+                  <Input
+                    id="model"
+                    value={formData.modelName}
+                    onChange={(e) => setFormData({ ...formData, modelName: e.target.value })}
+                    placeholder="claude-3-7-sonnet-latest or gpt-4o"
+                    data-testid="input-model-name"
+                  />
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p><span className="font-medium text-foreground">Anthropic (Claude):</span> claude-3-7-sonnet-latest, claude-3-5-sonnet-20241022, claude-3-5-haiku-20241022</p>
+                    <p><span className="font-medium text-foreground">OpenAI (GPT):</span> gpt-4o, gpt-4o-mini, gpt-5</p>
+                    <p className="pt-1">The active provider (Claude vs GPT) is set per-workflow on the <span className="font-medium text-foreground">AI Governance</span> page.</p>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>
