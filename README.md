@@ -16,7 +16,7 @@ Required env vars for local dev: `DATABASE_URL`, `SESSION_SECRET`, `JWT_SECRET`.
 
 | Command | What it runs |
 | --- | --- |
-| `npm run check` | TypeScript typecheck (`tsc`). Covers `client/src/**`, `server/**`, `shared/**` **including `**/*.test.ts`** so test code stays in sync with production types. |
+| `npm run check` | TypeScript typecheck (`tsc --build`, project references). Covers `client/src/**`, `server/**`, `shared/**`. Note: `shared/**/*.test.ts` is excluded from both sub-projects; four server tests that import cross-project types (`mobile/src/`, `client/src/`) are also excluded from `tsconfig.server.json` (see Task #2865 and follow-up #2878). |
 | `npm test` | Vitest unit + integration suites (server, shared, client). Requires a Postgres reachable at `DATABASE_URL`; the global setup pushes the Drizzle schema before suites run. |
 | `npm run test:coverage` | Same as `npm test` with v8 coverage written to `coverage/`. |
 | `npm run test:e2e` | Playwright end-to-end suite (Chromium / Firefox / WebKit + the touch-enabled `chromium-touch` project). |

@@ -24,10 +24,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Task #2864 — Persist the two .tsbuildinfo files (client + server)
-      # across CI runs so TypeScript's incremental checker only re-examines
-      # files that changed since the last green run, rather than checking all
-      # 2,100+ source files from scratch every time.
+      # Tasks #2864 + #2865 — Persist the two .tsbuildinfo files (client +
+      # server) across CI runs so `tsc --build` (TypeScript project references)
+      # only re-examines files that changed since the last green run, rather
+      # than checking all 2,100+ source files from scratch every time.
+      #
+      # tsconfig.json is now a solution file (composite: false, references both
+      # sub-projects). tsconfig.client.json and tsconfig.server.json each carry
+      # composite: true so tsc --build can parallelise the two passes and track
+      # inter-project dependencies at the file level.  Both sub-configs keep
+      # noEmit: true so no .d.ts files are written to disk — only the
+      # .tsbuildinfo files at node_modules/.cache/typecheck/{client,server}
+      # .tsbuildinfo are written, and those are exactly what this cache covers.
       #
       # Key strategy:
       #   exact key  = OS + tsconfig hash + commit SHA

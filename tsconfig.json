@@ -1,9 +1,11 @@
 {
-  "include": ["client/src/**/*", "shared/**/*", "server/**/*"],
-  "exclude": ["node_modules", "build", "dist"],
+  "files": [],
+  "references": [
+    {"path": "./tsconfig.client.json"},
+    {"path": "./tsconfig.server.json"}
+  ],
   "compilerOptions": {
-    "incremental": true,
-    "tsBuildInfoFile": "./node_modules/.cache/typecheck/tsbuildinfo",
+    "composite": false,
     "noEmit": true,
     "module": "ESNext",
     "target": "ES2022",

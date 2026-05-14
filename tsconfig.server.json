@@ -1,8 +1,25 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["server/**/*", "shared/**/*"],
-  "exclude": ["node_modules", "build", "dist"],
+  "include": [
+    "server/**/*",
+    "shared/**/*",
+    "scripts/fetch-dot-pay-items.ts",
+    "vite.config.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "shared/**/*.test.ts",
+    "shared/**/__tests__/**/*",
+    "server/__tests__/mobile-outbox.test.ts",
+    "server/__tests__/notification-destination.test.ts",
+    "server/__tests__/reassignment-email-render.test.ts",
+    "server/__tests__/plan-document-markups-undo-roundtrip.test.ts"
+  ],
   "compilerOptions": {
+    "composite": true,
+    "declaration": true,
     "incremental": true,
     "tsBuildInfoFile": "./node_modules/.cache/typecheck/server.tsbuildinfo",
     "noEmit": true
