@@ -916,7 +916,6 @@ const upload = multer({
                 organizationId: devOrg.id,
                 name: "Dev Vendor Org",
                 type: "VENDOR",
-                email: "vendor@dev.test",
               })
               .returning();
             logInfo("[DEV] Created Dev Vendor Org: " + devVendorCrmOrg.id);

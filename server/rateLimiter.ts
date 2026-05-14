@@ -47,6 +47,7 @@ export const authLimiter = rateLimit({
   message: { error: "Too many authentication attempts, please try again later" },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipInDevSeed,
   store: makeStore("auth"),
 });
 
