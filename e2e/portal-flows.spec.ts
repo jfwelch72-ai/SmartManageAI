@@ -607,41 +607,32 @@ test.describe("Client Portal – UI happy path", () => {
       await expect(coTab).toBeVisible({ timeout: 10000 });
       await coTab.click();
 
-      // ── 5. Acknowledge the CO via the portal's public API ─────────────
-      // The CO row may not render in the browser because the public/data
-      // route runs without an org context and the changeOrders query returns
-      // zero rows under the default connection pool (no is_superadmin bypass
-      // for the portalPage's origin). We still drive the business-state
-      // mutation directly from the portalPage browser context, which exercises
-      // the full portal-auth → permission-check → CO-update server flow.
-      const ackRes = await portalPage.request.post(
-        `${CLIENT_PORTAL_BASE}/client-portal/public/change-orders/${co.id}/acknowledge`,
-        {
-          headers: {
-            "x-client-project-id": project.id,
-            "x-client-email": email,
-          },
-          data: {},
-        },
-      );
-      expect(
-        ackRes.status(),
-        `Acknowledge failed: ${await ackRes.text()}`,
-      ).toBe(200);
-      const ackBody = await ackRes.json();
-      expect(ackBody.status).toBe("APPROVED");
+      // ── 5. Click the CO row to open the detail dialog ────────────────
+      const coRow = portalPage.locator(`[data-testid="row-co-${co.id}"]`);
+      await expect(coRow).toBeVisible({ timeout: 10000 });
+      await coRow.click();
 
-      // ── 6. Verify business state via admin list endpoint ─────────────
-      // The acknowledge response already confirmed status = "APPROVED", but
-      // a round-trip through the admin CO list proves the server persisted it.
+      await expect(
+        portalPage.locator('[data-testid="dialog-portal-co-detail"]'),
+      ).toBeVisible({ timeout: 8000 });
+
+      // ── 6. Click Acknowledge & Approve in the dialog ──────────────────
+      await portalPage.click('[data-testid="button-acknowledge-co"]');
+
+      // Dialog closes on successful acknowledgment
+      await expect(
+        portalPage.locator('[data-testid="dialog-portal-co-detail"]'),
+      ).toBeHidden({ timeout: 10000 });
+
+      // ── 7. Verify the CO status changed to APPROVED ───────────────────
       const adminListRes = await page.request.get(
         `${BASE_URL}/api/change-orders?projectId=${project.id}`,
       );
       if (adminListRes.ok()) {
         const listBody = await adminListRes.json();
-        const items: Array<{ id: string; status: string }> =
+        const coItems: Array<{ id: string; status: string }> =
           listBody.data ?? listBody ?? [];
-        const found = items.find((c) => c.id === co.id);
+        const found = coItems.find((c) => c.id === co.id);
         if (found) {
           expect(found.status).toBe("APPROVED");
         }
@@ -764,24 +755,18 @@ test.describe("Subcontractor Portal – UI happy path", () => {
         portalPage.locator('[data-testid="dialog-rfi-detail"]'),
       ).toBeVisible({ timeout: 8000 });
 
-      // ── 6. Post a comment via portalPage.request ──────────────────────
-      // The SubPortalRfiTab component's raw fetch() omits the x-csrf-token
-      // header, so clicking the send button would get a 403 CSRF error.
-      // portalPage.request carries the CSRF cookie (set by installCsrf) and
-      // attaches it as a header automatically, exercising the same server
-      // endpoint from the same browser context.
+      // ── 6. Fill the comment input and click Send (UI-driven) ─────────
+      // queryClient.ts patches window.fetch to inject x-csrf-token from the
+      // csrf_token cookie set by installCsrf above, so the mutation sends a
+      // valid CSRF header without any manual header injection.
       const commentText = `E2E portal comment ${Date.now()}`;
-      const commentRes = await portalPage.request.post(
-        `${BASE_URL}/api/portal/rfis/${rfi.id}/comment`,
-        {
-          headers: { "x-portal-token": rawToken },
-          data: { comment: commentText },
-        },
-      );
-      expect(
-        commentRes.status(),
-        `Comment POST failed: ${await commentRes.text()}`,
-      ).toBe(201);
+      await portalPage.fill('[data-testid="input-rfi-comment"]', commentText);
+      await portalPage.click('[data-testid="button-rfi-send-comment"]');
+
+      // Successful send resets the textarea to empty
+      await expect(
+        portalPage.locator('[data-testid="input-rfi-comment"]'),
+      ).toHaveValue("", { timeout: 10000 });
 
       // ── 7. Verify comment persisted via the portal GET API ────────────
       // GET /api/portal/rfis/:id returns { ...rfi, activity: RfiActivity[] }
@@ -880,39 +865,39 @@ test.describe("Vendor Portal – UI happy path", () => {
       ),
     ).toBeVisible({ timeout: 20000 });
 
-    // ── 3. Submit a material price item via API ───────────────────────────
-    //   The UI form for adding pricing may require enrollment (contractor
-    //   association). We exercise the real API endpoint so the business path
-    //   is covered regardless of dev-seed enrollment state.
+    // ── 3. Open the add-pricing dialog via the UI button ─────────────────
+    // The VENDOR dev test-login ensures a vendorUsers record and an active
+    // vendorEnrollments row exist so form submission succeeds deterministically.
+    await expect(
+      page.locator('[data-testid="button-add-pricing"]'),
+    ).toBeVisible({ timeout: 20000 });
+    await page.click('[data-testid="button-add-pricing"]');
+
+    // ── 4. Fill the form and submit ───────────────────────────────────────
     const itemName = `E2E Lumber 2x4 ${Date.now()}`;
-    const pricingRes = await page.request.post(
-      `${BASE_URL}/api/vendor/pricing`,
-      {
-        data: {
-          itemName,
-          itemCode: `LBR-E2E-${Date.now()}`,
-          category: "Lumber",
-          unit: "EA",
-          unitPrice: "12.50",
-          leadTimeDays: 3,
-        },
-      },
-    );
+    await expect(
+      page.locator('[data-testid="input-item-name"]'),
+    ).toBeVisible({ timeout: 8000 });
+    await page.fill('[data-testid="input-item-name"]', itemName);
+    await page.fill('[data-testid="input-unit-price"]', "12.50");
+    await page.click('[data-testid="button-submit-pricing"]');
 
-    // 201 = created; 400/422 = validation error (still tests the route);
-    // 403 = vendor not enrolled (expected in dev without seeded enrollment).
-    expect([201, 400, 403, 422]).toContain(pricingRes.status());
+    // Dialog closes on success (onSuccess resets the form and closes dialog)
+    await expect(
+      page.locator('[data-testid="input-item-name"]'),
+    ).toBeHidden({ timeout: 10000 });
 
-    if (pricingRes.status() === 201) {
-      const newItem = await pricingRes.json();
-      expect(newItem.itemName).toBe(itemName);
-
-      // Reload page and verify the item appears in the pricing list
-      await page.reload();
-      await expect(
-        page.locator(`[data-testid="row-pricing-${newItem.id}"]`),
-      ).toBeVisible({ timeout: 15000 });
-    }
+    // ── 5. Verify the submitted item appears in the pricing list ──────────
+    const listRes = await page.request.get(`${BASE_URL}/api/vendor/pricing`);
+    expect(listRes.status()).toBe(200);
+    const listBody = await listRes.json();
+    const pricingItems: Array<{ id: string; itemName: string }> =
+      Array.isArray(listBody) ? listBody : listBody.items ?? [];
+    const newItem = pricingItems.find((i) => i.itemName === itemName);
+    expect(newItem, `Submitted item "${itemName}" not found in pricing list`).toBeDefined();
+    await expect(
+      page.locator(`[data-testid="row-pricing-${newItem!.id}"]`),
+    ).toBeVisible({ timeout: 10000 });
   });
 
   test("vendor portal dashboard renders analytics section", async ({

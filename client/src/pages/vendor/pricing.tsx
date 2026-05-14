@@ -269,7 +269,7 @@ function MaterialPricingContent({ activeEnrollments, addDialogOpen, setAddDialog
   const { toast } = useToast();
   const download = useDownloadFile();
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
-  const [formData, setFormData] = useState({ itemName: "", itemCode: "", category: "", description: "", unit: "EA", unitPrice: "", minimumOrder: "", deliveryFee: "", leadTimeDays: "" });
+  const [formData, setFormData] = useState({ itemName: "", itemCode: "", category: MATERIAL_CATEGORIES[0], description: "", unit: "EA", unitPrice: "", minimumOrder: "", deliveryFee: "", leadTimeDays: "" });
 
   const { data: pricingItems, isLoading } = useQuery<VendorPricingItem[]>({ queryKey: ["/api/vendor/pricing"] });
 
@@ -279,7 +279,7 @@ function MaterialPricingContent({ activeEnrollments, addDialogOpen, setAddDialog
     onError: (error: Error) => { toast({ title: "Error", description: error.message || "Failed to submit", variant: "destructive" }); },
   });
 
-  const resetForm = () => { setFormData({ itemName: "", itemCode: "", category: "", description: "", unit: "EA", unitPrice: "", minimumOrder: "", deliveryFee: "", leadTimeDays: "" }); setSelectedClients([]); };
+  const resetForm = () => { setFormData({ itemName: "", itemCode: "", category: MATERIAL_CATEGORIES[0], description: "", unit: "EA", unitPrice: "", minimumOrder: "", deliveryFee: "", leadTimeDays: "" }); setSelectedClients([]); };
 
   const handleSubmit = () => {
     if (!formData.itemName || !formData.unitPrice) { toast({ title: "Validation error", description: "Item name and unit price are required", variant: "destructive" }); return; }

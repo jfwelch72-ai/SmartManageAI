@@ -160,9 +160,8 @@ export function PortalChangeOrdersTab({ changeOrders, projectId, email, onRefres
       });
       if (res.ok) {
         toast({ title: "Change Order Acknowledged", description: `CO ${selectedCO.changeOrderNumber} has been approved.` });
-        setSelectedCO({ ...selectedCO, status: "APPROVED", approvedAt: new Date().toISOString() });
-        fetchComments(selectedCO.id);
         onRefresh?.();
+        setSelectedCO(null);
       } else {
         const err = await res.json().catch(() => ({}));
         toast({ title: "Error", description: err.error || "Failed to acknowledge", variant: "destructive" });

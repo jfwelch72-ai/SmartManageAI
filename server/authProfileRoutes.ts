@@ -448,6 +448,7 @@ import {
   qualityIssues, performanceReviews, supervisorNotes,
   ssoConfigurations, userSessions, activityLog,
   aiEstimatorUserAccess, aiEstimatorChatSessions, aiEstimatorChatMessages,
+  crmOrganisations, vendorUsers, vendorEnrollments,
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken, invalidateAuthCache,
@@ -892,6 +893,84 @@ const upload = multer({
         });
       } catch (err) {
         logWarn("Failed to log dev login session/activity", { userId: testUser.id, error: err instanceof Error ? err.message : String(err) });
+      }
+
+      // For VENDOR role: ensure a vendorUsers record + active vendorEnrollments
+      // exist so e2e pricing-submission tests can succeed without manual seeding.
+      if (role === "VENDOR" && devOrg) {
+        try {
+          let [devVendorCrmOrg] = await db
+            .select()
+            .from(crmOrganisations)
+            .where(
+              and(
+                eq(crmOrganisations.organizationId, devOrg.id),
+                eq(crmOrganisations.name, "Dev Vendor Org"),
+              ),
+            )
+            .limit(1);
+          if (!devVendorCrmOrg) {
+            [devVendorCrmOrg] = await db
+              .insert(crmOrganisations)
+              .values({
+                organizationId: devOrg.id,
+                name: "Dev Vendor Org",
+                type: "VENDOR",
+                email: "vendor@dev.test",
+              })
+              .returning();
+            logInfo("[DEV] Created Dev Vendor Org: " + devVendorCrmOrg.id);
+          }
+          const [existingVu] = await db
+            .select()
+            .from(vendorUsers)
+            .where(
+              and(
+                eq(vendorUsers.userId, testUser.id),
+                eq(vendorUsers.crmOrganisationId, devVendorCrmOrg.id),
+              ),
+            )
+            .limit(1);
+          if (!existingVu) {
+            await db.insert(vendorUsers).values({
+              userId: testUser.id,
+              crmOrganisationId: devVendorCrmOrg.id,
+              canSubmitPricing: true,
+              canViewEnrollments: true,
+              canManageUsers: false,
+              isPrimaryContact: true,
+              isActive: true,
+            });
+          }
+          const [existingEnr] = await db
+            .select()
+            .from(vendorEnrollments)
+            .where(
+              and(
+                eq(vendorEnrollments.vendorCrmOrgId, devVendorCrmOrg.id),
+                eq(vendorEnrollments.contractorOrgId, devOrg.id),
+              ),
+            )
+            .limit(1);
+          if (!existingEnr) {
+            await db.insert(vendorEnrollments).values({
+              vendorCrmOrgId: devVendorCrmOrg.id,
+              contractorOrgId: devOrg.id,
+              status: "ACTIVE",
+              autoApproveNewPricing: true,
+              notifyOnPriceUpdate: false,
+            });
+          } else if (existingEnr.status !== "ACTIVE") {
+            await db
+              .update(vendorEnrollments)
+              .set({ status: "ACTIVE", autoApproveNewPricing: true })
+              .where(eq(vendorEnrollments.id, existingEnr.id));
+          }
+        } catch (vendorSetupErr) {
+          logWarn("[DEV] Vendor fixture setup failed", {
+            error: vendorSetupErr instanceof Error ? vendorSetupErr.message : String(vendorSetupErr),
+          });
+        }
       }
 
       const { passwordHash: _, tokenVersion: __, ...userWithoutPassword } = testUser;
