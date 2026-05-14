@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -311,14 +312,46 @@ export function AssignmentsTab({ assignments, canEdit, equipmentStatus, onOpenAs
   );
 }
 
+interface PmEngineResult {
+  checked: number;
+  generated: number;
+  skipped: number;
+  skippedReasons: { alreadyOpen: number; raceLost: number; notDue: number };
+  scheduleIds: string[];
+}
+
 interface RepairsTabProps {
   repairs: any[];
   canEdit: boolean;
   onOpenRepair: () => void;
   onUpdateRepairStatus: (repairId: string, status: string) => void;
+  onGeneratePmWorkOrders?: () => Promise<PmEngineResult>;
 }
 
-export function RepairsTab({ repairs, canEdit, onOpenRepair, onUpdateRepairStatus }: RepairsTabProps) {
+export function RepairsTab({ repairs, canEdit, onOpenRepair, onUpdateRepairStatus, onGeneratePmWorkOrders }: RepairsTabProps) {
+  const [pmNotice, setPmNotice] = useState<string | null>(null);
+  const [pmPending, setPmPending] = useState(false);
+
+  const handleGeneratePm = async () => {
+    if (!onGeneratePmWorkOrders) return;
+    setPmPending(true);
+    setPmNotice(null);
+    try {
+      const result = await onGeneratePmWorkOrders();
+      if (result.generated > 0) {
+        setPmNotice(`${result.generated} work order(s) generated`);
+      } else if (result.skippedReasons.alreadyOpen > 0) {
+        setPmNotice(`${result.skippedReasons.alreadyOpen} work order(s) already open — no duplicates created`);
+      } else {
+        setPmNotice("No work orders due at this time");
+      }
+    } catch {
+      setPmNotice("Failed to generate PM work orders — please try again");
+    } finally {
+      setPmPending(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card>
@@ -327,13 +360,32 @@ export function RepairsTab({ repairs, canEdit, onOpenRepair, onUpdateRepairStatu
             <CardTitle className="text-lg">Repair History</CardTitle>
             <CardDescription>Track repairs and maintenance issues</CardDescription>
           </div>
-          {canEdit && (
-            <Button onClick={onOpenRepair} size="sm" data-testid="button-new-repair">
-              <Plus className="h-4 w-4 mr-2" />
-              Report Issue
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {onGeneratePmWorkOrders && canEdit && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleGeneratePm}
+                disabled={pmPending}
+                data-testid="button-generate-pm-work-orders"
+              >
+                {pmPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CalendarClock className="h-4 w-4 mr-2" />}
+                Generate PM Work Orders
+              </Button>
+            )}
+            {canEdit && (
+              <Button onClick={onOpenRepair} size="sm" data-testid="button-new-repair">
+                <Plus className="h-4 w-4 mr-2" />
+                Report Issue
+              </Button>
+            )}
+          </div>
         </CardHeader>
+        {pmNotice && (
+          <div className="px-6 pb-2">
+            <p className="text-sm text-muted-foreground" data-testid="pm-already-open-notice">{pmNotice}</p>
+          </div>
+        )}
         <CardContent>
           {repairs.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">No repair history</p>
