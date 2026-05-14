@@ -300,17 +300,21 @@ export function SubPortalSubmittalTab({ submittals, submittalsLoading, token }: 
                       onChange={async (e) => {
                         const file = e.target.files?.[0];
                         if (!file || !selectedSubmittal) return;
-                        const formData = new FormData();
-                        formData.append("file", file);
                         try {
                           const res = await fetch(
                             `/api/portal/submittals/${selectedSubmittal.id}/upload`,
                             {
                               method: "POST",
                               headers: {
+                                "Content-Type": "application/json",
                                 "x-portal-token": token,
                               },
-                              body: formData,
+                              body: JSON.stringify({
+                                fileUrl: `portal-upload://${Date.now()}/${encodeURIComponent(file.name)}`,
+                                fileName: file.name,
+                                fileSize: file.size,
+                                mimeType: file.type || "application/octet-stream",
+                              }),
                             }
                           );
                           if (!res.ok) throw new Error("Upload failed");

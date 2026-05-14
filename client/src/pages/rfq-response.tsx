@@ -127,7 +127,7 @@ export default function RfqResponsePage() {
         <Card className="max-w-md w-full">
           <CardContent className="pt-6 text-center">
             <CheckCircle2 className="h-12 w-12 mx-auto mb-4 text-green-500" />
-            <h2 className="text-lg font-semibold mb-2">Quote Submitted</h2>
+            <h2 className="text-lg font-semibold mb-2" data-testid="text-rfq-success">Quote Submitted</h2>
             <p className="text-muted-foreground">
               Your quote has been submitted to {rfqInfo?.gcOrganizationName}. They will review and follow up.
             </p>
@@ -148,7 +148,7 @@ export default function RfqResponsePage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">{rfqInfo?.bidName}</CardTitle>
+            <CardTitle className="text-base" data-testid="text-rfq-bid-name">{rfqInfo?.bidName}</CardTitle>
             <CardDescription>
               {rfqInfo?.subcontractorName}
               {rfqInfo?.dueDate && (

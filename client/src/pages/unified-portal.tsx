@@ -484,7 +484,13 @@ function ClientPortalContent({
         )}
         {permissions.viewInvoices && (
           <TabsContent value="payments">
-            <PortalPaymentsTab payments={portalData?.payments} />
+            <PortalPaymentsTab
+              payments={portalData?.payments}
+              payApplications={portalData?.payApplications}
+              projectId={projectId}
+              email={email}
+              onApproved={() => refetchPortalData()}
+            />
           </TabsContent>
         )}
         <TabsContent value="chat" data-testid="content-chat">

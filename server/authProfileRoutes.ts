@@ -449,6 +449,7 @@ import {
   ssoConfigurations, userSessions, activityLog,
   aiEstimatorUserAccess, aiEstimatorChatSessions, aiEstimatorChatMessages,
   crmOrganisations, vendorUsers, vendorEnrollments,
+  bids, bidSubcontractorQuotes, projects, scheduleOfValues, payApplications,
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken, invalidateAuthCache,
@@ -2652,6 +2653,125 @@ router.get("/api/auth/mobile-exchange", async (req: AuthRequest, res, next) => {
     next(err);
   }
 });
+
+  // DEV ONLY: Create bid + sub quote + RFQ token (no email) for E2E tests
+  router.post("/api/dev/rfq-fixture", requireDevSeed, async (req: AuthRequest, res, next) => {
+    try {
+      const {
+        bidName = "E2E RFQ Bid",
+        scopeOfWork = "General framing and rough carpentry work for the project",
+      } = req.body || {};
+
+      // Reuse or create dev sandbox org as the GC
+      let [gcOrg] = await db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.name, "Dev Sandbox Organization"))
+        .limit(1);
+
+      if (!gcOrg) {
+        [gcOrg] = await db.insert(organizations).values({
+          name: "Dev Sandbox Organization",
+          slug: "dev-sandbox-org",
+          email: "dev@sandbox.test",
+          tradeType: "GENERAL_CONTRACTOR",
+          isActive: true,
+          onboardingStatus: "COMPLETED",
+        }).returning();
+      }
+
+      const bidCode = `E2E-BID-${Date.now()}`;
+      const [bid] = await db.insert(bids).values({
+        name: bidName,
+        code: bidCode,
+        clientName: "E2E Test Client",
+        gcOrganizationId: gcOrg.id,
+        status: "ACTIVE",
+      }).returning();
+
+      const [quote] = await db.insert(bidSubcontractorQuotes).values({
+        bidId: bid.id,
+        subcontractorName: "E2E Sub Contractor",
+        scopeOfWork,
+        quoteAmount: "0",
+        contactName: "E2E Contact",
+        contactEmail: "e2e-sub@test.example",
+      }).returning();
+
+      const { randomBytes } = await import("crypto");
+      const rfqToken = randomBytes(32).toString("hex");
+
+      await db
+        .update(bidSubcontractorQuotes)
+        .set({ rfqResponseToken: rfqToken, rfqSentAt: new Date() })
+        .where(eq(bidSubcontractorQuotes.id, quote.id));
+
+      res.json({ rfqToken, bidName, scopeOfWork, bidCode, quoteId: quote.id });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // DEV ONLY: Create SOV + pay application (SUBMITTED) for a project, for E2E tests
+  router.post("/api/dev/portal-pay-app-fixture", requireDevSeed, async (req: AuthRequest, res, next) => {
+    try {
+      const { projectId } = req.body || {};
+      if (!projectId) {
+        return res.status(400).json({ error: "projectId is required" });
+      }
+
+      const [project] = await db
+        .select()
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+
+      if (!project) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      let organizationId = project.gcOrganizationId;
+      if (!organizationId) {
+        // Fall back to the first active org (dev only — project may predate GC field)
+        const [firstOrg] = await db
+          .select({ id: organizations.id })
+          .from(organizations)
+          .where(eq(organizations.isActive, true))
+          .limit(1);
+        if (!firstOrg) {
+          return res.status(400).json({ error: "Project has no organization and no active org found" });
+        }
+        organizationId = firstOrg.id;
+      }
+
+      const sovNumber = `SOV-E2E-${Date.now()}`;
+      const [sov] = await db.insert(scheduleOfValues).values({
+        organizationId,
+        projectId,
+        sovNumber,
+        title: "E2E AIA Schedule of Values",
+        contractValue: project.contractAmount || "100000",
+        retainagePercent: "10",
+        periodNumber: 1,
+        status: "APPROVED",
+      }).returning();
+
+      const [payApp] = await db.insert(payApplications).values({
+        organizationId,
+        projectId,
+        sovId: sov.id,
+        applicationNumber: 1,
+        totalCompletedAndStored: "25000",
+        currentPaymentDue: "22500",
+        status: "SUBMITTED",
+        submittedAt: new Date(),
+      }).returning();
+
+      res.json({ sovId: sov.id, payAppId: payApp.id });
+    } catch (error) {
+      next(error);
+    }
+  });
 
 router.post("/api/auth/mobile-exchange/redeem", async (req, res, next) => {
   try {

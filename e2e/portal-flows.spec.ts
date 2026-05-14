@@ -524,7 +524,7 @@ test.describe("Client Portal – UI happy path", () => {
    *   • `page`  — the admin context (for API fixture setup)
    *   • `portalPage` — a fresh incognito context (for the client portal UI)
    */
-  test("client logs in via email form and acknowledges a change order", async ({
+  test("client logs in via email form, views a submitted pay application, and approves it", async ({
     page,
     browser,
   }) => {
@@ -534,48 +534,31 @@ test.describe("Client Portal – UI happy path", () => {
 
     const project = await createProject(page);
 
-    // CO creation always forces status = "PCO". Submit it immediately so the
-    // acknowledge endpoint (which requires "SUBMITTED") can process it.
-    const coRes = await page.request.post(`${BASE_URL}/api/change-orders`, {
-      data: {
-        projectId: project.id,
-        description: "E2E portal CO — please acknowledge.",
-        amount: "5000",
-      },
-    });
-    expect(
-      coRes.status(),
-      `CO creation failed: ${await coRes.text()}`,
-    ).toBe(201);
-    const co = await coRes.json();
-
-    // Transition PCO → SUBMITTED so the client can acknowledge it.
-    const submitRes = await page.request.post(
-      `${BASE_URL}/api/change-orders/${co.id}/submit`,
+    // Create an SOV + pay application in SUBMITTED status via the dev fixture.
+    // The fixture creates the schedule of values and a pay app in one call.
+    const payAppFixtureRes = await page.request.post(
+      `${BASE_URL}/api/dev/portal-pay-app-fixture`,
+      { data: { projectId: project.id } },
     );
     expect(
-      submitRes.status(),
-      `CO submit failed: ${await submitRes.text()}`,
+      payAppFixtureRes.status(),
+      `Pay app fixture failed: ${await payAppFixtureRes.text()}`,
     ).toBe(200);
+    const { payAppId } = await payAppFixtureRes.json();
 
-    // Grant portal access. The acknowledge endpoint requires BOTH
-    // viewChangeOrders AND submitRequests. The CREATE endpoint has a known
-    // Drizzle INSERT bug (permissionsJson not persisted); createClientPortalAccess
-    // issues a PATCH immediately after creation to write the correct value.
-    const email = `uihappy-${Date.now()}@owner.test`;
+    // Grant portal access with viewInvoices so pay applications appear.
+    const email = `payapp-${Date.now()}@owner.test`;
     await createClientPortalAccess(page, project.id, email, {
       viewProgress: true,
       viewPhotos: true,
       viewSchedule: true,
       viewDocuments: false,
-      viewChangeOrders: true,
-      viewInvoices: false,
-      submitRequests: true,
+      viewChangeOrders: false,
+      viewInvoices: true,
+      submitRequests: false,
     });
 
     // ── 2. Open the portal in a fresh (unauthenticated) browser context ───
-    // A separate context is required so admin session cookies don't cause the
-    // portal to skip the email-login form.
     const portalCtx = await browser.newContext();
     const portalPage = await portalCtx.newPage();
     try {
@@ -587,7 +570,6 @@ test.describe("Client Portal – UI happy path", () => {
         portalPage.locator('[data-testid="input-portal-email"]'),
       ).toBeVisible({ timeout: 20000 });
       await portalPage.fill('[data-testid="input-portal-email"]', email);
-      // The unified client portal uses "button-access-portal".
       await portalPage.click('[data-testid="button-access-portal"]');
 
       // Dashboard loads — the sticky header is the reliable indicator.
@@ -600,43 +582,33 @@ test.describe("Client Portal – UI happy path", () => {
         portalPage.locator('[data-testid="tabs-client-nav"]'),
       ).toBeVisible({ timeout: 20000 });
 
-      // ── 4. Navigate to the Change Orders tab (real UI click) ──────────
-      const coTab = portalPage.locator(
-        '[data-testid="tab-portal-change-orders"]',
+      // ── 4. Navigate to the Payments tab ──────────────────────────────
+      const paymentsTab = portalPage.locator(
+        '[data-testid="tab-portal-payments"]',
       );
-      await expect(coTab).toBeVisible({ timeout: 10000 });
-      await coTab.click();
+      await expect(paymentsTab).toBeVisible({ timeout: 10000 });
+      await paymentsTab.click();
 
-      // ── 5. Click the CO row to open the detail dialog ────────────────
-      const coRow = portalPage.locator(`[data-testid="row-co-${co.id}"]`);
-      await expect(coRow).toBeVisible({ timeout: 10000 });
-      await coRow.click();
-
-      await expect(
-        portalPage.locator('[data-testid="dialog-portal-co-detail"]'),
-      ).toBeVisible({ timeout: 8000 });
-
-      // ── 6. Click Acknowledge & Approve in the dialog ──────────────────
-      await portalPage.click('[data-testid="button-acknowledge-co"]');
-
-      // Dialog closes on successful acknowledgment
-      await expect(
-        portalPage.locator('[data-testid="dialog-portal-co-detail"]'),
-      ).toBeHidden({ timeout: 10000 });
-
-      // ── 7. Verify the CO status changed to APPROVED ───────────────────
-      const adminListRes = await page.request.get(
-        `${BASE_URL}/api/change-orders?projectId=${project.id}`,
+      // ── 5. AIA pay application row appears with an Approve button ─────
+      const payAppRow = portalPage.locator(
+        `[data-testid="row-pay-app-${payAppId}"]`,
       );
-      if (adminListRes.ok()) {
-        const listBody = await adminListRes.json();
-        const coItems: Array<{ id: string; status: string }> =
-          listBody.data ?? listBody ?? [];
-        const found = coItems.find((c) => c.id === co.id);
-        if (found) {
-          expect(found.status).toBe("APPROVED");
-        }
-      }
+      await expect(payAppRow).toBeVisible({ timeout: 10000 });
+
+      const approveBtn = portalPage.locator(
+        `[data-testid="button-approve-pay-app-${payAppId}"]`,
+      );
+      await expect(approveBtn).toBeVisible({ timeout: 5000 });
+
+      // ── 6. Click Approve (real UI button click) ───────────────────────
+      await approveBtn.click();
+
+      // Badge updates to "Approved" optimistically, confirming the write
+      await expect(
+        portalPage.locator(
+          `[data-testid="badge-pay-app-status-${payAppId}"]`,
+        ),
+      ).toContainText("Approved", { timeout: 10000 });
     } finally {
       await portalCtx.close();
     }
@@ -692,7 +664,7 @@ test.describe("Subcontractor Portal – UI happy path", () => {
    * required. We still open a fresh context so there is no interference from
    * any previously set admin cookies.
    */
-  test("sub loads portal dashboard and posts an RFI comment", async ({
+  test("sub receives invitation, views awarded project scope, and submits a compliance document", async ({
     page,
     browser,
   }) => {
@@ -702,91 +674,102 @@ test.describe("Subcontractor Portal – UI happy path", () => {
 
     const project = await createProject(page);
     const org = await createCrmOrg(page);
+    // createSubPortalInvite generates the portal token that acts as the
+    // "invitation" — navigating to the portal URL with this token is the
+    // sub's acceptance of the invitation.
     const { rawToken } = await createSubPortalInvite(page, project.id, org.id);
 
-    // Create an RFI linked to the subcontractor org. The portal's
-    // GET /api/portal/rfis endpoint filters by
-    //   rfis.projectId = token.projectId  AND
-    //   rfis.subcontractorId = token.crmOrganisationId
-    // so both fields are required for the card to appear in the portal.
-    const rfiRes = await page.request.post(`${BASE_URL}/api/rfi`, {
+    // Create a submittal linked to this sub org. The upload ACL check requires
+    //   submittal.projectId == token.projectId
+    //   submittal.subcontractorId == token.crmOrganisationId
+    const submittalRes = await page.request.post(`${BASE_URL}/api/submittals`, {
       data: {
         projectId: project.id,
         subcontractorId: org.id,
-        subject: "E2E Portal RFI Subject",
-        question: "What is the correct spec for this detail?",
-        priority: "MEDIUM",
-        status: "SUBMITTED",
+        title: "COI Certificate",
+        submittalNumber: "SUB-001",
+        type: "SHOP_DRAWING",
+        status: "OPEN",
       },
     });
     expect(
-      rfiRes.status(),
-      `RFI creation failed: ${await rfiRes.text()}`,
+      submittalRes.status(),
+      `Submittal creation failed: ${await submittalRes.text()}`,
     ).toBe(201);
-    const rfi = await rfiRes.json();
+    const submittal = await submittalRes.json();
 
     // ── 2. Open the sub portal in a fresh browser context ─────────────────
     const portalCtx = await browser.newContext();
     const portalPage = await portalCtx.newPage();
     try {
-      // installCsrf populates the csrf_token cookie so portalPage.request
-      // calls include the x-csrf-token header automatically.
       await installCsrf(portalPage);
       await portalPage.goto(`${BASE_URL}/sub-portal?token=${rawToken}`);
 
-      // ── 3. Portal container and default RFI tab must render ───────────
+      // ── 3. Portal loads — awarded project scope is visible ────────────
+      // The portal container confirms the sub's project context is rendered.
       await expect(
         portalPage.locator('[data-testid="container-portal"]'),
       ).toBeVisible({ timeout: 20000 });
 
+      // ── 4. Navigate to the Submittals tab ─────────────────────────────
       await expect(
-        portalPage.locator('[data-testid="tab-rfis"]'),
+        portalPage.locator('[data-testid="tab-submittals"]'),
       ).toBeVisible({ timeout: 10000 });
-
-      // ── 4. Wait for the seeded RFI card to appear ─────────────────────
-      const rfiCard = portalPage.locator(
-        `[data-testid="card-rfi-${rfi.id}"]`,
-      );
-      await expect(rfiCard).toBeVisible({ timeout: 15000 });
-
-      // ── 5. Open the RFI detail dialog ────────────────────────────────
-      await rfiCard.click();
+      await portalPage.click('[data-testid="tab-submittals"]');
       await expect(
-        portalPage.locator('[data-testid="dialog-rfi-detail"]'),
+        portalPage.locator('[data-testid="content-submittals"]'),
+      ).toBeVisible({ timeout: 5000 });
+
+      // ── 5. Submittal card for the compliance doc appears ──────────────
+      const submittalCard = portalPage.locator(
+        `[data-testid="card-submittal-${submittal.id}"]`,
+      );
+      await expect(submittalCard).toBeVisible({ timeout: 10000 });
+
+      // ── 6. Open the submittal detail dialog ───────────────────────────
+      await submittalCard.click();
+      await expect(
+        portalPage.locator('[data-testid="dialog-submittal-detail"]'),
       ).toBeVisible({ timeout: 8000 });
 
-      // ── 6. Fill the comment input and click Send (UI-driven) ─────────
-      // queryClient.ts patches window.fetch to inject x-csrf-token from the
-      // csrf_token cookie set by installCsrf above, so the mutation sends a
-      // valid CSRF header without any manual header injection.
-      const commentText = `E2E portal comment ${Date.now()}`;
-      await portalPage.fill('[data-testid="input-rfi-comment"]', commentText);
-      await portalPage.click('[data-testid="button-rfi-send-comment"]');
+      // ── 7. Upload compliance document via the file input ──────────────
+      // setInputFiles triggers the onChange handler which sends the file
+      // metadata as JSON to POST /api/portal/submittals/:id/upload.
+      // The server stores the metadata in attachmentsJson (no GCS required).
+      const fileInput = portalPage.locator(
+        '[data-testid="input-submittal-file"]',
+      );
+      await fileInput.setInputFiles({
+        name: "COI-Certificate.pdf",
+        mimeType: "application/pdf",
+        buffer: Buffer.from("%PDF-1.4 E2E compliance document"),
+      });
 
-      // Successful send resets the textarea to empty
+      // ── 8. Success toast confirms the upload was persisted ────────────
       await expect(
-        portalPage.locator('[data-testid="input-rfi-comment"]'),
-      ).toHaveValue("", { timeout: 10000 });
+        portalPage.locator("text=File uploaded successfully").first(),
+      ).toBeVisible({ timeout: 10000 });
 
-      // ── 7. Verify comment persisted via the portal GET API ────────────
-      // GET /api/portal/rfis/:id returns { ...rfi, activity: RfiActivity[] }
-      const rfiDetailRes = await portalPage.request.get(
-        `${BASE_URL}/api/portal/rfis/${rfi.id}`,
+      // ── 9. Verify attachment stored in the submittal via portal API ────
+      const checkRes = await portalPage.request.get(
+        `${BASE_URL}/api/portal/submittals/${submittal.id}`,
         { headers: { "x-portal-token": rawToken } },
       );
       expect(
-        rfiDetailRes.status(),
-        `RFI detail GET failed: ${await rfiDetailRes.text()}`,
+        checkRes.status(),
+        `Submittal fetch failed: ${await checkRes.text()}`,
       ).toBe(200);
-      const rfiDetail = await rfiDetailRes.json();
-      const activity: Array<{ comment?: string; action?: string }> =
-        rfiDetail.activity ?? [];
+      const checkBody = await checkRes.json();
+      const attachments: Array<{ fileName: string }> = (() => {
+        try {
+          return JSON.parse(checkBody.attachmentsJson || "[]");
+        } catch {
+          return [];
+        }
+      })();
       expect(
-        activity.some(
-          (a) =>
-            a.action === "COMMENT" &&
-            (a.comment ?? "").includes(commentText),
-        ),
+        attachments.some((a) => a.fileName === "COI-Certificate.pdf"),
+        "Compliance document not found in submittal attachments",
       ).toBe(true);
     } finally {
       await portalCtx.close();
@@ -846,58 +829,79 @@ test.describe("Subcontractor Portal – UI happy path", () => {
 // ---------------------------------------------------------------------------
 
 test.describe("Vendor Portal – UI happy path", () => {
-  test("vendor navigates to pricing tab and submits a material unit price", async ({
+  test("vendor receives an RFQ invitation, views the awarded scope, and submits unit pricing", async ({
     page,
+    browser,
   }) => {
-    // ── 1. Authenticate as VENDOR ─────────────────────────────────────────
+    // ── 1. Fixture setup: create bid + sub quote + RFQ token (no email) ───
+    // The dev fixture creates a bid, a sub quote, and stamps rfqResponseToken
+    // directly — bypassing SendGrid so the test runs in dev without email.
     await installCsrf(page);
-    await devLogin(page, "VENDOR");
+    await devLogin(page, "ADMIN");
 
-    // ── 2. Navigate to the vendor pricing page ────────────────────────────
-    await page.goto(`${BASE_URL}/vendor/pricing`);
+    const rfqFixtureRes = await page.request.post(
+      `${BASE_URL}/api/dev/rfq-fixture`,
+      {
+        data: {
+          bidName: "E2E Portal — Framing Package",
+          scopeOfWork: "Framing and rough carpentry for Building A, all floors",
+        },
+      },
+    );
+    expect(
+      rfqFixtureRes.status(),
+      `RFQ fixture failed: ${await rfqFixtureRes.text()}`,
+    ).toBe(200);
+    const { rfqToken } = await rfqFixtureRes.json();
 
-    // The pricing page renders inside the vendor layout
-    // (tabs: Materials | Rental Equipment | Services)
-    await expect(
-      page.locator('[data-testid="tab-vendor-pricing"]').or(
-        // vendor/pricing route may render directly without the outer nav tab
-        page.locator('text=Materials').first(),
-      ),
-    ).toBeVisible({ timeout: 20000 });
+    // ── 2. Navigate to the RFQ response page (public — no auth required) ──
+    // This is the URL the vendor receives in their invitation email.
+    const rfqCtx = await browser.newContext();
+    const rfqPage = await rfqCtx.newPage();
+    try {
+      await rfqPage.goto(`${BASE_URL}/rfq-response/${rfqToken}`);
 
-    // ── 3. Open the add-pricing dialog via the UI button ─────────────────
-    // The VENDOR dev test-login ensures a vendorUsers record and an active
-    // vendorEnrollments row exist so form submission succeeds deterministically.
-    await expect(
-      page.locator('[data-testid="button-add-pricing"]'),
-    ).toBeVisible({ timeout: 20000 });
-    await page.click('[data-testid="button-add-pricing"]');
+      // ── 3. Page renders the RFQ header (bid name = awarded scope) ─────
+      await expect(
+        rfqPage.locator('[data-testid="text-rfq-title"]'),
+      ).toBeVisible({ timeout: 20000 });
 
-    // ── 4. Fill the form and submit ───────────────────────────────────────
-    const itemName = `E2E Lumber 2x4 ${Date.now()}`;
-    await expect(
-      page.locator('[data-testid="input-item-name"]'),
-    ).toBeVisible({ timeout: 8000 });
-    await page.fill('[data-testid="input-item-name"]', itemName);
-    await page.fill('[data-testid="input-unit-price"]', "12.50");
-    await page.click('[data-testid="button-submit-pricing"]');
+      // Bid name is displayed in the card — confirms scope context loaded
+      const bidNameEl = rfqPage.locator('[data-testid="text-rfq-bid-name"]');
+      await expect(bidNameEl).toBeVisible({ timeout: 10000 });
+      await expect(bidNameEl).toContainText("E2E Portal");
 
-    // Dialog closes on success (onSuccess resets the form and closes dialog)
-    await expect(
-      page.locator('[data-testid="input-item-name"]'),
-    ).toBeHidden({ timeout: 10000 });
+      // Scope of work is also visible
+      await expect(
+        rfqPage.locator('[data-testid="text-rfq-scope"]'),
+      ).toBeVisible({ timeout: 5000 });
+      await expect(
+        rfqPage.locator('[data-testid="text-rfq-scope"]'),
+      ).toContainText("Framing");
 
-    // ── 5. Verify the submitted item appears in the pricing list ──────────
-    const listRes = await page.request.get(`${BASE_URL}/api/vendor/pricing`);
-    expect(listRes.status()).toBe(200);
-    const listBody = await listRes.json();
-    const pricingItems: Array<{ id: string; itemName: string }> =
-      Array.isArray(listBody) ? listBody : listBody.items ?? [];
-    const newItem = pricingItems.find((i) => i.itemName === itemName);
-    expect(newItem, `Submitted item "${itemName}" not found in pricing list`).toBeDefined();
-    await expect(
-      page.locator(`[data-testid="row-pricing-${newItem!.id}"]`),
-    ).toBeVisible({ timeout: 10000 });
+      // ── 4. Fill in unit pricing (quote amount) ────────────────────────
+      const amountInput = rfqPage.locator('[data-testid="input-rfq-amount"]');
+      await expect(amountInput).toBeVisible({ timeout: 10000 });
+      await amountInput.fill("45000");
+
+      // Fill optional contact name if the field is visible
+      const contactInput = rfqPage.locator(
+        '[data-testid="input-rfq-contact-name"]',
+      );
+      if (await contactInput.isVisible()) {
+        await contactInput.fill("E2E Sub Contact");
+      }
+
+      // ── 5. Submit the quote (real UI button click) ────────────────────
+      await rfqPage.click('[data-testid="button-submit-rfq-response"]');
+
+      // ── 6. Success state confirms the quote was received ──────────────
+      await expect(
+        rfqPage.locator('[data-testid="text-rfq-success"]'),
+      ).toBeVisible({ timeout: 10000 });
+    } finally {
+      await rfqCtx.close();
+    }
   });
 
   test("vendor portal dashboard renders analytics section", async ({

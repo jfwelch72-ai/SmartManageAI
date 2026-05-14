@@ -16,6 +16,7 @@ import {
   changeOrderRevisions,
   changeOrderAttachments,
   tmInvoices,
+  payApplications,
 } from "@shared/schema";
 import { eq, and, desc, asc, inArray, ne, sql } from "drizzle-orm";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
@@ -762,6 +763,29 @@ router.post("/client-portal/public/data", authLimiter, async (req, res, next) =>
         paidAt: inv.paidAt,
         pdfUrl: inv.pdfUrl,
       }));
+
+      const payApps = await db
+        .select()
+        .from(payApplications)
+        .where(
+          and(
+            eq(payApplications.projectId, projectId),
+            ne(payApplications.status, "DRAFT")
+          )
+        )
+        .orderBy(desc(payApplications.createdAt))
+        .limit(50);
+
+      result.payApplications = payApps.map((p) => ({
+        id: p.id,
+        applicationNumber: p.applicationNumber,
+        periodTo: p.periodTo,
+        totalCompletedAndStored: p.totalCompletedAndStored,
+        currentPaymentDue: p.currentPaymentDue,
+        status: p.status,
+        submittedAt: p.submittedAt,
+        approvedAt: p.approvedAt,
+      }));
     }
 
     res.json(result);
@@ -1127,6 +1151,59 @@ router.get("/client-portal/public/change-orders/:coId/attachments/:attachmentId/
     res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(attachment.fileName)}"`);
 
     await objectStorageService.downloadObject(objectFile, res, 0);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/client-portal/public/pay-apps/:payAppId/approve", authLimiter, async (req, res, next) => {
+  try {
+    const { projectId, email } = req.body;
+    const { payAppId } = req.params;
+
+    if (!projectId || !email) {
+      return res.status(400).json({ error: "projectId and email are required" });
+    }
+
+    const verified = await verifyPortalAccess(projectId, email);
+    if (!verified || !verified.permissions.viewInvoices) {
+      return res.status(403).json({ error: "No portal access or insufficient permissions" });
+    }
+
+    const [payApp] = await db
+      .select()
+      .from(payApplications)
+      .where(
+        and(
+          eq(payApplications.id, payAppId),
+          eq(payApplications.projectId, projectId)
+        )
+      )
+      .limit(1);
+
+    if (!payApp) {
+      return res.status(404).json({ error: "Pay application not found" });
+    }
+
+    if (payApp.status === "APPROVED") {
+      return res.status(400).json({ error: "Pay application already approved" });
+    }
+
+    if (payApp.status === "DRAFT") {
+      return res.status(400).json({ error: "Pay application must be submitted before it can be approved" });
+    }
+
+    const [updated] = await db
+      .update(payApplications)
+      .set({
+        status: "APPROVED",
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(payApplications.id, payAppId))
+      .returning();
+
+    res.json({ success: true, payApp: updated });
   } catch (error) {
     next(error);
   }
