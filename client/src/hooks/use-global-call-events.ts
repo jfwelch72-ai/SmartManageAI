@@ -201,7 +201,7 @@ export function useGlobalCallEvents(): GlobalCallState {
   }, [incomingCall]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.organizationId) return;
 
     const pollActiveCalls = async () => {
       try {

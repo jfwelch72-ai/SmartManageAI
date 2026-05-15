@@ -18,6 +18,7 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
   const listenersRef = useRef<Map<string, Set<SSEEventCallback>>>(new Map());
   const registeredEventsRef = useRef<Set<string>>(new Set());
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectDelayRef = useRef(3000);
   const isCleanedUpRef = useRef(false);
 
   const dispatchToListeners = useCallback((eventType: string, event: MessageEvent) => {
@@ -63,6 +64,7 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
     }
 
     isCleanedUpRef.current = false;
+    reconnectDelayRef.current = 3000;
 
     const createEventSource = () => {
       if (isCleanedUpRef.current) return;
@@ -72,6 +74,7 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
 
       const handleConnected = () => {
         setIsConnected(true);
+        reconnectDelayRef.current = 3000;
         dispatchToListeners("connected", new MessageEvent("connected"));
       };
       es.addEventListener("connected", handleConnected);
@@ -84,12 +87,14 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
         esRef.current = null;
         registeredEventsRef.current.clear();
         if (!isCleanedUpRef.current) {
+          const delay = reconnectDelayRef.current;
+          reconnectDelayRef.current = Math.min(delay * 2, 30000);
           reconnectTimerRef.current = setTimeout(() => {
             reconnectTimerRef.current = null;
             if (!isCleanedUpRef.current && esRef.current === null) {
               createEventSource();
             }
-          }, 3000);
+          }, delay);
         }
       };
     };
