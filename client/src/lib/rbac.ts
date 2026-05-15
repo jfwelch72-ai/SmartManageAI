@@ -605,10 +605,10 @@ export interface WorkflowGroup {
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest', '/portfolio'] },
-  { key: 'win_work', label: 'Win Work', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'win_work', label: 'Sales', itemHrefs: ['/crm', '/bids', '/bid-network', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
   { key: 'workforce', label: 'Workforce', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
-  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/payroll-management', '/payroll/certified-history', '/tm-billing', '/progress-billing', '/cost-rates', '/subcontractor-payables'] },
+  { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/payroll-management', '/payroll/certified-history', '/tm-billing', '/progress-billing', '/cost-rates', '/subcontractor-payables', '/historical-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/lidar-scans', '/permits'] },
   { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/compliance', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
@@ -624,7 +624,7 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio'] },
-  { key: 'win_work', label: 'Win Work', itemHrefs: ['/crm', '/bids', '/marketplace'] },
+  { key: 'win_work', label: 'Sales', itemHrefs: ['/crm', '/bids', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
   { key: 'workforce', label: 'Workforce', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/overhead-costs', '/subcontractor-payables'] },
