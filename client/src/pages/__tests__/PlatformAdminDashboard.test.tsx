@@ -13,9 +13,19 @@
  *   (e) An ADMIN (non-super) user does not see the tile *or* the badge,
  *       and the digest endpoint is not called for them (the badge query
  *       is gated by `enabled: isSuper`).
+ *
+ * Task #2883 — Beta Readiness panel:
+ *   (f) The Beta Readiness card renders for SUPER_ADMIN with all controls listed.
+ *   (g) Failing controls are visually flagged.
+ *   (h) The Beta Readiness card is hidden for ADMIN (non-super).
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
+
+const apiRequestMock = vi.hoisted(() =>
+  vi.fn(async () => new Response(JSON.stringify({}), { status: 200 })),
+);
+const invalidateQueriesMock = vi.hoisted(() => vi.fn());
 
 vi.mock("wouter", () => ({
   Link: ({ href, children }: { href: string; children: React.ReactNode }) => (
@@ -36,9 +46,6 @@ vi.mock("@/hooks/use-auth", () => ({
   }),
 }));
 
-const apiRequestMock = vi.fn(
-  async () => new Response(JSON.stringify({}), { status: 200 }),
-);
 vi.mock("@/lib/queryClient", () => ({
   apiRequest: apiRequestMock,
   queryClient: {
@@ -49,6 +56,22 @@ vi.mock("@/lib/queryClient", () => ({
 }));
 
 let quietOrgsFixture: Array<{ organizationId: string }> = [];
+let betaReadinessFixture: {
+  ready: boolean;
+  environment: string;
+  controls: Array<{ name: string; ok: boolean; description: string; value: string }>;
+  checkedAt: string;
+} = {
+  ready: true,
+  environment: "test",
+  controls: [
+    { name: "strict_tenant_rls", ok: true, description: "STRICT_TENANT_RLS=true", value: "on" },
+    { name: "session_secret_set", ok: true, description: "SESSION_SECRET is present", value: "set" },
+    { name: "dev_seed_off", ok: true, description: "Dev seed is off", value: "off" },
+  ],
+  checkedAt: new Date().toISOString(),
+};
+
 const platformStatsFixture = {
   totalOrganizations: 3,
   totalUsers: 12,
@@ -98,6 +121,12 @@ vi.mock("@tanstack/react-query", async () => {
       if (first === "/api/platform/subscriptions/stats") {
         return { ...base, data: subStatsFixture };
       }
+      if (first === "/api/ops/beta-readiness") {
+        if (options.enabled === false) {
+          return { ...base, data: undefined };
+        }
+        return { ...base, data: betaReadinessFixture };
+      }
       if (
         first === "/api/crm/calls/transcripts/backfill/alert-failures-digest"
       ) {
@@ -113,7 +142,8 @@ vi.mock("@tanstack/react-query", async () => {
     }
     return { ...base, data: undefined };
   };
-  return { ...actual, useQuery };
+  const useQueryClient = () => ({ invalidateQueries: invalidateQueriesMock });
+  return { ...actual, useQuery, useQueryClient };
 });
 
 import PlatformAdminDashboard from "../PlatformAdminDashboard";
@@ -121,6 +151,7 @@ import PlatformAdminDashboard from "../PlatformAdminDashboard";
 beforeEach(() => {
   cleanup();
   apiRequestMock.mockClear();
+  invalidateQueriesMock.mockClear();
   digestQueriesEnabledFor.length = 0;
   mockUser = {
     firstName: "Pat",
@@ -128,6 +159,16 @@ beforeEach(() => {
     role: "SUPER_ADMIN",
   };
   quietOrgsFixture = [];
+  betaReadinessFixture = {
+    ready: true,
+    environment: "test",
+    controls: [
+      { name: "strict_tenant_rls", ok: true, description: "STRICT_TENANT_RLS=true", value: "on" },
+      { name: "session_secret_set", ok: true, description: "SESSION_SECRET is present", value: "set" },
+      { name: "dev_seed_off", ok: true, description: "Dev seed is off", value: "off" },
+    ],
+    checkedAt: new Date().toISOString(),
+  };
 });
 
 describe("PlatformAdminDashboard — SUPER_ADMIN integration", () => {
@@ -210,5 +251,53 @@ describe("PlatformAdminDashboard — non-super ADMIN gating", () => {
     // it — no fetch is recorded for the ADMIN role.
     expect(digestQueriesEnabledFor).not.toContain("ADMIN");
     expect(apiRequestMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlatformAdminDashboard — Beta Readiness panel (Task #2883)", () => {
+  it("renders the Beta Readiness card with all controls for SUPER_ADMIN", () => {
+    render(<PlatformAdminDashboard />);
+
+    expect(screen.getByTestId("card-beta-readiness")).toBeTruthy();
+    expect(screen.getByTestId("badge-beta-readiness-status")).toBeTruthy();
+    expect(screen.getByTestId("list-beta-controls")).toBeTruthy();
+
+    expect(screen.getByTestId("beta-control-strict_tenant_rls")).toBeTruthy();
+    expect(screen.getByTestId("beta-control-session_secret_set")).toBeTruthy();
+    expect(screen.getByTestId("beta-control-dev_seed_off")).toBeTruthy();
+
+    expect(screen.getByTestId("beta-control-value-strict_tenant_rls").textContent).toBe("on");
+  });
+
+  it("shows 'All clear' badge when all controls pass", () => {
+    render(<PlatformAdminDashboard />);
+    expect(screen.getByTestId("badge-beta-readiness-status").textContent).toContain("All clear");
+  });
+
+  it("shows failing count badge when controls fail", () => {
+    betaReadinessFixture = {
+      ready: false,
+      environment: "test",
+      controls: [
+        { name: "strict_tenant_rls", ok: false, description: "RLS is off", value: "off" },
+        { name: "session_secret_set", ok: true, description: "Secret is set", value: "set" },
+        { name: "dev_seed_off", ok: false, description: "Dev seed is on", value: "on" },
+      ],
+      checkedAt: new Date().toISOString(),
+    };
+    render(<PlatformAdminDashboard />);
+    const badge = screen.getByTestId("badge-beta-readiness-status");
+    expect(badge.textContent).toContain("2 failing");
+  });
+
+  it("hides the Beta Readiness card for ADMIN (non-super)", () => {
+    mockUser = { firstName: "Sam", lastName: "OrgAdmin", role: "ADMIN" };
+    render(<PlatformAdminDashboard />);
+    expect(screen.queryByTestId("card-beta-readiness")).toBeNull();
+  });
+
+  it("renders the Check now button", () => {
+    render(<PlatformAdminDashboard />);
+    expect(screen.getByTestId("button-beta-readiness-refresh")).toBeTruthy();
   });
 });

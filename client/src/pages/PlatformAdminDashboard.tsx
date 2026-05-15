@@ -1,6 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones, MailWarning, RefreshCw, TicketCheck } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones, MailWarning, RefreshCw, TicketCheck, ShieldCheck, ShieldAlert, CheckCircle2, XCircle } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,6 +24,20 @@ interface SubscriptionStats {
   byPlanTier: Array<{ planTier: string; count: number }>;
   byStatus: Array<{ status: string; count: number }>;
   addonStats: Array<{ addonKey: string; count: number }>;
+}
+
+interface BetaControl {
+  name: string;
+  ok: boolean;
+  description: string;
+  value: string;
+}
+
+interface BetaReadiness {
+  ready: boolean;
+  environment: string;
+  controls: BetaControl[];
+  checkedAt: string;
 }
 
 interface HealthCheck {
@@ -51,6 +65,7 @@ function formatUptime(seconds: number): string {
 
 export default function PlatformAdminDashboard() {
   const { user, logout, organizationName } = useAuth();
+  const queryClient = useQueryClient();
   const { data: stats, isLoading } = useQuery<PlatformStats>({
     queryKey: ["/api/platform/stats"],
   });
@@ -62,6 +77,18 @@ export default function PlatformAdminDashboard() {
     queryKey: ["/api/platform/subscriptions/stats"],
   });
 
+  // Beta Readiness panel — SUPER_ADMIN only (the endpoint enforces this too)
+  const isSuper = isSuperAdmin(user?.role);
+  const {
+    data: betaReadiness,
+    isLoading: betaLoading,
+    isFetching: betaFetching,
+  } = useQuery<BetaReadiness>({
+    queryKey: ["/api/ops/beta-readiness"],
+    enabled: isSuper,
+    retry: false,
+  });
+
   // Task #1594 — surface a small "N quiet org(s)" badge on the
   // transcript-backfill tile so platform support can spot tenants whose
   // alert pipeline is silently broken without opening the deep-link page.
@@ -69,7 +96,6 @@ export default function PlatformAdminDashboard() {
   // share cache with `BackfillAlertFailuresDigestCard`) so tile + card
   // never drift. Cross-org + quietOrgs are SUPER_ADMIN-only on the server,
   // so we mirror that gating here to skip the request for non-supers.
-  const isSuper = isSuperAdmin(user?.role);
   const { data: quietDigest } = useQuery<{
     quietOrgs?: Array<{ organizationId: string }>;
   }>({
@@ -321,6 +347,116 @@ export default function PlatformAdminDashboard() {
           </div>
         </CardContent>
       </Card>
+
+      {isSuper && (
+        <Card
+          data-testid="card-beta-readiness"
+          className={
+            betaReadiness && !betaReadiness.ready
+              ? "border-red-500 dark:border-red-600"
+              : betaReadiness?.ready
+                ? "border-green-500 dark:border-green-600"
+                : ""
+          }
+        >
+          <CardHeader>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
+                {betaReadiness?.ready ? (
+                  <ShieldCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
+                ) : (
+                  <ShieldAlert className="h-5 w-5 text-red-600 dark:text-red-400" />
+                )}
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    Beta Readiness
+                    {betaReadiness && (
+                      <Badge
+                        variant={betaReadiness.ready ? "default" : "destructive"}
+                        data-testid="badge-beta-readiness-status"
+                        className={betaReadiness.ready ? "bg-green-600 dark:bg-green-500 text-white" : ""}
+                      >
+                        {betaReadiness.ready ? "All clear" : `${betaReadiness.controls.filter((c) => !c.ok).length} failing`}
+                      </Badge>
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    Critical security and operational controls required before onboarding beta users
+                    {betaReadiness?.checkedAt && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        · Last checked {new Date(betaReadiness.checkedAt).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </CardDescription>
+                </div>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-beta-readiness-refresh"
+                disabled={betaFetching}
+                onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/ops/beta-readiness"] })}
+              >
+                <RefreshCw className={`h-4 w-4 mr-1 ${betaFetching ? "animate-spin" : ""}`} />
+                {betaFetching ? "Checking…" : "Check now"}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {betaLoading ? (
+              <div className="space-y-3">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <div key={i} className="flex items-start gap-3">
+                    <Skeleton className="h-5 w-5 rounded-full mt-0.5 shrink-0" />
+                    <div className="space-y-1 flex-1">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-3 w-full max-w-md" />
+                    </div>
+                    <Skeleton className="h-5 w-16 rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : betaReadiness ? (
+              <div className="space-y-2" data-testid="list-beta-controls">
+                {betaReadiness.controls.map((control) => (
+                  <div
+                    key={control.name}
+                    data-testid={`beta-control-${control.name}`}
+                    className={`flex items-start gap-3 rounded-lg px-3 py-2.5 ${
+                      control.ok
+                        ? "bg-green-50 dark:bg-green-950/30"
+                        : "bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800"
+                    }`}
+                  >
+                    {control.ok ? (
+                      <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 shrink-0 mt-0.5" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-red-600 dark:text-red-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium font-mono" data-testid={`beta-control-name-${control.name}`}>
+                        {control.name}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5" data-testid={`beta-control-desc-${control.name}`}>
+                        {control.description}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={control.ok ? "secondary" : "destructive"}
+                      className="shrink-0 font-mono text-xs"
+                      data-testid={`beta-control-value-${control.name}`}
+                    >
+                      {control.value}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">Unable to load beta readiness status.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2">
         <Card>
