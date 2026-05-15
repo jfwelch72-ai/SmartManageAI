@@ -19,6 +19,9 @@
 //
 // Wire into CI by adding to scripts/ci.sh or running directly:
 //   node scripts/check-sse-org-context.mjs
+//
+// Run the script's own self-tests:
+//   node scripts/check-sse-org-context.mjs --self-test
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -66,30 +69,31 @@ function walk(dir) {
   return out;
 }
 
-const offenders = [];
+function checkRepo() {
+  const offenders = [];
 
-for (const file of walk(SERVER_DIR)) {
-  const src = readFileSync(file, "utf8");
-  if (!isSseFile(src)) continue;
-  if (isCompliant(src)) continue;
-  offenders.push(path.relative(process.cwd(), file));
-}
+  for (const file of walk(SERVER_DIR)) {
+    const src = readFileSync(file, "utf8");
+    if (!isSseFile(src)) continue;
+    if (isCompliant(src)) continue;
+    offenders.push(path.relative(process.cwd(), file));
+  }
 
-if (offenders.length === 0) {
-  process.stdout.write(
-    "[check-sse-org-context] OK — every SSE route file either uses withOrgContext or carries an approved annotation.\n",
+  if (offenders.length === 0) {
+    process.stdout.write(
+      "[check-sse-org-context] OK — every SSE route file either uses withOrgContext or carries an approved annotation.\n",
+    );
+    return 0;
+  }
+
+  process.stderr.write(
+    `[check-sse-org-context] FAIL — ${offenders.length} SSE route file(s) lack tenant-isolation coverage:\n`,
   );
-  process.exit(0);
-}
-
-process.stderr.write(
-  `[check-sse-org-context] FAIL — ${offenders.length} SSE route file(s) lack tenant-isolation coverage:\n`,
-);
-for (const f of offenders) {
-  process.stderr.write(`  - ${f}\n`);
-}
-process.stderr.write(
-  `
+  for (const f of offenders) {
+    process.stderr.write(`  - ${f}\n`);
+  }
+  process.stderr.write(
+    `
 Each file that emits text/event-stream must EITHER:
   (a) import and call \`withOrgContext\` for any per-query DB access, OR
   (b) carry a top-of-file or inline annotation:
@@ -100,5 +104,123 @@ inspect every new annotation in PR.
 
 See docs/architecture/tenant-isolation.md — "SSE bypass and tenant isolation".
 `,
-);
-process.exit(1);
+  );
+  return 1;
+}
+
+// -----------------------------------------------------------------------
+// Self-tests. Run via:  node scripts/check-sse-org-context.mjs --self-test
+// These lock the guard's behavior so future edits don't silently
+// introduce regressions in the regression-prevention guard itself.
+// -----------------------------------------------------------------------
+
+function selfTest() {
+  const cases = [
+    {
+      name: "no SSE content-type → clean (non-SSE file is ignored)",
+      src: `import express from "express";\nrouter.get("/data", (req, res) => res.json({}));\n`,
+      expectSse: false,
+      expectCompliant: true,
+    },
+    {
+      name: "text/event-stream via res.setHeader, no compliance → flagged",
+      src: `res.setHeader('Content-Type', 'text/event-stream');\nres.write('data: hello\\n\\n');\n`,
+      expectSse: true,
+      expectCompliant: false,
+    },
+    {
+      name: "text/event-stream via object literal, no compliance → flagged",
+      src: `res.writeHead(200, { 'Content-Type': 'text/event-stream' });\nres.write('data: hi\\n\\n');\n`,
+      expectSse: true,
+      expectCompliant: false,
+    },
+    {
+      name: "text/event-stream via writeHead args, no compliance → flagged",
+      src: `res.writeHead(200, "OK", { "Content-Type": "text/event-stream" });\nres.write('data: hi\\n\\n');\n`,
+      expectSse: true,
+      expectCompliant: false,
+    },
+    {
+      name: "text/event-stream + withOrgContext → passes",
+      src:
+        `import { withOrgContext } from "./middleware/orgContext";\n` +
+        `res.setHeader('Content-Type', 'text/event-stream');\n` +
+        `await withOrgContext(orgId, async () => { /* db query */ });\n`,
+      expectSse: true,
+      expectCompliant: true,
+    },
+    {
+      name: "text/event-stream + sse-org-context annotation → passes",
+      src:
+        `// sse-org-context: pure in-memory fan-out, no per-tenant DB queries\n` +
+        `res.setHeader('Content-Type', 'text/event-stream');\n` +
+        `res.write('data: ping\\n\\n');\n`,
+      expectSse: true,
+      expectCompliant: true,
+    },
+    {
+      name: "text/event-stream + inline sse-org-context annotation → passes",
+      src:
+        `res.setHeader('Content-Type', 'text/event-stream');\n` +
+        `// sse-org-context: reads only from in-memory cache\n` +
+        `res.write('data: ok\\n\\n');\n`,
+      expectSse: true,
+      expectCompliant: true,
+    },
+    {
+      name: "text/event-stream + withOrgContext referenced only in import → passes",
+      src:
+        `import { withOrgContext } from "../middleware/orgContext";\n` +
+        `res.setHeader('Content-Type', 'text/event-stream');\n`,
+      expectSse: true,
+      expectCompliant: true,
+    },
+    {
+      name: "sse-org-context annotation without colon → not recognized, flagged",
+      src:
+        `// sse-org-context safe because no DB\n` +
+        `res.setHeader('Content-Type', 'text/event-stream');\n`,
+      expectSse: true,
+      expectCompliant: false,
+    },
+  ];
+
+  let passed = 0;
+  let failed = 0;
+
+  for (const c of cases) {
+    const gotSse = isSseFile(c.src);
+    const gotCompliant = isCompliant(c.src);
+
+    // An SSE file is "flagged" when isSseFile=true AND isCompliant=false.
+    // For non-SSE files the compliance check is irrelevant; we only
+    // assert isSseFile matches the expectation.
+    const sseOk = gotSse === c.expectSse;
+    const complianceOk = !c.expectSse || gotCompliant === c.expectCompliant;
+
+    if (sseOk && complianceOk) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      if (!sseOk) {
+        console.error(
+          `  ✗ ${c.name}: isSseFile expected ${c.expectSse}, got ${gotSse}`,
+        );
+      }
+      if (!complianceOk) {
+        console.error(
+          `  ✗ ${c.name}: isCompliant expected ${c.expectCompliant}, got ${gotCompliant}`,
+        );
+      }
+    }
+  }
+
+  console.log(`\n[self-test] ${passed} passed, ${failed} failed`);
+  return failed === 0 ? 0 : 1;
+}
+
+if (process.argv.includes("--self-test")) {
+  process.exit(selfTest());
+}
+process.exit(checkRepo());

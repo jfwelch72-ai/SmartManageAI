@@ -88,6 +88,10 @@ run_step "ai router bypass lint (scripts/check-ai-router-bypass.mjs)" \
 # `// sse-org-context: <reason>` annotation. The org-context middleware
 # intentionally bypasses RLS context setup for SSE routes; this guard
 # ensures every SSE handler documents how it handles tenant isolation.
+# Task #2882 — self-tests lock the guard's own detection logic so a future
+# refactor of the script cannot silently break it and let violations through.
+run_step "SSE org-context guard self-test (scripts/check-sse-org-context.mjs --self-test)" \
+  node scripts/check-sse-org-context.mjs --self-test
 run_step "SSE org-context lint (scripts/check-sse-org-context.mjs)" \
   node scripts/check-sse-org-context.mjs
 
