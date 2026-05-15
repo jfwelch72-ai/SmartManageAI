@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 
 export interface IntegrationStatus {
   livekit: boolean;
@@ -27,10 +28,14 @@ const DEFAULT_STATUS: IntegrationStatus = {
 };
 
 export function useIntegrationStatus() {
+  const { user } = useAuth();
   const query = useQuery<IntegrationStatus>({
     queryKey: ["/api/integration-status"],
     staleTime: 5 * 60 * 1000,
     retry: 1,
+    // Requires an authenticated session — disable when no user is present
+    // (e.g. on the login page) to avoid 401 noise in the browser console.
+    enabled: !!user,
   });
 
   return {
