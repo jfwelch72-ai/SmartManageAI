@@ -30,3 +30,9 @@ id = "aErNxUXAx8BE3phIiRi6G"
 uri = "file://.local/tasks/smartmanageai-business-flow.md"
 type = "text"
 title = "SmartManageAI Business Flow"
+
+[[outputs]]
+id = "ud-UWi-w8lhK4wOvobnCA"
+uri = "file://.local/tasks/smartmanageai-test-flows.md"
+type = "text"
+title = "SmartManageAI — Full App Test Flow List"
