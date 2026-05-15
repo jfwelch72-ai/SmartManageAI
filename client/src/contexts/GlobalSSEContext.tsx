@@ -49,7 +49,10 @@ export function GlobalSSEProvider({ children }: { children: ReactNode }) {
   }, [dispatchToListeners]);
 
   useEffect(() => {
-    if (!user) {
+    // Super Admin users have no organizationId — the messaging/events SSE endpoint
+    // requires an org context and returns 400 for org-less sessions. Skip entirely
+    // to avoid a continuous 3-second reconnect loop that floods the server logs.
+    if (!user || !user.organizationId) {
       if (esRef.current) {
         esRef.current.close();
         esRef.current = null;

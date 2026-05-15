@@ -3,6 +3,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/use-auth";
 import type { FeatureKey, PlanTier, AddOnKey } from "@shared/billing/plans";
 
 interface AddonDetail {
@@ -43,10 +44,14 @@ export interface Entitlements {
  * Hook to fetch and cache organization entitlements
  */
 export function useEntitlements() {
+  const { user } = useAuth();
   const query = useQuery<Entitlements>({
     queryKey: ["/api/billing/entitlements"],
     staleTime: 60 * 1000, // 1 minute
     retry: 1,
+    // Super Admin has no organizationId — endpoint returns 400 "Organization required"
+    // for org-less sessions. Disable the query to avoid noisy error logs.
+    enabled: !!user?.organizationId,
   });
 
   /**
