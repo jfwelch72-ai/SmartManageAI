@@ -14,7 +14,7 @@ Before recording any stock, create the physical locations where materials are st
 1. Enter a short **Code** (e.g., `WH-01`) and a human-readable **Name** (e.g., `Main Warehouse`).
 1. Click **Save**. The location appears in the list immediately.
 
-> **Screenshot placeholder:** Locations tab showing the Add location drawer with Type, Code, and Name fields.
+![New Location drawer showing Code, Name, Type, Address, and Notes fields](images/inventory-add-location.jpg)
 
 Repeat for each physical storage area. You can add jobsite locations as new projects start and deactivate them when a project closes.
 
@@ -34,7 +34,7 @@ Repeat for each physical storage area. You can add jobsite locations as new proj
    - **Reorder quantity** — suggested order size shown on the Low-Stock Report.
 1. Click **Save**.
 
-> **Screenshot placeholder:** Add material drawer with SKU, Name, Unit, Cost Code, Barcode, and Reorder fields highlighted.
+![New Material / SKU drawer showing SKU, Barcode/QR, Name, UOM, Unit Cost, Reorder Point, and Reorder Qty fields](images/inventory-add-material.jpg)
 
 ---
 
@@ -49,7 +49,7 @@ Use **Receive** whenever materials arrive from a supplier or are returned from a
 1. Enter the **Quantity** and **Unit cost** for this delivery.
 1. Click **Post**. On-hand stock at the selected location increases immediately, and a transaction record is created in the ledger.
 
-> **Screenshot placeholder:** Receive transaction form showing the PO line picker and on-hand preview.
+![Receive Stock form showing Material, Location, Quantity, Unit Cost, and optional Purchase Order fields](images/inventory-receive.jpg)
 
 ---
 
@@ -96,7 +96,7 @@ A cycle count lets you reconcile physical quantities against system records for 
 1. Review the variance summary, then click **Submit for approval**.
 1. A Manager or Admin receives the approval request. On **Approve**, variance adjustments are posted automatically with reason code `CYCLE_COUNT`. On **Reject**, the count returns to draft for correction.
 
-> **Screenshot placeholder:** Cycle count sheet showing on-hand, physical count, and variance columns with a Submit button.
+![Materials Inventory On-Hand tab showing material list with SKU, name, location, on-hand quantity, and reorder point columns used to verify physical counts against system records](images/inventory-on-hand.jpg)
 
 ---
 

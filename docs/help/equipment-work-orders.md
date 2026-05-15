@@ -22,7 +22,7 @@ Before work orders can be generated, each piece of equipment needs at least one 
 1. Optionally assign a **Default technician** so generated work orders are pre-assigned.
 1. Click **Save**.
 
-> **Screenshot placeholder:** Add schedule drawer on the equipment Maintenance tab, showing trigger type selector and interval fields.
+![Equipment Preventive Maintenance tab showing the Generate Schedule button and schedule configuration area where trigger type, interval, and first due date are managed](images/equipment-maintenance-tab.jpg)
 
 You can add multiple schedules to one piece of equipment — for example, a 250-hour oil change and a 1,000-hour major service on the same machine.
 
@@ -39,7 +39,7 @@ Work orders are generated automatically every night by the system's PM engine. T
    - **Skipped (already open)** — a work order for this PM cycle already exists; no duplicate was created.
    - **Not yet due** — the trigger threshold has not been reached.
 
-> **Screenshot placeholder:** Generate results dialog showing Created, Skipped, and Not yet due counts.
+![Equipment Repairs tab showing work orders created by the PM engine, each with Repair number, Description, Reported date, Cost, and Status badge (Pending or In Progress)](images/equipment-repairs-data.jpg)
 
 If a schedule's due date or reading passes while a work order is still open, the engine does not create a second work order for the same cycle. Once the open work order is marked **Completed**, the next cycle becomes eligible.
 
@@ -56,7 +56,7 @@ If a schedule's due date or reading passes while a work order is still open, the
    - Current status: **Pending**, **In Progress**, or **Completed**
    - Assigned technician
 
-> **Screenshot placeholder:** Work Orders list with filter bar and example PM cards showing status badges.
+![Equipment work orders list showing open PM work orders across all equipment with status badges (Pending, In Progress), equipment names, and schedule descriptions](images/equipment-work-orders-list.jpg)
 
 ---
 
@@ -75,7 +75,7 @@ Marking a work order **Completed** does two things automatically:
 - The schedule's **Next due date / reading** advances by the interval (e.g., from 1,000 hours to 1,250 hours).
 - If parts were logged, the corresponding inventory transactions are posted.
 
-> **Screenshot placeholder:** Work order detail showing Labor, Parts, Notes, and Current Reading sections with Mark Completed button.
+![Complete Maintenance dialog showing Labor Cost and Parts Cost fields, Performed By vendor field, Notes textarea, and the Record Completion submit button for closing out a PM work order](images/equipment-complete-maintenance-dialog.jpg)
 
 ---
 

@@ -645,6 +645,15 @@ export default function EquipmentDetailPage() {
               onUpdateRepairStatus={(repairId, status) =>
                 mutations.updateRepairStatus.mutate({ repairId, status })
               }
+              onGeneratePmWorkOrders={async () => {
+                const res = await fetch("/api/equipment/maintenance/generate-work-orders", {
+                  method: "POST",
+                  credentials: "include",
+                  headers: { "Content-Type": "application/json" },
+                });
+                if (!res.ok) throw new Error("Failed to generate PM work orders");
+                return res.json();
+              }}
             />
           </TabsContent>
 

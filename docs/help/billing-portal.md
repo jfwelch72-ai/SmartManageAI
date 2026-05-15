@@ -8,13 +8,13 @@ Switch plans, update payment details, add or remove seats, and download invoices
 
 1. In the sidebar, click **Company Settings → Billing**, or navigate directly to **/billing**.
 1. The Billing overview page shows:
-   - Your **current plan** (Starter, Pro, or Enterprise)
+   - Your **current plan** (Starter, Growth, or Scale)
    - **Seats in use** vs. your plan's seat quota
    - **AI token usage** and **storage used** for the current billing period
    - **Next renewal date** and amount
 1. Click **Manage billing** to open the Stripe-hosted portal in a new tab.
 
-> **Screenshot placeholder:** Billing overview page showing plan badge, seat usage bar, AI token gauge, storage gauge, and the Manage billing button.
+![Billing & Subscription page showing current plan badge, Manage billing button, and plan tier cards for Starter, Growth, and Scale](images/billing-overview.jpg)
 
 If the **Manage billing** button is not visible, your organization has not yet been migrated to Stripe self-serve. Click **Set up billing** to complete the one-time migration — you will be prompted to enter a payment method and the migration takes effect immediately.
 
@@ -34,14 +34,14 @@ Before making any plan changes, review your usage metrics on the overview page:
 ## Changing your plan
 
 1. Inside the Stripe portal, click **Update plan**.
-1. The plan selector shows **Starter**, **Pro**, and **Enterprise** tiers with feature and quota differences.
+1. The plan selector shows **Starter**, **Growth**, and **Scale** tiers with feature and quota differences.
 1. Use the **Monthly / Annual** toggle to compare billing frequencies. Annual billing saves 15% compared to 12 monthly payments.
 1. Select the new plan. A summary shows the pro-rated charge or credit for the remainder of the current period.
 1. Click **Confirm change**.
    - **Upgrades** take effect immediately — new seat quota, AI token quota, and feature access are available right away.
    - **Downgrades** apply at the end of the current billing period. Until then, you retain your current plan's features and limits.
 
-> **Screenshot placeholder:** Plan selector in the Stripe portal showing Starter, Pro, and Enterprise cards with monthly/annual toggle.
+![Billing & Subscription page showing Starter $89/mo, Growth $229/mo, and Scale $579/mo plan comparison cards with feature lists and Upgrade buttons](images/billing-plan-cards.jpg)
 
 ---
 
@@ -96,7 +96,7 @@ To restore access:
 1. In the portal, click **Pay now** next to the outstanding invoice.
 1. Full access is restored within seconds of successful payment.
 
-> **Screenshot placeholder:** Failed payment banner on the billing page showing the grace period countdown and Update payment method button.
+![Billing & Subscription page showing current plan badge and Manage billing button used to access the Stripe portal where you can update a failed payment method or pay an overdue invoice](images/billing-overview.jpg)
 
 ---
 
@@ -111,7 +111,7 @@ SmartManageAI uses hard quotas, not overages. When a limit is reached:
 | AI vision documents | AI Estimator plan analysis is paused; manual estimating is unaffected. |
 | Storage quota | New file uploads are blocked. Existing files remain accessible. |
 
-Quotas reset at each billing renewal. Enterprise customers can request per-org quota overrides from their account manager.
+Quotas reset at each billing renewal. Scale customers can request per-org quota overrides from their account manager.
 
 ---
 
@@ -119,7 +119,7 @@ Quotas reset at each billing renewal. Enterprise customers can request per-org q
 
 - Annual billing saves 15% — use the monthly/annual toggle in the plan selector when comparing prices.
 - Your plan tier directly determines your support SLA response times. See [/sla](/sla) for the full tier comparison.
-- If you are on an Enterprise plan, contact your account manager for custom seat counts, AI quota increases, or dedicated storage allocations rather than using the self-serve portal.
+- If you are on the Scale plan, contact your account manager for custom seat counts, AI quota increases, or dedicated storage allocations rather than using the self-serve portal.
 
 ---
 

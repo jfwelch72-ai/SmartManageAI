@@ -20,7 +20,7 @@ The equipment module gives you a centralized asset register covering owned and r
    - **Cost code** — the default cost code for charges posted to a project.
 1. Click **Save**.
 
-> **Screenshot placeholder:** Add equipment drawer showing Type, Name, Serial, Ownership, Tracking type, and Starting reading fields.
+![Add New Equipment modal showing Name, Type, Make, Model, Year, Serial Number, VIN, License Plate, Purchase Price, and Home Location fields](images/equipment-add-drawer.jpg)
 
 ---
 
@@ -51,7 +51,7 @@ To move equipment to a different project, end the current assignment first, then
 1. Tap **+ Log** and select the entry type.
 1. Fill in the form and tap **Submit**.
 
-> **Screenshot placeholder:** Mobile app equipment detail screen with the + Log button and entry type selector.
+![Equipment hour log entry dialog showing current reading field, hours input, project assignment selector, and cost code field for posting time against a project](images/equipment-hour-log-dialog.jpg)
 
 Logged hours accumulate against the current project assignment. Fuel costs use the unit cost you enter and post to the assigned project's fuel cost code.
 
@@ -82,7 +82,7 @@ For a full walkthrough of work order creation, management, and completion, see [
    - **Red** — overdue.
 1. Click any row to open the equipment record or jump to the related work order.
 
-> **Screenshot placeholder:** Maintenance dashboard showing a fleet list with color-coded due-status badges.
+![Equipment Preventive Maintenance tab showing active maintenance schedules with trigger type, interval, and next due date, and the Regenerate Schedule button for updating the AI-generated plan](images/equipment-maintenance-tab.jpg)
 
 ---
 

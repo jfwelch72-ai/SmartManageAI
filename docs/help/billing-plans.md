@@ -8,18 +8,18 @@ Switch plans, update your payment method, manage seat allocations, and download 
 
 1. In the sidebar, click **Company Settings → Billing**, or navigate directly to **/billing**.
 1. The top of the page shows:
-   - Your **current plan** (Starter, Pro, or Enterprise) with the renewal date and next charge amount.
+   - Your **current plan** (Starter, Growth, or Scale) with the renewal date and next charge amount.
    - **Seats in use** — active users vs. your plan's seat limit.
    - **AI token usage** and **storage used** for the current billing period.
 1. Click **Manage billing** to open the Stripe-hosted portal where you can make changes.
 
-> **Screenshot placeholder:** Billing page showing plan badge, usage bars for seats/tokens/storage, and the Manage billing button.
+![Billing & Subscription page showing current plan badge, Manage billing button, Add-ons and Usage tabs, and plan tier cards](images/billing-overview.jpg)
 
 ---
 
 ## Comparing plan tiers
 
-| Feature | Starter | Pro | Enterprise |
+| Feature | Starter | Growth | Scale |
 |---|---|---|---|
 | Seats | Up to 5 | Up to 25 | Custom |
 | AI tokens / month | 100 K | 1 M | Custom |
@@ -87,7 +87,7 @@ To restore access, open the Stripe portal, update your payment method, and click
 
 - **Annual billing** saves 15% vs. monthly — the toggle is in the plan selector inside the Stripe portal.
 - Your **plan tier directly determines your support SLA response times** — see [/sla](/sla) for the full tier comparison table.
-- Enterprise customers with custom quota needs (seats, AI tokens, storage) should contact their account manager rather than using the self-serve portal.
+- Scale customers with custom quota needs (seats, AI tokens, storage) should contact their account manager rather than using the self-serve portal.
 - For a deeper walkthrough of the portal — including adding seats, dunning resolution, and quota overages — see [Manage your plan via the self-serve billing portal](/help/billing-portal).
 
 ---

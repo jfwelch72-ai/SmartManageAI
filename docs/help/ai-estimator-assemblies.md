@@ -26,7 +26,7 @@ When you upload a plan set to a bid, each sheet is automatically tagged with a d
 
 The **trade picker** on the Estimate step shows only the disciplines found in your uploaded plan set. Unrelated disciplines are hidden automatically so you are not offered trades that do not apply to this project.
 
-> **Screenshot placeholder:** Trade picker showing only the disciplines present in the uploaded plan set (e.g., A, S, E checked; others grayed out).
+![Bid Estimate page showing DRAFT status, Generate draft button, Adjust Markups, Export PDF, and summary cards for Total Estimate, Material Cost, Labor Cost, and Profit Margin](images/bid-estimate-top.jpg)
 
 If a sheet is classified incorrectly:
 1. Open the sheet's detail view (click the sheet thumbnail in the Takeoff workspace).
@@ -50,7 +50,7 @@ Assemblies let you pre-define the line-item structure your company uses for comm
    - Example: a "Cast-in-place spread footing (CY)" assembly might include components for forming (SF), reinforcing steel (LB), concrete (CY), and finishing (SF).
 1. Click **Save assembly**.
 
-> **Screenshot placeholder:** Assembly editor showing the Name, UOM, and Trade fields at the top and the component line-item grid below.
+![New assembly dialog showing Name, Description, Cost code, Trade type, Driving measurement type, Driving unit, and Waste factor fields](images/ai-estimator-assembly-editor.jpg)
 
 Repeat for each common scope item your crews work with. The more specific your assembly names and the more closely they mirror plan language, the higher the AI match rate.
 
@@ -79,7 +79,7 @@ These apply automatically to every new draft. You can override any factor on a p
 1. The trade picker appears. Select the **disciplines** you want to include in this draft — for example, select S and C for a structural + civil estimate; leave out A if architecture is under a separate contract.
 1. Click **Generate**. The AI processes up to 8 plan documents simultaneously. For large plan sets (100+ sheets) this typically takes 30–90 seconds.
 
-> **Screenshot placeholder:** Trade picker with selected disciplines highlighted and the Generate button below.
+![Generate Draft Estimate dialog showing scope notes textarea, description of how quantities are pulled from linked takeoff plans, and the Generate button for starting AI draft creation](images/bid-generate-draft-dialog.jpg)
 
 ---
 
@@ -104,7 +104,7 @@ Use **Accept all** or **Reject all** to process suggestions in bulk, then manual
 1. When you are satisfied with the reviewed lines, click **Apply to estimate**. All accepted lines are added to the estimate grid.
 1. Proceed with normal estimate editing — adjust quantities, costs, and markups as needed.
 
-> **Screenshot placeholder:** AI Suggestions panel showing rows with confidence scores, source sheet links, and Accept / Edit / Reject buttons.
+![Bid Estimate page with AI Estimator panel open alongside the estimate grid, showing the AI chat interface where draft suggestions appear with scope context, confidence indicators, and controls for reviewing and applying AI-generated line items](images/bid-estimate-ai-panel.jpg)
 
 ---
 

@@ -9,7 +9,7 @@ Collect all handover deliverables — warranties, lien waivers, as-builts, permi
 1. Open a project from the **Projects** list or from the dashboard.
 1. Click the **Closeout** tab at the top of the project detail page.
 
-> **Screenshot placeholder:** Project detail page with the Closeout tab highlighted in the tab bar.
+![Project Closeout section showing the Initialize Closeout button and description of the handover package feature](images/project-closeout-empty.jpg)
 
 ---
 
@@ -34,7 +34,7 @@ To customize the checklist for this project:
 1. Click the pencil icon on any existing item to rename it or update its description.
 1. Click **Assign** on an item to pick the responsible team member and set a due date.
 
-> **Screenshot placeholder:** Closeout checklist with category rows, assigned names, due dates, and status badges.
+![Project Closeout checklist showing item rows with categories — O&M Manual, Warranty, As-Built, Attic Stock — and PENDING status badges with Sources column](images/project-closeout-items-list.jpg)
 
 ---
 
@@ -54,7 +54,7 @@ Auto-Pull scans the project's existing records and attaches matching documents t
 1. Each matched source is attached to the appropriate item and the item status moves to **Ready** automatically.
 1. Items with no matching source remain **Pending** for manual upload.
 
-> **Screenshot placeholder:** Auto-Pull result showing green "Ready" badges on matched items and amber "Pending" on unmatched ones.
+![Project Closeout after auto-pull showing Auto-pull complete toast with item refresh results and checklist rows visible](images/project-closeout-after-autopull.jpg)
 
 ---
 
@@ -80,7 +80,7 @@ Before exporting, confirm all punch items are resolved.
 1. Work through each location in sequence — tap an item to mark it complete, add a photo, or reassign it.
 1. When every item in a location is resolved, the location collapses and disappears from the walkthrough list.
 
-> **Screenshot placeholder:** Walkthrough view showing location groups with open punch items listed beneath each one.
+![Project punch list showing open items with location tags, status badges, and action buttons for marking items complete or reassigning them during site walkthrough](images/project-punch-list.jpg)
 
 ---
 
@@ -88,14 +88,14 @@ Before exporting, confirm all punch items are resolved.
 
 When all checklist items show **Ready**, you can generate the owner's handover package.
 
-1. Click **Export Package** at the top right of the Closeout tab.
+1. In the Closeout tab, click **Generate ZIP package**.
 1. The system builds a ZIP file containing every attached document, verifies the archive's integrity, and uploads it to secure storage. Status changes from **Building** to **Ready** within a few seconds for typical packages (larger sets may take up to a minute).
 1. When status shows **Ready**:
    - Click **Download** to retrieve the package immediately via a signed link (valid for 5 minutes).
    - If the link expires, revisit the Closeout tab and click **Download** again — a fresh link is generated each time.
-1. If the export **fails**, the status shows **Failed** with an error message. No partial archive is stored. Click **Export Package** again to retry.
+1. If the export **fails**, the status shows **Failed** with an error message. No partial archive is stored. Click **Generate ZIP package** again to retry.
 
-> **Screenshot placeholder:** Export card showing status badge cycling from Building → Ready, and the Download button.
+![Project Closeout packages tab showing the Generate ZIP package button and export history section where generated packages appear with status (Building, Ready, or Failed) and a Download link](images/project-closeout-packages-tab.jpg)
 
 **What's inside the ZIP:**
 - One folder per checklist category.
