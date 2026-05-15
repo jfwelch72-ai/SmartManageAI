@@ -63,6 +63,7 @@ import {
   FileUp,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import {
   Table,
   TableBody,
@@ -504,7 +505,8 @@ export default function EquipmentPage() {
               Manage your equipment fleet and track availability
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 items-center">
+            <ContextualHelpButton />
             <AIAnalysisButton module="EQUIPMENT" />
             {canManageEquipment && (
               <>

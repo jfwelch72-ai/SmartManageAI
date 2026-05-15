@@ -24,6 +24,7 @@ import {
   ArrowLeft, Download, RefreshCw, Sparkles, FileDown, Plus, Trash2, FileText,
   CheckCircle2, AlertCircle, Loader2,
 } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 type CloseoutItem = {
   id: string;
@@ -183,6 +184,7 @@ export default function ProjectCloseoutPage({ projectCode }: { projectCode?: str
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <ContextualHelpButton />
           {!data?.checklist ? (
             <Button onClick={() => initMut.mutate()} disabled={initMut.isPending} data-testid="button-init-closeout">
               {initMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Plus className="h-4 w-4 mr-2" />}

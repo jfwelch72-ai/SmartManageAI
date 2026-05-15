@@ -18,6 +18,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { EmptyState } from "@/components/EmptyState";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Boxes, Warehouse, Plus, ScanLine, ArrowDownToLine, ArrowUpFromLine, Repeat, AlertTriangle, ClipboardCheck, Smartphone, WifiOff, Printer, RefreshCw } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 type Material = {
   id: string; sku: string; barcode: string | null; name: string; uom: string;
@@ -116,7 +117,8 @@ export default function InventoryPage() {
             <h1 className="text-3xl font-bold" data-testid="text-page-title">Materials Inventory</h1>
             <p className="text-muted-foreground">Warehouse / yard stock, receiving, issuing, and cycle counts</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            <ContextualHelpButton />
             <NewLocationDialog onCreated={() => qc.invalidateQueries({ queryKey: ["/api/inventory/locations"] })} />
             <NewMaterialDialog onCreated={() => qc.invalidateQueries({ queryKey: ["/api/inventory/materials"] })} />
           </div>

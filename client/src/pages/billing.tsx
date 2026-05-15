@@ -26,6 +26,7 @@ import {
   Monitor,
   Server
 } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useMutation } from "@tanstack/react-query";
@@ -181,6 +182,7 @@ export default function BillingPage() {
             Manage your plan, add-ons, and usage
           </p>
         </div>
+        <ContextualHelpButton />
         {isSuperAdmin ? (
           <div className="flex items-center gap-2">
             <button
