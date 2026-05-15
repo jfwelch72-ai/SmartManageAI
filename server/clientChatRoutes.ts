@@ -331,15 +331,34 @@ router.get("/client-portal/chat/events", async (req: ClientPortalChatRequest, re
   }
 
   try {
-    const [access] = await db
-      .select()
-      .from(clientPortalAccess)
-      .where(and(
-        eq(clientPortalAccess.email, clientEmail),
-        eq(clientPortalAccess.projectId, clientProjectId),
-        eq(clientPortalAccess.isActive, true)
-      ))
-      .limit(1);
+    // Pre-stream auth bootstrap: clientPortalAccess is RLS-gated on
+    // organizationId, but we only have email + projectId at this point —
+    // the portal client is not authenticated via a normal user session, so
+    // there is no org context in the ALS yet. Wrap this single lookup in a
+    // superadmin withOrgContext so the query succeeds under
+    // STRICT_TENANT_RLS=true (fail-closed default in production). The pg
+    // client is released as soon as the lookup resolves; no connection is
+    // held for the lifetime of the SSE stream.
+    let access: typeof clientPortalAccess.$inferSelect | undefined;
+    await withOrgContext(
+      {
+        organizationId: null,
+        isSuperadmin: true,
+        source: "client-portal:sse-auth-bootstrap",
+      },
+      async () => {
+        const [found] = await db
+          .select()
+          .from(clientPortalAccess)
+          .where(and(
+            eq(clientPortalAccess.email, clientEmail),
+            eq(clientPortalAccess.projectId, clientProjectId),
+            eq(clientPortalAccess.isActive, true)
+          ))
+          .limit(1);
+        access = found;
+      },
+    );
 
     if (!access) {
       res.status(401).json({ error: "Invalid client portal access" });
