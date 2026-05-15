@@ -262,7 +262,7 @@ export default function SubcontractorPortalManager({
         </Badge>
       );
     }
-    if (expiresAt < now) {
+    if (token.status === "expired" || expiresAt < now) {
       return (
         <Badge variant="secondary" className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" data-testid={`badge-status-${token.id}`}>
           Expired

@@ -432,9 +432,11 @@ export default function ClientPortal({ projectId, projectName }: ClientPortalPro
                       </TableCell>
                       <TableCell>
                         {access.isActive ? (
-                          <Badge className="bg-green-100 text-green-600">Active</Badge>
+                          <Badge className="bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300" data-testid={`badge-status-${access.id}`}>Active</Badge>
+                        ) : access.expiresAt && new Date(access.expiresAt) < new Date() ? (
+                          <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200" data-testid={`badge-status-${access.id}`}>Expired</Badge>
                         ) : (
-                          <Badge variant="outline">Inactive</Badge>
+                          <Badge variant="outline" data-testid={`badge-status-${access.id}`}>Inactive</Badge>
                         )}
                       </TableCell>
                       <TableCell>

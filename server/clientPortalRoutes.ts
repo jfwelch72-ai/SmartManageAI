@@ -506,6 +506,13 @@ router.post("/client-portal/public/verify", authLimiter, async (req, res, next) 
     }
 
     if (access.access.tokenExpiresAt && new Date(access.access.tokenExpiresAt) <= new Date()) {
+      // Lazy deactivation: flip isActive=false so the admin list reflects reality
+      if (access.access.isActive) {
+        db.update(clientPortalAccess)
+          .set({ isActive: false })
+          .where(eq(clientPortalAccess.id, access.access.id))
+          .catch((err) => logWarn("Failed to lazy-deactivate expired portal access", { id: access.access.id, err: String(err) }));
+      }
       return res.status(403).json({ error: "Portal access has expired" });
     }
 

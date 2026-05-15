@@ -12,7 +12,7 @@ import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetent
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { withJobOrgContext } from "../dbContext";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, changeOrders, hiringCandidates, hiringJobs, hiringPipelineStages, type InsertNotification, type UserRole } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, changeOrders, hiringCandidates, hiringJobs, hiringPipelineStages, clientPortalAccess, subcontractorPortalTokens, type InsertNotification, type UserRole } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -174,6 +174,8 @@ let stuckJobWatchdogTask: ReturnType<typeof cron.schedule> | null = null;
 let changeOrderOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #2833 — daily workflow SLA breach sweep
 let workflowSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2892 — nightly sweep to mark expired portal access records as inactive
+let portalAccessExpiryTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -620,6 +622,50 @@ export function startJobRunner() {
     } catch (err) {
       recordJobOutcome("compliance_expiration_check", false);
       logError("Compliance expiration check failed", { error: String(err) });
+    }
+  });
+
+  // Task #2892 — nightly sweep to deactivate expired portal access records.
+  // Marks client_portal_access rows with tokenExpiresAt in the past as inactive,
+  // and flips subcontractor_portal_tokens rows with expiresAt in the past from
+  // "active" to "expired" so the admin UI reflects reality without waiting for
+  // the next verify/auth request.
+  portalAccessExpiryTask = scheduleCron("portal_access_expiry_sweep", "0 30 2 * * *", async () => {
+    try {
+      await withSchedulerLock("job:portalAccessExpiryTask", async () => {
+        const now = new Date();
+
+        const clientResult = await db
+          .update(clientPortalAccess)
+          .set({ isActive: false })
+          .where(
+            and(
+              eq(clientPortalAccess.isActive, true),
+              lt(clientPortalAccess.tokenExpiresAt, now),
+            ),
+          )
+          .returning({ id: clientPortalAccess.id });
+
+        const subResult = await db
+          .update(subcontractorPortalTokens)
+          .set({ status: "expired" })
+          .where(
+            and(
+              eq(subcontractorPortalTokens.status, "active"),
+              lt(subcontractorPortalTokens.expiresAt, now),
+            ),
+          )
+          .returning({ id: subcontractorPortalTokens.id });
+
+        logInfo("Portal access expiry sweep complete", {
+          clientPortalDeactivated: clientResult.length,
+          subPortalExpired: subResult.length,
+        });
+        recordJobOutcome("portal_access_expiry_sweep", true);
+      });
+    } catch (err) {
+      recordJobOutcome("portal_access_expiry_sweep", false);
+      logError("Portal access expiry sweep failed", { error: String(err) });
     }
   });
 
@@ -2070,6 +2116,10 @@ export function stopJobRunner() {
   if (complianceCheckTask) {
     complianceCheckTask.stop();
     complianceCheckTask = null;
+  }
+  if (portalAccessExpiryTask) {
+    portalAccessExpiryTask.stop();
+    portalAccessExpiryTask = null;
   }
   if (equipmentPmGenerationTask) {
     equipmentPmGenerationTask.stop();
