@@ -83,10 +83,20 @@ export default function PlatformAdminDashboard() {
     data: betaReadiness,
     isLoading: betaLoading,
     isFetching: betaFetching,
-  } = useQuery<BetaReadiness>({
+  } = useQuery<BetaReadiness | null>({
     queryKey: ["/api/ops/beta-readiness"],
     enabled: isSuper,
     retry: false,
+    // Use a custom fetcher so a 401/403 response (e.g. during the brief window
+    // between page mount and cookie propagation) returns null instead of
+    // triggering the global handleGlobal401 handler, which would clear the
+    // auth cache and redirect the logged-in super-admin back to /login.
+    queryFn: async () => {
+      const res = await fetch("/api/ops/beta-readiness", { credentials: "include" });
+      if (res.status === 401 || res.status === 403) return null;
+      if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+      return res.json() as Promise<BetaReadiness>;
+    },
   });
 
   // Task #1594 — surface a small "N quiet org(s)" badge on the

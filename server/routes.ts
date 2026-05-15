@@ -268,9 +268,6 @@ import statusPageRoutes from "./statusPageRoutes";
 import supportRoutes from "./supportRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Register operational routes BEFORE auth middleware (health checks should be public)
-  app.use(opsRoutes);
-
   // Task #2780 — Demo request form (unauthenticated).
   app.use(demoRoutes);
 
@@ -286,6 +283,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Apply auth middleware to all routes
   app.use(authMiddleware);
+
+  // Operational routes (health checks + authenticated ops endpoints like beta-readiness).
+  // Mounted AFTER authMiddleware so req.user is populated for requireAuth guards inside
+  // opsRoutes. Public sub-routes (/healthz, /readyz, /metrics) do not call requireAuth
+  // so they remain accessible without a session.
+  app.use(opsRoutes);
 
   // Check org suspension for all authenticated requests (SUPER_ADMIN bypasses)
   app.use(requireActiveOrganization);
