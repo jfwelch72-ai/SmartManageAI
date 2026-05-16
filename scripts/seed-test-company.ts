@@ -16,7 +16,8 @@ import {
   organizationSubscriptions,
   organizationAddOns,
   masterSowItems,
-  organizationSowItems
+  organizationSowItems,
+  notifications
 } from "../shared/schema";
 import bcrypt from "bcrypt";
 import { eq, asc, and } from "drizzle-orm";
@@ -91,6 +92,14 @@ async function cleanupExisting() {
   // Delete test users - but first we need to nullify their references in audit_log
   // Instead of deleting users with constraints, just deactivate them and update orgs
   const testEmails = [...MAIN_ORG_USERS, ...SUB_ORG_USERS].map(u => u.email);
+
+  // Wipe all notifications for test users (clears cross-org leakage from upserts)
+  for (const email of testEmails) {
+    const [existing] = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (existing) {
+      await db.delete(notifications).where(eq(notifications.userId, existing.id));
+    }
+  }
   
   for (const email of testEmails) {
     // Just delete the user - if it fails due to FK, we'll handle it
