@@ -41,6 +41,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { ProjectDbeGoal } from "@shared/schema";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface DbeGoalRisk {
   certificationType: string;
@@ -149,8 +150,10 @@ export default function DbeGoalsPage() {
             WBE, SBE, VOSB and more.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {canAccess && projectId && (
+        <div className="flex items-center gap-2 self-start">
+          <ContextualHelpButton />
+          <div className="flex items-center gap-2">
+            {canAccess && projectId && (
             <Button
               variant="outline"
               disabled={riskMut.isPending}
@@ -178,6 +181,7 @@ export default function DbeGoalsPage() {
               New Goal
             </Button>
           )}
+          </div>
         </div>
       </div>
 

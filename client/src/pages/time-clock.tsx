@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { calculateDistance, GEOFENCE_RADIUS } from "@shared/utils/geofence";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -591,13 +592,16 @@ export default function TimeClockPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-full px-3 sm:px-6 py-4 sm:py-8">
-        <div className="mb-4 sm:mb-6">
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
-            Time Clock
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Clock in and out of your shifts
-          </p>
+        <div className="mb-4 sm:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-1">
+              Time Clock
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Clock in and out of your shifts
+            </p>
+          </div>
+          <ContextualHelpButton />
         </div>
 
         <Tabs defaultValue="clock" className="space-y-6">

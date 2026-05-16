@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
@@ -544,6 +545,7 @@ export default function MyWorkPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <ContextualHelpButton />
           {isManager && (
             <Button
               variant={teamMode ? "default" : "outline"}

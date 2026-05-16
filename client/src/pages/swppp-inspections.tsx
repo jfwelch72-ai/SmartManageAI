@@ -55,6 +55,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import {
   SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
   SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS,
@@ -299,15 +300,18 @@ export default function SwpppInspectionsPage() {
             corrective actions.
           </p>
         </div>
-        {canManage && (
-          <Button
-            onClick={() => setEditing("new")}
-            data-testid="button-new-swppp"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Inspection
-          </Button>
-        )}
+        <div className="flex items-center gap-2 self-start">
+          <ContextualHelpButton />
+          {canManage && (
+            <Button
+              onClick={() => setEditing("new")}
+              data-testid="button-new-swppp"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Inspection
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col sm:flex-row sm:items-end gap-3">

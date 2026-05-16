@@ -40,6 +40,7 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import {
   Target,
   Plus,
@@ -954,9 +955,12 @@ export default function KpiManagementPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-7xl px-6 py-8 space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">KPI Management</h1>
-          <p className="text-muted-foreground">Define, assign, and track key performance indicators for your team</p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold" data-testid="text-page-title">KPI Management</h1>
+            <p className="text-muted-foreground">Define, assign, and track key performance indicators for your team</p>
+          </div>
+          <ContextualHelpButton />
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>

@@ -26,6 +26,7 @@ import {
   Loader2,
   ClipboardList,
 } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import {
   format,
   startOfWeek,
@@ -413,8 +414,8 @@ export default function DispatchBoardPage() {
               Manage crew assignments across projects and tasks
             </p>
           </div>
-
           <div className="flex items-center gap-2 flex-wrap">
+            <ContextualHelpButton />
             <div className="flex items-center border rounded-md">
               <Button
                 variant="ghost"

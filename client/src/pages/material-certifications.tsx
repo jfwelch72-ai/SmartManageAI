@@ -43,6 +43,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import type { MaterialCertification } from "@shared/schema";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 const STATUSES = [
   "PENDING",
@@ -127,15 +128,18 @@ export default function MaterialCertificationsPage() {
             certification status for each material delivery.
           </p>
         </div>
-        {canManage && (
-          <Button
-            onClick={() => setEditing("new")}
-            data-testid="button-new-cert"
-          >
-            <Plus className="h-4 w-4 mr-2" />
-            New Certification
-          </Button>
-        )}
+        <div className="flex items-center gap-2 self-start">
+          <ContextualHelpButton />
+          {canManage && (
+            <Button
+              onClick={() => setEditing("new")}
+              data-testid="button-new-cert"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Certification
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="max-w-md">

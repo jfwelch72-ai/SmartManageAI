@@ -29,6 +29,7 @@ import { format, parseISO, differenceInCalendarDays, eachDayOfInterval, isSameMo
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 const leaveTypeIcons: Record<string, LucideIcon> = {
   "Vacation": TreePalm,
@@ -595,7 +596,9 @@ export default function LeaveManagementPage() {
               Manage time-off requests and leave balances
             </p>
           </div>
-          <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
+          <div className="flex items-center gap-2">
+            <ContextualHelpButton />
+            <Dialog open={showRequestDialog} onOpenChange={setShowRequestDialog}>
             <DialogTrigger asChild>
               <Button data-testid="button-new-leave-request">
                 <Plus className="w-4 h-4 mr-2" />
@@ -609,6 +612,7 @@ export default function LeaveManagementPage() {
               <RequestForm onClose={() => setShowRequestDialog(false)} />
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         <div className="mb-6">

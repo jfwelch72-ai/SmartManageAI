@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -708,14 +709,17 @@ export default function CrewsPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-full px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
-            <Users className="h-8 w-8 text-primary" />
-            Crews & Skills Management
-          </h1>
-          <p className="text-muted-foreground">
-            Organize crews, assign members, and track employee skills
-          </p>
+        <div className="mb-6 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <h1 className="text-3xl font-bold text-foreground mb-2 flex items-center gap-2">
+              <Users className="h-8 w-8 text-primary" />
+              Crews & Skills Management
+            </h1>
+            <p className="text-muted-foreground">
+              Organize crews, assign members, and track employee skills
+            </p>
+          </div>
+          <div className="self-start"><ContextualHelpButton /></div>
         </div>
 
         <Tabs defaultValue="crews" className="space-y-6">

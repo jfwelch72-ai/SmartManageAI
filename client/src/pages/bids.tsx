@@ -170,6 +170,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 // Due date filter options
 const DUE_DATE_FILTERS = [
@@ -804,6 +805,7 @@ export default function BidsPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            <ContextualHelpButton />
             <ViewSwitcher value={bidsView} onChange={handleBidsViewChange} views={["table", "kanban", "calendar"]} testId="bids-view-switcher" />
             <SavedViewsDropdown
               viewKey="bids"

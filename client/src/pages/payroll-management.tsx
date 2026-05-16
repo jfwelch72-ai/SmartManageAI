@@ -42,6 +42,7 @@ import { CertifiedPayrollButton } from "@/components/payroll/CertifiedPayrollRep
 import { MissingWageDecisionsBanner } from "@/components/payroll/MissingWageDecisionsBanner";
 import { SuppressedWageDecisionsBanner } from "@/components/payroll/SuppressedWageDecisionsBanner";
 import CertifiedPayrollHistoryPage from "./certified-payroll-history";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface PayrollOverview {
   currentPeriod: { start: string; end: string; workWeekStart: string };
@@ -254,10 +255,13 @@ export default function PayrollManagementPage() {
           <h1 className="text-2xl font-bold" data-testid="text-payroll-title">Payroll Management</h1>
           <p className="text-muted-foreground text-sm">Manage pay runs, time entries, and labor costs</p>
         </div>
-        <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-pay-run">
-          <Plus className="w-4 h-4 mr-2" />
-          Create Pay Run
-        </Button>
+        <div className="flex items-center gap-2">
+          <ContextualHelpButton />
+          <Button onClick={() => setCreateDialogOpen(true)} data-testid="button-create-pay-run">
+            <Plus className="w-4 h-4 mr-2" />
+            Create Pay Run
+          </Button>
+        </div>
       </div>
 
       <MissingWageDecisionsBanner />

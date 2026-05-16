@@ -17,6 +17,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { isVendor } from "@/lib/rbac";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   MEETING: "Meeting",
@@ -305,6 +306,7 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <ContextualHelpButton />
             {userIsVendor && (
               <Select value={vendorEventFilter} onValueChange={setVendorEventFilter}>
                 <SelectTrigger className="w-[200px]" data-testid="select-vendor-event-filter">

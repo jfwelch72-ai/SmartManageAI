@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ClipboardList, Paperclip } from "lucide-react";
 import type { DailyReport } from "@shared/schema";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface ProjectLite {
   id: string;
@@ -27,14 +28,17 @@ export default function DailyReportsPage() {
 
   return (
     <div className="container max-w-5xl mx-auto p-6 space-y-6" data-testid="page-daily-reports">
-      <div className="flex items-center gap-3">
-        <ClipboardList className="h-7 w-7 text-primary" />
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Daily Reports</h1>
-          <p className="text-sm text-muted-foreground">
-            Field daily reports submitted from crew mobile devices.
-          </p>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <ClipboardList className="h-7 w-7 text-primary" />
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">Daily Reports</h1>
+            <p className="text-sm text-muted-foreground">
+              Field daily reports submitted from crew mobile devices.
+            </p>
+          </div>
         </div>
+        <ContextualHelpButton />
       </div>
 
       {isLoading ? (

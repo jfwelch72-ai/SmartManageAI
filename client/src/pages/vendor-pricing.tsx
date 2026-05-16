@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import VendorPricingSync from "@/components/VendorPricingSync";
@@ -581,9 +582,12 @@ export default function VendorPricingPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="container max-w-full mx-auto px-4 py-8 space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Vendor Pricing</h1>
-          <p className="text-muted-foreground text-sm mt-1">Search, compare, and manage vendor pricing catalogs</p>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">Vendor Pricing</h1>
+            <p className="text-muted-foreground text-sm mt-1">Search, compare, and manage vendor pricing catalogs</p>
+          </div>
+          <ContextualHelpButton />
         </div>
 
         <Tabs defaultValue="catalog" className="w-full">

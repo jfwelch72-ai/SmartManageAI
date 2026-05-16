@@ -57,6 +57,7 @@ const taskFormSchema = z.object({
 type TaskFormData = z.infer<typeof taskFormSchema>;
 
 import type { TaskData as TaskItemBase } from "@/components/TaskDetailModal";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 interface TaskItem extends TaskItemBase {
   projectId?: string;
 }
@@ -321,8 +322,8 @@ export default function Tasks() {
             Manage manual tasks and track AI-generated insights
           </p>
         </div>
-
         <div className="flex flex-wrap items-center gap-2">
+          <ContextualHelpButton />
           <ViewSwitcher
             value={tasksView}
             onChange={handleTasksViewChange}

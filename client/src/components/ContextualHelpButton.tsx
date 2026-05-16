@@ -84,15 +84,17 @@ function ArticleBody({ slug, onBack }: { slug: string; onBack?: () => void }) {
 
 interface Props {
   label?: string;
+  /** When provided, shows exactly these article slugs instead of route-matching. Useful for tab-level help. */
+  slugs?: string[];
 }
 
 /**
  * Renders a small "?" / "Help" button that opens a slide-over listing help
  * articles whose `routes` field (from docs/help/manifest.json) matches the
- * current page path.  No hardcoded slug lists — the manifest drives all
- * mappings.
+ * current page path.  Pass explicit `slugs` to override route-matching (e.g.
+ * for tab-specific help inside a shared-URL page like project detail).
  */
-export function ContextualHelpButton({ label = "Help" }: Props) {
+export function ContextualHelpButton({ label = "Help", slugs }: Props) {
   const [open, setOpen] = useState(false);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [location] = useLocation();
@@ -104,10 +106,13 @@ export function ContextualHelpButton({ label = "Help" }: Props) {
 
   const contextual = useMemo(() => {
     const all = articlesQuery.data?.articles ?? [];
+    if (slugs && slugs.length > 0) {
+      return all.filter((a) => slugs.includes(a.slug));
+    }
     return all.filter((a) =>
       a.routes.some((r) => location.toLowerCase().startsWith(r.toLowerCase())),
     );
-  }, [articlesQuery.data, location]);
+  }, [articlesQuery.data, location, slugs]);
 
   const handleOpenChange = (v: boolean) => {
     setOpen(v);

@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -158,6 +159,7 @@ export default function NotificationsInboxPage() {
               )}
             </CardTitle>
             <div className="flex items-center gap-2">
+              <ContextualHelpButton />
               <Button
                 variant="outline"
                 size="sm"

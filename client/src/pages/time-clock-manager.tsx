@@ -55,6 +55,7 @@ import {
   Timer,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 export default function TimeClockManagerPage() {
   const { user, logout, organizationName } = useAuth();
@@ -428,13 +429,16 @@ export default function TimeClockManagerPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="mx-auto max-w-full px-6 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-foreground mb-1">
-            Time Clock Management
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Monitor active shifts, approve time, and manage adjustments
-          </p>
+        <div className="mb-8 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-foreground mb-1">
+              Time Clock Management
+            </h1>
+            <p className="text-sm text-muted-foreground">
+              Monitor active shifts, approve time, and manage adjustments
+            </p>
+          </div>
+          <ContextualHelpButton />
         </div>
 
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

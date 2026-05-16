@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { DashboardEditMode, EditModeIndicator } from "@/components/DashboardEditMode";
 import { ThemePicker } from "@/components/ThemePicker";
 import { DashboardGrid } from "@/components/DashboardGrid";
@@ -462,6 +463,7 @@ export default function DashboardPage() {
             </div>
             
             <div className="flex items-center gap-2 flex-wrap">
+              <ContextualHelpButton />
               <ThemePicker />
 
               <div className="hidden sm:flex items-center gap-2">

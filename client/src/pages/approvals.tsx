@@ -7,6 +7,7 @@ import { CheckCircle, XCircle, Clock, FileCheck, Loader2, Inbox } from "lucide-r
 import { EmptyState } from "@/components/EmptyState";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface ApprovalStats {
   total: number;
@@ -106,11 +107,14 @@ export default function ApprovalsPage() {
 
   return (
     <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold" data-testid="text-approvals-title">Approvals</h1>
-        <p className="text-muted-foreground" data-testid="text-approvals-description">
-          Review and manage pending approval requests
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold" data-testid="text-approvals-title">Approvals</h1>
+          <p className="text-muted-foreground" data-testid="text-approvals-description">
+            Review and manage pending approval requests
+          </p>
+        </div>
+        <ContextualHelpButton />
       </div>
 
       <div className="grid gap-4 md:grid-cols-4">

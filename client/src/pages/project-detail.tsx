@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import StatusBadge from "@/components/StatusBadge";
@@ -1048,12 +1049,17 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="schedule">
-            <AiSchedulingPanel
-              projectId={project.id}
-              projectCode={projectCode}
-              projectName={project.name}
-              tradeType={(project as { tradeType?: string }).tradeType}
-            />
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <ContextualHelpButton slugs={["schedule-of-values"]} />
+              </div>
+              <AiSchedulingPanel
+                projectId={project.id}
+                projectCode={projectCode}
+                projectName={project.name}
+                tradeType={(project as { tradeType?: string }).tradeType}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="delays">
@@ -1111,7 +1117,12 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="procurement">
-            <ProcurementTab projectCode={projectCode} project={project} />
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <ContextualHelpButton slugs={["procurement"]} />
+              </div>
+              <ProcurementTab projectCode={projectCode} project={project} />
+            </div>
           </TabsContent>
 
           <TabsContent value="plans" className="space-y-0">
@@ -1159,11 +1170,16 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="rfis">
-            <ProjectRFIs
-              projectId={project.id}
-              projectCode={project.code}
-              userRole={user?.role || ""}
-            />
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <ContextualHelpButton slugs={["rfis-submittals"]} />
+              </div>
+              <ProjectRFIs
+                projectId={project.id}
+                projectCode={project.code}
+                userRole={user?.role || ""}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="transmittals">
@@ -1230,16 +1246,21 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="project-financials">
-            <FinancialsTab
-              project={project}
-              projectCode={projectCode}
-              userRole={user?.role || ""}
-              changeOrders={changeOrders}
-              changeOrdersLoading={changeOrdersLoading}
-              canAccessSOV={canAccessSOV}
-              activeSubTab={financialSubTab}
-              onSubTabChange={setFinancialSubTab}
-            />
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <ContextualHelpButton slugs={["schedule-of-values"]} />
+              </div>
+              <FinancialsTab
+                project={project}
+                projectCode={projectCode}
+                userRole={user?.role || ""}
+                changeOrders={changeOrders}
+                changeOrdersLoading={changeOrdersLoading}
+                canAccessSOV={canAccessSOV}
+                activeSubTab={financialSubTab}
+                onSubTabChange={setFinancialSubTab}
+              />
+            </div>
           </TabsContent>
 
           <TabsContent value="punch-list">
@@ -1259,7 +1280,12 @@ export default function ProjectDetailPage() {
           </TabsContent>
 
           <TabsContent value="closeout">
-            <ProjectCloseoutPage projectCode={projectCode} />
+            <div className="space-y-4">
+              <div className="flex justify-end">
+                <ContextualHelpButton slugs={["project-closeout"]} />
+              </div>
+              <ProjectCloseoutPage projectCode={projectCode} />
+            </div>
           </TabsContent>
 
           <TabsContent value="asset-handover">

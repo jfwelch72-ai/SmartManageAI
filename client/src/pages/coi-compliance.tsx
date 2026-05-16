@@ -16,6 +16,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { AlertTriangle, Download, Mail, ShieldCheck, ShieldAlert } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface DashboardCertRow {
   id: string;
@@ -127,13 +128,16 @@ export default function CoiCompliancePage() {
             Track every certificate of insurance, expiry windows, and required endorsements.
           </p>
         </div>
-        <a
-          href="/api/coi/dashboard.csv"
-          className="inline-flex items-center gap-2 px-3 py-2 border rounded-md text-sm hover-elevate"
-          data-testid="link-export-csv"
-        >
-          <Download className="h-4 w-4" /> Export CSV
-        </a>
+        <div className="flex items-center gap-2">
+          <ContextualHelpButton />
+          <a
+            href="/api/coi/dashboard.csv"
+            className="inline-flex items-center gap-2 px-3 py-2 border rounded-md text-sm hover-elevate"
+            data-testid="link-export-csv"
+          >
+            <Download className="h-4 w-4" /> Export CSV
+          </a>
+        </div>
       </div>
 
       {data && !data.enforcementEnabled && (

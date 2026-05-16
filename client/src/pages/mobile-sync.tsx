@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useState } from "react";
 import { Link } from "wouter";
 import MobileSyncStatus from "@/components/MobileSyncStatus";
@@ -171,6 +172,7 @@ export default function MobileSyncPage() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <ContextualHelpButton />
             <Badge
               variant={isOnline ? "default" : "destructive"}
               className="flex items-center gap-1"

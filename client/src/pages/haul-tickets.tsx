@@ -55,6 +55,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import type { HaulTicket } from "@shared/schema";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 interface MassHaulImbalance {
   material: string;
@@ -187,8 +188,10 @@ export default function HaulTicketsPage() {
             quantity, and cost.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {canView && projectId && massHaulAnalyzerEnabled && (
+        <div className="flex items-center gap-2 self-start">
+          <ContextualHelpButton />
+          <div className="flex items-center gap-2">
+            {canView && projectId && massHaulAnalyzerEnabled && (
             <Button
               variant="outline"
               onClick={() => {
@@ -215,6 +218,7 @@ export default function HaulTicketsPage() {
               New Ticket
             </Button>
           )}
+          </div>
         </div>
       </div>
 

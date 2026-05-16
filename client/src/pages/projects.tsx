@@ -1,3 +1,4 @@
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useState, useEffect, useRef } from "react";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useGlobalSearchFocus } from "@/hooks/use-global-search-focus";
@@ -534,6 +535,7 @@ export default function ProjectsPage() {
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            <ContextualHelpButton />
             <ViewSwitcher value={viewType} onChange={setViewType} testId="projects-view-switcher" />
             <SavedViewsDropdown
               viewKey="projects"

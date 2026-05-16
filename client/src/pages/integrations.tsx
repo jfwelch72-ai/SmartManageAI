@@ -19,6 +19,7 @@ import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
 import { QboSyncRetryPanel } from "@/components/integrations/QboSyncRetryPanel";
 import { Badge } from "@/components/ui/badge";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 function StackCTConnectButton() {
   const { toast } = useToast();
@@ -176,12 +177,15 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
               Connect your favorite tools and services to streamline your workflow
             </p>
           </div>
-          <Link href="/developer-portal">
-            <Button variant="outline" data-testid="link-developer-portal">
-              <Key className="h-4 w-4 mr-2" />
-              Developer Portal
-            </Button>
-          </Link>
+          <div className="flex items-center gap-2">
+            <ContextualHelpButton />
+            <Link href="/developer-portal">
+              <Button variant="outline" data-testid="link-developer-portal">
+                <Key className="h-4 w-4 mr-2" />
+                Developer Portal
+              </Button>
+            </Link>
+          </div>
         </div>
       )}
       {embedded && (

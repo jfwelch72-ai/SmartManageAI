@@ -94,6 +94,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { CrmOrgDetail } from "@/components/crm/CrmOrgDetail";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 type OrganizationType =
   | "CONTRACTOR"
@@ -1451,6 +1452,7 @@ export default function CRMPage() {
               </p>
             </div>
             <div className="flex gap-2">
+              <ContextualHelpButton />
               <AIAnalysisButton module="VENDOR_PRICING" />
               <Button variant="outline" asChild data-testid="button-crm-settings">
                 <Link href="/crm-settings">

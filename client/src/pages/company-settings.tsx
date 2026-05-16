@@ -13,6 +13,7 @@ import { CompanyUserInviteTab } from "@/components/settings/CompanyUserInviteTab
 import { OrgDistributionListsTab } from "@/components/settings/OrgDistributionListsTab";
 import { EstimatingMarkupsTab } from "@/components/settings/EstimatingMarkupsTab";
 import type { LucideIcon } from "lucide-react";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 const CostCodesPage = lazy(() => import("@/pages/cost-codes"));
 const UsersPage = lazy(() => import("@/pages/users"));
@@ -261,7 +262,7 @@ export default function CompanySettings() {
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div>
           <h1 className="text-3xl font-bold flex items-center gap-2">
             <Building2 className="h-8 w-8 text-primary" />
@@ -271,6 +272,7 @@ export default function CompanySettings() {
             Manage your organization's configuration, branding, and integrations
           </p>
         </div>
+        <ContextualHelpButton />
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>

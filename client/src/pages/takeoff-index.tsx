@@ -50,6 +50,7 @@ import {
 } from "@/lib/takeoff-recents";
 import type { Bid } from "@shared/schema";
 import type { ProjectWithNames } from "@/hooks/use-data";
+import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 const ACTIVE_BID_STATUSES = new Set([
   "DRAFT",
@@ -258,6 +259,7 @@ export default function TakeoffIndexPage() {
             before there is a bid or project.
           </p>
         </div>
+        <ContextualHelpButton />
         <Button
           onClick={() => createTakeoff.mutate()}
           disabled={createTakeoff.isPending}
