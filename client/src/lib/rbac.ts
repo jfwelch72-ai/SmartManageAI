@@ -534,8 +534,10 @@ export const NavItems: Record<string, NavItem> = {
   // (surfaced via FIELD_WORKER_WORKFLOW safety_section group). It is intentionally excluded from
   // ADMIN/MANAGER/SUPERINTENDENT workflow groups because those roles use /safety (Safety Hub) which
   // embeds SafetyTrainingPage as a tab. Do not add it to non-field-worker workflow groups.
-  '/safety-training': { href: '/safety-training', label: 'Safety Training', testId: 'nav-safety-training', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
-  '/safety': { href: '/safety', label: 'Safety & Compliance', testId: 'nav-safety-hub', visible: (role?: string, perms?: FeaturePerms) => hasSafetyAccess(role, perms) },
+  // /safety-training is shown only when the user has canViewSafety but NOT canManageSafety.
+  // Users with canManageSafety see the full Safety Hub (/safety) instead.
+  '/safety-training': { href: '/safety-training', label: 'Safety Training', testId: 'nav-safety-training', visible: (role?: string, perms?: FeaturePerms) => perms ? (!!perms.canViewSafety && !perms.canManageSafety) : hasSafetyAccess(role, perms) },
+  '/safety': { href: '/safety', label: 'Safety & Compliance', testId: 'nav-safety-hub', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageSafety : hasSafetyAccess(role, perms) },
   '/time-clock': { href: '/time-clock', label: 'My Time Clock', testId: 'nav-my-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTimeClock : hasContractorAccess(role) },
   '/time-clock-manager': { href: '/time-clock-manager', label: 'Manage Time Clock', testId: 'nav-manage-time-clock', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/tm-daily': { href: '/tm-daily', label: 'T&M Daily Sheets', testId: 'nav-tm-daily', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
@@ -549,6 +551,7 @@ export const NavItems: Record<string, NavItem> = {
   '/subcontractor-payables': { href: '/subcontractor-payables', label: 'Subcontractor Payables', testId: 'nav-subcontractor-payables', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessSubcontracts : isOrganizationAdmin(role) || role === "HUSTLER" },
   '/overhead-costs': { href: '/overhead-costs', label: 'Overhead Costs', testId: 'nav-overhead-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessOverheadCosts : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER" },
   '/equipment': { href: '/equipment', label: 'Equipment', testId: 'nav-equipment', visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role, perms) },
+  '/inventory': { href: '/inventory', label: 'Inventory', testId: 'nav-inventory', visible: (role?: string, perms?: FeaturePerms) => hasEquipmentAccess(role, perms) },
   '/procurement-module': { href: '/procurement-module', label: 'Procurement', testId: 'nav-procurement', visible: (role?: string, perms?: FeaturePerms) => hasProcurementAccess(role, perms) },
   '/approvals': { href: '/approvals', label: 'Approvals', testId: 'nav-approvals', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessApprovals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/company-settings': { href: '/company-settings', label: 'Company Settings', testId: 'nav-company-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
@@ -609,7 +612,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
   { key: 'workforce', label: 'Workforce', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/payroll-management', '/payroll/certified-history', '/tm-billing', '/progress-billing', '/cost-rates', '/subcontractor-payables', '/historical-costs'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/lidar-scans', '/permits'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/inventory', '/procurement-module', '/lidar-scans', '/permits'] },
   { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/compliance', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'administration', label: 'Administration', itemHrefs: ['/company-settings', '/cost-book', '/crew-templates', '/ai-estimator/admin', '/audit-logs'] },
@@ -628,18 +631,18 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/approvals', '/messages', '/email-assistant'] },
   { key: 'workforce', label: 'Workforce', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/time-clock', '/time-clock-manager', '/tm-daily', '/leave-management'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/overhead-costs', '/subcontractor-payables'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/lidar-scans', '/permits'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/inventory', '/procurement-module', '/lidar-scans', '/permits'] },
   { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/compliance', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'administration', label: 'Administration', itemHrefs: ['/company-settings', '/cost-book', '/crew-templates', '/reports'] },
-  { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
+  { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
-  { key: 'workforce', label: 'Workforce', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management'] },
+  { key: 'workforce', label: 'Workforce', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/crews', '/leave-management'] },
   { key: 'safety_compliance', label: 'Safety & Compliance', itemHrefs: ['/safety', '/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits', '/compliance', '/approvals'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/inventory', '/procurement-module', '/permits', '/compliance', '/approvals'] },
   { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications', '/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
@@ -649,7 +652,7 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'estimating', label: 'Estimating', itemHrefs: ['/crm', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'reference', label: 'Reference', itemHrefs: ['/cost-rates', '/cost-book', '/crew-templates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
-  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
+  { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/inventory', '/procurement-module', '/lidar-scans'] },
   { key: 'compliance_section', label: 'Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
@@ -657,8 +660,9 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
 
 const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/tasks', '/calendar'] },
-  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/equipment', '/tm-daily', '/lidar-scans', '/procurement-module'] },
-  { key: 'safety_section', label: 'Safety', itemHrefs: ['/safety-training'] },
+  { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/projects', '/equipment', '/inventory', '/tm-daily', '/lidar-scans', '/procurement-module'] },
+  { key: 'safety_section', label: 'Safety', itemHrefs: ['/safety-training', '/safety'] },
+  { key: 'workforce', label: 'Workforce', itemHrefs: ['/dispatch-board', '/manage-workers', '/crews', '/time-clock-manager'] },
   { key: 'communication', label: 'Communication', itemHrefs: ['/leave-management', '/communications', '/messages'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },

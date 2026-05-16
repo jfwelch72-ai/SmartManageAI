@@ -17,7 +17,8 @@ import {
   organizationAddOns,
   masterSowItems,
   organizationSowItems,
-  notifications
+  notifications,
+  userDashboardPermissions,
 } from "../shared/schema";
 import bcrypt from "bcrypt";
 import { eq, asc, and } from "drizzle-orm";
@@ -302,6 +303,54 @@ async function copyMasterSowToOrganization(organizationId: string, tradeType: st
   console.log(`    Copied ${items.length} SOW items to organization`);
 }
 
+async function seedEquipmentManagerPermissions(orgId: string) {
+  console.log("  Seeding Equipment Manager permissions for equipment@realtest.com...");
+  const [equipUser] = await db.select({ id: users.id }).from(users).where(eq(users.email, "equipment@realtest.com"));
+  if (!equipUser) {
+    console.log("    equipment@realtest.com not found, skipping permissions seed.");
+    return;
+  }
+  await db.insert(userDashboardPermissions).values({
+    organizationId: orgId,
+    userId: equipUser.id,
+    canAccessDashboard: true,
+    canAccessProjects: true,
+    projectScope: "ACTIVE_ONLY",
+    canAccessCalendar: true,
+    canAccessTasks: true,
+    canAccessMessages: true,
+    canAccessBulletins: true,
+    canAccessTimeClock: true,
+    canManageLeave: true,
+    canViewProjectTimeEntries: true,
+    canViewSafety: true,
+    canViewAiSummaries: true,
+    canSubmitPeerRatings: true,
+    canViewPeerRatings: true,
+    canManageEquipment: true,
+  }).onConflictDoUpdate({
+    target: [userDashboardPermissions.organizationId, userDashboardPermissions.userId],
+    set: {
+      canAccessDashboard: true,
+      canAccessProjects: true,
+      projectScope: "ACTIVE_ONLY",
+      canAccessCalendar: true,
+      canAccessTasks: true,
+      canAccessMessages: true,
+      canAccessBulletins: true,
+      canAccessTimeClock: true,
+      canManageLeave: true,
+      canViewProjectTimeEntries: true,
+      canViewSafety: true,
+      canViewAiSummaries: true,
+      canSubmitPeerRatings: true,
+      canViewPeerRatings: true,
+      canManageEquipment: true,
+    },
+  });
+  console.log("    Equipment Operator permissions applied.");
+}
+
 async function main() {
   console.log("========================================");
   console.log("  SmartManageAI Test Company Seeder");
@@ -324,6 +373,7 @@ async function main() {
     await createSubscription(mainOrg.id, "enterprise");
     await enableAllAddons(mainOrg.id);
     await createUsers(mainOrg.id, MAIN_ORG_USERS);
+    await seedEquipmentManagerPermissions(mainOrg.id);
     await copyMasterSowToOrganization(mainOrg.id, "GENERAL_CONTRACTOR");
     
     console.log("\n--- Creating Subcontractor Organization ---");

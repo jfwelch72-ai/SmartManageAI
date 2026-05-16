@@ -1404,21 +1404,28 @@ const BUILT_IN_PRESETS: Array<{ name: string; description: string; targetRole: s
 
 async function seedBuiltInPresets() {
   try {
-    const existing = await db.select({ id: permissionPresets.id }).from(permissionPresets)
-      .where(eq(permissionPresets.isBuiltIn, true));
-    if (existing.length >= BUILT_IN_PRESETS.length) return;
-
-    await db.delete(permissionPresets).where(eq(permissionPresets.isBuiltIn, true));
-
     for (const preset of BUILT_IN_PRESETS) {
-      await db.insert(permissionPresets).values({
-        name: preset.name,
-        description: preset.description,
-        targetRole: preset.targetRole,
-        permissions: JSON.stringify(preset.permissions),
-        isBuiltIn: true,
-        organizationId: null,
-      });
+      const [existing] = await db.select({ id: permissionPresets.id })
+        .from(permissionPresets)
+        .where(and(eq(permissionPresets.isBuiltIn, true), eq(permissionPresets.name, preset.name)));
+      if (existing) {
+        await db.update(permissionPresets)
+          .set({
+            description: preset.description,
+            targetRole: preset.targetRole,
+            permissions: JSON.stringify(preset.permissions),
+          })
+          .where(eq(permissionPresets.id, existing.id));
+      } else {
+        await db.insert(permissionPresets).values({
+          name: preset.name,
+          description: preset.description,
+          targetRole: preset.targetRole,
+          permissions: JSON.stringify(preset.permissions),
+          isBuiltIn: true,
+          organizationId: null,
+        });
+      }
     }
   } catch (error) {
     logError('Error seeding built-in presets:', {}, error instanceof Error ? error : new Error(String(error)));
