@@ -121,6 +121,13 @@ async function createOrganization(
 ) {
   console.log(`Creating organization: ${name}...`);
   
+  // Check if org already exists (couldn't be cleaned up due to FK constraints)
+  const [existing] = await db.select().from(organizations).where(eq(organizations.slug, slug));
+  if (existing) {
+    console.log(`  Organization already exists, using existing ID: ${existing.id}`);
+    return existing;
+  }
+  
   const orgData = {
     name,
     slug,
@@ -156,6 +163,9 @@ async function createSubscription(organizationId: string, planTier: "free" | "st
     status: "active",
     billingProvider: "manual",
     currentPeriodEnd,
+  }).onConflictDoUpdate({
+    target: organizationSubscriptions.organizationId,
+    set: { planTier, status: "active", billingProvider: "manual", currentPeriodEnd },
   });
 }
 
@@ -167,6 +177,9 @@ async function enableAllAddons(organizationId: string) {
       organizationId,
       addonKey,
       status: "active",
+    }).onConflictDoUpdate({
+      target: [organizationAddOns.organizationId, organizationAddOns.addonKey],
+      set: { status: "active" },
     });
     console.log(`    - ${addonKey}: ACTIVE`);
   }
@@ -189,6 +202,19 @@ async function createUsers(orgId: string, userList: TestUser[]) {
       isActive: true,
       walkthroughCompleted: true,
       walkthroughStep: 0,
+    }).onConflictDoUpdate({
+      target: users.email,
+      set: {
+        organizationId: orgId,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        phone: user.phone,
+        role: user.role,
+        passwordHash,
+        isActive: true,
+        walkthroughCompleted: true,
+        walkthroughStep: 0,
+      },
     });
     console.log(`    - ${user.email} (${user.role})`);
   }
