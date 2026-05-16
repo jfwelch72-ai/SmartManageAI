@@ -348,9 +348,9 @@ export function DashboardSectionComponent({ section, sectionIndex, totalSections
                   <StaggeredWidget key={widget.id} delay={widgetIndex * 150}>
                   <div
                     className={cn(
-                      "relative group rounded-lg border-t-2 transition-all",
+                      "relative group rounded-lg border-t-2 transition-all shadow-sm",
                       CATEGORY_ACCENT_COLORS[widgetDef?.category || "General"],
-                      isEditMode && "ring-1 ring-dashed ring-primary/25 hover:ring-primary/50 hover:shadow-sm"
+                      isEditMode && "ring-1 ring-dashed ring-primary/25 hover:ring-primary/50 hover:shadow-md"
                     )}
                     data-testid={`widget-container-${widget.id}`}
                   >
