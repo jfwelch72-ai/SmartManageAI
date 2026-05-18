@@ -502,6 +502,11 @@ export default function BidWizardPage() {
         const parsed = parseFloat(value);
         return { ...item, quantity: Number.isFinite(parsed) && parsed > 0 ? parsed : 1 };
       }
+      if (field === 'unitMaterialCost' || field === 'unitLaborCost') {
+        const parsed = parseFloat(value);
+        const current = field === 'unitMaterialCost' ? item.unitMaterialCost : item.unitLaborCost;
+        return { ...item, [field]: value === '' ? null : (Number.isFinite(parsed) ? parsed : current) };
+      }
       return { ...item, [field]: value };
     }));
   };
@@ -919,10 +924,17 @@ export default function BidWizardPage() {
                                   <TableHead className="w-24">Quantity</TableHead>
                                   <TableHead className="w-16">Unit</TableHead>
                                   <TableHead className="w-28">Category</TableHead>
+                                  <TableHead className="w-28">Unit Mat. $</TableHead>
+                                  <TableHead className="w-28">Unit Labor $</TableHead>
+                                  <TableHead className="w-28 text-right">AI Est. Total</TableHead>
                                 </TableRow>
                               </TableHeader>
                               <TableBody>
-                                {grouped[division].map((item) => (
+                                {grouped[division].map((item) => {
+                                  const qty = item.quantity != null && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+                                  const lineTotal = ((item.unitMaterialCost ?? 0) + (item.unitLaborCost ?? 0)) * qty;
+                                  const hasCostData = item.unitMaterialCost != null || item.unitLaborCost != null;
+                                  return (
                                   <TableRow key={item.id} data-testid={`scope-item-${item.id}`}>
                                     <TableCell className="w-10">
                                       <Checkbox
@@ -941,16 +953,6 @@ export default function BidWizardPage() {
                                       {item.notes && (
                                         <p className="text-xs text-muted-foreground mt-0.5 pl-0.5">{item.notes}</p>
                                       )}
-                                      {(item.unitMaterialCost != null || item.unitLaborCost != null) && (() => {
-                                        const qty = item.quantity != null && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
-                                        const lineTotal = ((item.unitMaterialCost ?? 0) + (item.unitLaborCost ?? 0)) * qty;
-                                        return (
-                                          <p className="text-xs text-muted-foreground mt-0.5 pl-0.5 flex items-center gap-1" data-testid={`ai-est-${item.id}`}>
-                                            <span className="inline-flex items-center rounded px-1 py-0 text-[10px] font-medium bg-muted text-muted-foreground border">AI Est.</span>
-                                            <span>{lineTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</span>
-                                          </p>
-                                        );
-                                      })()}
                                     </TableCell>
                                     <TableCell>
                                       <Input
@@ -973,8 +975,42 @@ export default function BidWizardPage() {
                                     <TableCell>
                                       <span className="text-xs text-muted-foreground" data-testid={`text-category-${item.id}`}>{item.category || "GENERAL"}</span>
                                     </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="h-7 w-24 text-sm"
+                                        value={item.unitMaterialCost ?? ""}
+                                        placeholder={hasCostData ? "0.00" : "—"}
+                                        onChange={(e) => updateScopeItem(item.id, 'unitMaterialCost', e.target.value)}
+                                        data-testid={`input-mat-cost-${item.id}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        type="number"
+                                        min="0"
+                                        step="0.01"
+                                        className="h-7 w-24 text-sm"
+                                        value={item.unitLaborCost ?? ""}
+                                        placeholder={hasCostData ? "0.00" : "—"}
+                                        onChange={(e) => updateScopeItem(item.id, 'unitLaborCost', e.target.value)}
+                                        data-testid={`input-labor-cost-${item.id}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                      {hasCostData ? (
+                                        <span className="text-sm font-medium" data-testid={`ai-est-${item.id}`}>
+                                          {lineTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-muted-foreground">—</span>
+                                      )}
+                                    </TableCell>
                                   </TableRow>
-                                ))}
+                                  );
+                                })}
                               </TableBody>
                             </Table>
                           </div>
