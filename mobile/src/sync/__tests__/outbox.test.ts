@@ -15,6 +15,7 @@ type Row = {
 };
 
 const store: { rows: Row[] } = { rows: [] };
+const metaStore: Record<string, string> = {};
 
 function findRow(localId: string): Row | undefined {
   return store.rows.find((r) => r.local_id === localId);
@@ -35,7 +36,9 @@ const fakeDb = {
         attachments,
         client_timestamp,
         status,
-      ] = params as [string, string, string, string | null, string, string | null, string, string];
+        _retry_count,
+        _logical_clock,
+      ] = params as [string, string, string, string | null, string, string | null, string, string, number, number];
       store.rows.push({
         local_id,
         entity_type,
@@ -72,7 +75,7 @@ const fakeDb = {
       return;
     }
     if (s.startsWith("UPDATE outbox SET status='CONFLICT'")) {
-      const [serverUpdatedAt, localId] = params as [string, string];
+      const [serverUpdatedAt, _reason, localId] = params as [string, string | null, string];
       const row = findRow(localId);
       if (row) {
         row.status = "CONFLICT";
@@ -100,6 +103,11 @@ const fakeDb = {
     }
     if (s.startsWith("DELETE FROM outbox WHERE status='SYNCED'")) {
       store.rows = store.rows.filter((r) => r.status !== "SYNCED");
+      return;
+    }
+    if (s.startsWith("INSERT INTO sync_meta")) {
+      const [key, value] = params as [string, string];
+      metaStore[key] = value;
       return;
     }
     throw new Error(`fakeDb.runAsync: unhandled SQL: ${s}`);
@@ -142,12 +150,19 @@ const fakeDb = {
       const row = findRow(localId);
       return row ? ({ payload: row.payload } as unknown as T) : undefined;
     }
+    if (s.startsWith("SELECT value FROM sync_meta WHERE key = ?")) {
+      const [key] = params as [string];
+      const value = metaStore[key];
+      return value !== undefined ? ({ value } as unknown as T) : undefined;
+    }
     throw new Error(`fakeDb.getFirstAsync: unhandled SQL: ${s}`);
   },
 };
 
-vi.mock("../../mobile/src/sync/db", () => ({
+vi.mock("../db", () => ({
   getDb: async () => fakeDb,
+  getMeta: async (key: string) => metaStore[key] ?? null,
+  setMeta: async (key: string, value: string) => { metaStore[key] = value; },
 }));
 
 import {
@@ -160,10 +175,13 @@ import {
   listRetryable,
   pendingCount,
   clearSynced,
-} from "../../mobile/src/sync/outbox";
+} from "../outbox";
 
 beforeEach(() => {
   store.rows = [];
+  for (const key of Object.keys(metaStore)) {
+    delete metaStore[key];
+  }
 });
 
 describe("mobile outbox", () => {

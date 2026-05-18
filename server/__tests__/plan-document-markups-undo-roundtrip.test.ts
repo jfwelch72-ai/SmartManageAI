@@ -11,10 +11,10 @@
  * pre-move values. That locks down the Undo contract against accidental
  * regressions to the bulk-PATCH route or its persistence path.
  *
- * `buildMoveSnapshot` is imported from `client/src/components/markups/
- * moveHelpers.ts` — a pure-TypeScript module re-exported by
- * `PlanMarkupLayer.tsx`, so the test exercises the *exact* helper the
- * UI uses without dragging react-konva into the Node test environment.
+ * `buildMoveSnapshot` is imported from `shared/markups` — a pure-TypeScript
+ * module with no browser dependencies — so the test exercises the *exact*
+ * helper the UI uses without dragging react-konva into the Node test
+ * environment.
  *
  * Task #1739 — Extended with multi-step undo/redo coverage. The plan
  * markup layer now keeps a bounded LIFO of move snapshots
@@ -34,7 +34,7 @@ import type { Server } from "http";
 import type { Express } from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
-import { sql, eq, inArray } from "drizzle-orm";
+import { sql, inArray } from "drizzle-orm";
 
 import { db } from "../db";
 import {
@@ -45,8 +45,8 @@ import {
   planDocumentMarkups,
 } from "@shared/schema";
 import { generateToken } from "../auth";
-import { buildMoveSnapshot } from "@/components/markups/moveHelpers";
-import type { MarkupShape } from "@/components/markups/MarkupRenderer";
+import { buildMoveSnapshot } from "../../shared/markups";
+import type { MarkupShape } from "../../shared/markups";
 
 const TEST_PREFIX = "__plandoc_undo_e2e__";
 

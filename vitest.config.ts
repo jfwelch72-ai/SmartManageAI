@@ -13,6 +13,9 @@ export default defineConfig({
       // node-based server suites under one config.
       'client/**/*.test.ts',
       'client/**/*.test.tsx',
+      // Task #2947 — mobile outbox test relocated from server/__tests__
+      // to its correct home next to the code it exercises.
+      'mobile/**/*.test.ts',
     ],
     exclude: [
       'node_modules',

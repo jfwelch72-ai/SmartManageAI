@@ -8,12 +8,19 @@
  * `<MarkupRenderer />`. When `<MarkupShapeView />` is consumed directly,
  * callers pass already-denormalized `pts` in their own coordinate space
  * (e.g. raw PDF pixels for the takeoff workspace).
+ *
+ * The `MarkupShape` type and `MarkupTool` type live in `shared/markups/`
+ * so server-side tests can import them without crossing the client project
+ * boundary. They are re-exported here for backwards compatibility.
  */
 import { useMemo } from "react";
 import { Stage, Layer, Arrow, Rect, Path, Line, Text, Group, Circle } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import type Konva from "konva";
 import { buildCloudPath } from "./cloudPath";
+
+export type { MarkupTool, MarkupShape } from "../../../../shared/markups";
+import type { MarkupShape } from "../../../../shared/markups";
 
 // Re-exported for backwards compatibility with existing call sites and
 // tests that imported `buildCloudPath` from this module before the
@@ -23,17 +30,6 @@ export { buildCloudPath };
 // "SELECT" is a non-drawing mode that allows clicking existing markups
 // to select/delete them without engaging a drawing tool. Drawing logic
 // in PlanMarkupLayer treats it as a no-op for pointerdown.
-export type MarkupTool = "SELECT" | "ARROW" | "TEXT" | "RECTANGLE" | "CLOUD" | "HIGHLIGHT" | "FREEHAND";
-
-export interface MarkupShape {
-  id: string;
-  tool: MarkupTool | string;
-  points: Array<{ x: number; y: number }>;
-  color: string;
-  thickness: number;
-  text?: string | null;
-  createdBy?: string;
-}
 
 export interface MarkupRendererProps {
   width: number;

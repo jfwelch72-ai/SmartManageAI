@@ -9,7 +9,7 @@
  * when a real user got the email. These tests pin the user-visible copy
  * for both the immediate (first-in-window) and summary (coalesced) variants
  * and assert that the email "View" button URL matches the deep link the
- * in-app notification list uses (`client/src/lib/notificationDestination.ts`).
+ * in-app notification list uses (`shared/lib/notificationDestination.ts`).
  *
  * The DB is not touched: `composeEmailContent` is a pure function over a
  * `NotificationRecord`, so we feed it records shaped exactly like the ones
@@ -18,7 +18,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { composeEmailContent, type NotificationRecord } from "../services/notificationDelivery";
-import { getNotificationDestination } from "../../client/src/lib/notificationDestination";
+import { getNotificationDestination } from "../../shared/lib/notificationDestination";
 
 const BASE_URL = "https://app.example.test";
 

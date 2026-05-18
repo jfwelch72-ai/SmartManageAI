@@ -16,7 +16,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import { getNotificationDestination } from "../../client/src/lib/notificationDestination";
+import { getNotificationDestination } from "../../shared/lib/notificationDestination";
 
 describe("getNotificationDestination — CRM_ORGANIZATION_REASSIGNED (Task #731 / #738)", () => {
   it("routes the immediate notification to the specific organisation on the orgs tab", () => {

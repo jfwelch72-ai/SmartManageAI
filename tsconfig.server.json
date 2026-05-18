@@ -9,13 +9,7 @@
   "exclude": [
     "node_modules",
     "build",
-    "dist",
-    "shared/**/*.test.ts",
-    "shared/**/__tests__/**/*",
-    "server/__tests__/mobile-outbox.test.ts",
-    "server/__tests__/notification-destination.test.ts",
-    "server/__tests__/reassignment-email-render.test.ts",
-    "server/__tests__/plan-document-markups-undo-roundtrip.test.ts"
+    "dist"
   ],
   "compilerOptions": {
     "composite": true,
