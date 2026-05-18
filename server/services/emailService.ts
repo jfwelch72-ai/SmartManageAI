@@ -1,5 +1,5 @@
 import { logError, logInfo } from "../utils/logger";
-import { Resend } from 'resend';
+import sgMail from '@sendgrid/mail';
 import {
   captureOutboundEmail,
   clearTestEmailOutbox,
@@ -8,9 +8,11 @@ import {
   type CapturedEmail,
 } from './emailTransport';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+if (process.env.SENDGRID_API_KEY) {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+}
 
-const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'SmartManageAI <onboarding@resend.dev>';
+const DEFAULT_FROM_EMAIL = process.env.EMAIL_FROM_ADDRESS || 'SmartManageAI <noreply@smartmanageai.com>';
 
 /**
  * Task #777 / #782 — env-gated no-op transport for tests.
@@ -119,14 +121,14 @@ export async function sendEmailWithResult(
       html: options.html,
       text: options.text,
       replyTo: options.replyTo,
-      source: 'resend',
+      source: 'sendgrid',
     });
     return { ok: true, recipientCount };
   }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const emailPayload: any = {
+      const emailPayload: sgMail.MailDataRequired = {
         from: options.from || DEFAULT_FROM_EMAIL,
         to: recipients,
         subject: options.subject,
@@ -139,50 +141,38 @@ export async function sendEmailWithResult(
       }
 
       if (options.headers && Object.keys(options.headers).length > 0) {
-        emailPayload.headers = options.headers;
+        emailPayload.headers = options.headers as Record<string, string>;
       }
 
       if (options.attachments && options.attachments.length > 0) {
         emailPayload.attachments = options.attachments.map(att => ({
           filename: att.filename,
-          content: att.content,
-          content_type: att.contentType || 'application/pdf',
+          content: att.content.toString('base64'),
+          type: att.contentType || 'application/pdf',
+          disposition: 'attachment' as const,
         }));
       }
 
-      const { data, error } = await resend.emails.send(emailPayload);
+      await sgMail.send(emailPayload);
 
-      if (error) {
-        const errorMsg = typeof error === 'object' ? JSON.stringify(error) : String(error);
-        lastError = error;
-        if (attempt < MAX_RETRIES && isTransientError(error)) {
-          const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-          logInfo(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
-          await sleep(delay);
-          continue;
-        }
-        logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, new Error(errorMsg));
-        return { ok: false, error: summarizeSendError(error), recipientCount };
-      }
-
-      logInfo(`Email sent successfully via Resend (${recipientCount} recipient(s))`, data?.id);
+      logInfo(`Email sent successfully via SendGrid (${recipientCount} recipient(s))`);
       return { ok: true, recipientCount };
     } catch (error: any) {
       lastError = error;
       const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
       if (attempt < MAX_RETRIES && isTransientError(error)) {
         const delay = BASE_DELAY_MS * Math.pow(2, attempt);
-        logInfo(`Resend transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
+        logInfo(`SendGrid transient error, retrying in ${delay}ms (attempt ${attempt + 1}/${MAX_RETRIES}): ${errorMsg}`);
         await sleep(delay);
         continue;
       }
-      logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, error instanceof Error ? error : new Error(errorMsg));
+      logError(`SendGrid email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, error instanceof Error ? error : new Error(errorMsg));
       return { ok: false, error: summarizeSendError(error), recipientCount };
     }
   }
 
   const finalMsg = lastError instanceof Error ? lastError.message : (typeof lastError === 'object' ? JSON.stringify(lastError) : String(lastError));
-  logError(`Resend email failed after ${MAX_RETRIES + 1} attempts: ${finalMsg}`, {}, lastError instanceof Error ? lastError : new Error(finalMsg));
+  logError(`SendGrid email failed after ${MAX_RETRIES + 1} attempts: ${finalMsg}`, {}, lastError instanceof Error ? lastError : new Error(finalMsg));
   return { ok: false, error: summarizeSendError(lastError), recipientCount };
 }
 

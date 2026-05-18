@@ -23,7 +23,7 @@ export interface CapturedEmail {
   replyTo?: string;
   cc?: string[];
   bcc?: string[];
-  source: 'resend' | 'smtp';
+  source: 'sendgrid' | 'smtp';
   capturedAt: Date;
 }
 

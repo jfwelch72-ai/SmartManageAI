@@ -546,6 +546,40 @@ export function warnIfResendWebhookSigningSecretMissing(): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SendGrid event webhook (bounce/complaint tracking) — TODO (Task #2916)
+// ---------------------------------------------------------------------------
+//
+// The transactional email provider has been switched from Resend to SendGrid.
+// SendGrid delivers bounce, complaint, and delivery events via its Event
+// Webhook (https://docs.sendgrid.com/for-developers/tracking-events/event).
+//
+// To wire this up:
+//   1. Configure a SendGrid Event Webhook pointing to
+//      POST /api/webhooks/email/sendgrid with a ?token=<SENDGRID_WEBHOOK_SECRET>.
+//   2. Enable SendGrid's signed webhook feature and set SENDGRID_WEBHOOK_SIGNING_KEY.
+//   3. Map SendGrid event types (bounce / spamreport / unsubscribe / dropped)
+//      to the existing `status_subscriber_email_events` categories used below.
+//
+// The stub below accepts the route so the server doesn't 404 on deliveries
+// from a pre-configured webhook URL, but does not yet process events.
+router.post("/sendgrid", async (req: Request, res: Response) => {
+  // TODO: verify SENDGRID_WEBHOOK_SIGNING_KEY signature (ECDSA, public-key
+  //       provided by SendGrid dashboard) and process bounce/complaint events.
+  logInfo("SendGrid event webhook received (processing not yet implemented)", {
+    eventCount: Array.isArray(req.body) ? req.body.length : 1,
+  });
+  return res.status(202).json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Legacy Resend bounce/complaint webhook — kept for historical event records
+// ---------------------------------------------------------------------------
+//
+// The Resend provider has been replaced by SendGrid (Task #2916). This
+// endpoint is retained so any in-flight Resend webhook deliveries that arrive
+// after the cutover are still recorded rather than rejected. It can be removed
+// once the Resend webhook subscription has been deactivated.
 router.post("/resend", async (req: Request, res: Response) => {
   if (!isResendAuthorized(req)) {
     return res.status(401).json({ error: "unauthorized" });

@@ -45,7 +45,7 @@ interface CapturedEmail {
   replyTo?: string;
   cc?: string[];
   bcc?: string[];
-  source: "resend" | "smtp";
+  source: "sendgrid" | "smtp";
   capturedAt: string;
 }
 
@@ -56,7 +56,7 @@ interface OutboxResponse {
 
 const QUERY_KEY = ["/api/admin/dev/email-outbox"];
 
-type SourceFilter = "all" | "resend" | "smtp";
+type SourceFilter = "all" | "sendgrid" | "smtp";
 
 interface PersistedFilters {
   recipient: string;
@@ -93,7 +93,7 @@ function readFiltersFromUrl(): PersistedFilters {
   const params = new URLSearchParams(window.location.search);
   const sourceRaw = params.get("source");
   const source: SourceFilter =
-    sourceRaw === "resend" || sourceRaw === "smtp" ? sourceRaw : "all";
+    sourceRaw === "sendgrid" || sourceRaw === "smtp" ? sourceRaw : "all";
   return {
     recipient: params.get("recipient") ?? "",
     subject: params.get("subject") ?? "",
@@ -141,7 +141,7 @@ export default function AdminEmailOutboxPage() {
     initialFilters.recipient,
   );
   const [subjectFilter, setSubjectFilter] = useState(initialFilters.subject);
-  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">(
+  const [sourceFilter, setSourceFilter] = useState<"all" | "sendgrid" | "smtp">(
     initialFilters.source,
   );
   const [searchQuery, setSearchQuery] = useState("");
@@ -399,7 +399,7 @@ export default function AdminEmailOutboxPage() {
               <Select
                 value={sourceFilter}
                 onValueChange={(v) =>
-                  setSourceFilter(v as "all" | "resend" | "smtp")
+                  setSourceFilter(v as "all" | "sendgrid" | "smtp")
                 }
               >
                 <SelectTrigger
@@ -412,8 +412,8 @@ export default function AdminEmailOutboxPage() {
                   <SelectItem value="all" data-testid="option-source-all">
                     All sources
                   </SelectItem>
-                  <SelectItem value="resend" data-testid="option-source-resend">
-                    Resend
+                  <SelectItem value="sendgrid" data-testid="option-source-sendgrid">
+                    SendGrid
                   </SelectItem>
                   <SelectItem value="smtp" data-testid="option-source-smtp">
                     SMTP
