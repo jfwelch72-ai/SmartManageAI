@@ -45,6 +45,7 @@ import { ensureTakeoffStylusTelemetryEventsTable } from "./ensureTakeoffStylusTe
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensureCloseoutPackagesAtomicColumns } from "./ensureCloseoutPackagesAtomicColumns";
+import { ensureCsiScopeColumns } from "./ensureCsiScopeColumns";
 import { ensureAiEstimatorChatAttachmentsColumn } from "./ensureAiEstimatorChatAttachmentsColumn";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
@@ -586,6 +587,13 @@ const migrations: MigrationStep[] = [
   // lived dev DB provisioned before CAREERS was added would silently be missing
   // the value until a CAREERS-page insert crashed.
   { name: "website_page_type_enum_values", category: "ADD_ENUM", fn: ensureWebsitePageTypeEnumValues },
+  // Task #2922 — Bid AI Analysis: CSI scope document + standalone takeoff scope fields.
+  // Adds scope_document_key to ai_bid_document_analysis and scope_document_key /
+  // scope_items_json / scope_analysis_status to standalone_takeoffs. These are the
+  // 4 columns reconcileSchemaDrift flags as missing in production. Mirrors
+  // migrations/0121_csi_scope_document.sql so production converges on first boot
+  // after deploy without requiring a manual drizzle-kit push.
+  { name: "csi_scope_columns", category: "ADD_COLUMN", fn: ensureCsiScopeColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
