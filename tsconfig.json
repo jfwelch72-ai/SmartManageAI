@@ -2,7 +2,8 @@
   "files": [],
   "references": [
     {"path": "./tsconfig.client.json"},
-    {"path": "./tsconfig.server.json"}
+    {"path": "./tsconfig.server.json"},
+    {"path": "./tsconfig.mobile.json"}
   ],
   "compilerOptions": {
     "composite": false,

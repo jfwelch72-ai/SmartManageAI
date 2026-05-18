@@ -208,8 +208,8 @@ export async function push(): Promise<{ pushed: number; conflicts: number }> {
             localId: a.localId,
             name: a.name,
             mime: a.mime,
-            size: a.size,
-            objectKey: await uploadAttachment(a),
+            size: a.size ?? 0,
+            objectKey: await uploadAttachment(a) ?? undefined,
           }))
         )
       : undefined;
