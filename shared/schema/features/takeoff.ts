@@ -1207,6 +1207,10 @@ export const standaloneTakeoffs = pgTable("standalone_takeoffs", {
   notes: text("notes"),
   settings: text("settings").notNull().default("{}"),
   archivedAt: timestamp("archived_at"),
+  // Task #2922 — Scope of Work extraction (triggered after plan import)
+  scopeDocumentKey: text("scope_document_key"),
+  scopeItemsJson: text("scope_items_json"),   // JSON array of CSI-tagged line items
+  scopeAnalysisStatus: text("scope_analysis_status"), // null | PROCESSING | COMPLETED | FAILED
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

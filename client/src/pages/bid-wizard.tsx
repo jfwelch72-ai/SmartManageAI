@@ -77,10 +77,11 @@ interface UploadedDocument {
 interface AIExtractedItem {
   id: string;
   description: string;
-  quantity: number;
+  quantity: number | null;
   unit: string;
   category: string;
-  notes?: string;
+  csiDivision?: string | null;
+  notes?: string | null;
   selected: boolean;
 }
 
@@ -97,6 +98,8 @@ interface AIAnalysisResult {
   description?: string;
   estimatedValue?: number;
   scopeItems: AIExtractedItem[];
+  scopeDocument?: string | null;
+  scopeDocumentUrl?: string;
   keyRequirements?: string[];
   specialConditions?: string[];
   insuranceRequirements?: string;
@@ -137,6 +140,8 @@ export default function BidWizardPage() {
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([]);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
+  const [scopeDocumentUrl, setScopeDocumentUrl] = useState<string | undefined>(undefined);
+  const [scopeAnalysisId, setScopeAnalysisId] = useState<string | undefined>(undefined);
   const [scopeItems, setScopeItems] = useState<AIExtractedItem[]>([]);
   const [customItems, setCustomItems] = useState<AIExtractedItem[]>([]);
   const [newItemDescription, setNewItemDescription] = useState("");
@@ -222,14 +227,17 @@ export default function BidWizardPage() {
     },
     onSuccess: (data) => {
       setAnalysisResult(data);
+      setScopeDocumentUrl(data.scopeDocumentUrl ?? undefined);
+      setScopeAnalysisId(data.analysisId ?? undefined);
       
       // Safely coerce scope items with proper numeric handling
       const items = (data.scopeItems || []).map((item: any, idx: number) => ({
         ...item,
         id: `ai-${idx}`,
-        quantity: typeof item.quantity === 'number' && !isNaN(item.quantity) ? item.quantity : 1,
-        unit: item.unit || 'EA',
+        quantity: typeof item.quantity === 'number' && !isNaN(item.quantity) ? item.quantity : null,
+        unit: item.unit || 'LS',
         category: item.category || 'GENERAL',
+        csiDivision: item.csiDivision ?? null,
         selected: true,
       }));
       setScopeItems(items);
@@ -290,6 +298,14 @@ export default function BidWizardPage() {
       }
       const bid = await response.json();
 
+      // Step 1b: Link the scope analysis record to the new bid so
+      // GET /api/bids/:code/scope-document can resolve it.
+      if (scopeAnalysisId) {
+        try {
+          await apiRequest("PATCH", `/api/ai/bid-document-analysis/${scopeAnalysisId}/link-bid`, { bidCode: bid.code });
+        } catch { /* best-effort */ }
+      }
+
       // Step 2: Attach uploaded documents to the bid as Plans & Takeoff docs
       if (uploadedDocs.length > 0) {
         for (const doc of uploadedDocs) {
@@ -329,7 +345,7 @@ export default function BidWizardPage() {
         const failedItems: string[] = [];
         
         for (const item of selectedItems) {
-          const qty = Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+          const qty = item.quantity != null && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
           const lineItemData = {
             description: item.description,
             quantity: qty.toString(),
@@ -784,12 +800,43 @@ export default function BidWizardPage() {
                 <Alert className="bg-primary/5 border-primary/20">
                   <Sparkles className="h-4 w-4" />
                   <AlertDescription>
-                    AI found <strong>{scopeItems.length}</strong> potential scope items from your documents.
-                    {analysisResult.keyRequirements && analysisResult.keyRequirements.length > 0 && (
-                      <span className="block mt-1 text-xs">
-                        Key requirements: {analysisResult.keyRequirements.slice(0, 3).join(", ")}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span>
+                        AI found <strong>{scopeItems.length}</strong> scope items across{" "}
+                        <strong>{new Set(scopeItems.map(i => i.csiDivision).filter(Boolean)).size}</strong> CSI divisions.
+                        {analysisResult.keyRequirements && analysisResult.keyRequirements.length > 0 && (
+                          <span className="block mt-1 text-xs">
+                            Key requirements: {analysisResult.keyRequirements.slice(0, 3).join(", ")}
+                          </span>
+                        )}
                       </span>
-                    )}
+                      {(scopeAnalysisId || scopeDocumentUrl) && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 gap-1 text-xs shrink-0"
+                          onClick={async () => {
+                            try {
+                              if (scopeAnalysisId) {
+                                const resp = await fetch(`/api/ai-bid-wizard/analyses/${scopeAnalysisId}/scope-document`, { credentials: "include" });
+                                if (resp.ok) {
+                                  const { url } = await resp.json();
+                                  window.open(url, "_blank");
+                                  return;
+                                }
+                              }
+                              if (scopeDocumentUrl) window.open(scopeDocumentUrl, "_blank");
+                            } catch {
+                              if (scopeDocumentUrl) window.open(scopeDocumentUrl, "_blank");
+                            }
+                          }}
+                          data-testid="button-view-scope-document"
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          View Scope Document
+                        </Button>
+                      )}
+                    </div>
                   </AlertDescription>
                 </Alert>
               )}
@@ -797,75 +844,104 @@ export default function BidWizardPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <h4 className="font-medium">
-                    {scopeItems.length > 0 ? "AI-Extracted Items" : "Scope Items"}
+                    {scopeItems.length > 0 ? "AI-Extracted Items (by CSI Division)" : "Scope Items"}
                   </h4>
                   <Badge variant="outline">
                     {scopeItems.filter(i => i.selected).length + customItems.length} selected
                   </Badge>
                 </div>
 
-                {scopeItems.length > 0 ? (
-                  <ScrollArea className="h-[300px] rounded-md border">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-12">
-                            <Checkbox
-                              checked={scopeItems.length > 0 && scopeItems.every(i => i.selected)}
-                              onCheckedChange={(checked) => toggleAllScopeItems(!!checked)}
-                              data-testid="checkbox-select-all"
-                            />
-                          </TableHead>
-                          <TableHead>Description</TableHead>
-                          <TableHead className="w-24">Quantity</TableHead>
-                          <TableHead className="w-20">Unit</TableHead>
-                          <TableHead className="w-28">Category</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {scopeItems.map((item) => (
-                          <TableRow key={item.id} data-testid={`scope-item-${item.id}`}>
-                            <TableCell>
-                              <Checkbox
-                                checked={item.selected}
-                                onCheckedChange={() => toggleScopeItem(item.id)}
-                                data-testid={`checkbox-${item.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                className="h-7 text-sm font-medium"
-                                value={item.description}
-                                onChange={(e) => updateScopeItem(item.id, 'description', e.target.value)}
-                                data-testid={`input-desc-${item.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                type="number"
-                                className="h-7 w-20 text-sm"
-                                value={item.quantity}
-                                onChange={(e) => updateScopeItem(item.id, 'quantity', e.target.value)}
-                                data-testid={`input-qty-${item.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Input
-                                className="h-7 w-16 text-sm"
-                                value={item.unit}
-                                onChange={(e) => updateScopeItem(item.id, 'unit', e.target.value)}
-                                data-testid={`input-unit-${item.id}`}
-                              />
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant="outline" className="text-xs">{item.category}</Badge>
-                            </TableCell>
-                          </TableRow>
+                {scopeItems.length > 0 ? (() => {
+                  // Group items by CSI division for rendering
+                  const grouped = scopeItems.reduce<Record<string, AIExtractedItem[]>>((acc, item) => {
+                    const key = item.csiDivision || "Uncategorized";
+                    if (!acc[key]) acc[key] = [];
+                    acc[key].push(item);
+                    return acc;
+                  }, {});
+                  const sortedDivisions = Object.keys(grouped).sort((a, b) => {
+                    if (a === "Uncategorized") return 1;
+                    if (b === "Uncategorized") return -1;
+                    return a.localeCompare(b);
+                  });
+                  return (
+                    <ScrollArea className="h-[380px] rounded-md border">
+                      <div className="p-1">
+                        <div className="flex items-center px-3 py-2 border-b">
+                          <Checkbox
+                            checked={scopeItems.length > 0 && scopeItems.every(i => i.selected)}
+                            onCheckedChange={(checked) => toggleAllScopeItems(!!checked)}
+                            data-testid="checkbox-select-all"
+                          />
+                          <span className="ml-2 text-xs text-muted-foreground">Select all</span>
+                        </div>
+                        {sortedDivisions.map((division) => (
+                          <div key={division}>
+                            <div className="px-3 py-1.5 bg-muted/40 border-y text-xs font-semibold text-muted-foreground uppercase tracking-wide" data-testid={`division-header-${division}`}>
+                              {division}
+                            </div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-10" />
+                                  <TableHead>Description</TableHead>
+                                  <TableHead className="w-24">Quantity</TableHead>
+                                  <TableHead className="w-16">Unit</TableHead>
+                                  <TableHead className="w-28">Category</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {grouped[division].map((item) => (
+                                  <TableRow key={item.id} data-testid={`scope-item-${item.id}`}>
+                                    <TableCell className="w-10">
+                                      <Checkbox
+                                        checked={item.selected}
+                                        onCheckedChange={() => toggleScopeItem(item.id)}
+                                        data-testid={`checkbox-${item.id}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        className="h-7 text-sm font-medium"
+                                        value={item.description}
+                                        onChange={(e) => updateScopeItem(item.id, 'description', e.target.value)}
+                                        data-testid={`input-desc-${item.id}`}
+                                      />
+                                      {item.notes && (
+                                        <p className="text-xs text-muted-foreground mt-0.5 pl-0.5">{item.notes}</p>
+                                      )}
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        type="number"
+                                        className="h-7 w-20 text-sm"
+                                        value={item.quantity ?? ""}
+                                        placeholder="—"
+                                        onChange={(e) => updateScopeItem(item.id, 'quantity', e.target.value)}
+                                        data-testid={`input-qty-${item.id}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <Input
+                                        className="h-7 w-16 text-sm"
+                                        value={item.unit}
+                                        onChange={(e) => updateScopeItem(item.id, 'unit', e.target.value)}
+                                        data-testid={`input-unit-${item.id}`}
+                                      />
+                                    </TableCell>
+                                    <TableCell>
+                                      <span className="text-xs text-muted-foreground" data-testid={`text-category-${item.id}`}>{item.category || "GENERAL"}</span>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
                         ))}
-                      </TableBody>
-                    </Table>
-                  </ScrollArea>
-                ) : (
+                      </div>
+                    </ScrollArea>
+                  );
+                })() : (
                   <div className="text-center py-8 border rounded-md bg-muted/30">
                     <ClipboardList className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                     <p className="text-muted-foreground">No AI-extracted items. Add your own below.</p>

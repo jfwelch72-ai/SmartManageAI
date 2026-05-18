@@ -328,6 +328,51 @@ router.get("/api/bids/:code", requireAuth, async (req: AuthRequest, res, next) =
   }
 });
 
+/**
+ * GET /api/bids/:code/scope-document
+ * Task #2922 — Returns a fresh signed URL for the most recent scope document
+ * associated with a bid.  Looks up the latest aiBidDocumentAnalysis row that
+ * has a scopeDocumentKey for the given bid (by bidId).
+ */
+router.get("/api/bids/:code/scope-document", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const ctx = getOrgIdForFilter(req);
+    if (ctx.mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const storage = getBidStorage(req, res);
+    if (!storage) return;
+    const bid = await storage.getBidByCode(req.params.code);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+
+    const { db } = await import("./db");
+    const { aiBidDocumentAnalysis } = await import("@shared/schema");
+    const { eq, and, isNotNull, desc } = await import("drizzle-orm");
+
+    const [analysis] = await db
+      .select({ id: aiBidDocumentAnalysis.id, scopeDocumentKey: aiBidDocumentAnalysis.scopeDocumentKey })
+      .from(aiBidDocumentAnalysis)
+      .where(
+        and(
+          eq(aiBidDocumentAnalysis.bidId, bid.id),
+          isNotNull(aiBidDocumentAnalysis.scopeDocumentKey),
+        ),
+      )
+      .orderBy(desc(aiBidDocumentAnalysis.createdAt))
+      .limit(1);
+
+    if (!analysis?.scopeDocumentKey) return res.status(404).json({ error: "Scope document not available" });
+
+    const { ObjectStorageService, objectStorageClient, parseObjectPath } = await import("./objectStorage");
+    const storageService = new ObjectStorageService();
+    const { bucketName, objectName } = parseObjectPath(analysis.scopeDocumentKey);
+    const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+    const url = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+    return res.json({ url, analysisId: analysis.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post(
   "/api/bids",
   requireAuth,

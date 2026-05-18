@@ -161,6 +161,9 @@ export const aiBidDocumentAnalysis = pgTable("ai_bid_document_analysis", {
   suggestedPricingFactors: text("suggested_pricing_factors"), // JSON with pricing considerations
   riskFactors: text("risk_factors"), // JSON array of potential risks
   
+  // Task #2922 — CSI scope document stored in GCS
+  scopeDocumentKey: text("scope_document_key"),
+
   // Raw AI response for debugging
   rawAiResponse: text("raw_ai_response"),
   confidenceScore: integer("confidence_score"), // 0-100

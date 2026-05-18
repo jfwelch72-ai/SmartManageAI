@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { ArrowLeft, ExternalLink, FileText, Loader2, Tag } from "lucide-react";
+import { ArrowLeft, BookOpen, ChevronDown, ChevronUp, ExternalLink, FileText, Loader2, Tag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -32,6 +32,21 @@ interface StandaloneTakeoff {
   title: string;
   tradeType: string | null;
   clientName: string | null;
+  scopeAnalysisStatus?: string | null;
+  scopeItemsJson?: string | null;
+  scopeDocumentKey?: string | null;
+}
+
+interface ScopeAnalysisResult {
+  status: string | null;
+  items: Array<{
+    description: string;
+    quantity: number | null;
+    unit?: string;
+    csiDivision?: string | null;
+    notes?: string | null;
+  }>;
+  hasScopeDocument: boolean;
 }
 
 /**
@@ -250,6 +265,161 @@ export default function TakeoffStandaloneWorkspacePage() {
           />
         </WidgetErrorBoundary>
       </div>
+      <ScopeOfWorkPanel takeoffId={takeoff.id} />
+    </div>
+  );
+}
+
+// ---------- Scope of Work Panel (Task #2922) ----------
+
+interface ScopeItem {
+  description: string;
+  quantity: number | null;
+  unit?: string;
+  csiDivision?: string | null;
+  notes?: string | null;
+}
+
+function ScopeOfWorkPanel({ takeoffId }: { takeoffId: string }) {
+  const [expanded, setExpanded] = useState(false);
+
+  const scopeQuery = useQuery<ScopeAnalysisResult>({
+    queryKey: ["/api/takeoff/standalone", takeoffId, "scope"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/takeoff/standalone/${takeoffId}/scope`);
+      return res.json();
+    },
+    enabled: expanded,
+    refetchInterval: (query) => {
+      const queryData = query.state.data as ScopeAnalysisResult | undefined;
+      if (!queryData) return 4000;
+      return queryData.status === "PROCESSING" ? 4000 : false;
+    },
+  });
+
+  const scope = scopeQuery.data;
+  const isProcessing = scope?.status === "PROCESSING" || (!scope && expanded && scopeQuery.isLoading);
+
+  const grouped = useMemo(() => {
+    if (!scope?.items?.length) return {};
+    return scope.items.reduce<Record<string, ScopeItem[]>>((acc, item) => {
+      const key = item.csiDivision || "Uncategorized";
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(item);
+      return acc;
+    }, {});
+  }, [scope?.items]);
+
+  const sortedDivisions = useMemo(
+    () =>
+      Object.keys(grouped).sort((a, b) => {
+        if (a === "Uncategorized") return 1;
+        if (b === "Uncategorized") return -1;
+        return a.localeCompare(b);
+      }),
+    [grouped],
+  );
+
+  const handleViewDocument = async () => {
+    try {
+      const res = await apiRequest("GET", `/api/takeoff/standalone/${takeoffId}/scope-document`);
+      const { url } = await res.json();
+      if (url) window.open(url, "_blank");
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="border-t bg-background shrink-0" data-testid="scope-of-work-panel">
+      <button
+        className="w-full flex items-center justify-between px-4 py-2 text-sm font-medium hover:bg-muted/40 transition-colors"
+        onClick={() => setExpanded((v) => !v)}
+        data-testid="button-toggle-scope-panel"
+      >
+        <div className="flex items-center gap-2">
+          <BookOpen className="w-4 h-4 text-muted-foreground" />
+          <span>Scope of Work</span>
+          {scope?.status === "COMPLETED" && scope.items.length > 0 && (
+            <Badge variant="secondary" className="text-[10px]">{scope.items.length} items</Badge>
+          )}
+          {isProcessing && (
+            <Badge variant="outline" className="text-[10px] gap-1">
+              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              Analyzing…
+            </Badge>
+          )}
+        </div>
+        {expanded ? <ChevronDown className="w-4 h-4 text-muted-foreground" /> : <ChevronUp className="w-4 h-4 text-muted-foreground" />}
+      </button>
+
+      {expanded && (
+        <div className="px-4 pb-4 max-h-72 overflow-y-auto" data-testid="scope-panel-content">
+          {isProcessing && (
+            <div className="flex items-center gap-2 py-4 text-sm text-muted-foreground">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              AI is extracting the scope of work from your plans…
+            </div>
+          )}
+
+          {!isProcessing && scope?.status === "FAILED" && (
+            <p className="text-sm text-muted-foreground py-4">
+              Scope analysis failed. Import a plan to retry automatically.
+            </p>
+          )}
+
+          {!isProcessing && (!scope?.status || scope.status === null) && (
+            <p className="text-sm text-muted-foreground py-4">
+              Import a plan to automatically extract the scope of work.
+            </p>
+          )}
+
+          {!isProcessing && scope?.status === "COMPLETED" && (
+            <>
+              {scope.hasScopeDocument && (
+                <div className="flex justify-end mb-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 gap-1 text-xs"
+                    onClick={handleViewDocument}
+                    data-testid="button-view-scope-document-panel"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    View Scope Document
+                  </Button>
+                </div>
+              )}
+              {sortedDivisions.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-2">No scope items extracted.</p>
+              ) : (
+                <div className="space-y-3">
+                  {sortedDivisions.map((division) => (
+                    <div key={division} data-testid={`scope-division-${division}`}>
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{division}</p>
+                      <ul className="space-y-0.5 pl-2">
+                        {grouped[division].map((item, idx) => (
+                          <li key={idx} className="text-sm flex items-start gap-1.5">
+                            <span className="text-muted-foreground mt-0.5">•</span>
+                            <span>
+                              {item.description}
+                              {item.quantity != null && (
+                                <span className="text-muted-foreground ml-1 text-xs">
+                                  ({item.quantity} {item.unit || "LS"})
+                                </span>
+                              )}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

@@ -168,7 +168,9 @@ export type GeneralFeatureKey =
   | "general.schedule.generate"
   // Onboarding
   | "general.onboarding.color_palette"
-  | "general.onboarding.trade_research";
+  | "general.onboarding.trade_research"
+  // Task #2922 — Bid Wizard CSI scope extraction
+  | "general.bid_wizard.scope_extract";
 
 /**
  * Task #2684 — Embedding provider seam. The router emits

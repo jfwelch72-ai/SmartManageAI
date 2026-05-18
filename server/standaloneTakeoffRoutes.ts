@@ -23,7 +23,7 @@ import {
 import { and, desc, eq, inArray, isNull, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, type AuthRequest, type SanitizedUser } from "./auth";
-import { logError } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { logAudit } from "./auditLogger";
 import {
@@ -31,8 +31,54 @@ import {
   emitLibraryAssignmentSamplesSafe,
 } from "./services/aiEstimator/standaloneIngestion";
 // Task #2551 — Per-sheet discipline indexing for standalone takeoffs.
-import { indexPlanSheetsForStandaloneTakeoffSafe } from "./services/aiEstimator/sheetIndex";
+import { indexPlanSheetsForStandaloneTakeoffSafe, indexPlanSheetsForStandaloneTakeoff } from "./services/aiEstimator/sheetIndex";
 import { getPdfPageCountFromGcs } from "./utils/pdfPageCount";
+// Task #2922 — CSI scope extraction wired after plan import.
+import { analyzeDocumentScopeForTakeoff } from "./aiDocumentRoutes";
+
+/**
+ * Fire-and-forget wrapper for scope analysis. Updates the takeoff row with
+ * the analysis result so callers don't need to await the AI call.
+ */
+async function runScopeAnalysisForTakeoffSafe(
+  takeoffId: string,
+  orgId: string,
+  fileUrls: string[],
+  tradeType?: string | null,
+): Promise<void> {
+  try {
+    await db
+      .update(standaloneTakeoffs)
+      .set({ scopeAnalysisStatus: "PROCESSING" })
+      .where(eq(standaloneTakeoffs.id, takeoffId));
+
+    const { lineItems, scopeDocumentKey } = await analyzeDocumentScopeForTakeoff(fileUrls, orgId, tradeType);
+
+    await db
+      .update(standaloneTakeoffs)
+      .set({
+        scopeAnalysisStatus: "COMPLETED",
+        scopeItemsJson: JSON.stringify(lineItems),
+        scopeDocumentKey: scopeDocumentKey ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(standaloneTakeoffs.id, takeoffId));
+
+    logInfo(`[Scope Analysis] Completed for takeoff ${takeoffId}: ${lineItems.length} items`);
+  } catch (err) {
+    logError(
+      "[Scope Analysis] Failed for takeoff",
+      { takeoffId },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    try {
+      await db
+        .update(standaloneTakeoffs)
+        .set({ scopeAnalysisStatus: "FAILED", updatedAt: new Date() })
+        .where(eq(standaloneTakeoffs.id, takeoffId));
+    } catch { /* best-effort */ }
+  }
+}
 
 const router = Router();
 
@@ -418,12 +464,110 @@ router.post("/api/takeoff/standalone/:id/import-plan", requireAuth, async (req: 
     // Task #2561 — auto-classify the freshly-imported sheets by AIA
     // discipline so the standalone Sheets list can group/filter by
     // trade just like the bid workspace.
-    indexPlanSheetsForStandaloneTakeoffSafe({
-      organizationId: row.organizationId,
-      userId: req.user!.id,
-      standaloneTakeoffId: row.id,
-    });
+    // Task #2922 — Chain scope analysis AFTER sheet indexing completes so the
+    // discipline classification is available before scope extraction runs.
+    (async () => {
+      try {
+        await indexPlanSheetsForStandaloneTakeoff({
+          organizationId: row.organizationId,
+          userId: req.user!.id,
+          standaloneTakeoffId: row.id,
+        });
+      } catch (err) {
+        logWarn("[import-plan] Sheet indexing failed; proceeding to scope analysis anyway", {
+          standaloneTakeoffId: row.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      // Collect all file URLs for this takeoff so scope covers the full plan set.
+      try {
+        const allFiles = await db
+          .select({ fileUrl: standaloneTakeoffFiles.fileUrl })
+          .from(standaloneTakeoffFiles)
+          .where(eq(standaloneTakeoffFiles.standaloneTakeoffId, row.id));
+        const allUrls = allFiles.map((f) => f.fileUrl).filter(Boolean);
+        if (allUrls.length === 0) allUrls.push(fileUrl);
+        void runScopeAnalysisForTakeoffSafe(
+          row.id,
+          row.organizationId,
+          allUrls,
+          row.tradeType ?? null,
+        );
+      } catch {
+        void runScopeAnalysisForTakeoffSafe(row.id, row.organizationId, [fileUrl], row.tradeType ?? null);
+      }
+    })();
+
     res.status(201).json({ sheets, pageCount });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ---------- Scope of Work endpoints (Task #2922) ----------
+
+/**
+ * GET /api/takeoff/standalone/:id/scope
+ * Returns scope analysis status + extracted line items so the Scope of Work
+ * panel can render without polling.
+ */
+router.get("/api/takeoff/standalone/:id/scope", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+
+    const [takeoff] = await db
+      .select({
+        scopeAnalysisStatus: standaloneTakeoffs.scopeAnalysisStatus,
+        scopeItemsJson: standaloneTakeoffs.scopeItemsJson,
+        scopeDocumentKey: standaloneTakeoffs.scopeDocumentKey,
+      })
+      .from(standaloneTakeoffs)
+      .where(eq(standaloneTakeoffs.id, row.id))
+      .limit(1);
+
+    if (!takeoff) return res.status(404).json({ error: "Takeoff not found" });
+
+    let items: unknown[] = [];
+    if (takeoff.scopeItemsJson) {
+      try { items = JSON.parse(takeoff.scopeItemsJson); } catch { /* ignore */ }
+    }
+
+    return res.json({
+      status: takeoff.scopeAnalysisStatus ?? null,
+      items,
+      hasScopeDocument: !!takeoff.scopeDocumentKey,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * GET /api/takeoff/standalone/:id/scope-document
+ * Returns a short-lived signed URL for the scope document markdown.
+ */
+router.get("/api/takeoff/standalone/:id/scope-document", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const row = await loadAccessibleTakeoff(req.params.id, req.user!);
+    if (!row) return res.status(404).json({ error: "Takeoff not found" });
+
+    const [takeoff] = await db
+      .select({ scopeDocumentKey: standaloneTakeoffs.scopeDocumentKey })
+      .from(standaloneTakeoffs)
+      .where(eq(standaloneTakeoffs.id, row.id))
+      .limit(1);
+
+    if (!takeoff?.scopeDocumentKey) {
+      return res.status(404).json({ error: "Scope document not available" });
+    }
+
+    const { ObjectStorageService, objectStorageClient, parseObjectPath } = await import("./objectStorage");
+    const storageService = new ObjectStorageService();
+    const { bucketName, objectName } = parseObjectPath(takeoff.scopeDocumentKey);
+    const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+    const signedUrl = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+    return res.json({ url: signedUrl });
   } catch (err) {
     next(err);
   }
@@ -560,12 +704,41 @@ router.post("/api/takeoff/standalone/:id/files", requireAuth, async (req: AuthRe
         fileSize: parsed.data.fileSize ?? null,
       })
       .returning();
-    // Task #2551 — Newly added plan files give the indexer fresh AI input.
-    indexPlanSheetsForStandaloneTakeoffSafe({
-      organizationId: row.organizationId,
-      userId: req.user!.id,
-      standaloneTakeoffId: row.id,
-    });
+    // Task #2922 — Chain scope analysis AFTER sheet indexing completes
+    // (same pattern as import-plan) so CSI discipline data is available.
+    const capturedFileUrl = parsed.data.fileUrl;
+    const capturedRow = row;
+    const capturedUserId = req.user!.id;
+    (async () => {
+      try {
+        await indexPlanSheetsForStandaloneTakeoff({
+          organizationId: capturedRow.organizationId,
+          userId: capturedUserId,
+          standaloneTakeoffId: capturedRow.id,
+        });
+      } catch (err) {
+        logWarn("[files] Sheet indexing failed; proceeding to scope analysis anyway", {
+          standaloneTakeoffId: capturedRow.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      try {
+        const allFiles = await db
+          .select({ fileUrl: standaloneTakeoffFiles.fileUrl })
+          .from(standaloneTakeoffFiles)
+          .where(eq(standaloneTakeoffFiles.standaloneTakeoffId, capturedRow.id));
+        const allUrls = allFiles.map((f) => f.fileUrl).filter(Boolean);
+        if (allUrls.length === 0) allUrls.push(capturedFileUrl);
+        void runScopeAnalysisForTakeoffSafe(
+          capturedRow.id,
+          capturedRow.organizationId,
+          allUrls,
+          capturedRow.tradeType ?? null,
+        );
+      } catch {
+        void runScopeAnalysisForTakeoffSafe(capturedRow.id, capturedRow.organizationId, [capturedFileUrl], capturedRow.tradeType ?? null);
+      }
+    })();
     res.status(201).json(file);
   } catch (err) {
     next(err);

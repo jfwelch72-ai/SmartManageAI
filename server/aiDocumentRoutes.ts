@@ -1,4 +1,5 @@
-// ai-router-bypass: vision (image_url) + tool-calling pipeline; uses OpenAI-typed mixed-content messages and depends on prompt-injection guard quarantine envelope. Migration tracked as a dedicated follow-up under Task #2684.
+// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint and analyzeDocumentWithAI are fully migrated to routedGeneralChatCompletion (Task #2922). See docs/architecture/ai-provider-routing.md.
+// prompt-injection-guard: all LLM call sites in this file import detectPromptInjection, quarantineDocumentBlocks, validateAiJsonOutput from promptInjectionGuard.ts (lines below).
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { 
@@ -49,7 +50,14 @@ const BID_DOC_ANALYSIS_SCHEMA = z.object({
   projectLocation: z.string().nullable().optional(),
   projectScope: z.string().nullable().optional(),
   scopeSummary: z.string().nullable().optional(),
-  lineItems: z.array(z.any()).optional(),
+  scopeDocument: z.string().nullable().optional(),
+  lineItems: z.array(z.object({
+    description: z.string(),
+    quantity: z.number().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    csiDivision: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })).optional(),
   requirements: z.array(z.any()).optional(),
   qualifications: z.array(z.any()).optional(),
   insuranceRequirements: z.string().nullable().optional(),
@@ -58,10 +66,32 @@ const BID_DOC_ANALYSIS_SCHEMA = z.object({
   riskFactors: z.array(z.any()).optional(),
   confidenceScore: z.number().optional(),
 }).passthrough();
-const BID_WIZARD_RESULT_SCHEMA = z.object({}).passthrough();
+const BID_WIZARD_RESULT_SCHEMA = z.object({
+  scopeItems: z.array(z.object({
+    description: z.string(),
+    quantity: z.number().nullable().optional(),
+    unit: z.string().nullable().optional(),
+    csiDivision: z.string().nullable().optional(),
+    category: z.string().nullable().optional(),
+    notes: z.string().nullable().optional(),
+  })).optional(),
+  scopeDocument: z.string().nullable().optional(),
+  projectName: z.string().nullable().optional(),
+  clientName: z.string().nullable().optional(),
+  bidDueDate: z.string().nullable().optional(),
+  projectLocation: z.string().nullable().optional(),
+  estimatedValue: z.number().nullable().optional(),
+  keyRequirements: z.array(z.string()).optional(),
+  specialConditions: z.array(z.string()).optional(),
+  insuranceRequirements: z.string().nullable().optional(),
+  bondingRequirements: z.string().nullable().optional(),
+  confidenceScore: z.number().optional(),
+}).passthrough();
 const CONTRACT_DOC_ANALYSIS_SCHEMA = z.object({}).passthrough();
 import { governedAiCall } from "./services/aiGovernance";
-import { ObjectStorageService } from "./objectStorage";
+import { ObjectStorageService, objectStorageClient, parseObjectPath } from "./objectStorage";
+import { randomUUID } from "crypto";
+import type { AiMessage } from "./ai/providers/types";
 import { aiNotesService } from "./aiNotesService";
 import { parsePagination, getUserOrThrow } from "./utils/routeHelpers";
 import {logInfo, logError, logWarn } from "./utils/logger";
@@ -120,18 +150,19 @@ How to read drawings and plan sets:
 For each document, extract:
 1. **Project Information**: Project name, full project location, client/owner/GC name, bid due date.
 2. **Scope of Work**: Detailed scope description grounded in the drawings and specs.
-3. **Line Items**: Specific work items with quantities and units when the document provides them. Include the unit (e.g. SF, LF, CY, EA, TON) exactly as written in the document. If a quantity is not explicitly stated, omit it (set to null) — do not invent numbers.
-4. **Requirements**: Special requirements, qualifications, certifications.
-5. **Insurance/Bonding**: Insurance and bonding requirements.
-6. **Risk Factors**: Potential risks or concerns (incomplete documents, ambiguous scope, tight schedule, unusual conditions).
-7. **Pricing Considerations**: Factors that should influence pricing.
+3. **Line Items**: Specific work items with quantities and units when the document provides them. Include the unit (e.g. SF, LF, CY, EA, TON) exactly as written in the document. If a quantity is not explicitly stated, omit it (set to null) — do not invent numbers. Each item must include a \`csiDivision\` string formatted as "Division XX – Name" (e.g. "Division 03 – Concrete").
+4. **Scope Document**: A well-formatted markdown string with one H2 section per CSI division found, with bullet points for each scope item under that division.
+5. **Requirements**: Special requirements, qualifications, certifications.
+6. **Insurance/Bonding**: Insurance and bonding requirements.
+7. **Risk Factors**: Potential risks or concerns (incomplete documents, ambiguous scope, tight schedule, unusual conditions).
+8. **Pricing Considerations**: Factors that should influence pricing.
 
 Honesty rules — these matter more than completeness:
 - If information is **not** in the document, return null (or "Not specified") for that field. Never fabricate.
 - If a quantity, unit, dimension, or material is **uncertain** or only inferred, lower the confidenceScore and call it out in the relevant \`notes\` field (e.g. "Inferred from plan dimensions; verify against detail 3/A-501.").
 - Prefer fewer high-confidence line items over many low-confidence ones.
 
-Respond with valid JSON matching the required structure.`;
+Respond with valid JSON matching the required structure. Include a \`scopeDocument\` field (markdown) and \`csiDivision\` on every lineItem.`;
 
 interface BidDocumentAnalysisResult {
   projectName: string | null;
@@ -140,10 +171,12 @@ interface BidDocumentAnalysisResult {
   projectLocation: string | null;
   projectScope: string | null;
   scopeSummary: string | null;
+  scopeDocument?: string | null;
   lineItems: Array<{
     description: string;
     quantity: number | null;
     unit: string | null;
+    csiDivision?: string | null;
     notes: string | null;
   }>;
   requirements: string[];
@@ -293,51 +326,42 @@ Respond with JSON in this format:
     }
 
     await reportProgress(55, "Calling AI analyzer");
-    if (governanceOpts) {
-      const governed = await governedAiCall({
-        orgId: governanceOpts.orgId,
-        userId: governanceOpts.userId,
-        actionType: "bid_document_analysis",
-        inputRefs: { documentName, documentUrl },
-        fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages,
-            response_format: { type: 'json_object' },
-            max_completion_tokens: 4096,
-          });
-          const content = completion.choices[0]?.message?.content;
-          if (!content) throw new Error('No response from OpenAI');
-          const validated = validateAiJsonOutput(BID_DOC_ANALYSIS_SCHEMA, content);
-          if (!validated.ok) {
-            throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
-          }
-          return { result: validated.data as BidDocumentAnalysisResult, completion };
+    const callOrgId = governanceOpts?.orgId ?? "";
+    const callUserId = governanceOpts?.userId ?? null;
+    const callWithGovernance = !!governanceOpts;
+    const innerCall = async () => {
+      const completion = await routedGeneralChatCompletion({
+        orgId: callOrgId,
+        featureKey: "general.bid_wizard.scope_extract",
+        request: {
+          messages: messages as AiMessage[],
+          response_format: { type: "json_object" },
+          max_completion_tokens: 8192,
         },
       });
-      if (governed.blocked) {
-        throw new Error(`AI_GOVERNANCE_BLOCKED:${governed.reason}`);
-      }
+      const content = completion.choices[0]?.message?.content;
+      if (!content) throw new Error("No response from AI");
+      const validated = validateAiJsonOutput(BID_DOC_ANALYSIS_SCHEMA, content);
+      if (!validated.ok) throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
+      return { result: validated.data as BidDocumentAnalysisResult, completion };
+    };
+
+    if (callWithGovernance) {
+      const governed = await governedAiCall({
+        orgId: callOrgId,
+        userId: callUserId,
+        actionType: "bid_document_analysis",
+        inputRefs: { documentName, documentUrl },
+        fn: innerCall,
+      });
+      if (governed.blocked) throw new Error(`AI_GOVERNANCE_BLOCKED:${governed.reason}`);
       await reportProgress(75, "Validating AI response");
       return governed.result;
     }
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages,
-      response_format: { type: 'json_object' },
-      max_completion_tokens: 4096,
-    });
-
-    const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
-
-    const validated = validateAiJsonOutput(BID_DOC_ANALYSIS_SCHEMA, content);
-    if (!validated.ok) {
-      throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
-    }
+    const { result } = await innerCall();
     await reportProgress(75, "Validating AI response");
-    return validated.data as BidDocumentAnalysisResult;
+    return result;
   } catch (error) {
     // Hard-fail on prompt-injection refusal — never mask it as a fallback
     // result, otherwise the caller would proceed with a "0 confidence"
@@ -827,6 +851,120 @@ router.get("/ai/bid-document-analysis/:id", requireAuth, async (req: AuthRequest
   }
 });
 
+/**
+ * GET /api/ai-bid-wizard/analyses/:id/scope-document
+ * Task #2922 — Alias using the wizard-specific path for the scope document
+ * download endpoint.  Backed by the same aiBidDocumentAnalysis record.
+ */
+router.get("/ai-bid-wizard/analyses/:id/scope-document", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(404).json({ error: "Analysis not found" });
+
+    const [analysis] = await db
+      .select({ id: aiBidDocumentAnalysis.id, organizationId: aiBidDocumentAnalysis.organizationId, scopeDocumentKey: aiBidDocumentAnalysis.scopeDocumentKey })
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+    if (shouldFilter && orgId && analysis.organizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+    if (!analysis.scopeDocumentKey) return res.status(404).json({ error: "Scope document not available" });
+
+    const storageService = new ObjectStorageService();
+    const { bucketName, objectName } = parseObjectPath(analysis.scopeDocumentKey);
+    const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+    const url = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+    return res.json({ url, analysisId: analysis.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/ai/bid-document-analysis/:id/scope-document
+ * Task #2922 — Returns a fresh short-lived signed URL for the scope document
+ * associated with a bid analysis record.  Scoped to the requesting org.
+ */
+router.get("/ai/bid-document-analysis/:id/scope-document", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+    if (mustDenyAccess) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+
+    const [analysis] = await db
+      .select({ id: aiBidDocumentAnalysis.id, organizationId: aiBidDocumentAnalysis.organizationId, scopeDocumentKey: aiBidDocumentAnalysis.scopeDocumentKey })
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!analysis) {
+      return res.status(404).json({ error: "Analysis not found" });
+    }
+    if (shouldFilter && orgId && analysis.organizationId !== orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    if (!analysis.scopeDocumentKey) {
+      return res.status(404).json({ error: "Scope document not available for this analysis" });
+    }
+
+    const storageService = new ObjectStorageService();
+    const { bucketName, objectName } = parseObjectPath(analysis.scopeDocumentKey);
+    const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+    const url = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+    return res.json({ url, analysisId: analysis.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /api/ai/bid-document-analysis/:id/link-bid
+ * Task #2922 — Associates an existing analysis record with a bid by code.
+ * Called by the Bid Wizard after the bid is created so that
+ * GET /api/bids/:code/scope-document can find the scope document.
+ */
+router.patch("/ai/bid-document-analysis/:id/link-bid", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+    const { bidCode } = z.object({ bidCode: z.string().min(1) }).parse(req.body);
+
+    const [bid] = await db
+      .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
+      .from(bids)
+      .where(eq(bids.code, bidCode))
+      .limit(1);
+
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+    if (shouldFilter && orgId && bid.gcOrganizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    const [analysis] = await db
+      .select({ id: aiBidDocumentAnalysis.id, organizationId: aiBidDocumentAnalysis.organizationId })
+      .from(aiBidDocumentAnalysis)
+      .where(eq(aiBidDocumentAnalysis.id, id))
+      .limit(1);
+
+    if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+    if (shouldFilter && orgId && analysis.organizationId !== orgId) return res.status(403).json({ error: "Access denied" });
+
+    await db
+      .update(aiBidDocumentAnalysis)
+      .set({ bidId: bid.id, updatedAt: new Date() })
+      .where(eq(aiBidDocumentAnalysis.id, id));
+
+    return res.json({ ok: true, analysisId: id, bidId: bid.id });
+  } catch (error) {
+    next(error);
+  }
+});
+
 const documentUrlValidator = z.string().refine(
   (val) => val.startsWith("/objects/") || z.string().url().safeParse(val).success,
   { message: "Must be a valid URL or object storage path" }
@@ -914,7 +1052,30 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTI
 
     (async () => {
       try {
-        const result = await analyzeDocumentWithAI(documentUrl, documentName, org?.tradeType || undefined);
+        const result = await analyzeDocumentWithAI(
+          documentUrl,
+          documentName,
+          org?.tradeType || undefined,
+          { userId: req.user?.id ?? null, orgId: targetOrgId },
+        );
+
+        // Upload scopeDocument to GCS and persist the key alongside the result.
+        let bgScopeDocumentKey: string | null = null;
+        if (result.scopeDocument && typeof result.scopeDocument === "string") {
+          try {
+            const storageService = new ObjectStorageService();
+            const PRIVATE_DIR = storageService.getPrivateObjectDir();
+            const key = `${PRIVATE_DIR}/${targetOrgId}/scope-docs/${randomUUID()}.md`;
+            const { bucketName, objectName } = parseObjectPath(key);
+            const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+            await scopeFile.save(Buffer.from(result.scopeDocument, "utf-8"), {
+              contentType: "text/markdown; charset=utf-8",
+            });
+            bgScopeDocumentKey = key;
+          } catch (uploadErr) {
+            logWarn("[Background Analysis] Failed to upload scope document", {}, uploadErr instanceof Error ? uploadErr : new Error(String(uploadErr)));
+          }
+        }
         
         await db
           .update(aiBidDocumentAnalysis)
@@ -936,6 +1097,7 @@ router.post("/ai/bid-document-analysis", requireAuth, requireRole("ADMIN", "ESTI
             confidenceScore: result.confidenceScore ?? 0,
             analyzedAt: new Date(),
             rawAiResponse: JSON.stringify(result),
+            ...(bgScopeDocumentKey ? { scopeDocumentKey: bgScopeDocumentKey } : {}),
             updatedAt: new Date(),
           })
           .where(eq(aiBidDocumentAnalysis.id, newAnalysis.id));
@@ -1002,9 +1164,10 @@ router.post("/ai/bid-document-analysis/:id/reanalyze", requireAuth, requireRole(
           .limit(1);
 
         const result = await analyzeDocumentWithAI(
-          existingAnalysis.documentUrl, 
+          existingAnalysis.documentUrl,
           existingAnalysis.documentName,
-          org?.tradeType || undefined
+          org?.tradeType || undefined,
+          { userId: req.user?.id ?? null, orgId: existingAnalysis.organizationId },
         );
         
         await db
@@ -1089,20 +1252,54 @@ const wizardAnalyzeSchema = z.object({
     url: documentUrlValidator,
     name: z.string(),
   })).min(1, "At least one document is required"),
+  bidCode: z.string().optional(),
 });
 
-const BID_WIZARD_SYSTEM_PROMPT = `You are an expert construction estimator AI assistant. You are analyzing actual bid invitation documents, construction drawings, and specifications that have been uploaded as images.
+const BID_WIZARD_SYSTEM_PROMPT = `You are an expert construction estimator specializing in CSI MasterFormat-organized scope analysis. You analyze bid invitation documents, construction drawings, specifications, RFPs, ITBs, and scope documents to produce comprehensive scope of work extractions.
 
-Your task is to carefully read the document content shown in the images and extract structured project information and scope of work items for a construction bid.
+Your job is to extract EVERY identifiable scope item from the documents, organized by CSI MasterFormat division. A thorough analysis of a real bid document should produce 15–50+ line items covering every trade present.
 
-IMPORTANT INSTRUCTIONS:
-- Read ALL text visible in the document images carefully
-- Extract REAL information from the documents - do NOT guess or make up data
-- If a field is not found in the documents, return null for that field
-- For scope items, only use these categories: CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
-- Extract quantities and units accurately from the documents
-- Parse dates in YYYY-MM-DD format
-- For estimatedValue, provide a numeric value (no currency symbols or text)
+CSI MasterFormat Divisions to consider (include all that apply):
+- Division 01 – General Requirements (mobilization, submittals, testing, bonds, project scheduling, temporary facilities)
+- Division 02 – Existing Conditions (demolition, site clearing, environmental remediation, hazmat abatement)
+- Division 03 – Concrete (cast-in-place, precast, shotcrete, concrete repair, slab-on-grade, foundations)
+- Division 04 – Masonry (brick, CMU, stone, mortar, reinforcing)
+- Division 05 – Metals (structural steel, metal framing, stairs, railings, miscellaneous metals)
+- Division 06 – Wood, Plastics, Composites (rough framing, finish carpentry, millwork, casework, sheathing)
+- Division 07 – Thermal and Moisture Protection (roofing, waterproofing, insulation, flashing, sealants, vapor barriers)
+- Division 08 – Openings (doors, frames, hardware, windows, glazing, curtain walls, storefronts)
+- Division 09 – Finishes (drywall, plaster, flooring, tile, acoustical ceilings, painting, wall coverings)
+- Division 10 – Specialties (signage, toilet accessories, fire extinguishers, lockers, partitions)
+- Division 11 – Equipment (kitchen equipment, lab equipment, loading dock equipment)
+- Division 12 – Furnishings (blinds, casework, artwork, seating)
+- Division 13 – Special Construction (pre-engineered buildings, aquatic facilities, vaults)
+- Division 14 – Conveying Equipment (elevators, escalators, lifts)
+- Division 21 – Fire Suppression (sprinklers, standpipes, fire pump, alarm valves)
+- Division 22 – Plumbing (piping, fixtures, water heater, drains, gas piping)
+- Division 23 – HVAC (ductwork, equipment, controls, insulation, balancing)
+- Division 26 – Electrical (service entrance, distribution panels, lighting, devices, conduit, generators)
+- Division 27 – Communications (structured cabling, AV systems, intercoms, PA)
+- Division 28 – Electronic Safety and Security (fire alarm, access control, CCTV, intrusion detection)
+- Division 31 – Earthwork (grading, excavation, backfill, compaction, shoring, dewatering)
+- Division 32 – Exterior Improvements (paving, curbs, sidewalks, landscaping, fencing, irrigation, striping)
+- Division 33 – Utilities (sanitary sewer, water main, storm drainage, gas, electrical duct banks)
+
+Instructions:
+- Read ALL sheet titles, specs, notes, schedules, and dimensions in the documents
+- Extract at minimum one item per relevant division found in the documents
+- Include trade-specific detail: materials, finishes, equipment tags, spec section references where visible
+- Use quantities from the document; if not explicitly stated, set quantity to null
+- For each line item include the CSI division label (e.g. "Division 03 – Concrete")
+- Generate a full Scope of Work narrative document (scopeDocument) as a formatted markdown string with:
+  * A project header section (name, location, client, date)
+  * One H2 section per CSI division present, with bullet points for each scope item
+  * Division headings formatted as "## Division XX – Name"
+
+Honesty rules:
+- Only extract what is actually in the documents; never fabricate quantities or scope
+- If a division is not represented in the documents, omit it entirely
+- If a quantity is uncertain, set it to null and add a note explaining uncertainty
+- Parse dates in YYYY-MM-DD format; provide estimatedValue as a plain number (no currency symbols)
 
 Respond with valid JSON matching the required structure.`;
 
@@ -1132,7 +1329,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
       return res.status(400).json({ error: "Invalid request", details: validationResult.error.issues });
     }
 
-    const { documents } = validationResult.data;
+    const { documents, bidCode } = validationResult.data;
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
 
     if (mustDenyAccess) {
@@ -1159,6 +1356,19 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
         .where(eq(organizations.id, orgId))
         .limit(1);
       tradeType = org?.tradeType || undefined;
+    }
+
+    // Resolve bidId from bidCode so the persisted analysis record is linked.
+    let resolvedBidId: string | null = null;
+    if (bidCode && orgId) {
+      const [bid] = await db
+        .select({ id: bids.id, gcOrganizationId: bids.gcOrganizationId })
+        .from(bids)
+        .where(eq(bids.code, bidCode))
+        .limit(1);
+      if (bid && bid.gcOrganizationId === orgId) {
+        resolvedBidId = bid.id;
+      }
     }
 
     logInfo(`[AI Bid Wizard] Analyzing ${documents.length} documents for org:${orgId}`);
@@ -1201,7 +1411,7 @@ router.post("/ai-bid-wizard/analyze", requireAuth, requireRole("ADMIN", "MANAGER
     const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
     const documentNames = documents.map(d => `- ${d.name}`).join('\n');
 
-    const userPrompt = `Analyze these bid documents and extract project information and scope of work items.
+    const userPrompt = `Analyze these bid/construction documents and extract comprehensive project information and scope of work items organized by CSI MasterFormat division.
 
 ${tradeContext}
 
@@ -1226,19 +1436,25 @@ Extract and respond with JSON in this exact format:
       "description": "Specific scope item description",
       "quantity": 100,
       "unit": "SF",
-      "category": "CONCRETE",
-      "notes": "Any relevant notes"
+      "category": "GENERAL",
+      "csiDivision": "Division 03 – Concrete",
+      "notes": "Any relevant notes or null"
     }
   ],
+  "scopeDocument": "# Project Scope of Work\\n\\n## Division 03 – Concrete\\n- Item 1\\n- Item 2\\n\\n## Division 09 – Finishes\\n...",
   "keyRequirements": ["Requirement 1", "Requirement 2"],
   "specialConditions": ["Condition 1", "Condition 2"],
   "insuranceRequirements": "Insurance requirements text or null",
   "bondingRequirements": "Bonding requirements text or null"
 }
 
-CATEGORY VALUES (use only these): CONCRETE, EXCAVATION, PAVERS, BOLLARDS, GC, OVERHEAD, PROFIT, GENERAL
-
-Be thorough in extracting scope items. Include quantities and units when available. If estimatedValue is mentioned or can be inferred from the documents, provide it as a number (no currency symbols).`;
+IMPORTANT:
+- scopeItems must be COMPREHENSIVE — extract 15–50+ items covering every CSI division present in the documents
+- Each scopeItem must include a csiDivision string using the format "Division XX – Name"
+- scopeDocument must be a well-formatted markdown string with one H2 section per CSI division and bullet points per item
+- category is a legacy field; set it to "GENERAL" for all items (grouping is done via csiDivision)
+- Include quantities and units when visible in the document; use null if not found
+- If estimatedValue is stated or can be directly read from the documents, provide it as a plain number`;
 
     try {
       let messages: any[] = [
@@ -1282,11 +1498,14 @@ Be thorough in extracting scope items. Include quantities and units when availab
         actionType: "bid_document_reanalysis",
         inputRefs: { documentCount: documents.length, documentNames: documents.map((d: any) => d.name) },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages,
-            max_completion_tokens: 4096,
-            response_format: { type: "json_object" },
+          const completion = await routedGeneralChatCompletion({
+            orgId: orgId || "",
+            featureKey: "general.bid_wizard.scope_extract",
+            request: {
+              messages: messages as AiMessage[],
+              max_completion_tokens: 8192,
+              response_format: { type: "json_object" },
+            },
           });
           const content = completion.choices[0]?.message?.content;
           if (!content) {
@@ -1308,7 +1527,53 @@ Be thorough in extracting scope items. Include quantities and units when availab
 
       logInfo(`[AI Bid Wizard] Extracted ${result.scopeItems?.length || 0} scope items`);
 
-      res.json(result);
+      // Task #2922 — Upload the scopeDocument markdown to GCS, persist the
+      // key in ai_bid_document_analysis for durable retrieval, and return
+      // both the key and a short-lived signed URL to the caller.
+      let scopeDocumentUrl: string | undefined;
+      let scopeDocumentKey: string | undefined;
+      let persistedAnalysisId: string | undefined;
+      if (result.scopeDocument && typeof result.scopeDocument === "string" && orgId) {
+        try {
+          const storageService = new ObjectStorageService();
+          const PRIVATE_DIR = storageService.getPrivateObjectDir();
+          scopeDocumentKey = `${PRIVATE_DIR}/${orgId}/scope-docs/${randomUUID()}.md`;
+          const { bucketName, objectName } = parseObjectPath(scopeDocumentKey);
+          const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+          await scopeFile.save(Buffer.from(result.scopeDocument as string, "utf-8"), {
+            contentType: "text/markdown; charset=utf-8",
+          });
+          scopeDocumentUrl = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+          logInfo(`[AI Bid Wizard] Scope document uploaded to GCS: ${scopeDocumentKey}`);
+
+          // Persist the key in a slim aiBidDocumentAnalysis record so the
+          // client can later retrieve a fresh signed URL by analysis ID.
+          try {
+            const firstDoc = documents[0] as { url: string; name: string } | undefined;
+            const [persisted] = await db
+              .insert(aiBidDocumentAnalysis)
+              .values({
+                organizationId: orgId,
+                bidId: resolvedBidId,
+                documentUrl: firstDoc?.url ?? "",
+                documentName: firstDoc?.name ?? "wizard-analysis",
+                documentType: "PDF",
+                status: "COMPLETED",
+                analyzedById: req.user?.id ?? null,
+                scopeDocumentKey,
+                analyzedAt: new Date(),
+              })
+              .returning({ id: aiBidDocumentAnalysis.id });
+            persistedAnalysisId = persisted?.id;
+          } catch (persistErr) {
+            logWarn("[AI Bid Wizard] Failed to persist scope_document_key", {}, persistErr instanceof Error ? persistErr : new Error(String(persistErr)));
+          }
+        } catch (uploadErr) {
+          logWarn("[AI Bid Wizard] Failed to upload scope document to GCS", {}, uploadErr instanceof Error ? uploadErr : new Error(String(uploadErr)));
+        }
+      }
+
+      res.json({ ...result, scopeDocumentUrl, scopeDocumentKey, analysisId: persistedAnalysisId });
     } catch (aiError) {
       // Hard-fail on prompt-injection refusal — return 422 so the client
       // surfaces the rejection instead of getting a "manual entry"
@@ -1347,6 +1612,127 @@ Be thorough in extracting scope items. Include quantities and units when availab
     next(error);
   }
 });
+
+/**
+ * Task #2922 — Shared scope analysis helper for standalone takeoffs.
+ *
+ * Extracts document text from the given URLs, runs the comprehensive
+ * CSI MasterFormat scope extraction via routedGeneralChatCompletion,
+ * uploads the resulting scopeDocument markdown to GCS, and returns
+ * the extracted line items + the signed download URL.
+ *
+ * Fire-and-forget callers should call `runScopeAnalysisForTakeoffSafe`.
+ */
+export async function analyzeDocumentScopeForTakeoff(
+  fileUrls: string[],
+  orgId: string,
+  tradeType?: string | null,
+): Promise<{ lineItems: Record<string, unknown>[]; scopeDocumentUrl: string | undefined; scopeDocumentKey: string | undefined }> {
+  const allDocumentContent: Array<{ type: "image_url"; image_url: { url: string; detail: string } } | { type: "text"; text: string }> = [];
+
+  for (const url of fileUrls) {
+    try {
+      const rawContent = await extractDocumentContent(url);
+      const text = rawContent
+        .filter((c) => c.type === "text")
+        .map((c) => (c as { text: string }).text)
+        .join("\n");
+      const det = detectPromptInjection(text);
+      if (shouldRefusePromptInjection(det)) {
+        logWarn("[Scope Analysis] Prompt injection detected in takeoff file, skipping", { url, matches: det.matches.map((m) => m.id) });
+        continue;
+      }
+      allDocumentContent.push(...(quarantineDocumentBlocks(rawContent as DocumentContentBlock[]) as typeof allDocumentContent));
+    } catch (extractErr) {
+      if (isPromptInjectionRefusal(extractErr)) throw extractErr;
+      logError("[Scope Analysis] Failed to extract content from file", {}, extractErr instanceof Error ? extractErr : new Error(String(extractErr)));
+    }
+  }
+
+  const tradeContext = tradeType ? `The contractor specializes in ${tradeType} work. Focus on extracting scope items relevant to this trade.` : "";
+  const hasImages = allDocumentContent.some((c) => c.type === "image_url");
+  const textBlocks = allDocumentContent.filter((c) => c.type === "text");
+  const imageBlocks = allDocumentContent.filter((c) => c.type === "image_url");
+
+  const scopeUserPrompt = `Analyze these construction documents and extract comprehensive scope of work items organized by CSI MasterFormat division.
+
+${tradeContext}
+
+Extract and respond with JSON in this exact format:
+{
+  "scopeItems": [
+    {
+      "description": "Specific scope item description",
+      "quantity": null,
+      "unit": "LS",
+      "category": "GENERAL",
+      "csiDivision": "Division 03 – Concrete",
+      "notes": null
+    }
+  ],
+  "scopeDocument": "# Scope of Work\\n\\n## Division 03 – Concrete\\n- Item 1\\n..."
+}
+
+IMPORTANT: Extract 15–50+ scope items covering every CSI division present. Each item must have a csiDivision. scopeDocument must be well-formatted markdown.`;
+
+  let userContent: AiMessage["content"];
+  if (allDocumentContent.length > 0) {
+    if (hasImages) {
+      const extraText = textBlocks.map((t) => (t as { text: string }).text).join("\n\n");
+      userContent = [
+        { type: "text", text: extraText ? `${scopeUserPrompt}\n\nAdditional text:\n${extraText}` : scopeUserPrompt },
+        ...imageBlocks,
+      ] as AiMessage["content"];
+    } else {
+      const extractedText = textBlocks.map((t) => (t as { text: string }).text).join("\n\n");
+      userContent = `${scopeUserPrompt}\n\nExtracted document text:\n${extractedText}`;
+    }
+  } else {
+    userContent = `${scopeUserPrompt}\n\nNote: Document content could not be extracted.`;
+  }
+
+  const completion = await routedGeneralChatCompletion({
+    orgId,
+    featureKey: "general.bid_wizard.scope_extract",
+    request: {
+      messages: [
+        { role: "system", content: BID_WIZARD_SYSTEM_PROMPT } as AiMessage,
+        { role: "user", content: userContent } as AiMessage,
+      ],
+      max_completion_tokens: 8192,
+      response_format: { type: "json_object" },
+    },
+  });
+
+  const content = completion.choices[0]?.message?.content;
+  if (!content) throw new Error("No response from AI for scope analysis");
+
+  const validated = validateAiJsonOutput(z.object({ scopeItems: z.array(z.any()).optional(), scopeDocument: z.string().nullable().optional() }).passthrough(), content);
+  if (!validated.ok) throw new Error(`AI_OUTPUT_INVALID:${validated.reason}`);
+
+  const data = validated.data as Record<string, unknown>;
+  const lineItems = (data.scopeItems as Record<string, unknown>[] | undefined) ?? [];
+
+  let scopeDocumentUrl: string | undefined;
+  let scopeDocumentKey: string | undefined;
+  const scopeDocText = data.scopeDocument as string | null | undefined;
+  if (scopeDocText) {
+    try {
+      const storageService = new ObjectStorageService();
+      const PRIVATE_DIR = storageService.getPrivateObjectDir();
+      const key = `${PRIVATE_DIR}/${orgId}/scope-docs/${randomUUID()}.md`;
+      const { bucketName, objectName } = parseObjectPath(key);
+      const scopeFile = objectStorageClient.bucket(bucketName).file(objectName);
+      await scopeFile.save(Buffer.from(scopeDocText, "utf-8"), { contentType: "text/markdown; charset=utf-8" });
+      scopeDocumentKey = key;
+      scopeDocumentUrl = await storageService.getSignedDownloadUrl(scopeFile, 3600);
+    } catch (uploadErr) {
+      logWarn("[Scope Analysis] Failed to upload scope document to GCS", {}, uploadErr instanceof Error ? uploadErr : new Error(String(uploadErr)));
+    }
+  }
+
+  return { lineItems, scopeDocumentUrl, scopeDocumentKey };
+}
 
 router.post("/ai-bid-wizard/analyze-text", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
