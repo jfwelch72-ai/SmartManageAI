@@ -85,6 +85,7 @@ import coiRoutes from "./coiRoutes";
 import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import closeoutRoutes from "./closeoutRoutes";
+import byokRoutes from "./byokRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
 import projectDistributionListRoutes from "./projectDistributionListRoutes";
 import projectLogEmailScheduleRoutes from "./projectLogEmailScheduleRoutes";
@@ -359,6 +360,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Register project closeout package routes (templates, auto-pull, ZIP+TOC export, dashboard summary)
   app.use(closeoutRoutes);
+
+  // Task #2948 — BYOK: per-org AI provider key management (ADMIN + BYOK_AI_KEYS gated)
+  app.use(byokRoutes);
 
   // Register AI routes through single orchestration layer (consolidates document, scheduling, takeoff, CFO analytics routes)
   app.use("/api", aiOrchestrationRoutes);

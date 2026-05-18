@@ -116,6 +116,10 @@ export const FEATURE_FLAG_KEYS = [
   // approval request for the auto-generated draft contract so it can be sent for
   // e-signature without a PM needing to initiate it manually.
   "BID_CONVERSION_AUTO_ESIGN",
+  // Task #2948 — BYOK: enables org admins on Growth/Scale/Enterprise to store
+  // their own OpenAI / Anthropic API keys so AI calls are billed to their
+  // account rather than the platform shared keys.
+  "BYOK_AI_KEYS",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -174,6 +178,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   TILE_RENDERING_ENABLED: "Server-side PDF Tile Pre-rendering",
   INVENTORY_ADJUSTMENT_APPROVAL: "Inventory – Approval Gate for Large Adjustments",
   BID_CONVERSION_AUTO_ESIGN: "Bid Conversion – Auto E-Sign Draft Contract",
+  BYOK_AI_KEYS: "Bring-Your-Own-Key (BYOK) — Per-org AI Provider Keys",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -230,6 +235,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   TILE_RENDERING_ENABLED: "When ON, enqueues a server-side PDF tile pre-render job after each plan-document upload or import. The job renders tiles using pdfjs-dist + canvas on the server and uploads PNGs to GCS for faster Takeoff workspace loads on large plans. Safe to flip ON per-org — the Takeoff workspace always falls back to client-side rendering when tiles are unavailable. When OFF (default), no job is dispatched and rendering remains entirely client-side.",
   INVENTORY_ADJUSTMENT_APPROVAL: "When ON, inventory adjustments of ≥ INVENTORY_ADJUSTMENT_APPROVAL_THRESHOLD units (default 50) are routed through an approval request before stock is moved. Approvers are notified immediately; the adjustment executes only after the request is approved.",
   BID_CONVERSION_AUTO_ESIGN: "When ON, converting a bid to a project automatically creates an ESIGN_SEND approval request for the auto-generated draft contract, allowing a PM to send it for e-signature without a manual trigger.",
+  BYOK_AI_KEYS: "Allows org admins to store their own OpenAI and/or Anthropic API keys. When an org key is present, all AI calls for that org are billed to the org's own account rather than the platform shared key. Keys are stored AES-256-GCM encrypted and only the last 4 characters are shown in the UI.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -305,6 +311,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   TILE_RENDERING_ENABLED: "Advanced Tech",
   INVENTORY_ADJUSTMENT_APPROVAL: "Core Platform",
   BID_CONVERSION_AUTO_ESIGN: "Core Platform",
+  BYOK_AI_KEYS: "Advanced Tech",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -377,6 +384,10 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // behaviour change on upgrade.
   "INVENTORY_ADJUSTMENT_APPROVAL",
   "BID_CONVERSION_AUTO_ESIGN",
+  // Task #2948 — BYOK: per-org AI provider key storage. Off by default so
+  // Starter orgs never see the setting. Super Admins enable per org for
+  // Growth/Scale/Enterprise orgs that want cost isolation or enterprise pricing.
+  "BYOK_AI_KEYS",
 ] as const;
 
 // Task #1119: audit log of trade-preset applications on the Feature Flags tab.

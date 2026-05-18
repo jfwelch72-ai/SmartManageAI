@@ -40,6 +40,14 @@ function getClient(): Anthropic {
   return clientInstance;
 }
 
+/**
+ * Task #2948 — Creates a one-off Anthropic client using an org-supplied BYOK
+ * key. The global singleton is never touched so no cross-org bleed can occur.
+ */
+function makeClientWithKey(apiKey: string): Anthropic {
+  return new Anthropic({ apiKey });
+}
+
 interface AnthropicTextBlock { type: "text"; text: string }
 interface AnthropicImageBlock {
   type: "image";
@@ -116,13 +124,20 @@ export class AnthropicProvider implements AiProvider {
   readonly name = "anthropic" as const;
   readonly defaultModel = ANTHROPIC_MODEL_SONNET_4_5;
 
+  /** Task #2948 — when set, bypasses the global singleton for BYOK calls. */
+  private readonly overrideClient: Anthropic | null;
+
+  constructor(apiKey?: string) {
+    this.overrideClient = apiKey ? makeClientWithKey(apiKey) : null;
+  }
+
   isConfigured(): boolean {
-    return !!process.env.ANTHROPIC_API_KEY;
+    return !!(this.overrideClient || process.env.ANTHROPIC_API_KEY);
   }
 
   async chatCompletion(req: AiChatRequest): Promise<AiChatResponse> {
     const startedAt = Date.now();
-    const client = getClient();
+    const client = this.overrideClient ?? getClient();
 
     // Pull every system message off the front (in order) and concat. If a
     // caller interleaves system messages later in the conversation we still
@@ -210,3 +225,11 @@ export class AnthropicProvider implements AiProvider {
 }
 
 export const anthropicProvider = new AnthropicProvider();
+
+/**
+ * Task #2948 — BYOK factory: creates a one-off Anthropic provider that uses
+ * the supplied org-level API key instead of the platform env-var key.
+ */
+export function createAnthropicProviderWithKey(apiKey: string): AnthropicProvider {
+  return new AnthropicProvider(apiKey);
+}

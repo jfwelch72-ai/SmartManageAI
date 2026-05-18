@@ -9,8 +9,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Badge } from "@/components/ui/badge";
-import { Settings, Save, Filter, Lightbulb, Trash2 } from "lucide-react";
+import { Settings, Save, Filter, Lightbulb, Trash2, Key, Eye, EyeOff, AlertCircle, CheckCircle } from "lucide-react";
 import { useState, useEffect } from "react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import type { AISettings } from "@shared/schema";
 
 // Task #2342 — server response shape for the per-org takeoff settings
@@ -155,6 +157,62 @@ export default function AISettingsPage() {
     queryKey: ["/api/ai-estimator/admin/lessons"],
     enabled: !!user && user.role === "ADMIN",
   });
+
+  // ── Task #2948 — BYOK ──────────────────────────────────────────────────────
+
+  interface ByokKeyRow {
+    id: string;
+    provider: string;
+    keyHint: string;
+    createdAt: string;
+    updatedAt: string;
+  }
+
+  const { data: byokData, isLoading: byokLoading } = useQuery<{ keys: ByokKeyRow[]; byokEnabled: boolean }>({
+    queryKey: ["/api/org/ai-keys"],
+    enabled: !!user && user.role === "ADMIN",
+    retry: false,
+  });
+
+  const [byokOpenaiKey, setByokOpenaiKey] = useState("");
+  const [byokAnthropicKey, setByokAnthropicKey] = useState("");
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showAnthropicKey, setShowAnthropicKey] = useState(false);
+
+  const savedKey = (provider: string) =>
+    byokData?.keys.find(k => k.provider === provider);
+
+  const saveByokMutation = useMutation<unknown, Error, { provider: string; apiKey: string }>({
+    mutationFn: async ({ provider, apiKey }: { provider: string; apiKey: string }) => {
+      const res = await apiRequest("PUT", `/api/org/ai-keys/${provider}`, { apiKey });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org/ai-keys"] });
+      if (vars.provider === "openai") setByokOpenaiKey("");
+      if (vars.provider === "anthropic") setByokAnthropicKey("");
+      toast({ title: "API key saved", description: `${vars.provider === "openai" ? "OpenAI" : "Anthropic"} key stored securely.` });
+    },
+    onError: (error) => {
+      toast({ variant: "destructive", title: "Save failed", description: error.message || "Failed to save API key" });
+    },
+  });
+
+  const removeByokMutation = useMutation<unknown, Error, string>({
+    mutationFn: async (provider: string) => {
+      const res = await apiRequest("DELETE", `/api/org/ai-keys/${provider}`);
+      return res.json();
+    },
+    onSuccess: (_data, provider) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org/ai-keys"] });
+      toast({ title: "API key removed", description: `${provider === "openai" ? "OpenAI" : "Anthropic"} key removed. Platform default will be used.` });
+    },
+    onError: (error) => {
+      toast({ variant: "destructive", title: "Remove failed", description: error.message || "Failed to remove API key" });
+    },
+  });
+
+  // ── End BYOK ──────────────────────────────────────────────────────────────
 
   const deleteLessonMutation = useMutation({
     mutationFn: async (lessonId: string) => {
@@ -737,6 +795,165 @@ export default function AISettingsPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Task #2948 — BYOK: per-org AI provider key management (only shown when plan supports it) */}
+          {(byokLoading || byokData?.byokEnabled) && <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Key className="h-5 w-5 text-primary" />
+                Bring-Your-Own-Key (BYOK) AI Provider Keys
+              </CardTitle>
+              <CardDescription>
+                Supply your own OpenAI or Anthropic API keys. When set, all AI
+                calls for this organization are billed to your own account
+                instead of the platform shared key. Keys are stored encrypted
+                and only the last 4 characters are ever shown.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {byokLoading ? (
+                <Skeleton className="h-24 w-full" />
+              ) : (
+                <>
+                  {/* OpenAI */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">OpenAI</p>
+                        {savedKey("openai") ? (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            Key on file — ends in <code className="font-mono font-bold">…{savedKey("openai")!.keyHint}</code>
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                            No org key — using platform default
+                          </p>
+                        )}
+                      </div>
+                      {savedKey("openai") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeByokMutation.mutate("openai")}
+                          disabled={removeByokMutation.isPending}
+                          data-testid="button-remove-openai-key"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Input
+                          type={showOpenaiKey ? "text" : "password"}
+                          placeholder={savedKey("openai") ? "Enter new key to replace current" : "sk-…"}
+                          value={byokOpenaiKey}
+                          onChange={e => setByokOpenaiKey(e.target.value)}
+                          data-testid="input-openai-byok-key"
+                          className="pr-10 font-mono text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowOpenaiKey(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          tabIndex={-1}
+                          aria-label={showOpenaiKey ? "Hide key" : "Show key"}
+                        >
+                          {showOpenaiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <Button
+                        onClick={() => saveByokMutation.mutate({ provider: "openai", apiKey: byokOpenaiKey })}
+                        disabled={!byokOpenaiKey.trim() || saveByokMutation.isPending}
+                        data-testid="button-save-openai-key"
+                        size="default"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Separator />
+
+                  {/* Anthropic */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Anthropic</p>
+                        {savedKey("anthropic") ? (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
+                            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                            Key on file — ends in <code className="font-mono font-bold">…{savedKey("anthropic")!.keyHint}</code>
+                          </p>
+                        ) : (
+                          <p className="text-sm text-muted-foreground flex items-center gap-1">
+                            <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
+                            No org key — using platform default
+                          </p>
+                        )}
+                      </div>
+                      {savedKey("anthropic") && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeByokMutation.mutate("anthropic")}
+                          disabled={removeByokMutation.isPending}
+                          data-testid="button-remove-anthropic-key"
+                          className="text-destructive hover:text-destructive"
+                        >
+                          <Trash2 className="h-4 w-4 mr-1" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <Input
+                          type={showAnthropicKey ? "text" : "password"}
+                          placeholder={savedKey("anthropic") ? "Enter new key to replace current" : "sk-ant-…"}
+                          value={byokAnthropicKey}
+                          onChange={e => setByokAnthropicKey(e.target.value)}
+                          data-testid="input-anthropic-byok-key"
+                          className="pr-10 font-mono text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAnthropicKey(v => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          tabIndex={-1}
+                          aria-label={showAnthropicKey ? "Hide key" : "Show key"}
+                        >
+                          {showAnthropicKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </button>
+                      </div>
+                      <Button
+                        onClick={() => saveByokMutation.mutate({ provider: "anthropic", apiKey: byokAnthropicKey })}
+                        disabled={!byokAnthropicKey.trim() || saveByokMutation.isPending}
+                        data-testid="button-save-anthropic-key"
+                        size="default"
+                      >
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+
+                  <Alert variant="default" className="bg-muted/50">
+                    <Key className="h-4 w-4" />
+                    <AlertDescription className="text-xs text-muted-foreground">
+                      Keys are stored using AES-256-GCM encryption. The plaintext key is never
+                      written to logs or returned to the browser after saving. Removing a key
+                      immediately reverts all AI calls to the platform shared key.
+                    </AlertDescription>
+                  </Alert>
+                </>
+              )}
+            </CardContent>
+          </Card>}
+
         </div>
       )}
     </div>

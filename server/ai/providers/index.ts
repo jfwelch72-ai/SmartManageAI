@@ -14,10 +14,11 @@
  */
 
 import { logWarn, logInfo } from "../../utils/logger";
-import { openaiProvider } from "./openaiProvider";
-import { anthropicProvider } from "./anthropicProvider";
+import { openaiProvider, createOpenAIProviderWithKey } from "./openaiProvider";
+import { anthropicProvider, createAnthropicProviderWithKey } from "./anthropicProvider";
 import { isFeatureEnabled } from "../../services/featureFlagService";
 import { consume as consumeBillingUsage, checkQuota as checkBillingQuota, QuotaExceededError } from "../../services/billing/usageMetering";
+import { resolveOrgKey } from "./orgKeyResolver";
 import {
   buildPriorContextSystemMessage,
   capturePriorContext,
@@ -58,6 +59,63 @@ interface ResolvedRouting {
   primary: AiProvider;
   secondary: AiProvider | null;
   source: "flag-anthropic" | "flag-openai" | "anthropic-not-configured";
+}
+
+/**
+ * Task #2948 — Given per-org BYOK keys (may be null for each provider),
+ * substitute the provider instances in the routing result with per-call
+ * instances that carry the org key. Returns the updated routing and a
+ * Set of provider names that were patched with a BYOK key so callers can
+ * determine `keySource` AFTER the call (based on which provider actually
+ * answered) rather than before (which could misattribute when a non-BYOK
+ * fallback responds).
+ */
+function applyByokKeys(
+  routing: ResolvedRouting,
+  openaiKey: string | null,
+  anthropicKey: string | null,
+): { routing: ResolvedRouting; byokProviders: Set<string> } {
+  const byokProviders = new Set<string>();
+
+  // Special case: routing resolved to "anthropic-not-configured" (the flag
+  // wanted Anthropic primary but the platform ANTHROPIC_API_KEY is absent).
+  // If the org has a BYOK Anthropic key we can recover the intended routing —
+  // use Anthropic-BYOK as primary with the platform (or BYOK) OpenAI as fallback.
+  if (routing.source === "anthropic-not-configured" && anthropicKey) {
+    byokProviders.add("anthropic");
+    const fallback = openaiKey
+      ? (byokProviders.add("openai"), createOpenAIProviderWithKey(openaiKey))
+      : openaiProvider.isConfigured() ? openaiProvider : null;
+    return {
+      routing: {
+        primary: createAnthropicProviderWithKey(anthropicKey),
+        secondary: fallback,
+        source: routing.source,
+      },
+      byokProviders,
+    };
+  }
+
+  const patchProvider = (p: AiProvider): AiProvider => {
+    if (p.name === "openai" && openaiKey) {
+      byokProviders.add("openai");
+      return createOpenAIProviderWithKey(openaiKey);
+    }
+    if (p.name === "anthropic" && anthropicKey) {
+      byokProviders.add("anthropic");
+      return createAnthropicProviderWithKey(anthropicKey);
+    }
+    return p;
+  };
+
+  return {
+    routing: {
+      ...routing,
+      primary: patchProvider(routing.primary),
+      secondary: routing.secondary ? patchProvider(routing.secondary) : null,
+    },
+    byokProviders,
+  };
 }
 
 async function resolveRouting(
@@ -260,7 +318,7 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
     throw new QuotaExceededError(preflight, "ai_jobs");
   }
 
-  const routing = await resolveRouting(orgId, "AI_PROVIDER_TAKEOFF");
+  let routing = await resolveRouting(orgId, "AI_PROVIDER_TAKEOFF");
 
   if (routing.source === "anthropic-not-configured") {
     logWarn("AI_PROVIDER_TAKEOFF=on but ANTHROPIC_API_KEY missing — using OpenAI", {
@@ -268,6 +326,15 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
       featureKey,
     });
   }
+
+  // Task #2948 — BYOK: resolve any org-supplied provider keys and substitute
+  // the provider instances before executing the chat. Runs in parallel for speed.
+  const [openaiKey, anthropicKey] = await Promise.all([
+    resolveOrgKey(orgId, "openai"),
+    resolveOrgKey(orgId, "anthropic"),
+  ]);
+  const { routing: byokRouting, byokProviders } = applyByokKeys(routing, openaiKey, anthropicKey);
+  routing = byokRouting;
 
   const result = await executeRoutedChat(
     orgId,
@@ -277,6 +344,7 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
     priorContext,
     allowFallback,
   );
+  result.keySource = byokProviders.has(result.provider) ? "org_byok" : "platform";
 
   if (priorContext) {
     capturePriorContext({
@@ -322,7 +390,7 @@ export async function routedGeneralChatCompletion(
     throw new QuotaExceededError(preflight, "ai_jobs");
   }
 
-  const routing = await resolveRouting(orgId, "AI_PROVIDER_GENERAL");
+  let routing = await resolveRouting(orgId, "AI_PROVIDER_GENERAL");
 
   if (routing.source === "anthropic-not-configured") {
     logWarn("AI_PROVIDER_GENERAL=on but ANTHROPIC_API_KEY missing — using OpenAI", {
@@ -330,6 +398,15 @@ export async function routedGeneralChatCompletion(
       featureKey,
     });
   }
+
+  // Task #2948 — BYOK: resolve any org-supplied provider keys and substitute
+  // the provider instances before executing the chat. Runs in parallel for speed.
+  const [openaiKey, anthropicKey] = await Promise.all([
+    resolveOrgKey(orgId, "openai"),
+    resolveOrgKey(orgId, "anthropic"),
+  ]);
+  const { routing: byokRouting, byokProviders } = applyByokKeys(routing, openaiKey, anthropicKey);
+  routing = byokRouting;
 
   const result = await executeRoutedChat(
     orgId,
@@ -339,6 +416,7 @@ export async function routedGeneralChatCompletion(
     undefined,
     allowFallback,
   );
+  result.keySource = byokProviders.has(result.provider) ? "org_byok" : "platform";
 
   meterRoutedUsageAsync(orgId, featureKey, result);
   return result;

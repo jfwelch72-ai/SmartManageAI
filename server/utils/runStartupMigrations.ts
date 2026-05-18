@@ -165,6 +165,8 @@ import { ensureDemoLeadCrmConfig } from "./ensureDemoLeadCrmConfig";
 import { ensureOauthReconnectAlertEnumValues } from "./ensureOauthReconnectAlertEnumValues";
 import { ensureWorkflowLifecycleEnumValues } from "./ensureWorkflowLifecycleEnumValues";
 import { ensureWebsitePageTypeEnumValues } from "./ensureWebsitePageTypeEnumValues";
+import { ensureOrgAiKeys } from "./ensureOrgAiKeys";
+import { ensureAiActionAuditKeySource } from "./ensureAiActionAuditKeySource";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -594,6 +596,14 @@ const migrations: MigrationStep[] = [
   // migrations/0121_csi_scope_document.sql so production converges on first boot
   // after deploy without requiring a manual drizzle-kit push.
   { name: "csi_scope_columns", category: "ADD_COLUMN", fn: ensureCsiScopeColumns },
+  // Task #2948 — BYOK: org_ai_keys table for encrypted per-org AI provider keys.
+  // Mirrors migrations/0122_org_ai_keys.sql; creates the table if it doesn't
+  // exist on older DBs so production converges on first boot after deploy.
+  { name: "org_ai_keys", category: "CREATE_TABLE", fn: ensureOrgAiKeys },
+  // Task #2948 — BYOK: key_source column on ai_action_audit.
+  // Mirrors migrations/0123_ai_action_audit_key_source.sql; adds the column +
+  // index idempotently so production converges on first boot after deploy.
+  { name: "ai_action_audit_key_source", category: "ADD_COLUMN", fn: ensureAiActionAuditKeySource },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

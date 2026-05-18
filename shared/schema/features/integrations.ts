@@ -404,3 +404,28 @@ export const integrationApiRequestLog = pgTable("integration_api_request_log", {
 }));
 
 export type IntegrationApiRequestLog = typeof integrationApiRequestLog.$inferSelect;
+
+// ============ Task #2948 — BYOK: Per-org AI provider keys ============
+
+// Task #2948 — Stores encrypted per-org AI provider API keys for BYOK support.
+// One row per (organization_id, provider) pair. The `encrypted_key` column
+// holds the AES-256-GCM ciphertext from server/services/keyVault.ts.
+// The plaintext key is NEVER stored — only the 4-char hint is returned to
+// the frontend. Deleting a row reverts the org to the platform global key.
+export const orgAiKeys = pgTable("org_ai_keys", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull(),
+  encryptedKey: text("encrypted_key").notNull(),
+  keyHint: varchar("key_hint", { length: 4 }).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  createdByUserId: varchar("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+}, (table) => ({
+  orgIdx: index("org_ai_keys_org_idx").on(table.organizationId),
+  orgProviderUniq: unique("org_ai_keys_org_provider_uniq").on(table.organizationId, table.provider),
+}));
+
+export const insertOrgAiKeySchema = createInsertSchema(orgAiKeys).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertOrgAiKey = z.infer<typeof insertOrgAiKeySchema>;
+export type OrgAiKey = typeof orgAiKeys.$inferSelect;

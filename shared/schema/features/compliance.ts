@@ -35,6 +35,10 @@ export const aiActionAudit = pgTable("ai_action_audit", {
   // construction since the router didn't exist yet).
   provider: text("provider"),
   fallbackUsed: boolean("fallback_used").notNull().default(false),
+  // Task #2948 — BYOK: records whether the call used the platform-shared key
+  // ('platform') or an org-supplied bring-your-own key ('org_byok'). Nullable
+  // for backward compat with rows written before BYOK shipped.
+  keySource: text("key_source"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("ai_action_audit_org_idx").on(table.organizationId),
@@ -42,6 +46,7 @@ export const aiActionAudit = pgTable("ai_action_audit", {
   actionTypeIdx: index("ai_action_audit_action_type_idx").on(table.actionType),
   createdAtIdx: index("ai_action_audit_created_at_idx").on(table.createdAt),
   providerIdx: index("ai_action_audit_provider_idx").on(table.provider),
+  keySourceIdx: index("ai_action_audit_key_source_idx").on(table.keySource),
 }));
 
 export const insertAiActionAuditSchema = createInsertSchema(aiActionAudit).omit({ id: true, createdAt: true });

@@ -5,8 +5,13 @@
  * change how the underlying SDK is constructed — that path already supports
  * Replit AI Integrations (`AI_INTEGRATIONS_OPENAI_API_KEY`) plus a direct
  * `OPENAI_API_KEY` fallback.
+ *
+ * Task #2948 — `createOpenAIProviderWithKey(apiKey)` creates a per-call
+ * instance that bypasses the global singleton when an org supplies their own
+ * BYOK key. This keeps the default path byte-identical.
  */
 
+import OpenAI from "openai";
 import { openai, AI_MODEL_GPT5 } from "../openaiClient";
 import type {
   AiProvider,
@@ -19,8 +24,16 @@ export class OpenAIProvider implements AiProvider {
   readonly name = "openai" as const;
   readonly defaultModel = AI_MODEL_GPT5;
 
+  /** Task #2948 — when set, overrides the global singleton for BYOK calls. */
+  private readonly overrideClient: OpenAI | null;
+
+  constructor(apiKey?: string) {
+    this.overrideClient = apiKey ? new OpenAI({ apiKey }) : null;
+  }
+
   isConfigured(): boolean {
     return !!(
+      this.overrideClient ||
       process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
       process.env.OPENAI_API_KEY
     );
@@ -28,7 +41,8 @@ export class OpenAIProvider implements AiProvider {
 
   async chatCompletion(req: AiChatRequest): Promise<AiChatResponse> {
     const startedAt = Date.now();
-    const completion = await openai.chat.completions.create({
+    const client = this.overrideClient ?? openai;
+    const completion = await client.chat.completions.create({
       model: req.model || this.defaultModel,
       messages: req.messages.map(toOpenAiMessage) as any,
       max_completion_tokens: req.max_completion_tokens,
@@ -68,3 +82,11 @@ function toOpenAiMessage(m: AiMessage): unknown {
 }
 
 export const openaiProvider = new OpenAIProvider();
+
+/**
+ * Task #2948 — BYOK factory: creates a one-off OpenAI provider that uses
+ * the supplied org-level API key instead of the platform env-var key.
+ */
+export function createOpenAIProviderWithKey(apiKey: string): OpenAIProvider {
+  return new OpenAIProvider(apiKey);
+}

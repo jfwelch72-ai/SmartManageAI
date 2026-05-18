@@ -60,6 +60,13 @@ export interface AiChatResponse {
   fallbackUsed: boolean;
   /** Latency of the wire call(s) in ms; recorded in the audit row. */
   latencyMs: number;
+  /**
+   * Task #2948 — BYOK: whether the call used a platform-shared key or an
+   * org-supplied bring-your-own key. Set by the provider router after resolving
+   * the org key. `undefined` means the response came from a raw provider call
+   * (e.g. a test) and is treated as "platform" in the audit insert.
+   */
+  keySource?: "platform" | "org_byok";
 }
 
 export interface AiProvider {
@@ -203,6 +210,7 @@ export interface AiEmbeddingResponse {
   usage: { prompt_tokens: number; total_tokens: number };
   provider: AiProviderName;
   latencyMs: number;
+  keySource?: "platform" | "org_byok";
 }
 
 export interface AiEmbeddingProvider {

@@ -712,4 +712,25 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0119_time_entry_and_estimate_indexes.sql": {
     skip: "(A) CREATE INDEX IF NOT EXISTS — idempotent DDL, applied by numbered migration runner; reconcileSchemaDrift re-creates missing indexes on fresh dev DBs (Task #2843).",
   },
+  // Task #2948 not involved — 0120 and 0121 are earlier schema additions;
+  // covered here to close the coverage map.
+  "0120_rfi_activity_nullable_user_id.sql": {
+    skip: "(A) ALTER COLUMN DROP NOT NULL + index — idempotent DDL applied by numbered migration runner; reconcileSchemaDrift handles drift on fresh dev DBs.",
+  },
+  "0121_csi_scope_document.sql": {
+    skip: "(A) CREATE TABLE IF NOT EXISTS + indexes — idempotent DDL applied by numbered migration runner; reconcileSchemaDrift handles drift on fresh dev DBs.",
+  },
+  // Task #2948 — BYOK: org_ai_keys table. The startup helper
+  // ensureOrgAiKeys guarantees the table exists on older DBs that
+  // haven't had the numbered migration applied yet.
+  "0122_org_ai_keys.sql": {
+    helper: "ensureOrgAiKeys",
+    note: "Task #2948 — CREATE TABLE org_ai_keys for per-org BYOK AI provider key storage.",
+  },
+  // Task #2948 — BYOK: key_source column on ai_action_audit.
+  // ensureAiActionAuditKeySource adds the column + index idempotently.
+  "0123_ai_action_audit_key_source.sql": {
+    helper: "ensureAiActionAuditKeySource",
+    note: "Task #2948 — ADD COLUMN key_source TEXT to ai_action_audit for BYOK key attribution.",
+  },
 };

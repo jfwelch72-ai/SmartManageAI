@@ -11,9 +11,11 @@
  * because this is the transport layer, not a caller.
  */
 
+import OpenAI from "openai";
 import { logWarn } from "../../utils/logger";
 import { openai } from "../openaiClient";
 import { isFeatureEnabled } from "../../services/featureFlagService";
+import { resolveOrgKey } from "./orgKeyResolver";
 import type {
   AiEmbeddingProvider,
   AiEmbeddingRequest,
@@ -81,10 +83,39 @@ export async function routedEmbedding(
       { orgId: opts.orgId, featureKey: opts.featureKey },
     );
   }
+  // Task #2948 — BYOK: resolve org key FIRST. If the org has its own OpenAI
+  // key we use it regardless of whether the platform key is configured —
+  // this lets orgs self-serve embeddings even when the platform key is absent.
+  const orgKey = await resolveOrgKey(opts.orgId, "openai");
+  if (orgKey) {
+    const byokClient = new OpenAI({ apiKey: orgKey });
+    const start = Date.now();
+    const model = opts.request.model ?? OPENAI_EMBEDDING_MODEL_DEFAULT;
+    const params: Record<string, unknown> = { model, input: opts.request.input };
+    if (typeof opts.request.dimensions === "number") params.dimensions = opts.request.dimensions;
+    const raw = await byokClient.embeddings.create(
+      params as unknown as Parameters<typeof byokClient.embeddings.create>[0],
+    );
+    return {
+      data: raw.data.map((d) => ({ embedding: d.embedding, index: d.index })),
+      model: raw.model ?? model,
+      usage: {
+        prompt_tokens: raw.usage?.prompt_tokens ?? 0,
+        total_tokens: raw.usage?.total_tokens ?? 0,
+      },
+      provider: "openai",
+      latencyMs: Date.now() - start,
+      keySource: "org_byok",
+    };
+  }
+
+  // Fall back to platform provider — enforce configured check only here,
+  // after we've already given the BYOK path a chance to run.
   if (!openaiEmbeddingProvider.isConfigured()) {
     throw new Error(
       "Embedding provider not configured: set OPENAI_API_KEY or AI_INTEGRATIONS_OPENAI_API_KEY",
     );
   }
-  return openaiEmbeddingProvider.createEmbedding(opts.request);
+  const result = await openaiEmbeddingProvider.createEmbedding(opts.request);
+  return { ...result, keySource: "platform" };
 }

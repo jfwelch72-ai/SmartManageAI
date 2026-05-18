@@ -12,6 +12,7 @@ export interface AiActionResult {
   costEstimate?: number;
   model?: string;
   rationale?: string;
+  keySource?: "platform" | "org_byok";
 }
 
 export interface AiActionParams {
@@ -132,6 +133,7 @@ export async function executeAiAction(params: AiActionParams): Promise<AiActionR
       approvalRequired: params.approvalRequired || false,
       approvalStatus: params.approvalRequired ? "pending" : null,
       durationMs,
+      keySource: result.keySource ?? "platform",
     });
   } catch (err) {
     logError("Failed to record AI audit", { error: String(err) });
@@ -191,6 +193,10 @@ export async function governedAiCall<T>(opts: {
       provider?: string;
       fallbackUsed?: boolean;
       latencyMs?: number;
+      // Task #2948 — BYOK: callers that route through routedChatCompletion or
+      // routedGeneralChatCompletion get keySource stamped on the AiChatResponse;
+      // including it here lets governedAiCall persist it to ai_action_audit.
+      keySource?: string;
     };
   }>;
 }): Promise<{
@@ -246,6 +252,7 @@ export async function governedAiCall<T>(opts: {
       durationMs,
       provider,
       fallbackUsed,
+      keySource: completion.keySource ?? "platform",
     });
   } catch (err) {
     logError("Failed to record AI audit", { error: String(err) });

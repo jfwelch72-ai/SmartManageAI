@@ -75,7 +75,8 @@ export type FeatureKey =
   | "RISK_MANAGEMENT"
   | "ASSET_MANAGEMENT"
   | "ENTERPRISE_NOTIFICATIONS"
-  | "LIDAR_SCANNER";
+  | "LIDAR_SCANNER"
+  | "BYOK_AI_KEYS";
 
 // Plan default features - what each plan tier includes by default
 export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
@@ -105,6 +106,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "PUNCH_LIST",
     "WARRANTY_MODULE",
     "DASHBOARD_CUSTOMIZATION",
+    "BYOK_AI_KEYS",
   ],
   enterprise: [
     // Scale ($579) or Hustler ($1199): Everything in Growth, plus:
@@ -146,6 +148,7 @@ export const PLAN_DEFAULT_FEATURES: Record<PlanTier, FeatureKey[]> = {
     "RISK_MANAGEMENT",
     "ASSET_MANAGEMENT",
     "ENTERPRISE_NOTIFICATIONS",
+    "BYOK_AI_KEYS",
   ],
 };
 
@@ -501,6 +504,10 @@ export const FEATURE_INFO: Record<FeatureKey, { name: string; description: strin
   LIDAR_SCANNER: {
     name: "LiDAR Scanner",
     description: "3D point cloud scanning, measurement, and comparison tools",
+  },
+  BYOK_AI_KEYS: {
+    name: "Bring-Your-Own-Key (BYOK) AI",
+    description: "Supply your own OpenAI / Anthropic API keys for cost isolation and enterprise pricing",
   },
 };
 
