@@ -76,7 +76,7 @@ async function latestComponentVerdict(componentId: string): Promise<boolean | nu
 function deterministicVerdict(component: { key: string; probe_kind: string }): boolean | null {
   switch (component.probe_kind) {
     case "config_present":
-      if (component.key === "email") return !!process.env.RESEND_API_KEY;
+      if (component.key === "email") return !!process.env.SENDGRID_API_KEY;
       if (component.key === "ai") {
         return !!(
           process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY

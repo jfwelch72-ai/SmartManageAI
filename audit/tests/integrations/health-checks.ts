@@ -156,15 +156,15 @@ async function checkOpenAIHealth(): Promise<IntegrationHealth> {
 }
 
 function checkEmailHealth(): IntegrationHealth {
-  const hasResendKey = !!process.env.RESEND_API_KEY;
+  const hasSendGridKey = !!process.env.SENDGRID_API_KEY;
   const hasSmtp = !!process.env.SMTP_HOST;
   
-  if (!hasResendKey && !hasSmtp) {
+  if (!hasSendGridKey && !hasSmtp) {
     return {
       name: 'Email',
       status: 'not-configured',
       lastCheck: new Date().toISOString(),
-      details: 'No email provider configured (RESEND_API_KEY or SMTP_HOST)',
+      details: 'No email provider configured (SENDGRID_API_KEY or SMTP_HOST)',
       configPresent: false,
     };
   }
@@ -173,7 +173,7 @@ function checkEmailHealth(): IntegrationHealth {
     name: 'Email',
     status: 'healthy',
     lastCheck: new Date().toISOString(),
-    details: hasResendKey ? 'Resend configured' : 'SMTP configured',
+    details: hasSendGridKey ? 'SendGrid configured' : 'SMTP configured',
     configPresent: true,
   };
 }

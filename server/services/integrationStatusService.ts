@@ -2,7 +2,7 @@ export interface IntegrationStatus {
   livekit: boolean;
   twilio: boolean;
   openai: boolean;
-  resend: boolean;
+  sendgrid: boolean;
   social_facebook: boolean;
   social_linkedin: boolean;
   social_twitter: boolean;
@@ -27,8 +27,8 @@ export function getIntegrationStatus(): IntegrationStatus {
       process.env.AI_INTEGRATIONS_OPENAI_API_KEY ||
       process.env.OPENAI_API_KEY
     ),
-    resend: !!(
-      process.env.RESEND_API_KEY
+    sendgrid: !!(
+      process.env.SENDGRID_API_KEY
     ),
     social_facebook: !!(process.env.FB_APP_ID && process.env.FB_APP_SECRET),
     social_linkedin: !!(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET),

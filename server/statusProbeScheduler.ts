@@ -167,8 +167,8 @@ function configProbe(component: ComponentRow): ProbeResult {
   let ok = false;
   let error: string | null = null;
   if (component.key === "email") {
-    ok = !!process.env.RESEND_API_KEY;
-    if (!ok) error = "RESEND_API_KEY not configured";
+    ok = !!process.env.SENDGRID_API_KEY;
+    if (!ok) error = "SENDGRID_API_KEY not configured";
   } else if (component.key === "ai") {
     // OpenAI is configured via Replit AI Integrations OR explicit key
     ok = !!(process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
