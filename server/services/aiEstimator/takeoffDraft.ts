@@ -33,6 +33,8 @@ import {
 // lines with org waste factors when a matching assembly exists.
 import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
 import type { AssemblyExpansion } from "./explodeAssembly";
+import { resolveEstimatorFiles, type EstimatorFileType } from "./fileResolver";
+import { extractSpreadsheetFromUrl } from "./extractSpreadsheet";
 
 const TAKEOFF_DRAFT_OUTPUT_SCHEMA = z.object({
   measurements: z.array(z.object({
@@ -84,12 +86,25 @@ export interface TakeoffDraftCostSummary {
   byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
 }
 
+/**
+ * Task #2942 — A single file that was resolved and fed to the LLM during a
+ * draft-takeoff run. Surfaced in the "Files analyzed" UI panel so estimators
+ * can see what the AI actually read.
+ */
+export interface AnalyzedFileRef {
+  fileName: string;
+  fileType: EstimatorFileType;
+  source: "bid_document" | "plan_document";
+}
+
 export interface TakeoffDraftResult {
   measurements: DraftTakeoffMeasurement[];
   notes: string;
   confidence: number;
   /** Task #2626 — aggregated AI spend for this draft run. */
   cost: TakeoffDraftCostSummary;
+  /** Task #2942 — extra files from bid_documents / plan_documents included in the draft context. */
+  filesAnalyzed: AnalyzedFileRef[];
 }
 
 async function resolveOrgPlanDocuments(
@@ -268,6 +283,111 @@ export async function draftTakeoffFromPlans(opts: {
   }
   const blocks = quarantineDocumentBlocks(rawBlocks) as typeof rawBlocks;
 
+  // Task #2942 — Pull in extra files from bid_documents / plan_documents
+  // (PDFs, spreadsheets, images that were NOT already included via the
+  // plan-sheet resolver above). These give the AI richer context: spec
+  // books, cost estimates, schedules, etc.
+  const filesAnalyzed: AnalyzedFileRef[] = [];
+  const extraBlocks: typeof rawBlocks = [];
+  try {
+    // Only resolve when we have a concrete bid or project scope (skip
+    // standalone takeoffs which own their own file set).
+    if ((opts.bidId || opts.projectId) && !opts.standaloneTakeoffId) {
+      const MAX_TOTAL_TEXT_CHARS = 80_000;
+      const existingUrlSet = new Set(urls);
+
+      // Count text chars already consumed by the plan-doc blocks.
+      let totalTextChars = rawBlocks
+        .filter((b) => b.type === "text")
+        .reduce((sum, b) => sum + (b as { text: string }).text.length, 0);
+
+      const extraFiles = await resolveEstimatorFiles({
+        bidId: opts.bidId,
+        projectId: opts.projectId,
+        organizationId: opts.organizationId,
+      });
+
+      // Only process files not already included via the plan-sheet resolver.
+      const freshFiles = extraFiles.filter((f) => !existingUrlSet.has(f.fileUrl));
+
+      for (const fileRef of freshFiles) {
+        if (totalTextChars >= MAX_TOTAL_TEXT_CHARS) break;
+
+        try {
+          let fileRawBlocks: typeof rawBlocks = [];
+
+          if (fileRef.fileType === "spreadsheet") {
+            const extracted = await extractSpreadsheetFromUrl(fileRef.fileUrl, fileRef.fileName);
+            if (extracted?.text) {
+              fileRawBlocks = [
+                {
+                  type: "text" as const,
+                  text: `[Spreadsheet: ${fileRef.fileName}]\n${extracted.text}`,
+                },
+              ] as typeof rawBlocks;
+            }
+          } else if (
+            fileRef.fileType === "pdf_plan" ||
+            fileRef.fileType === "pdf_spec" ||
+            fileRef.fileType === "image"
+          ) {
+            fileRawBlocks = (await extractDocumentContent(fileRef.fileUrl).catch(
+              () => [],
+            )) as typeof rawBlocks;
+          }
+
+          if (fileRawBlocks.length === 0) continue;
+
+          const fileText = fileRawBlocks
+            .filter((b) => b.type === "text")
+            .map((b) => (b as { text: string }).text)
+            .join("\n");
+
+          // Skip this file if it would push us over the total-context cap.
+          if (totalTextChars + fileText.length > MAX_TOTAL_TEXT_CHARS) continue;
+
+          // Injection guard on the extra file's content.
+          const fileDetection = detectPromptInjection(fileText);
+          if (shouldRefusePromptInjection(fileDetection)) {
+            logWarn("AI Estimator file resolver: skipping file with injection payload", {
+              organizationId: opts.organizationId,
+              fileName: fileRef.fileName,
+              matches: fileDetection.matches.map((m) => m.id),
+            });
+            continue;
+          }
+
+          const guardedBlocks = quarantineDocumentBlocks(fileRawBlocks) as typeof rawBlocks;
+          extraBlocks.push(...guardedBlocks);
+          totalTextChars += fileText.length;
+          filesAnalyzed.push({
+            fileName: fileRef.fileName,
+            fileType: fileRef.fileType,
+            source: fileRef.source,
+          });
+        } catch (fileErr) {
+          logWarn("AI Estimator file resolver: failed to extract extra file", {
+            organizationId: opts.organizationId,
+            fileUrl: fileRef.fileUrl,
+            fileName: fileRef.fileName,
+            error: String(fileErr),
+          });
+        }
+      }
+    }
+  } catch (resolverErr) {
+    // File resolver failure must never break the draft — fall through
+    // with only the plan-doc blocks already in `blocks`.
+    logWarn("AI Estimator file resolver aborted", {
+      organizationId: opts.organizationId,
+      error: String(resolverErr),
+    });
+  }
+
+  // Merged block list fed to the LLM: existing plan-doc blocks (already
+  // quarantined) + extra file blocks (quarantined above per-file).
+  const allBlocks = extraBlocks.length > 0 ? [...blocks, ...extraBlocks] : blocks;
+
   const tradeHint = opts.tradeFilter
     ? ` Restrict measurements to the ${opts.tradeFilter} trade scope only; ignore items that belong to other trades.`
     : "";
@@ -356,7 +476,7 @@ export async function draftTakeoffFromPlans(opts: {
             {
               role: "user",
               content: [
-                ...blocks.map<AiContentPart>((b) =>
+                ...allBlocks.map<AiContentPart>((b) =>
                   b.type === "image_url"
                     ? { type: "image_url", image_url: { url: b.image_url.url, detail: "auto" } }
                     : { type: "text", text: b.text },
@@ -415,6 +535,7 @@ export async function draftTakeoffFromPlans(opts: {
       notes: parsed.notes ?? "",
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
       cost,
+      filesAnalyzed,
     },
   };
 }

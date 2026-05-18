@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, Layers, Unlink } from "lucide-react";
+import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, Layers, Unlink, FileText, FileSpreadsheet, Image, FileQuestion } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -58,12 +58,20 @@ interface CostSummary {
   byModel: Record<string, { calls: number; tokensIn: number; tokensOut: number; costUsd: number }>;
 }
 
+interface AnalyzedFileRef {
+  fileName: string;
+  fileType: string;
+  source: string;
+}
+
 interface DraftResult {
   measurements: DraftMeasurement[];
   notes: string;
   confidence: number;
   // Task #2626 — aggregated AI spend rendered on the draft header.
   cost?: CostSummary;
+  // Task #2942 — extra files from bid_documents / plan_documents included in the draft context.
+  filesAnalyzed?: AnalyzedFileRef[];
 }
 
 /**
@@ -79,6 +87,8 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [fetchingResult, setFetchingResult] = useState(false);
+  // Task #2942 — whether the "Files analyzed" panel is expanded.
+  const [filesOpen, setFilesOpen] = useState(false);
   // Task #2624 — Per-row local UI state for the assembly review UX.
   // `expanded` tracks which assembly parents are open. `detached` is a
   // set of `${rowIdx}:${componentId}` keys that the estimator has
@@ -190,6 +200,7 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
       setDraft(null);
       setJobId(null);
       setFetchingResult(false);
+      setFilesOpen(false);
       setExpanded(new Set());
       setDetached(new Set());
       setFlatten(new Set());
@@ -221,7 +232,7 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
           <DialogHeader>
             <DialogTitle>Draft full takeoff from plans</DialogTitle>
             <DialogDescription>
-              Reads the plan documents on this project (capped at 8 for performance) and produces an initial measurement
+              Reads the plan documents and any uploaded bid files (PDFs, spreadsheets, images) and produces an initial measurement
               list. You review and accept manually — nothing is added to your takeoff automatically.
             </DialogDescription>
           </DialogHeader>
@@ -421,6 +432,60 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
                     </tbody>
                   </table>
                 </div>
+
+                {/* Task #2942 — Files analyzed panel */}
+                {draft.filesAnalyzed && draft.filesAnalyzed.length > 0 ? (
+                  <div className="border rounded-md overflow-hidden">
+                    <button
+                      type="button"
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium bg-muted hover:bg-muted/80 transition-colors"
+                      onClick={() => setFilesOpen((v) => !v)}
+                      data-testid="button-toggle-files-analyzed"
+                    >
+                      <span>Files analyzed ({draft.filesAnalyzed.length})</span>
+                      {filesOpen ? (
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {filesOpen && (
+                      <ul className="divide-y text-xs" data-testid="list-files-analyzed">
+                        {draft.filesAnalyzed.map((f, idx) => {
+                          const isSpreadsheet =
+                            f.fileType === "spreadsheet";
+                          const isImage = f.fileType === "image";
+                          const Icon = isSpreadsheet
+                            ? FileSpreadsheet
+                            : isImage
+                            ? Image
+                            : f.fileType === "other"
+                            ? FileQuestion
+                            : FileText;
+                          return (
+                            <li
+                              key={idx}
+                              className="flex items-center gap-2 px-3 py-1.5"
+                              data-testid={`item-analyzed-file-${idx}`}
+                            >
+                              <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="truncate flex-1" title={f.fileName}>
+                                {f.fileName}
+                              </span>
+                              <span className="text-muted-foreground shrink-0 capitalize">
+                                {f.source === "bid_document" ? "bid" : "project"}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                ) : draft.filesAnalyzed !== undefined ? (
+                  <p className="text-xs text-muted-foreground px-1" data-testid="text-no-extra-files">
+                    No extra files were found. Upload PDFs, spreadsheets, or drawings to the bid or project to give the AI more context.
+                  </p>
+                ) : null}
               </div>
             </ScrollArea>
           )}

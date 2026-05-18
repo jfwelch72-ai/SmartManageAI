@@ -3,10 +3,13 @@ import { db } from "../../db";
 import {
   aiEstimatorIngestRuns,
   aiEstimatorKnowledgeIndex,
+  bidDocuments,
   bids,
   estimates,
   estimateLineItems,
   historicalCosts,
+  planDocuments,
+  projects,
   standaloneTakeoffs,
   takeoffMeasurements,
   takeoffSheets,
@@ -15,6 +18,9 @@ import {
   type AiEstimatorLearnedRate,
   type InsertAiEstimatorKnowledgeIndex,
 } from "@shared/schema";
+import { objectStorageClient, ObjectStorageService } from "../../objectStorage";
+import { getOcrProvider } from "../../ai/ocrProvider";
+import { extractSpreadsheetFromBuffer } from "./extractSpreadsheet";
 import {
   bulkUpsertKnowledgeRows,
   setKnowledgeRowEnrichment,
@@ -489,6 +495,216 @@ export async function runIngestion(
         if (saMeasRows.length > 0) {
           const saUpserts = await bulkUpsertKnowledgeRows(saMeasRows);
           recordChanges(saUpserts, saMeasRows.map(() => null));
+        }
+      }
+    }
+
+    // 3c. Task #2942 — Bid documents (PDFs + spreadsheets) → knowledge index.
+    // Downloads each file, extracts text (PDF → extractPdfPageTexts,
+    // spreadsheet → extractSpreadsheetFromBuffer), then upserts a knowledge
+    // row so the AI chat and retrieval have richer context for Q&A.
+    // - Only processes files uploaded after `since` for incremental runs.
+    // - Files over MAX_INGEST_FILE_BYTES are skipped to control GCS spend.
+    // - Images ≤ 5 MB are OCR'd via the registered provider (Tesseract default);
+    //   larger images are skipped to bound synchronous OCR cost.
+    // - Per-run cap (MAX_INGEST_FILES_PER_TYPE) prevents timeout on large orgs.
+    // - All text is stored as-is; prompt-injection guard runs at query time.
+    {
+      const MAX_INGEST_FILE_BYTES = 50 * 1024 * 1024;
+      const MAX_INGEST_FILES_PER_TYPE = 100;
+      const SPREADSHEET_EXTS = new Set(["xlsx", "xls", "csv", "ods"]);
+      const SPREADSHEET_MIMES = new Set([
+        "application/vnd.ms-excel",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv",
+        "application/csv",
+      ]);
+      const IMAGE_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "tiff", "tif", "bmp"]);
+
+      async function downloadFileBufferForIngest(fileUrl: string): Promise<Buffer | null> {
+        try {
+          if (fileUrl.startsWith("/objects/")) {
+            const svc = new ObjectStorageService();
+            const file = await svc.getObjectEntityFile(fileUrl);
+            const [buf] = await file.download();
+            return buf;
+          }
+          const m = fileUrl.match(/storage\.googleapis\.com\/([^/?]+)\/([^?]+)/);
+          if (!m) return null;
+          const bucket = objectStorageClient.bucket(m[1]);
+          const file = bucket.file(decodeURIComponent(m[2]));
+          const [buf] = await file.download();
+          return buf;
+        } catch {
+          return null;
+        }
+      }
+
+      async function extractTextForIngest(
+        fileUrl: string,
+        fileName: string,
+        mimeType: string | null,
+        fileSize: number | null,
+      ): Promise<string | null> {
+        if (fileSize && fileSize > MAX_INGEST_FILE_BYTES) return null;
+        const ext = (fileName.split(".").pop() ?? "").toLowerCase();
+        const mime = (mimeType ?? "").toLowerCase();
+        if (IMAGE_EXTS.has(ext) || mime.startsWith("image/")) {
+          // Task #2942 — OCR small images (≤ 5 MB) via the registered
+          // OCR provider (Tesseract by default). Larger images are skipped
+          // to avoid expensive synchronous OCR in the background job.
+          const MAX_IMAGE_OCR_BYTES = 5 * 1024 * 1024;
+          if (fileSize && fileSize > MAX_IMAGE_OCR_BYTES) return null;
+          const ocrProvider = getOcrProvider();
+          if (!ocrProvider) return null;
+          const imgBuf = await downloadFileBufferForIngest(fileUrl);
+          if (!imgBuf || imgBuf.length > MAX_IMAGE_OCR_BYTES) return null;
+          const mimeForOcr = mime.startsWith("image/") ? mime : `image/${ext}`;
+          const ocrText = await ocrProvider.recognize({ buffer: imgBuf, mimeType: mimeForOcr });
+          return ocrText && ocrText.trim().length > 0 ? ocrText.trim() : null;
+        }
+
+        const isSpreadsheet = SPREADSHEET_EXTS.has(ext) || SPREADSHEET_MIMES.has(mime);
+        const isPdf = mime === "application/pdf" || ext === "pdf";
+        if (!isSpreadsheet && !isPdf) return null;
+
+        const buf = await downloadFileBufferForIngest(fileUrl);
+        if (!buf || buf.length > MAX_INGEST_FILE_BYTES) return null;
+
+        if (isSpreadsheet) {
+          const extracted = extractSpreadsheetFromBuffer(buf, fileName);
+          return extracted?.text ?? null;
+        }
+
+        // PDF: detect by magic bytes as well (in case MIME is wrong).
+        const looksLikePdf =
+          isPdf || (buf.length >= 5 && buf.subarray(0, 5).toString("ascii") === "%PDF-");
+        if (!looksLikePdf) return null;
+
+        try {
+          const { extractPdfPageTexts } = await import("../../ai/documentExtractor");
+          const result = await extractPdfPageTexts(buf, { maxPages: 30 });
+          const pages = Object.values(result.pages ?? {});
+          const joined = pages.join("\n").trim();
+          return joined || null;
+        } catch {
+          return null;
+        }
+      }
+
+      // Bid documents — join through bids.gc_organization_id for org ownership.
+      if (allBidIds.length > 0) {
+        const BID_DOC_CHUNK = 200;
+        let filesProcessed = 0;
+        for (let i = 0; i < allBidIds.length && filesProcessed < MAX_INGEST_FILES_PER_TYPE; i += BID_DOC_CHUNK) {
+          const slice = allBidIds.slice(i, i + BID_DOC_CHUNK);
+          const docs = await db
+            .select({
+              id: bidDocuments.id,
+              bidId: bidDocuments.bidId,
+              fileName: bidDocuments.fileName,
+              fileUrl: bidDocuments.fileUrl,
+              fileSize: bidDocuments.fileSize,
+              mimeType: bidDocuments.mimeType,
+              uploadedAt: bidDocuments.uploadedAt,
+            })
+            .from(bidDocuments)
+            .where(
+              since
+                ? and(inArray(bidDocuments.bidId, slice), gte(bidDocuments.uploadedAt, since))
+                : inArray(bidDocuments.bidId, slice),
+            );
+          const bdRows: InsertAiEstimatorKnowledgeIndex[] = [];
+          for (const doc of docs) {
+            if (filesProcessed >= MAX_INGEST_FILES_PER_TYPE) break;
+            filesProcessed++;
+            const text = await extractTextForIngest(doc.fileUrl, doc.fileName, doc.mimeType, doc.fileSize).catch(() => null);
+            if (!text) continue;
+            const snippet = text.slice(0, 1_000);
+            const hashInput = `${doc.id}:${snippet}`;
+            const { createHash } = await import("crypto");
+            const contentHash = createHash("sha256").update(hashInput).digest("hex");
+            bdRows.push({
+              organizationId,
+              sourceType: "bid_document",
+              sourceId: doc.id,
+              bidId: doc.bidId,
+              projectId: null,
+              costCode: null,
+              tradeType: null,
+              title: doc.fileName,
+              contentSnippet: snippet,
+              tags: ["bid_document"],
+              numericFacets: null,
+              contentHash,
+            });
+          }
+          if (bdRows.length > 0) {
+            const bdUpserts = await bulkUpsertKnowledgeRows(bdRows);
+            recordChanges(bdUpserts, bdRows.map(() => null));
+          }
+        }
+      }
+
+      // Plan documents — scoped directly by organizationId.
+      {
+        const orgProjectIds = await db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(eq(projects.gcOrganizationId, organizationId));
+        const projectIds = orgProjectIds.map((p) => p.id);
+
+        if (projectIds.length > 0) {
+          const PD_CHUNK = 200;
+          let pdFilesProcessed = 0;
+          for (let i = 0; i < projectIds.length && pdFilesProcessed < MAX_INGEST_FILES_PER_TYPE; i += PD_CHUNK) {
+            const slice = projectIds.slice(i, i + PD_CHUNK);
+            const docs = await db
+              .select({
+                id: planDocuments.id,
+                projectId: planDocuments.projectId,
+                fileName: planDocuments.fileName,
+                fileUrl: planDocuments.fileUrl,
+                fileSize: planDocuments.fileSize,
+                mimeType: planDocuments.mimeType,
+                uploadedAt: planDocuments.uploadedAt,
+              })
+              .from(planDocuments)
+              .where(
+                since
+                  ? and(inArray(planDocuments.projectId, slice), gte(planDocuments.uploadedAt, since))
+                  : inArray(planDocuments.projectId, slice),
+              );
+            const pdRows: InsertAiEstimatorKnowledgeIndex[] = [];
+            for (const doc of docs) {
+              if (pdFilesProcessed >= MAX_INGEST_FILES_PER_TYPE) break;
+              pdFilesProcessed++;
+              const text = await extractTextForIngest(doc.fileUrl, doc.fileName, doc.mimeType, doc.fileSize).catch(() => null);
+              if (!text) continue;
+              const snippet = text.slice(0, 1_000);
+              const hashInput = `${doc.id}:${snippet}`;
+              const { createHash } = await import("crypto");
+              const contentHash = createHash("sha256").update(hashInput).digest("hex");
+              pdRows.push({
+                organizationId,
+                sourceType: "plan_document",
+                sourceId: doc.id,
+                bidId: null,
+                projectId: doc.projectId ?? null,
+                costCode: null,
+                tradeType: null,
+                title: doc.fileName,
+                contentSnippet: snippet,
+                tags: ["plan_document"],
+                numericFacets: null,
+                contentHash,
+              });
+            }
+            if (pdRows.length > 0) {
+              const pdUpserts = await bulkUpsertKnowledgeRows(pdRows);
+              recordChanges(pdUpserts, pdRows.map(() => null));
+            }
+          }
         }
       }
     }

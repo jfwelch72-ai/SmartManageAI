@@ -45,6 +45,12 @@ import {
 // pipeline (mirrors `takeoffDraft.ts`).
 import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
 import type { AssemblyExpansion } from "./explodeAssembly";
+// Task #2942 — Extra file access (bid_documents / plan_documents).
+import { objectStorageClient, ObjectStorageService } from "../../objectStorage";
+import { getOcrProvider } from "../../ai/ocrProvider";
+import { extractSpreadsheetFromBuffer } from "./extractSpreadsheet";
+import { resolveEstimatorFiles } from "./fileResolver";
+import type { AnalyzedFileRef } from "./takeoffDraft";
 
 const PAGES_PER_DISCIPLINE_BATCH = 20;
 // Default ceiling on the number of LLM calls executed per discipline.
@@ -136,6 +142,8 @@ export interface MapReduceDraftResult {
   modelId?: string | null;
   /** Task #2625 — provider name observed on the first successful LLM response ("anthropic" | "openai"). */
   provider?: string | null;
+  /** Task #2942 — extra files from bid_documents / plan_documents included in the draft context. */
+  filesAnalyzed?: AnalyzedFileRef[];
 }
 
 interface PageInfo {
@@ -313,6 +321,8 @@ async function reduceDisciplineBatch(opts: {
   // the same draft attempt so the admin spend tab can roll up per-draft.
   draftId: string;
   projectId: string | null;
+  /** Task #2942 — pre-validated supplemental text from bid/plan documents. */
+  supplementalContext?: string;
 }): Promise<{
   measurements: MapReduceMeasurement[];
   notes?: string;
@@ -360,6 +370,15 @@ async function reduceDisciplineBatch(opts: {
     recordDetectionMatches("ai_estimator.map_reduce_draft", detection, "quarantined");
   }
   const blocks = quarantineDocumentBlocks([{ type: "text" as const, text: concatenated }]);
+  // Task #2942 — Prepend pre-validated supplemental file context (spreadsheets
+  // / spec PDFs from bid_documents) so the model has richer scope data.
+  const supplementalBlocks = opts.supplementalContext
+    ? quarantineDocumentBlocks([{
+        type: "text" as const,
+        text: `[SUPPLEMENTAL FILE CONTEXT — cost estimates, schedules, specs]\n${opts.supplementalContext}`,
+      }])
+    : [];
+  const allMessageBlocks = [...supplementalBlocks, ...blocks];
 
   const sysPrompt = `You are a senior estimator drafting takeoff measurements for the ${opts.discipline} discipline only. The user message contains the text contents of multiple plan sheets, separated by lines like "<<<SHEET A-101>>>". For every quantifiable item visible in those sheets, emit one measurement and include the sheet identifier(s) it came from in "sheetCitations". Be conservative — never invent measurements not visible. Do not emit items that belong to other disciplines.
 Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[] }], "notes": string, "confidence": number }`;
@@ -412,7 +431,7 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
               : []),
             {
               role: "user",
-              content: blocks.map<AiContentPart>((b) => ({ type: "text", text: (b as { text: string }).text })),
+              content: allMessageBlocks.map<AiContentPart>((b) => ({ type: "text", text: (b as { text: string }).text })),
             },
           ],
           max_completion_tokens: 4000,
@@ -564,6 +583,121 @@ export async function mapReduceDraftFromPlans(opts: {
     return { result: null, reason: "No indexed plan-sheet text available — run sheet indexing first." };
   }
 
+  // Task #2942 — Resolve extra files from bid_documents (PDFs, spreadsheets)
+  // and build a supplemental text block passed into every discipline-reduce batch.
+  const filesAnalyzed: AnalyzedFileRef[] = [];
+  let supplementalContext = "";
+  try {
+    const MAX_SUPPLEMENTAL_CHARS = 40_000;
+    const MAX_SUPPLEMENTAL_FILE_BYTES = 50 * 1024 * 1024;
+    const SPREADSHEET_EXTS_S = new Set(["xlsx", "xls", "csv", "ods"]);
+    const SPREADSHEET_MIMES_S = new Set([
+      "application/vnd.ms-excel",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "text/csv",
+      "application/csv",
+    ]);
+
+    async function downloadBufSupp(url: string): Promise<Buffer | null> {
+      try {
+        if (url.startsWith("/objects/")) {
+          const svc = new ObjectStorageService();
+          const f = await svc.getObjectEntityFile(url);
+          const [buf] = await f.download();
+          return buf;
+        }
+        const m = url.match(/storage\.googleapis\.com\/([^/?]+)\/([^?]+)/);
+        if (!m) return null;
+        const bucket = objectStorageClient.bucket(m[1]);
+        const file = bucket.file(decodeURIComponent(m[2]));
+        const [buf] = await file.download();
+        return buf;
+      } catch {
+        return null;
+      }
+    }
+
+    const extraFiles = await resolveEstimatorFiles({
+      bidId: opts.bidId,
+      organizationId: opts.organizationId,
+    });
+
+    const MAX_IMAGE_OCR_BYTES = 5 * 1024 * 1024;
+
+    for (const fileRef of extraFiles) {
+      if (supplementalContext.length >= MAX_SUPPLEMENTAL_CHARS) break;
+      if (fileRef.fileType === "other") continue;
+
+      let fileText: string | null = null;
+      try {
+        const ext = (fileRef.fileName.split(".").pop() ?? "").toLowerCase();
+        const mime = (fileRef.mimeType ?? "").toLowerCase();
+        const isSpreadsheet = SPREADSHEET_EXTS_S.has(ext) || SPREADSHEET_MIMES_S.has(mime);
+        const isPdf = mime === "application/pdf" || ext === "pdf";
+        const isImage = fileRef.fileType === "image";
+
+        if (!isSpreadsheet && !isPdf && !isImage) continue;
+
+        // Images: OCR up to 5 MB via the registered provider (Tesseract default).
+        if (isImage) {
+          if (fileRef.fileSize && fileRef.fileSize > MAX_IMAGE_OCR_BYTES) continue;
+          const ocrProv = getOcrProvider();
+          if (!ocrProv) continue;
+          const imgBuf = await downloadBufSupp(fileRef.fileUrl);
+          if (!imgBuf || imgBuf.length > MAX_IMAGE_OCR_BYTES) continue;
+          const mimeForOcr = mime.startsWith("image/") ? mime : `image/${ext}`;
+          const ocrText = await ocrProv.recognize({ buffer: imgBuf, mimeType: mimeForOcr });
+          fileText = ocrText && ocrText.trim().length > 0 ? ocrText.trim() : null;
+        } else {
+          const buf = await downloadBufSupp(fileRef.fileUrl);
+          if (!buf || buf.length > MAX_SUPPLEMENTAL_FILE_BYTES) continue;
+
+          if (isSpreadsheet) {
+            const extracted = extractSpreadsheetFromBuffer(buf, fileRef.fileName);
+            fileText = extracted?.text ?? null;
+          } else {
+            const { extractPdfPageTexts } = await import("../../ai/documentExtractor");
+            const result = await extractPdfPageTexts(buf, { maxPages: 20 });
+            const pagesArr = Object.values(result.pages ?? {});
+            fileText = pagesArr.join("\n").trim() || null;
+          }
+        }
+      } catch {
+        fileText = null;
+      }
+
+      if (!fileText) continue;
+
+      const fileDetection = detectPromptInjection(fileText);
+      if (shouldRefusePromptInjection(fileDetection)) {
+        logWarn("[mapReduceDraft] supplemental file refused (prompt injection)", {
+          fileName: fileRef.fileName,
+        });
+        continue;
+      }
+      if (fileDetection.flagged) {
+        recordDetectionMatches("ai_estimator.map_reduce_draft", fileDetection, "quarantined");
+      }
+
+      const label = fileRef.fileType === "spreadsheet"
+        ? `[Spreadsheet: ${fileRef.fileName}]`
+        : `[Document: ${fileRef.fileName}]`;
+      const chunk = `${label}\n${fileText}`;
+      if (supplementalContext.length + chunk.length > MAX_SUPPLEMENTAL_CHARS) continue;
+
+      supplementalContext += (supplementalContext ? "\n\n" : "") + chunk;
+      filesAnalyzed.push({
+        fileName: fileRef.fileName,
+        fileType: fileRef.fileType,
+        source: fileRef.source,
+      });
+    }
+  } catch (suppErr) {
+    logWarn("[mapReduceDraft] supplemental file resolution failed (best-effort)", {
+      error: suppErr instanceof Error ? suppErr.message : String(suppErr),
+    });
+  }
+
   const wanted = opts.disciplines && opts.disciplines.length > 0
     ? new Set(opts.disciplines.map((d) => d.toUpperCase()))
     : null;
@@ -652,6 +786,7 @@ export async function mapReduceDraftFromPlans(opts: {
         bidId: opts.bidId,
         draftId,
         projectId,
+        supplementalContext: supplementalContext || undefined,
       });
       llmCallCount++;
       if (out.usage) accumulateCost(cost, out.usage);
@@ -732,6 +867,7 @@ export async function mapReduceDraftFromPlans(opts: {
       cost,
       modelId: observedModelId,
       provider: observedProvider,
+      filesAnalyzed,
     },
   };
 }
