@@ -1,4 +1,3 @@
-// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint and analyzeDocumentWithAI helper both use routedChatCompletion (Takeoff family, Task #2926 / Task #2934). See docs/architecture/ai-provider-routing.md.
 // prompt-injection-guard: all LLM call sites in this file import detectPromptInjection, quarantineDocumentBlocks, validateAiJsonOutput from promptInjectionGuard.ts (lines below).
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
@@ -26,7 +25,6 @@ import { z } from "zod";
 import OpenAI from "openai";
 import { requireAuth, requireRole, requireAnyFeaturePermission, getEffectivePermissions, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
-import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { routedGeneralChatCompletion, routedChatCompletion } from "./ai/providers";
 import { extractDocumentContent } from "./ai/documentExtractor";
 import {
@@ -1860,14 +1858,17 @@ Be thorough in suggesting scope items based on the project type described. Inclu
         actionType: "bid_text_analysis",
         inputRefs: { descriptionLength: description.length },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            max_completion_tokens: 4096,
-            response_format: { type: "json_object" },
+          const completion = await routedGeneralChatCompletion({
+            orgId: orgId || "",
+            featureKey: "general.bid.text_analysis",
+            request: {
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              max_completion_tokens: 4096,
+              response_format: { type: "json_object" },
+            },
           });
           const content = completion.choices[0]?.message?.content;
           if (!content) {
@@ -2169,15 +2170,18 @@ Analyze the document and return the structured JSON with all contract details.`;
         userId: userId ?? null,
         actionType: "contract_document_analysis",
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages,
-            response_format: { type: 'json_object' },
-            max_completion_tokens: 6000,
+          const completion = await routedGeneralChatCompletion({
+            orgId,
+            featureKey: "general.document.contract_analyze",
+            request: {
+              messages: messages as AiMessage[],
+              response_format: { type: 'json_object' },
+              max_completion_tokens: 6000,
+            },
           });
 
           const content = completion.choices[0]?.message?.content;
-          if (!content) throw new Error('No response from OpenAI');
+          if (!content) throw new Error('No response from AI provider');
 
           const validated = validateAiJsonOutput(CONTRACT_DOC_ANALYSIS_SCHEMA, content);
           if (!validated.ok) {
@@ -2197,15 +2201,18 @@ Analyze the document and return the structured JSON with all contract details.`;
       return governed.result;
     }
 
-    const completion = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages,
-      response_format: { type: 'json_object' },
-      max_completion_tokens: 6000,
+    const completion = await routedGeneralChatCompletion({
+      orgId: "",
+      featureKey: "general.document.contract_analyze",
+      request: {
+        messages: messages as AiMessage[],
+        response_format: { type: 'json_object' },
+        max_completion_tokens: 6000,
+      },
     });
 
     const content = completion.choices[0]?.message?.content;
-    if (!content) throw new Error('No response from OpenAI');
+    if (!content) throw new Error('No response from AI provider');
 
     const validated = validateAiJsonOutput(CONTRACT_DOC_ANALYSIS_SCHEMA, content);
     if (!validated.ok) {
@@ -4456,7 +4463,7 @@ router.post("/ai-assistant/sow/suggest", sensitiveLimiter, async (req: AuthReque
     const existingCodes = existingItems.map(i => i.code);
     const uomList = uoms.map(u => `${u.code} (${u.name})`).join(', ');
 
-    // Call OpenAI for suggestion
+    // Call routed provider for suggestion
     const systemPrompt = `You are a construction industry expert helping standardize Scope of Work (SOW) items.
 Your task is to analyze the user's description and suggest a properly formatted SOW item that maintains consistency with existing items.
 
@@ -4492,14 +4499,17 @@ Analyze and suggest the properly formatted SOW item.`;
       actionType: "sow_assistant",
       inputRefs: { userInput, tradeType },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 1000,
+        const completion = await routedGeneralChatCompletion({
+          orgId: req.user!.organizationId || '',
+          featureKey: "general.sow.suggest",
+          request: {
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 1000,
+          },
         });
 
         const content = completion.choices[0]?.message?.content;
@@ -4646,7 +4656,7 @@ router.post("/ai-assistant/uom/suggest", sensitiveLimiter, async (req: AuthReque
       `${u.code}: ${u.name} (${u.abbreviation}) - ${u.category}`
     ).join('\n');
 
-    // Call OpenAI for suggestion
+    // Call routed provider for suggestion
     const systemPrompt = `You are a construction industry expert helping standardize Units of Measure (UOM).
 Your task is to analyze the user's description and suggest a properly formatted UOM that maintains consistency with existing units.
 
@@ -4684,14 +4694,17 @@ Analyze and suggest the properly formatted UOM, or explain if a similar one alre
       actionType: "uom_assistant",
       inputRefs: { userInput },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 500,
+        const completion = await routedGeneralChatCompletion({
+          orgId: req.user!.organizationId || '',
+          featureKey: "general.uom.suggest",
+          request: {
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 500,
+          },
         });
 
         const content = completion.choices[0]?.message?.content;

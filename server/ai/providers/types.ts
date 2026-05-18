@@ -170,7 +170,12 @@ export type GeneralFeatureKey =
   | "general.schedule.generate"
   // Onboarding
   | "general.onboarding.color_palette"
-  | "general.onboarding.trade_research";
+  | "general.onboarding.trade_research"
+  // Bids
+  | "general.bid.text_analysis"
+  // Scope of Work / Units of Measure assistants
+  | "general.sow.suggest"
+  | "general.uom.suggest";
 
 /**
  * Task #2684 — Embedding provider seam. The router emits
