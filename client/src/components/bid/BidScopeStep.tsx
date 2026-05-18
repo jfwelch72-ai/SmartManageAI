@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History, Tag, AlertTriangle } from "lucide-react";
+import { Calculator, Plus, FileText, ChevronRight, ChevronLeft, Info, ArrowDownToLine, Layers, Loader2, CheckCircle2, HardHat, History, Tag, AlertTriangle, Sparkles } from "lucide-react";
 import type { Estimate, EstimateLineItem } from "@shared/schema";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
@@ -508,6 +508,43 @@ export default function BidScopeStep({
                 </Badge>
               </div>
             </div>
+
+            {estimate.lineItems.length > 0 ? (
+              <div className="border rounded-md overflow-hidden" data-testid="list-scope-items">
+                <div className="px-4 py-2 bg-muted/30 border-b flex items-center justify-between">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Scope Items ({estimate.lineItems.length})
+                  </span>
+                </div>
+                <div className="divide-y max-h-72 overflow-y-auto">
+                  {estimate.lineItems.map((item) => (
+                    <div key={item.id} className="flex items-center gap-3 px-4 py-2.5" data-testid={`scope-item-${item.id}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.description}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {Number(item.quantity).toLocaleString()} {item.unit}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {item.source === "GENERATED" && (
+                          <Badge variant="secondary" className="text-xs gap-1 bg-violet-100 dark:bg-violet-950/30 text-violet-700 dark:text-violet-300 border-0 py-0">
+                            <Sparkles className="w-3 h-3" />
+                            AI
+                          </Badge>
+                        )}
+                        <Badge variant="outline" className="text-xs capitalize border-border text-muted-foreground py-0">
+                          {item.category.toLowerCase().replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-6 text-muted-foreground border rounded-md" data-testid="empty-scope-items">
+                <p className="text-sm">No line items yet. Open the full estimate to add items.</p>
+              </div>
+            )}
 
             <Button
               className="w-full"

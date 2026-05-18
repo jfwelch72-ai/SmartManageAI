@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { ToastAction } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useLocation, useRoute } from "wouter";
+import { useLocation, useRoute, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
 import { canEditBids, canGenerateBidPDFs } from "@/lib/rbac";
 import { useBid, useConvertBidToProject } from "@/hooks/use-data";
@@ -117,6 +117,7 @@ type CostBuilderStep = 1 | 2 | 3 | 4 | 5 | 6;
 export default function BidDetailPage() {
   const [, setLocation] = useLocation();
   const [, params] = useRoute("/bids/:code");
+  const searchString = useSearch();
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -164,7 +165,12 @@ export default function BidDetailPage() {
   const [selectedEquipmentSource, setSelectedEquipmentSource] = useState<
     "OWNED" | "RENTAL"
   >("OWNED");
-  const [currentStep, setCurrentStep] = useState<CostBuilderStep>(1);
+  const initialStep = (() => {
+    const params = new URLSearchParams(searchString);
+    const s = parseInt(params.get("step") || "1", 10);
+    return (s >= 1 && s <= 6 ? s : 1) as CostBuilderStep;
+  })();
+  const [currentStep, setCurrentStep] = useState<CostBuilderStep>(initialStep);
   const [overheadPercent, setOverheadPercent] = useState<number>(10);
   const [profitPercent, setProfitPercent] = useState<number>(15);
 

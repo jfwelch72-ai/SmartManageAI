@@ -358,6 +358,7 @@ export default function BidWizardPage() {
             unit: item.unit || 'EA',
             category: mapCategory(item.category),
             notes: item.notes,
+            source: "GENERATED",
             materialCost: "0",
             laborCost: "0",
             laborHours: "0",
@@ -389,11 +390,9 @@ export default function BidWizardPage() {
         title: "Bid created successfully", 
         description: `Bid ${bid.code} has been created with ${scopeItems.filter(i => i.selected).length + customItems.length} line items`
       });
-      // Bid detail (`/bids/:code`) initializes currentStep=1 which renders the
-      // Plans & Takeoff tab (BidPlansTab). This satisfies the wizard's
-      // "Create Bid & Start Takeoff" outcome — the user lands directly on the
-      // takeoff workspace ready to start measurements.
-      setLocation(`/bids/${bid.code}`);
+      // Redirect to Step 2 (Scope of Work) so the user immediately sees the
+      // AI-extracted line items that were just created by the wizard.
+      setLocation(`/bids/${bid.code}?step=2`);
     },
     onError: (error: any) => {
       toast({ 
