@@ -138,6 +138,7 @@ export default function BidWizardPage() {
   
   const [currentStep, setCurrentStep] = useState(1);
   const [uploadedDocs, setUploadedDocs] = useState<UploadedDocument[]>([]);
+  const [isProcessingUploads, setIsProcessingUploads] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<AIAnalysisResult | null>(null);
   const [scopeDocumentUrl, setScopeDocumentUrl] = useState<string | undefined>(undefined);
@@ -170,7 +171,12 @@ export default function BidWizardPage() {
   });
 
 
+  const handleProcessingStart = useCallback(() => {
+    setIsProcessingUploads(true);
+  }, []);
+
   const handleUploadComplete = useCallback((result: any) => {
+    setIsProcessingUploads(false);
     const successful = result.successful ?? [];
     const failed = result.failed ?? [];
 
@@ -625,6 +631,7 @@ export default function BidWizardPage() {
               <ObjectUploader
                 fileType="DOCUMENT"
                 onComplete={handleUploadComplete}
+                onProcessingStart={handleProcessingStart}
                 allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx"]}
                 maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
               >
@@ -637,7 +644,17 @@ export default function BidWizardPage() {
                 </div>
               </ObjectUploader>
 
-              {uploadedDocs.length > 0 && (
+              {isProcessingUploads && (
+                <div
+                  className="flex items-center gap-3 p-4 rounded-md border bg-muted/30 text-muted-foreground"
+                  data-testid="upload-processing-indicator"
+                >
+                  <Loader2 className="h-5 w-5 animate-spin shrink-0" />
+                  <span className="text-sm font-medium">Processing your uploads…</span>
+                </div>
+              )}
+
+              {!isProcessingUploads && uploadedDocs.length > 0 && (
                 <div className="space-y-2">
                   <h4 className="font-medium">Uploaded Documents ({uploadedDocs.length})</h4>
                   <div className="space-y-2">
@@ -681,11 +698,20 @@ export default function BidWizardPage() {
                   </Button>
                   <Button 
                     onClick={() => goToStep(3)} 
-                    disabled={uploadedDocs.length === 0}
+                    disabled={uploadedDocs.length === 0 || isProcessingUploads}
                     data-testid="button-analyze-documents"
                   >
-                    Analyze Documents
-                    <ArrowRight className="h-4 w-4 ml-2" />
+                    {isProcessingUploads ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Processing…
+                      </>
+                    ) : (
+                      <>
+                        Analyze Documents
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    )}
                   </Button>
                 </div>
               </div>

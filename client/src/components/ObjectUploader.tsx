@@ -43,6 +43,7 @@ interface ObjectUploaderProps {
   onComplete?: (
     result: UploadResult<Record<string, unknown>, Record<string, unknown>>
   ) => void;
+  onProcessingStart?: () => void;
   buttonVariant?: "default" | "outline" | "ghost" | "secondary";
   buttonClassName?: string;
   children: ReactNode;
@@ -118,6 +119,7 @@ export function ObjectUploader({
   fileType,
   onGetUploadParameters,
   onComplete,
+  onProcessingStart,
   children,
   testId,
 }: ObjectUploaderProps) {
@@ -129,6 +131,7 @@ export function ObjectUploader({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const intentMapRef = useRef<Map<string, string>>(new Map());
   const onCompleteRef = useRef(onComplete);
+  const onProcessingStartRef = useRef(onProcessingStart);
   const toastRef = useRef(toast);
   const resolvedFileType = fileType ?? "DOCUMENT";
 
@@ -153,6 +156,10 @@ export function ObjectUploader({
   useEffect(() => {
     onCompleteRef.current = onComplete;
   }, [onComplete]);
+
+  useEffect(() => {
+    onProcessingStartRef.current = onProcessingStart;
+  }, [onProcessingStart]);
 
   useEffect(() => {
     toastRef.current = toast;
@@ -518,6 +525,8 @@ export function ObjectUploader({
         .filter((id): id is string => !!id);
 
       intentMapRef.current.clear();
+
+      onProcessingStartRef.current?.();
 
       try {
         let objectPaths: string[] = [];
