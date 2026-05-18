@@ -1,4 +1,4 @@
-// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint uses routedChatCompletion (Takeoff family, Task #2926); analyzeDocumentWithAI uses routedGeneralChatCompletion (Task #2922). See docs/architecture/ai-provider-routing.md.
+// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint and analyzeDocumentWithAI helper both use routedChatCompletion (Takeoff family, Task #2926 / Task #2934). See docs/architecture/ai-provider-routing.md.
 // prompt-injection-guard: all LLM call sites in this file import detectPromptInjection, quarantineDocumentBlocks, validateAiJsonOutput from promptInjectionGuard.ts (lines below).
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
@@ -293,7 +293,7 @@ Respond with JSON in this format:
     const documentContent = quarantineDocumentBlocks(rawContent);
 
     let messages: any[] = [
-      { role: 'system', content: BID_DOCUMENT_ANALYSIS_SYSTEM_PROMPT },
+      { role: 'system', content: BID_WIZARD_SYSTEM_PROMPT },
     ];
 
     if (documentContent.length > 0) {
@@ -332,9 +332,9 @@ Respond with JSON in this format:
     const callUserId = governanceOpts?.userId ?? null;
     const callWithGovernance = !!governanceOpts;
     const innerCall = async () => {
-      const completion = await routedGeneralChatCompletion({
+      const completion = await routedChatCompletion({
         orgId: callOrgId,
-        featureKey: "general.bid_wizard.scope_extract",
+        featureKey: "takeoff.bid_wizard.scope_extract",
         request: {
           messages: messages as AiMessage[],
           response_format: { type: "json_object" },

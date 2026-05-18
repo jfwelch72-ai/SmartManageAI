@@ -170,10 +170,7 @@ export type GeneralFeatureKey =
   | "general.schedule.generate"
   // Onboarding
   | "general.onboarding.color_palette"
-  | "general.onboarding.trade_research"
-  // Task #2922 — Bid Wizard CSI scope extraction (analyzeDocumentWithAI helper still uses this;
-  // the main wizard analyze route was migrated to TakeoffFeatureKey in Task #2926)
-  | "general.bid_wizard.scope_extract";
+  | "general.onboarding.trade_research";
 
 /**
  * Task #2684 — Embedding provider seam. The router emits
