@@ -118,7 +118,9 @@ export type TakeoffFeatureKey =
   | "estimation.module_analyze.vendor_pricing"
   | "estimation.module_analyze.project_health"
   // Task #2703 — AI-generated skill suggestions from lessons.
-  | "ai_estimator.skill_suggestions";
+  | "ai_estimator.skill_suggestions"
+  // Task #2926 — Bid wizard scope extraction moved to Takeoff family (Claude primary).
+  | "takeoff.bid_wizard.scope_extract";
 
 /**
  * Task #2684 — Logical labels for every non-Takeoff call site that goes
@@ -169,7 +171,8 @@ export type GeneralFeatureKey =
   // Onboarding
   | "general.onboarding.color_palette"
   | "general.onboarding.trade_research"
-  // Task #2922 — Bid Wizard CSI scope extraction
+  // Task #2922 — Bid Wizard CSI scope extraction (analyzeDocumentWithAI helper still uses this;
+  // the main wizard analyze route was migrated to TakeoffFeatureKey in Task #2926)
   | "general.bid_wizard.scope_extract";
 
 /**

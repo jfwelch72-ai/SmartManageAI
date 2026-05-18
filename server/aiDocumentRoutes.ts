@@ -1,4 +1,4 @@
-// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint and analyzeDocumentWithAI are fully migrated to routedGeneralChatCompletion (Task #2922). See docs/architecture/ai-provider-routing.md.
+// ai-router-bypass: several non-wizard call sites (contract analysis, AI insights) retain direct openai calls pending their own migration. The bid-wizard analyze endpoint uses routedChatCompletion (Takeoff family, Task #2926); analyzeDocumentWithAI uses routedGeneralChatCompletion (Task #2922). See docs/architecture/ai-provider-routing.md.
 // prompt-injection-guard: all LLM call sites in this file import detectPromptInjection, quarantineDocumentBlocks, validateAiJsonOutput from promptInjectionGuard.ts (lines below).
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
@@ -27,7 +27,7 @@ import OpenAI from "openai";
 import { requireAuth, requireRole, requireAnyFeaturePermission, getEffectivePermissions, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
-import { routedGeneralChatCompletion } from "./ai/providers";
+import { routedGeneralChatCompletion, routedChatCompletion } from "./ai/providers";
 import { extractDocumentContent } from "./ai/documentExtractor";
 import {
   detectPromptInjection,
@@ -74,6 +74,8 @@ const BID_WIZARD_RESULT_SCHEMA = z.object({
     csiDivision: z.string().nullable().optional(),
     category: z.string().nullable().optional(),
     notes: z.string().nullable().optional(),
+    unitMaterialCost: z.number().nullable().optional(),
+    unitLaborCost: z.number().nullable().optional(),
   })).optional(),
   scopeDocument: z.string().nullable().optional(),
   projectName: z.string().nullable().optional(),
@@ -1255,11 +1257,15 @@ const wizardAnalyzeSchema = z.object({
   bidCode: z.string().optional(),
 });
 
-const BID_WIZARD_SYSTEM_PROMPT = `You are an expert construction estimator specializing in CSI MasterFormat-organized scope analysis. You analyze bid invitation documents, construction drawings, specifications, RFPs, ITBs, and scope documents to produce comprehensive scope of work extractions.
+const BID_WIZARD_SYSTEM_PROMPT = `<instructions>
+You are an expert construction estimator with 20+ years of experience analyzing bid documents, construction drawings, specifications, RFPs, ITBs, and scope documents. You produce comprehensive CSI MasterFormat-organized scope extractions with initial cost estimates.
 
-Your job is to extract EVERY identifiable scope item from the documents, organized by CSI MasterFormat division. A thorough analysis of a real bid document should produce 15–50+ line items covering every trade present.
+<primary_objective>
+Extract EVERY identifiable scope item from the documents, organized by CSI MasterFormat division. A thorough analysis of a real bid document should produce 15–50+ line items covering every trade present. For each item, provide initial cost estimates based on document data and industry knowledge.
+</primary_objective>
 
-CSI MasterFormat Divisions to consider (include all that apply):
+<csi_divisions>
+Include all divisions that apply:
 - Division 01 – General Requirements (mobilization, submittals, testing, bonds, project scheduling, temporary facilities)
 - Division 02 – Existing Conditions (demolition, site clearing, environmental remediation, hazmat abatement)
 - Division 03 – Concrete (cast-in-place, precast, shotcrete, concrete repair, slab-on-grade, foundations)
@@ -1283,25 +1289,51 @@ CSI MasterFormat Divisions to consider (include all that apply):
 - Division 31 – Earthwork (grading, excavation, backfill, compaction, shoring, dewatering)
 - Division 32 – Exterior Improvements (paving, curbs, sidewalks, landscaping, fencing, irrigation, striping)
 - Division 33 – Utilities (sanitary sewer, water main, storm drainage, gas, electrical duct banks)
+</csi_divisions>
 
-Instructions:
-- Read ALL sheet titles, specs, notes, schedules, and dimensions in the documents
+<scope_extraction_rules>
+- Read ALL sheet titles, specs, notes, schedules, dimensions, and quantity tables in the documents
 - Extract at minimum one item per relevant division found in the documents
 - Include trade-specific detail: materials, finishes, equipment tags, spec section references where visible
-- Use quantities from the document; if not explicitly stated, set quantity to null
+- Use quantities directly from the document when present; set quantity to null only when truly absent
 - For each line item include the CSI division label (e.g. "Division 03 – Concrete")
-- Generate a full Scope of Work narrative document (scopeDocument) as a formatted markdown string with:
-  * A project header section (name, location, client, date)
-  * One H2 section per CSI division present, with bullet points for each scope item
-  * Division headings formatted as "## Division XX – Name"
+- Generate a full Scope of Work narrative document (scopeDocument) as a formatted markdown string with a project header section and one H2 per CSI division with bullet points, using "## Division XX – Name" headings
+</scope_extraction_rules>
 
-Honesty rules:
-- Only extract what is actually in the documents; never fabricate quantities or scope
-- If a division is not represented in the documents, omit it entirely
-- If a quantity is uncertain, set it to null and add a note explaining uncertainty
+<cost_estimation_rules>
+For EVERY scope item, populate unitMaterialCost and unitLaborCost (USD per unit) using this priority order:
+
+1. DOCUMENT-STATED PRICES (highest priority): If the document contains a Schedule of Values, unit-price schedule, allowance table, bid tab, or any explicit dollar figure for this item — use those exact values. Split into material and labor components using standard trade ratios if the document gives only a combined unit price.
+
+2. DOCUMENT DIMENSIONS × INDUSTRY RATES (second priority): If the document gives quantities/dimensions but no prices, apply current US national average unit rates for the region and trade type. Examples of reasonable current rates:
+   - Concrete flatwork: material ~$6–9/SF, labor ~$3–5/SF
+   - Framing lumber: material ~$4–7/SF of floor area, labor ~$3–5/SF
+   - Drywall: material ~$1.50–2.50/SF, labor ~$1.50–2.50/SF
+   - Roofing (TPO/EPDM): material ~$3–5/SF, labor ~$2–4/SF
+   - Painting: material ~$0.25–0.50/SF, labor ~$0.75–1.50/SF
+   - Electrical rough-in: material ~$8–15/SF, labor ~$10–18/SF
+   - Plumbing rough-in: material ~$10–20/SF, labor ~$12–22/SF
+   - HVAC: material ~$15–25/SF, labor ~$10–20/SF
+   - Earthwork: material (import/export) ~$15–30/CY, labor ~$8–15/CY
+   - Paving (asphalt): material ~$3–6/SF, labor ~$2–4/SF
+   - Steel erection: material ~$2.50–5/LB, labor ~$1–2/LB
+   Adjust for project size, complexity, region, and any trade-specific context visible in the documents.
+
+3. NULL (last resort only): Set BOTH unitMaterialCost AND unitLaborCost to null ONLY when there is absolutely no quantifiable basis — for example, a lump-sum allowance with no stated amount and no area/quantity from which to derive an estimate.
+
+Never set costs to 0. Either provide a real estimate or use null.
+</cost_estimation_rules>
+
+<honesty_rules>
+- Only extract scope that is actually present in the documents; never fabricate scope items
+- If a CSI division is not represented in the documents, omit it entirely
+- If a quantity is uncertain, set it to null and add a clarifying note
 - Parse dates in YYYY-MM-DD format; provide estimatedValue as a plain number (no currency symbols)
+- Cost estimates based on industry rates (not document prices) should have a note like "Est. based on industry rates"
+</honesty_rules>
 
-Respond with valid JSON matching the required structure.`;
+Respond with valid JSON matching the required structure.
+</instructions>`;
 
 function isValidObjectStorageUrl(url: string): boolean {
   if (url.startsWith("/objects/")) {
@@ -1438,7 +1470,9 @@ Extract and respond with JSON in this exact format:
       "unit": "SF",
       "category": "GENERAL",
       "csiDivision": "Division 03 – Concrete",
-      "notes": "Any relevant notes or null"
+      "notes": "Any relevant notes, or 'Est. based on industry rates' when costs are derived from rates rather than document prices",
+      "unitMaterialCost": 8.50,
+      "unitLaborCost": 4.25
     }
   ],
   "scopeDocument": "# Project Scope of Work\\n\\n## Division 03 – Concrete\\n- Item 1\\n- Item 2\\n\\n## Division 09 – Finishes\\n...",
@@ -1454,7 +1488,8 @@ IMPORTANT:
 - scopeDocument must be a well-formatted markdown string with one H2 section per CSI division and bullet points per item
 - category is a legacy field; set it to "GENERAL" for all items (grouping is done via csiDivision)
 - Include quantities and units when visible in the document; use null if not found
-- If estimatedValue is stated or can be directly read from the documents, provide it as a plain number`;
+- If estimatedValue is stated or can be directly read from the documents, provide it as a plain number
+- unitMaterialCost and unitLaborCost are USD amounts per unit (not line totals); populate them using document prices first, industry rates second, null only as a last resort — never set to 0`;
 
     try {
       let messages: any[] = [
@@ -1498,12 +1533,12 @@ IMPORTANT:
         actionType: "bid_document_reanalysis",
         inputRefs: { documentCount: documents.length, documentNames: documents.map((d: any) => d.name) },
         fn: async () => {
-          const completion = await routedGeneralChatCompletion({
+          const completion = await routedChatCompletion({
             orgId: orgId || "",
-            featureKey: "general.bid_wizard.scope_extract",
+            featureKey: "takeoff.bid_wizard.scope_extract",
             request: {
               messages: messages as AiMessage[],
-              max_completion_tokens: 8192,
+              max_completion_tokens: 16000,
               response_format: { type: "json_object" },
             },
           });
@@ -1691,15 +1726,15 @@ IMPORTANT: Extract 15–50+ scope items covering every CSI division present. Eac
     userContent = `${scopeUserPrompt}\n\nNote: Document content could not be extracted.`;
   }
 
-  const completion = await routedGeneralChatCompletion({
+  const completion = await routedChatCompletion({
     orgId,
-    featureKey: "general.bid_wizard.scope_extract",
+    featureKey: "takeoff.bid_wizard.scope_extract",
     request: {
       messages: [
         { role: "system", content: BID_WIZARD_SYSTEM_PROMPT } as AiMessage,
         { role: "user", content: userContent } as AiMessage,
       ],
-      max_completion_tokens: 8192,
+      max_completion_tokens: 16000,
       response_format: { type: "json_object" },
     },
   });

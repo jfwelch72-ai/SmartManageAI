@@ -106,6 +106,8 @@ interface AIExtractedItem {
   category: string;
   notes?: string;
   selected: boolean;
+  unitMaterialCost?: number | null;
+  unitLaborCost?: number | null;
 }
 
 interface AITextAnalysisResult {

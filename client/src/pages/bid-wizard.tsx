@@ -83,6 +83,8 @@ interface AIExtractedItem {
   csiDivision?: string | null;
   notes?: string | null;
   selected: boolean;
+  unitMaterialCost?: number | null;
+  unitLaborCost?: number | null;
 }
 
 interface AIAnalysisResult {
@@ -245,6 +247,8 @@ export default function BidWizardPage() {
         category: item.category || 'GENERAL',
         csiDivision: item.csiDivision ?? null,
         selected: true,
+        unitMaterialCost: typeof item.unitMaterialCost === 'number' && item.unitMaterialCost > 0 ? item.unitMaterialCost : null,
+        unitLaborCost: typeof item.unitLaborCost === 'number' && item.unitLaborCost > 0 ? item.unitLaborCost : null,
       }));
       setScopeItems(items);
       
@@ -352,6 +356,8 @@ export default function BidWizardPage() {
         
         for (const item of selectedItems) {
           const qty = item.quantity != null && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+          const computedMaterialCost = ((item.unitMaterialCost ?? 0) * qty).toFixed(2);
+          const computedLaborCost = ((item.unitLaborCost ?? 0) * qty).toFixed(2);
           const lineItemData = {
             description: item.description,
             quantity: qty.toString(),
@@ -359,8 +365,8 @@ export default function BidWizardPage() {
             category: mapCategory(item.category),
             notes: item.notes,
             source: "GENERATED",
-            materialCost: "0",
-            laborCost: "0",
+            materialCost: computedMaterialCost,
+            laborCost: computedLaborCost,
             laborHours: "0",
             equipmentHours: "0",
             equipmentCost: "0",
@@ -935,6 +941,16 @@ export default function BidWizardPage() {
                                       {item.notes && (
                                         <p className="text-xs text-muted-foreground mt-0.5 pl-0.5">{item.notes}</p>
                                       )}
+                                      {(item.unitMaterialCost != null || item.unitLaborCost != null) && (() => {
+                                        const qty = item.quantity != null && Number.isFinite(item.quantity) && item.quantity > 0 ? item.quantity : 1;
+                                        const lineTotal = ((item.unitMaterialCost ?? 0) + (item.unitLaborCost ?? 0)) * qty;
+                                        return (
+                                          <p className="text-xs text-muted-foreground mt-0.5 pl-0.5 flex items-center gap-1" data-testid={`ai-est-${item.id}`}>
+                                            <span className="inline-flex items-center rounded px-1 py-0 text-[10px] font-medium bg-muted text-muted-foreground border">AI Est.</span>
+                                            <span>{lineTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}</span>
+                                          </p>
+                                        );
+                                      })()}
                                     </TableCell>
                                     <TableCell>
                                       <Input
