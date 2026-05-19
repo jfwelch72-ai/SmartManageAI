@@ -1745,7 +1745,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               }
 
               return (
-                <div className="flex flex-col h-full" data-testid="doc-preview-panel">
+                <div className="flex flex-col h-full overflow-hidden" data-testid="doc-preview-panel">
                   <div className="flex items-center gap-2 px-3 py-2 border-b bg-muted/30 shrink-0">
                     <Button
                       size="sm"

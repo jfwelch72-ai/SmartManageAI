@@ -495,9 +495,12 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
       </div>
       {numPages > 1 && (
         <div
-          className="flex items-center gap-1 px-3 py-1 border-b bg-muted/10 shrink-0 overflow-x-auto"
+          className="w-full min-w-0 px-3 py-1 border-b bg-muted/10 shrink-0 overflow-x-auto"
           data-testid="pdf-page-strip"
         >
+          {/* inner flex row — items are shrink-0 so they overflow the bounded
+              outer block container, which then scrolls horizontally */}
+          <div className="flex items-center gap-1 w-max">
           {Array.from({ length: numPages }, (_, i) => i + 1).map((pn) => {
             const openCount = pageBadges?.[pn] || 0;
             const closedCount = pageBadgesClosed?.[pn] || 0;
@@ -538,6 +541,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
               </button>
             );
           })}
+          </div>
         </div>
       )}
       <div
