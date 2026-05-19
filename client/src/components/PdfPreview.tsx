@@ -115,6 +115,22 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   const rotationCacheRef = useRef<Map<string, number>>(new Map());
   const [rotation, setRotation] = useState(0);
 
+  // ResizeObserver for page-number strip — same pattern as PageThumbStrip.
+  // Gives the strip an explicit pixel width so overflow-x-auto actually
+  // creates a scroll container rather than expanding to content width.
+  const pageNumStripWrapperRef = useRef<HTMLDivElement | null>(null);
+  const [pageNumStripWidth, setPageNumStripWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = pageNumStripWrapperRef.current;
+    if (!el) return;
+    setPageNumStripWidth(el.clientWidth);
+    const ro = new ResizeObserver(([entry]) => {
+      setPageNumStripWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     onPageChange?.(pageNum);
   }, [pageNum, onPageChange]);
@@ -495,9 +511,15 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
       </div>
       {numPages > 1 && (
         <div
-          className="w-full min-w-0 px-3 py-1 border-b bg-muted/10 shrink-0 overflow-x-auto"
-          data-testid="pdf-page-strip"
+          ref={pageNumStripWrapperRef}
+          className="w-full min-w-0 shrink-0 border-b bg-muted/10"
+          data-testid="pdf-page-num-strip-wrapper"
         >
+          <div
+            className="overflow-x-auto px-3 py-1"
+            style={{ width: pageNumStripWidth > 0 ? pageNumStripWidth : "100%" }}
+            data-testid="pdf-page-strip"
+          >
           {/* inner flex row — items are shrink-0 so they overflow the bounded
               outer block container, which then scrolls horizontally */}
           <div className="flex items-center gap-1 w-max">
@@ -541,6 +563,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
               </button>
             );
           })}
+          </div>
           </div>
         </div>
       )}
@@ -619,6 +642,25 @@ interface PageThumbStripProps {
 function PageThumbStrip({ url, numPages, currentPage, onSelect }: PageThumbStripProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const parentRef = useRef<HTMLDivElement | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Measure the outer wrapper's actual rendered pixel width via ResizeObserver
+  // so the virtualizer's scroll container gets an explicit pixel value rather
+  // than relying on CSS percentage chains (w-full in a deeply nested
+  // flex/block layout can resolve to the content size instead of the panel
+  // width, causing all virtual items to render at once and the strip to
+  // overflow the viewport).
+  const [stripWidth, setStripWidth] = useState(0);
+  useLayoutEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+    setStripWidth(el.clientWidth);
+    const ro = new ResizeObserver(([entry]) => {
+      setStripWidth(entry.contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // Task #1609 — virtualize the strip so 600+ pages stays buttery smooth.
   const ITEM_W = 72 + 6; // tile width + gap
@@ -636,47 +678,52 @@ function PageThumbStrip({ url, numPages, currentPage, onSelect }: PageThumbStrip
   }, [currentPage, virtualizer]);
 
   return (
+    // Outer wrapper: sized by the CSS layout (align-items:stretch in the
+    // parent flex column). ResizeObserver reads its clientWidth and passes
+    // the explicit pixel value down to the scroll container below, breaking
+    // the percentage-chain dependency entirely.
     <div
-      ref={parentRef}
-      // w-full + min-w-0 bound the scroll container to the parent column
-      // width so overflow-x-auto actually creates a scroll region rather
-      // than letting the flex/block element grow to match the virtualizer's
-      // getTotalSize() total width (e.g. 32 pages × 78px ≈ 2 500px).
-      // The virtual items are position:absolute inside the inner div, so
-      // removing flex here has no visual effect on the items themselves.
-      className="w-full min-w-0 px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
-      data-testid="pdf-page-strip"
+      ref={wrapperRef}
+      className="w-full min-w-0 shrink-0 border-b bg-muted/20"
+      data-testid="pdf-thumb-strip-wrapper"
     >
       <div
-        style={{
-          width: virtualizer.getTotalSize(),
-          height: 96,
-          position: "relative",
-        }}
+        ref={parentRef}
+        className="overflow-x-auto px-2 py-1.5"
+        style={{ width: stripWidth > 0 ? stripWidth : "100%" }}
+        data-testid="pdf-page-strip"
       >
-        {virtualizer.getVirtualItems().map((vi) => {
-          const n = vi.index + 1;
-          return (
-            <div
-              key={vi.key}
-              style={{
-                position: "absolute",
-                left: vi.start,
-                top: 0,
-                width: vi.size,
-                paddingRight: 6,
-              }}
-            >
-              <PageThumb
-                url={url}
-                pageNumber={n}
-                active={n === currentPage}
-                onSelect={onSelect}
-                buttonRef={n === currentPage ? activeRef : undefined}
-              />
-            </div>
-          );
-        })}
+        <div
+          style={{
+            width: virtualizer.getTotalSize(),
+            height: 96,
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((vi) => {
+            const n = vi.index + 1;
+            return (
+              <div
+                key={vi.key}
+                style={{
+                  position: "absolute",
+                  left: vi.start,
+                  top: 0,
+                  width: vi.size,
+                  paddingRight: 6,
+                }}
+              >
+                <PageThumb
+                  url={url}
+                  pageNumber={n}
+                  active={n === currentPage}
+                  onSelect={onSelect}
+                  buttonRef={n === currentPage ? activeRef : undefined}
+                />
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
