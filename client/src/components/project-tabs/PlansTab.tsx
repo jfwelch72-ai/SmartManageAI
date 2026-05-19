@@ -1907,7 +1907,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       )}
 
       {subTab === "plans" && project && (
-        <div className="flex flex-1 min-h-0 relative">
+        <div className="flex flex-1 min-h-0 overflow-hidden relative">
           {!leftPanelCollapsed && (
             <div
               className="absolute inset-0 z-20 md:relative md:inset-auto md:h-full w-full bg-card border-r flex flex-col shrink-0"
@@ -2743,7 +2743,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             </div>
           )}
 
-          <div className={cn("flex-1 min-w-0 relative flex", splitViewMode ? "flex-row" : "flex-col")}>
+          <div className={cn("flex-1 min-w-0 overflow-hidden relative flex", splitViewMode ? "flex-row" : "flex-col")}>
             {!splitViewMode && leftPanelCollapsed && !previewDocId && (
               <Button
                 size="icon"
