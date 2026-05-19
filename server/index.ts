@@ -175,7 +175,14 @@ app.use(helmet({
     ? {
         directives: {
           defaultSrc: ["'self'"],
-          scriptSrc: ["'self'"],
+          // 'wasm-unsafe-eval' is required for PDF.js v5's WebAssembly
+          // font worker. It does NOT permit arbitrary JS eval — only
+          // WebAssembly compilation. Without it, pdfjs's WASM-backed
+          // operations are blocked by CSP in production, degrading to
+          // the JS fallback which may still be eval-gated in some paths.
+          // JS eval for font compilation is handled separately by setting
+          // isEvalSupported:false in pdfTileWorker.ts.
+          scriptSrc: ["'self'", "'wasm-unsafe-eval'"],
           styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
           imgSrc: ["'self'", "data:", "blob:", "https://storage.googleapis.com", "https://*.googleapis.com", "https://*.gstatic.com", "https://*.googleusercontent.com"],
           fontSrc: ["'self'", "https://fonts.gstatic.com"],

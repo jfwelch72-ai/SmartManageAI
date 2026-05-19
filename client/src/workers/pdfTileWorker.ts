@@ -340,6 +340,15 @@ async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
       standardFontDataUrl: `${origin}/standard_fonts/`,
       cMapUrl: `${origin}/cmaps/`,
       cMapPacked: true,
+      // Production CSP omits 'unsafe-eval', which silently blocks the
+      // eval()/new Function() path PDF.js v5 uses to JIT-compile Type1
+      // and CFF font glyph programs. When eval is blocked, the compiled
+      // font produces notdef rectangles (filled with the current PDF
+      // ink color) instead of rendered characters — the "red boxes"
+      // symptom. Setting isEvalSupported:false forces PDF.js onto its
+      // pure-JS interpreter path, which does not require eval and
+      // renders glyphs correctly in all CSP environments.
+      isEvalSupported: false,
     });
     return await task.promise;
   })();
