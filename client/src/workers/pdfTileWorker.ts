@@ -320,6 +320,16 @@ async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
   p = (async () => {
     const pdfjsLib = await pdfjsLibPromise;
     const resolved = await resolvePdfFetchUrl(sheetUrl);
+    // Build absolute URLs for the standard font data and CMaps that
+    // pdfjs-dist needs to render text in PDFs that use standard Type1
+    // fonts (Helvetica, Times-Roman, Courier, etc.) or CJK CMaps.
+    // Without these, text characters render as boxes. The assets are
+    // served from /standard_fonts/ and /cmaps/ (copied from
+    // node_modules/pdfjs-dist during the build/setup step).
+    const origin =
+      typeof self !== "undefined" && self.location
+        ? self.location.origin
+        : "";
     const task = pdfjsLib.getDocument({
       url: resolved.url,
       withCredentials: resolved.useCredentials,
@@ -327,6 +337,9 @@ async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
       // to `DOMCanvasFactory` and crashes the first time it needs a
       // scratch canvas in this worker context.
       CanvasFactory: WorkerCanvasFactory,
+      standardFontDataUrl: `${origin}/standard_fonts/`,
+      cMapUrl: `${origin}/cmaps/`,
+      cMapPacked: true,
     });
     return await task.promise;
   })();

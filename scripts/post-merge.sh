@@ -42,3 +42,13 @@ timeout 60 bash scripts/setup-playwright-webkit.sh 2>&1 \
 # never blocks merges.
 timeout 120 bash scripts/setup-playwright-firefox.sh 2>&1 \
   || echo "[post-merge] playwright firefox setup skipped or failed (run scripts/setup-playwright-firefox.sh manually)"
+
+# PDF.js standard fonts + CMaps — copy from pdfjs-dist into client/public/
+# so Vite serves them at /standard_fonts/ and /cmaps/. Without these,
+# PDF.js cannot render text in PDFs that use standard Type1 fonts
+# (Helvetica, Times-Roman, Courier, etc.) or CJK CMaps, causing all
+# characters to appear as boxes in the plan document PDF export and the
+# markup viewer. The copy is idempotent (rsync skips unchanged files).
+rsync -a --delete node_modules/pdfjs-dist/standard_fonts/ client/public/standard_fonts/ \
+  && rsync -a --delete node_modules/pdfjs-dist/cmaps/ client/public/cmaps/ \
+  || echo "[post-merge] pdfjs font/cmap copy failed — PDF text may render as boxes"
