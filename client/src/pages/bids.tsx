@@ -736,7 +736,7 @@ export default function BidsPage() {
       });
       setShowCreateDialog(false);
       resetFormAndCrmState();
-      setLocation(`/bids/${bid.code}/estimate`);
+      setLocation(`/bids/${bid.code}?step=1`);
     },
     onError: (error: any) => {
       toast({
