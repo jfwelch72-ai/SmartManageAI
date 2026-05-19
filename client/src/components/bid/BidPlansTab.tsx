@@ -815,7 +815,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px]">
+    <div className="flex flex-col h-[calc(100vh-280px)] min-h-[500px] overflow-hidden">
       {/* Task #2582 — live banner for the background plan-set ingest job. */}
       <PlanSetIngestBanner key={ingestBannerKey} bidId={bidId} />
       <div className="flex flex-1 min-h-0 overflow-hidden relative">

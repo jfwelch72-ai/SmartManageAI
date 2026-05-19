@@ -408,7 +408,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   }
 
   return (
-    <div className="flex flex-col h-full min-w-0 w-full" data-testid="pdf-preview">
+    <div className="flex flex-col h-full min-w-0 w-full overflow-hidden" data-testid="pdf-preview">
       {pdfReady && numPages > 1 && (
         <PageThumbStrip
           url={url}

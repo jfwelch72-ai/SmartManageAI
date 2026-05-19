@@ -1827,7 +1827,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   }, [project?.id, sheets, toast]);
 
   return (
-      <div className="flex flex-col h-[calc(100vh-200px)] mb-[50px]">
+      <div className="flex flex-col h-[calc(100vh-200px)] mb-[50px] overflow-hidden">
       <div className="border-b flex items-center gap-1 px-2 py-1 bg-card shrink-0">
         <Button
           variant={subTab === "plans" ? "default" : "ghost"}
