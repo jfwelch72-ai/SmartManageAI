@@ -28,9 +28,9 @@ export interface ChatAttachmentStored extends ChatAttachmentInput {
 }
 
 const WHISPER_MODEL = "whisper-1";
-const MAX_DOC_CHARS = 4000;
-const MAX_IMAGE_OCR_CHARS = 1500;
-const MAX_PROMPT_BLOCK_CHARS = 6000;
+const MAX_DOC_CHARS = 20_000;
+const MAX_IMAGE_OCR_CHARS = 4_000;
+const MAX_PROMPT_BLOCK_CHARS = 30_000;
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024; // OpenAI Whisper limit
 
 interface DownloadedObject {

@@ -94,7 +94,7 @@ export interface TakeoffDraftCostSummary {
 export interface AnalyzedFileRef {
   fileName: string;
   fileType: EstimatorFileType;
-  source: "bid_document" | "plan_document";
+  source: "bid_document" | "plan_document" | "quote_document";
 }
 
 export interface TakeoffDraftResult {
