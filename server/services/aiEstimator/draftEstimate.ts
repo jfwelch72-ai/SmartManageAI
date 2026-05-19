@@ -24,7 +24,7 @@ import {
   filterSheetsInOrg,
   ResourceOwnershipError,
 } from "./access";
-import { resolveEstimatorFiles } from "./fileResolver";
+import { resolveEstimatorFiles, type EstimatorFileType } from "./fileResolver";
 import { extractDocumentContent } from "../../ai/documentExtractor";
 import { extractSpreadsheetFromUrl } from "./extractSpreadsheet";
 import {
@@ -52,12 +52,20 @@ export interface SkillApplied {
   scopeValue: string | null;
 }
 
+export interface EstimateReadFileRef {
+  fileName: string;
+  fileType: EstimatorFileType;
+  source: "bid_document" | "plan_document" | "quote_document";
+}
+
 export interface DraftEstimateResult {
   lines: DraftLineItem[];
   notes: string;
   citations: ReturnType<typeof citationsFromRows>;
   confidence: number;
   skillsApplied: SkillApplied[];
+  /** Task #2957 — files the AI actually read when drafting this estimate. */
+  filesRead: EstimateReadFileRef[];
 }
 
 function safeJson<T>(text: string | null | undefined): T | null {
@@ -240,6 +248,7 @@ export async function generateDraftEstimate(opts: {
   // system message — so a hostile uploaded document cannot override estimator constraints.
   // Best-effort: any failure here must never break the draft.
   let uploadedDocsBlock = "";
+  const filesRead: EstimateReadFileRef[] = [];
   if (opts.bidId) {
     try {
       const MAX_SUPPLEMENTARY_CHARS = 40_000;
@@ -292,6 +301,12 @@ export async function generateDraftEstimate(opts: {
           if (totalChars + quarantined.length > MAX_SUPPLEMENTARY_CHARS) continue;
           textParts.push(quarantined);
           totalChars += quarantined.length;
+          // Task #2957 — record each file that was successfully read.
+          filesRead.push({
+            fileName: fileRef.fileName,
+            fileType: fileRef.fileType,
+            source: fileRef.source,
+          });
         } catch {
           /* per-file extraction failures are non-fatal */
         }
@@ -457,6 +472,7 @@ Return strict JSON: {
       confidence: typeof parsed.confidence === "number" ? parsed.confidence : 50,
       citations: citationsFromRows(contextRows),
       skillsApplied,
+      filesRead,
     },
   };
 }

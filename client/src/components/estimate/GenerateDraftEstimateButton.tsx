@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
+import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, FileQuestion } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { pollJobUntilDone } from "@/lib/jobs";
 import { useToast } from "@/hooks/use-toast";
@@ -29,12 +29,19 @@ interface SkillApplied {
   scopeValue: string | null;
 }
 
+interface ReadFileRef {
+  fileName: string;
+  fileType: "pdf_plan" | "pdf_spec" | "spreadsheet" | "image" | "other";
+  source: "bid_document" | "plan_document" | "quote_document";
+}
+
 interface DraftResult {
   lines: DraftLine[];
   notes: string;
   confidence: number;
   citations?: Array<{ id: string; sourceType: string; title: string }>;
   skillsApplied?: SkillApplied[];
+  filesRead?: ReadFileRef[];
 }
 
 interface Props {
@@ -48,6 +55,7 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
   const [scopeNotes, setScopeNotes] = useState("");
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
+  const [filesExpanded, setFilesExpanded] = useState(false);
 
   // Task #2517 — POST enqueues an `ai_estimator_draft` job and returns
   // `{ jobId }`. Poll `/api/jobs/:id` until terminal then unwrap the
@@ -211,6 +219,64 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                     )}
                   </div>
                 )}
+                {/* Task #2957 — Files analyzed panel */}
+                {draft.filesRead && draft.filesRead.length > 0 ? (
+                  <div className="border rounded-md overflow-hidden" data-testid="section-files-read">
+                    <button
+                      type="button"
+                      onClick={() => setFilesExpanded((v) => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium bg-muted/50 hover:bg-muted transition-colors"
+                      data-testid="button-toggle-files-read"
+                    >
+                      <span>Files analyzed ({draft.filesRead.length})</span>
+                      {filesExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {filesExpanded && (
+                      <ul className="divide-y text-xs" data-testid="list-files-read">
+                        {draft.filesRead.map((f, idx) => {
+                          const isSpreadsheet = f.fileType === "spreadsheet";
+                          const isImage = f.fileType === "image";
+                          const Icon = isSpreadsheet
+                            ? FileSpreadsheet
+                            : isImage
+                            ? Image
+                            : f.fileType === "other"
+                            ? FileQuestion
+                            : FileText;
+                          const sourceLabel =
+                            f.source === "bid_document"
+                              ? "bid"
+                              : f.source === "quote_document"
+                              ? "quote"
+                              : "project";
+                          return (
+                            <li
+                              key={idx}
+                              className="flex items-center gap-2 px-3 py-1.5"
+                              data-testid={`item-read-file-${idx}`}
+                            >
+                              <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                              <span className="truncate flex-1" title={f.fileName}>
+                                {f.fileName}
+                              </span>
+                              <span className="text-muted-foreground shrink-0 capitalize">
+                                {sourceLabel}
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+                ) : draft.filesRead !== undefined ? (
+                  <p className="text-xs text-muted-foreground px-1" data-testid="text-no-files-read">
+                    No extra files were read. Upload PDFs, spreadsheets, or drawings to the bid to give the AI more context.
+                  </p>
+                ) : null}
                 {draft.citations && draft.citations.length > 0 && (
                   <div className="space-y-1">
                     <div className="text-xs uppercase tracking-wider text-muted-foreground">Sources</div>
