@@ -407,7 +407,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   }
 
   return (
-    <div className="flex flex-col h-full" data-testid="pdf-preview">
+    <div className="flex flex-col h-full min-w-0 w-full" data-testid="pdf-preview">
       {pdfReady && numPages > 1 && (
         <PageThumbStrip
           url={url}
@@ -634,7 +634,13 @@ function PageThumbStrip({ url, numPages, currentPage, onSelect }: PageThumbStrip
   return (
     <div
       ref={parentRef}
-      className="flex items-center px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
+      // w-full + min-w-0 bound the scroll container to the parent column
+      // width so overflow-x-auto actually creates a scroll region rather
+      // than letting the flex/block element grow to match the virtualizer's
+      // getTotalSize() total width (e.g. 32 pages × 78px ≈ 2 500px).
+      // The virtual items are position:absolute inside the inner div, so
+      // removing flex here has no visual effect on the items themselves.
+      className="w-full min-w-0 px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
       data-testid="pdf-page-strip"
     >
       <div
