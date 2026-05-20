@@ -20,6 +20,9 @@
 //
 // Wire into CI via scripts/ci.sh. Run directly:
 //   node scripts/check-job-context.mjs
+//
+// Run the script's own self-tests:
+//   node scripts/check-job-context.mjs --self-test
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -112,13 +115,132 @@ const RE_DB_IMPORT = /import\s+\{[^}]*\bdb\b[^}]*\}\s+from\s+["']\.\.?\/(\.\.\/)
 const RE_DB_USE = /\bdb\.(select|insert|update|delete|execute|transaction|query|with)\b/;
 const RE_CONTEXT = /\b(withJobOrgContext|withOrgContext|withSystemJobContext|runAsSuperadmin)\b/;
 
+// Returns true if the file's source requires a context wrapper (has DB
+// access) but doesn't have one — i.e. it is an offender.
+function isJobFileOffender(src) {
+  if (!RE_DB_IMPORT.test(src) && !RE_DB_USE.test(src)) return false;
+  if (RE_CONTEXT.test(src)) return false;
+  return true;
+}
+
+// -----------------------------------------------------------------------
+// Self-tests. Run via:  node scripts/check-job-context.mjs --self-test
+// These lock the guard's behavior so future edits don't silently
+// introduce regressions in the detection logic.
+// -----------------------------------------------------------------------
+
+function selfTest() {
+  const cases = [
+    {
+      name: "no DB import or usage → clean (not an offender)",
+      src: `export async function run() { console.log("noop"); }\n`,
+      expectOffender: false,
+    },
+    {
+      name: "db import present, no db.* usage → flagged (import alone triggers the check)",
+      src: `import { db } from "../../db";\nexport async function run() { return; }\n`,
+      expectOffender: true,
+    },
+    {
+      name: "db.select used, no context wrapper → offender",
+      src:
+        `import { db } from "../db";\n` +
+        `export async function run() {\n` +
+        `  const rows = await db.select().from(users);\n` +
+        `}\n`,
+      expectOffender: true,
+    },
+    {
+      name: "db.insert used, no context wrapper → offender",
+      src:
+        `export async function run() {\n` +
+        `  await db.insert(events).values({ type: "x" });\n` +
+        `}\n`,
+      expectOffender: true,
+    },
+    {
+      name: "db.select used with withJobOrgContext → clean",
+      src:
+        `import { db } from "../db";\n` +
+        `import { withJobOrgContext } from "../dbContext";\n` +
+        `export async function run(orgId) {\n` +
+        `  await withJobOrgContext("job", orgId, async () => {\n` +
+        `    await db.select().from(users);\n` +
+        `  });\n` +
+        `}\n`,
+      expectOffender: false,
+    },
+    {
+      name: "db.update used with withSystemJobContext → clean",
+      src:
+        `import { db } from "../db";\n` +
+        `export async function run() {\n` +
+        `  await withSystemJobContext("purge-job", async () => {\n` +
+        `    await db.update(tbl).set({ deleted: true });\n` +
+        `  });\n` +
+        `}\n`,
+      expectOffender: false,
+    },
+    {
+      name: "db.delete used with runAsSuperadmin → clean",
+      src:
+        `export async function run() {\n` +
+        `  await runAsSuperadmin("hard-delete", async () => {\n` +
+        `    await db.delete(rows).where(eq(rows.id, id));\n` +
+        `  });\n` +
+        `}\n`,
+      expectOffender: false,
+    },
+    {
+      name: "db.execute used with withOrgContext → clean",
+      src:
+        `import { db } from "../../db";\n` +
+        `export async function handle(payload) {\n` +
+        `  await withOrgContext({ organizationId: payload.orgId }, async () => {\n` +
+        `    await db.execute(sql);\n` +
+        `  });\n` +
+        `}\n`,
+      expectOffender: false,
+    },
+    {
+      name: "db.transaction used, no wrapper → offender",
+      src:
+        `import { db } from "../db";\n` +
+        `await db.transaction(async (tx) => { tx.insert(t).values({}); });\n`,
+      expectOffender: true,
+    },
+  ];
+
+  let passed = 0;
+  let failed = 0;
+
+  for (const c of cases) {
+    const got = isJobFileOffender(c.src);
+    if (got === c.expectOffender) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      console.error(
+        `  ✗ ${c.name}: expected isOffender=${c.expectOffender}, got ${got}`,
+      );
+    }
+  }
+
+  console.log(`\n[self-test] ${passed} passed, ${failed} failed`);
+  return failed === 0 ? 0 : 1;
+}
+
+if (process.argv.includes("--self-test")) {
+  process.exit(selfTest());
+}
+
 const offenders = [];
 for (const dir of SCAN_DIRS) {
   for (const file of walk(dir)) {
     if (ALLOWED.has(file)) continue;
     const src = readFileSync(file, "utf8");
-    if (!RE_DB_IMPORT.test(src) && !RE_DB_USE.test(src)) continue;
-    if (RE_CONTEXT.test(src)) continue;
+    if (!isJobFileOffender(src)) continue;
     offenders.push(path.relative(process.cwd(), file));
   }
 }

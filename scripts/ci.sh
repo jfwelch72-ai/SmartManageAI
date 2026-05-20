@@ -47,17 +47,26 @@ else
 fi
 
 # Task #2478 — block new files from bypassing the RLS-aware `db` proxy.
-# Cheap (<1s), so always on.
+# Cheap (<1s), so always on. Self-tests lock the guard's own detection
+# logic so a future refactor cannot silently break it (Task #2899).
+run_step "tenant-isolation lint self-test (scripts/check-db-imports.mjs --self-test)" \
+  node scripts/check-db-imports.mjs --self-test
 run_step "tenant-isolation lint (scripts/check-db-imports.mjs)" \
   node scripts/check-db-imports.mjs
 
 # Task #2672 — block resurrection of the retired legacy storage monolith.
+# Self-tests lock the guard's own detection logic (Task #2899).
+run_step "legacy-storage freeze self-test (scripts/check-legacy-storage.mjs --self-test)" \
+  node scripts/check-legacy-storage.mjs --self-test
 run_step "legacy-storage freeze (scripts/check-legacy-storage.mjs)" \
   node scripts/check-legacy-storage.mjs
 
 # Task #2673 — block new background-job files from touching the DB
 # without a tenant context wrapper. Required for STRICT_TENANT_RLS=true
-# mode to stay green. Also cheap (<1s).
+# mode to stay green. Also cheap (<1s). Self-tests lock the guard's own
+# detection logic (Task #2899).
+run_step "background-job context lint self-test (scripts/check-job-context.mjs --self-test)" \
+  node scripts/check-job-context.mjs --self-test
 run_step "background-job context lint (scripts/check-job-context.mjs)" \
   node scripts/check-job-context.mjs
 
@@ -69,6 +78,9 @@ run_step "SLA doc parity (scripts/check-sla-doc.mjs)" \
 # Task #2683 — block new LLM-calling files from bypassing the
 # prompt-injection guard contract (import the helpers OR carry a
 # `// prompt-injection-guard: <reason>` annotation). Cheap (<1s).
+# Self-tests lock the guard's own detection logic (Task #2899).
+run_step "prompt-injection guard lint self-test (scripts/check-prompt-injection-guard.mjs --self-test)" \
+  node scripts/check-prompt-injection-guard.mjs --self-test
 run_step "prompt-injection guard lint (scripts/check-prompt-injection-guard.mjs)" \
   node scripts/check-prompt-injection-guard.mjs
 
@@ -103,7 +115,10 @@ run_step "replit.md size guard (scripts/check-replit-md-size.mjs)" \
 
 # Task #2685 — block new duplicate 4-digit prefixes in migrations/ from
 # slipping into main. Historical duplicates (Task #2435) are allowlisted
-# inside the script. Cheap (<1s).
+# inside the script. Cheap (<1s). Self-tests lock the guard's own detection
+# logic (Task #2899).
+run_step "migration collision guard self-test (scripts/check-migration-collisions.mjs --self-test)" \
+  node scripts/check-migration-collisions.mjs --self-test
 run_step "migration collision guard (scripts/check-migration-collisions.mjs)" \
   node scripts/check-migration-collisions.mjs
 

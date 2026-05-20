@@ -26,6 +26,9 @@
 //
 // Wire into CI via scripts/ci.sh. Run directly:
 //   node scripts/check-prompt-injection-guard.mjs
+//
+// Run the script's own self-tests:
+//   node scripts/check-prompt-injection-guard.mjs --self-test
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -95,6 +98,129 @@ function fileCallsLLM(text) {
 
 function fileSatisfiesGuard(text) {
   return GUARD_IMPORT_PATTERN.test(text) || ANNOTATION_PATTERN.test(text);
+}
+
+// -----------------------------------------------------------------------
+// Self-tests. Run via:  node scripts/check-prompt-injection-guard.mjs --self-test
+// These lock the guard's behavior so future edits don't silently
+// introduce regressions in the detection logic.
+// -----------------------------------------------------------------------
+
+function selfTest() {
+  const cases = [
+    {
+      name: "no LLM call → fileCallsLLM=false",
+      text: `import { db } from "./db";\nconsole.log("no AI here");\n`,
+      expectCallsLlm: false,
+      expectSatisfied: true,
+    },
+    {
+      name: "openai.chat.completions.create → fileCallsLLM=true",
+      text:
+        `import { openai } from "./ai/openaiClient";\n` +
+        `await openai.chat.completions.create({ messages: [] });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: false,
+    },
+    {
+      name: "routedChatCompletion call → fileCallsLLM=true",
+      text: `const r = await routedChatCompletion({ orgId, request: {} });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: false,
+    },
+    {
+      name: "callOpenAIForAnalysis call → fileCallsLLM=true",
+      text: `const r = await callOpenAIForAnalysis(doc);\n`,
+      expectCallsLlm: true,
+      expectSatisfied: false,
+    },
+    {
+      name: "LLM call + guard import → satisfied",
+      text:
+        `import { quarantineUntrustedText } from "./ai/promptInjectionGuard";\n` +
+        `await openai.chat.completions.create({ messages: [] });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: true,
+    },
+    {
+      name: "LLM call + annotation → satisfied",
+      text:
+        `// prompt-injection-guard: system-prompt-only, no user text\n` +
+        `import { openai } from "./ai/openaiClient";\n` +
+        `await openai.chat.completions.create({ messages: [] });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: true,
+    },
+    {
+      name: "annotation colon with text on next line → satisfied (\\s* crosses newline boundary)",
+      text:
+        `// prompt-injection-guard:\n` +
+        `await openai.chat.completions.create({ messages: [] });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: true,
+    },
+    {
+      name: "guard import from a different path (not promptInjectionGuard) → NOT satisfied",
+      text:
+        `import { something } from "./ai/otherHelper";\n` +
+        `await routedChatCompletion({ orgId, request: {} });\n`,
+      expectCallsLlm: true,
+      expectSatisfied: false,
+    },
+    {
+      name: "validateAiJsonOutput import satisfies guard",
+      text:
+        `import { validateAiJsonOutput } from "../ai/promptInjectionGuard";\n` +
+        `const result = await callOpenAIForAnalysis(doc);\n`,
+      expectCallsLlm: true,
+      expectSatisfied: true,
+    },
+    {
+      name: "annotation mid-file (multiline flag matches) → satisfied",
+      text:
+        `import { openai } from "./ai/openaiClient";\n` +
+        `function setup() { return 1; }\n` +
+        `// prompt-injection-guard: structured-numeric-only\n` +
+        `await openai.chat.completions.create({});\n`,
+      expectCallsLlm: true,
+      expectSatisfied: true,
+    },
+  ];
+
+  let passed = 0;
+  let failed = 0;
+
+  for (const c of cases) {
+    const gotCallsLlm = fileCallsLLM(c.text);
+    const gotSatisfied = fileSatisfiesGuard(c.text);
+    const callsLlmOk = gotCallsLlm === c.expectCallsLlm;
+    // For files that don't call LLM, the satisfied check is irrelevant.
+    const satisfiedOk = !c.expectCallsLlm || gotSatisfied === c.expectSatisfied;
+
+    if (callsLlmOk && satisfiedOk) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      if (!callsLlmOk) {
+        console.error(
+          `  ✗ ${c.name}: fileCallsLLM expected ${c.expectCallsLlm}, got ${gotCallsLlm}`,
+        );
+      }
+      if (!satisfiedOk) {
+        console.error(
+          `  ✗ ${c.name}: fileSatisfiesGuard expected ${c.expectSatisfied}, got ${gotSatisfied}`,
+        );
+      }
+    }
+  }
+
+  console.log(`\n[self-test] ${passed} passed, ${failed} failed`);
+  return failed === 0 ? 0 : 1;
+}
+
+if (process.argv.includes("--self-test")) {
+  process.exit(selfTest());
 }
 
 function main() {

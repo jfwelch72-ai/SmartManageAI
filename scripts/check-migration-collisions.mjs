@@ -17,6 +17,9 @@
 //
 // Run directly:
 //   node scripts/check-migration-collisions.mjs
+//
+// Run the script's own self-tests:
+//   node scripts/check-migration-collisions.mjs --self-test
 
 import { readdirSync } from "node:fs";
 import path from "node:path";
@@ -136,41 +139,204 @@ function groupByPrefix(files) {
   return groups;
 }
 
+// Core collision detection logic. Accepts a file list and a known-duplicates
+// map, returns { newCollisions, staleAllowlist } so it can be tested without
+// touching the filesystem.
+function detectCollisions(files, knownDups) {
+  const groups = groupByPrefix(files);
+  const newCollisions = [];
+  const staleAllowlist = [];
+
+  for (const [prefix, group] of groups) {
+    if (group.length < 2) continue;
+    const expected = knownDups[prefix];
+    const sortedGroup = [...group].sort();
+    if (!expected) {
+      newCollisions.push({ prefix, files: sortedGroup });
+      continue;
+    }
+    const sortedExpected = [...expected].sort();
+    if (
+      sortedGroup.length !== sortedExpected.length ||
+      sortedGroup.some((f, i) => f !== sortedExpected[i])
+    ) {
+      newCollisions.push({
+        prefix,
+        files: sortedGroup,
+        expected: sortedExpected,
+      });
+    }
+  }
+
+  // Allowlist entries whose duplicate is gone (i.e. the renumbering happened
+  // but the allowlist wasn't trimmed) should be flagged so the guard tightens.
+  for (const [prefix, expected] of Object.entries(knownDups)) {
+    const group = groups.get(prefix) ?? [];
+    if (group.length < 2) {
+      staleAllowlist.push({ prefix, expected, actual: group });
+    }
+  }
+
+  return { newCollisions, staleAllowlist };
+}
+
+// -----------------------------------------------------------------------
+// Self-tests. Run via:  node scripts/check-migration-collisions.mjs --self-test
+// These lock the guard's behavior so future edits don't silently
+// introduce regressions in the detection logic.
+// -----------------------------------------------------------------------
+
+function selfTest() {
+  const cases = [
+    {
+      name: "no duplicates → clean",
+      files: [
+        "0001_create_users.sql",
+        "0002_add_projects.sql",
+        "0003_add_bids.sql",
+      ],
+      knownDups: {},
+      expectNewCollisions: 0,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "known duplicate exactly as allowlisted → clean",
+      files: [
+        "0001_alpha.sql",
+        "0001_beta.sql",
+        "0002_gamma.sql",
+      ],
+      knownDups: {
+        "0001": ["0001_alpha.sql", "0001_beta.sql"],
+      },
+      expectNewCollisions: 0,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "unknown new collision → 1 new collision",
+      files: [
+        "0099_foo.sql",
+        "0099_bar.sql",
+      ],
+      knownDups: {},
+      expectNewCollisions: 1,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "known duplicate group has extra new file → 1 new collision (set mismatch)",
+      files: [
+        "0001_alpha.sql",
+        "0001_beta.sql",
+        "0001_gamma.sql",
+      ],
+      knownDups: {
+        "0001": ["0001_alpha.sql", "0001_beta.sql"],
+      },
+      expectNewCollisions: 1,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "known duplicate group with different filenames → 1 new collision",
+      files: [
+        "0001_alpha.sql",
+        "0001_delta.sql",
+      ],
+      knownDups: {
+        "0001": ["0001_alpha.sql", "0001_beta.sql"],
+      },
+      expectNewCollisions: 1,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "stale allowlist entry (duplicate was renumbered away) → 1 stale",
+      files: [
+        "0001_alpha.sql",
+        "0002_gamma.sql",
+      ],
+      knownDups: {
+        "0001": ["0001_alpha.sql", "0001_beta.sql"],
+      },
+      expectNewCollisions: 0,
+      expectStaleAllowlist: 1,
+    },
+    {
+      name: "multiple new collisions → counts correctly",
+      files: [
+        "0010_aaa.sql",
+        "0010_bbb.sql",
+        "0020_ccc.sql",
+        "0020_ddd.sql",
+      ],
+      knownDups: {},
+      expectNewCollisions: 2,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "file without 4-digit prefix is ignored",
+      files: [
+        "no-prefix.sql",
+        "meta/_journal.json",
+        "0001_create_users.sql",
+      ],
+      knownDups: {},
+      expectNewCollisions: 0,
+      expectStaleAllowlist: 0,
+    },
+    {
+      name: "three-way known duplicate → clean",
+      files: [
+        "0103_ai_estimator_max_discipline_batches.sql",
+        "0103_ai_takeoff_revisions.sql",
+        "0103_sheet_review_queue.sql",
+      ],
+      knownDups: {
+        "0103": [
+          "0103_ai_estimator_max_discipline_batches.sql",
+          "0103_ai_takeoff_revisions.sql",
+          "0103_sheet_review_queue.sql",
+        ],
+      },
+      expectNewCollisions: 0,
+      expectStaleAllowlist: 0,
+    },
+  ];
+
+  let passed = 0;
+  let failed = 0;
+
+  for (const c of cases) {
+    const { newCollisions, staleAllowlist } = detectCollisions(c.files, c.knownDups);
+    const collOk = newCollisions.length === c.expectNewCollisions;
+    const staleOk = staleAllowlist.length === c.expectStaleAllowlist;
+
+    if (collOk && staleOk) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      if (!collOk) {
+        console.error(
+          `  ✗ ${c.name}: expected ${c.expectNewCollisions} new collision(s), got ${newCollisions.length}`,
+        );
+      }
+      if (!staleOk) {
+        console.error(
+          `  ✗ ${c.name}: expected ${c.expectStaleAllowlist} stale allowlist entr(y/ies), got ${staleAllowlist.length}`,
+        );
+      }
+    }
+  }
+
+  console.log(`\n[self-test] ${passed} passed, ${failed} failed`);
+  return failed === 0 ? 0 : 1;
+}
+
+if (process.argv.includes("--self-test")) {
+  process.exit(selfTest());
+}
+
 const files = listSqlFiles();
-const groups = groupByPrefix(files);
-
-const newCollisions = [];
-const staleAllowlist = [];
-
-for (const [prefix, group] of groups) {
-  if (group.length < 2) continue;
-  const expected = KNOWN_DUPLICATES[prefix];
-  const sortedGroup = [...group].sort();
-  if (!expected) {
-    newCollisions.push({ prefix, files: sortedGroup });
-    continue;
-  }
-  const sortedExpected = [...expected].sort();
-  if (
-    sortedGroup.length !== sortedExpected.length ||
-    sortedGroup.some((f, i) => f !== sortedExpected[i])
-  ) {
-    newCollisions.push({
-      prefix,
-      files: sortedGroup,
-      expected: sortedExpected,
-    });
-  }
-}
-
-// Allowlist entries whose duplicate is gone (i.e. the renumbering happened
-// but the allowlist wasn't trimmed) should be flagged so the guard tightens.
-for (const [prefix, expected] of Object.entries(KNOWN_DUPLICATES)) {
-  const group = groups.get(prefix) ?? [];
-  if (group.length < 2) {
-    staleAllowlist.push({ prefix, expected, actual: group });
-  }
-}
+const { newCollisions, staleAllowlist } = detectCollisions(files, KNOWN_DUPLICATES);
 
 if (newCollisions.length === 0 && staleAllowlist.length === 0) {
   process.stdout.write(

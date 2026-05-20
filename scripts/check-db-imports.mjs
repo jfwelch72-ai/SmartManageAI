@@ -14,6 +14,9 @@
 //
 // Wire into CI by adding to scripts/ci.sh or running directly:
 //   node scripts/check-db-imports.mjs
+//
+// Run the script's own self-tests:
+//   node scripts/check-db-imports.mjs --self-test
 
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
@@ -43,21 +46,18 @@ function walk(dir) {
   return out;
 }
 
-const offenders = [];
 const RE_DRIZZLE_NODE = /from\s+["']drizzle-orm\/node-postgres["']/;
 const RE_NEW_POOL = /new\s+Pool\s*\(/;
 const RE_DRIZZLE_CALL = /\bdrizzle\s*\(\s*\{\s*client/;
 
-for (const file of walk(SERVER_DIR)) {
-  if (ALLOWED.has(file)) continue;
-  const src = readFileSync(file, "utf8");
+// Returns an array of issue strings for a single file's source text.
+// Empty array means the file is clean.
+function getFileViolations(src) {
   const issues = [];
   if (RE_DRIZZLE_NODE.test(src)) issues.push("imports from drizzle-orm/node-postgres");
   if (RE_NEW_POOL.test(src)) issues.push("constructs its own pg Pool");
   if (RE_DRIZZLE_CALL.test(src)) issues.push("calls drizzle({ client: ... }) directly");
-  if (issues.length > 0) {
-    offenders.push({ file: path.relative(process.cwd(), file), issues });
-  }
+  return issues;
 }
 
 // Task #2674 — additional check for `server/jobs/jobRunner.ts`: every `db.*`
@@ -163,16 +163,12 @@ function stripCommentsAndStrings(src) {
   return out.join("");
 }
 
-function checkJobRunnerOrgLoops() {
-  const rawSrc = readFileSync(JOB_RUNNER, "utf8");
-  // Use a comment/string-stripped view for matching `db.` and
-  // `withJobOrgContext(`. Offsets are preserved so line numbers stay
-  // accurate. Brace/paren matching also runs on the stripped view, which
-  // is fine because braces/parens inside comments/strings are now spaces.
+// Core logic for the jobRunner per-org loop check. Accepts the raw source
+// text so it can be called from both the production path and self-tests.
+// Returns an array of { line } issue objects.
+function checkJobRunnerSrc(rawSrc) {
   const src = stripCommentsAndStrings(rawSrc);
   const issues = [];
-  // Match every `for (const|let|var VAR of ITER) { ... }`. We then decide
-  // per-loop whether it looks per-tenant (heuristics (a)/(b) above).
   const loopRe = /for\s*\(\s*(?:const|let|var)\s+(\w+)\s+of\s+(\w+)\s*\)\s*\{/g;
   const PER_ORG_ITERABLE = /^(orgs?|orgRows|organizations|activeOrgs|tenants)$/;
   let m;
@@ -231,39 +227,187 @@ function checkJobRunnerOrgLoops() {
   return issues;
 }
 
-const jobRunnerIssues = checkJobRunnerOrgLoops();
-if (jobRunnerIssues.length > 0) {
+function checkJobRunnerOrgLoops() {
+  const rawSrc = readFileSync(JOB_RUNNER, "utf8");
+  return checkJobRunnerSrc(rawSrc);
+}
+
+function checkRepo() {
+  const jobRunnerIssues = checkJobRunnerOrgLoops();
+  if (jobRunnerIssues.length > 0) {
+    process.stderr.write(
+      `[check-db-imports] FAIL — ${jobRunnerIssues.length} db.* reference(s) inside a per-org loop in server/jobs/jobRunner.ts are NOT wrapped in withJobOrgContext(...):\n`,
+    );
+    for (const i of jobRunnerIssues) {
+      process.stderr.write(`  - server/jobs/jobRunner.ts:${i.line}\n`);
+    }
+    process.stderr.write(
+      "\nWrap the per-org loop body in `withJobOrgContext(\"<job-name>\", org.organizationId, async () => { ... })`\n" +
+        "so RLS scopes every query to the current tenant. See\n" +
+        "docs/architecture/tenant-isolation.md.\n",
+    );
+    return 1;
+  }
+
+  const offenders = [];
+  for (const file of walk(SERVER_DIR)) {
+    if (ALLOWED.has(file)) continue;
+    const src = readFileSync(file, "utf8");
+    const issues = getFileViolations(src);
+    if (issues.length > 0) {
+      offenders.push({ file: path.relative(process.cwd(), file), issues });
+    }
+  }
+
+  if (offenders.length === 0) {
+    process.stdout.write(
+      "[check-db-imports] OK — every server file routes through the shared db proxy.\n",
+    );
+    return 0;
+  }
+
   process.stderr.write(
-    `[check-db-imports] FAIL — ${jobRunnerIssues.length} db.* reference(s) inside a per-org loop in server/jobs/jobRunner.ts are NOT wrapped in withJobOrgContext(...):\n`,
+    `[check-db-imports] FAIL — ${offenders.length} file(s) bypass the tenant-isolation seam:\n`,
   );
-  for (const i of jobRunnerIssues) {
-    process.stderr.write(`  - server/jobs/jobRunner.ts:${i.line}\n`);
+  for (const o of offenders) {
+    process.stderr.write(`  - ${o.file}\n`);
+    for (const i of o.issues) process.stderr.write(`      • ${i}\n`);
   }
   process.stderr.write(
-    "\nWrap the per-org loop body in `withJobOrgContext(\"<job-name>\", org.organizationId, async () => { ... })`\n" +
-      "so RLS scopes every query to the current tenant. See\n" +
+    "\nAll DB access must go through `import { db } from \"./db\"` so the\n" +
+      "AsyncLocalStorage-bound RLS client is used. See\n" +
       "docs/architecture/tenant-isolation.md.\n",
   );
-  process.exit(1);
+  return 1;
 }
 
-if (offenders.length === 0) {
-  process.stdout.write(
-    "[check-db-imports] OK — every server file routes through the shared db proxy.\n",
-  );
-  process.exit(0);
+// -----------------------------------------------------------------------
+// Self-tests. Run via:  node scripts/check-db-imports.mjs --self-test
+// These lock the guard's behavior so future edits don't silently
+// introduce regressions in the detection logic.
+// -----------------------------------------------------------------------
+
+function selfTest() {
+  const fileCases = [
+    {
+      name: "no forbidden patterns → clean",
+      src: `import { db } from "./db";\nimport { users } from "../shared/schema";\n`,
+      expectViolations: 0,
+    },
+    {
+      name: "imports from drizzle-orm/node-postgres → violation",
+      src: `import { drizzle } from "drizzle-orm/node-postgres";\n`,
+      expectViolations: 1,
+    },
+    {
+      name: "constructs its own pg Pool → violation",
+      src: `import { Pool } from "pg";\nconst pool = new Pool({ connectionString: process.env.DATABASE_URL });\n`,
+      expectViolations: 1,
+    },
+    {
+      name: "calls drizzle({ client }) directly → violation",
+      src: `const db = drizzle({ client: pool });\n`,
+      expectViolations: 1,
+    },
+    {
+      name: "all three violations in one file → 3 violations",
+      src:
+        `import { drizzle } from "drizzle-orm/node-postgres";\n` +
+        `const pool = new Pool({});\n` +
+        `const db2 = drizzle({ client: pool });\n`,
+      expectViolations: 3,
+    },
+    {
+      name: "drizzle-orm/neon-serverless (different pkg) → clean",
+      src: `import { drizzle } from "drizzle-orm/neon-serverless";\n`,
+      expectViolations: 0,
+    },
+  ];
+
+  const jobRunnerCases = [
+    {
+      name: "no per-org loop → clean",
+      src: `for (const item of items) { db.select(); }\n`,
+      expectIssues: 0,
+    },
+    {
+      name: "per-org loop with db inside withJobOrgContext → clean",
+      src:
+        `for (const org of orgs) {\n` +
+        `  await withJobOrgContext("job", org.id, async () => {\n` +
+        `    await db.select().from(t);\n` +
+        `  });\n` +
+        `}\n`,
+      expectIssues: 0,
+    },
+    {
+      name: "per-org loop with db NOT wrapped → violation",
+      src:
+        `for (const org of orgs) {\n` +
+        `  await db.select().from(t);\n` +
+        `}\n`,
+      expectIssues: 1,
+    },
+    {
+      name: "per-org loop with db inside runAsSuperadmin → clean",
+      src:
+        `for (const org of orgs) {\n` +
+        `  await runAsSuperadmin("reason", async () => {\n` +
+        `    await db.insert(t).values({});\n` +
+        `  });\n` +
+        `}\n`,
+      expectIssues: 0,
+    },
+    {
+      name: "tenants loop with db NOT wrapped → violation",
+      src:
+        `for (const t2 of tenants) {\n` +
+        `  await db.update(u).set({}).where();\n` +
+        `}\n`,
+      expectIssues: 1,
+    },
+    {
+      name: "db reference in comment inside per-org loop → clean",
+      src:
+        `for (const org of orgs) {\n` +
+        `  // db.select() is intentionally avoided here\n` +
+        `}\n`,
+      expectIssues: 0,
+    },
+  ];
+
+  let passed = 0;
+  let failed = 0;
+
+  console.log("--- file-level violation checks ---");
+  for (const c of fileCases) {
+    const got = getFileViolations(c.src).length;
+    if (got === c.expectViolations) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      console.error(`  ✗ ${c.name}: expected ${c.expectViolations} violation(s), got ${got}`);
+    }
+  }
+
+  console.log("--- jobRunner per-org loop checks ---");
+  for (const c of jobRunnerCases) {
+    const got = checkJobRunnerSrc(c.src).length;
+    if (got === c.expectIssues) {
+      passed++;
+      console.log(`  ✓ ${c.name}`);
+    } else {
+      failed++;
+      console.error(`  ✗ ${c.name}: expected ${c.expectIssues} issue(s), got ${got}`);
+    }
+  }
+
+  console.log(`\n[self-test] ${passed} passed, ${failed} failed`);
+  return failed === 0 ? 0 : 1;
 }
 
-process.stderr.write(
-  `[check-db-imports] FAIL — ${offenders.length} file(s) bypass the tenant-isolation seam:\n`,
-);
-for (const o of offenders) {
-  process.stderr.write(`  - ${o.file}\n`);
-  for (const i of o.issues) process.stderr.write(`      • ${i}\n`);
+if (process.argv.includes("--self-test")) {
+  process.exit(selfTest());
 }
-process.stderr.write(
-  "\nAll DB access must go through `import { db } from \"./db\"` so the\n" +
-    "AsyncLocalStorage-bound RLS client is used. See\n" +
-    "docs/architecture/tenant-isolation.md.\n",
-);
-process.exit(1);
+process.exit(checkRepo());
