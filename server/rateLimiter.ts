@@ -115,6 +115,20 @@ export const aiLimiter = rateLimit({
   store: makeStore("ai"),
 });
 
+// Inbound email webhook — IP-based since there is no session. Limit is
+// deliberately generous (60/15min) because a legitimate burst of inbound
+// emails from the same relay IP is normal during busy periods. The shared
+// secret header is the primary auth gate; this limiter defends against
+// relay-level flooding.
+export const inboundEmailLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: "Too many inbound email requests, please try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  store: makeStore("inbound_email"),
+});
+
 export const feedbackLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: () => {

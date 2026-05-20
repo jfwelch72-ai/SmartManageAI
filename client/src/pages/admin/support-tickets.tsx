@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isPast } from "date-fns";
 import {
@@ -28,6 +28,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useTicketStream } from "@/hooks/use-ticket-stream";
 import type { SupportTicket, SupportTicketReply } from "@shared/schema";
 
 type TicketWithReplyCount = SupportTicket & { replyCount: number };
@@ -143,13 +144,20 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
   const [replyText, setReplyText] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const onNewReply = useCallback(() => {
+    toast({ title: "New reply received", description: "A customer replied to this ticket." });
+  }, [toast]);
+
+  const { newReplyArrived, clearNewReplyFlag, usingPolling } = useTicketStream(ticket.id, true, {
+    onNewReply,
+  });
+
   const { data: repliesData, isLoading: repliesLoading } = useQuery<{ replies: SupportTicketReply[] }>({
     queryKey: ["/api/support/tickets", ticket.id, "replies"],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/support/tickets/${ticket.id}/replies`);
       return res.json();
     },
-    refetchInterval: 30_000,
   });
 
   const replies = repliesData?.replies ?? [];
@@ -159,6 +167,13 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [replies.length]);
+
+  useEffect(() => {
+    if (newReplyArrived) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+      clearNewReplyFlag();
+    }
+  }, [newReplyArrived, clearNewReplyFlag]);
 
   const replyMutation = useMutation({
     mutationFn: async (body: string) => {
@@ -188,6 +203,11 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
         <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Replies {replies.length > 0 && <span className="ml-1 normal-case font-normal">({replies.length})</span>}
         </p>
+        {usingPolling && (
+          <span className="ml-auto text-[10px] text-muted-foreground" data-testid="text-admin-polling-fallback">
+            Refreshing every 30s
+          </span>
+        )}
       </div>
 
       <div className="p-4 space-y-3 max-h-64 overflow-y-auto">

@@ -1,13 +1,15 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, gte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, like, sql } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
+import multer from "multer";
 import { db } from "./db";
 import {
   organizationSubscriptions,
   supportTickets,
   supportTicketReplies,
+  users,
   insertSupportTicketSchema,
   type SupportTicket,
   type SupportTicketReply,
@@ -25,11 +27,53 @@ import {
   type SupportPriority,
 } from "./support/slaPolicy";
 import { runSlaSweep } from "./support/slaMonitor";
+import { supportEventBus } from "./supportEventBus";
+import { inboundEmailLimiter } from "./rateLimiter";
+import { logCreate } from "./auditLogger";
+import { objectStorageClient, parseObjectPath } from "./objectStorage";
 
 const router = Router();
 
 const HELP_DIR = path.join(process.cwd(), "docs", "help");
 const SUPPORT_INBOX = process.env.SUPPORT_INBOX_EMAIL || "support@smartmanageai.local";
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Utilities
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** Strip HTML tags to produce safe plain text for storage. */
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+/** Parse the From header into { name, email }. */
+function parseFrom(from: string): { name: string | null; email: string } {
+  const match = /^(?:"?(.+?)"?\s+)?<([^>]+)>$/.exec(from.trim());
+  if (match) return { name: match[1]?.trim() || null, email: match[2].toLowerCase() };
+  return { name: null, email: from.trim().toLowerCase() };
+}
+
+/**
+ * Multer instance — 25 MB hard ceiling per file (DoS guard; above our 10 MB
+ * soft skip threshold so email-sized files are always accepted).  The route
+ * wraps this middleware and handles MulterError so one oversized file doesn't
+ * reject the whole multipart payload.
+ */
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 20, fieldSize: 2 * 1024 * 1024 },
+});
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Help center articles (Markdown-driven)
@@ -441,6 +485,9 @@ SmartManageAI Support`,
 
       void emailPromise;
 
+      // Notify any open SSE connections for this ticket.
+      supportEventBus.emitReplyCreated({ ticketId: ticket.id, reply });
+
       logInfo(`[support] reply ${reply.id} added to ticket ${ticket.id} by ${req.user?.id}`);
       res.status(201).json({ reply, ticket: updatedTicket });
     } catch (err) {
@@ -564,12 +611,331 @@ Ticket ID: ${ticket.id}`,
       replyTo: ticket.submitterEmail,
     }).catch((err) => logError("customer reply email failed", err));
 
+    // Notify any open SSE connections for this ticket.
+    supportEventBus.emitReplyCreated({ ticketId: ticket.id, reply });
+
     logInfo(`[support] customer reply ${reply.id} added to ticket ${ticket.id} by user ${userId}`);
     res.status(201).json({ reply, ticket: updatedTicket });
   } catch (err) {
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SSE — real-time reply streaming
+// GET /api/support/tickets/:id/stream
+// Accessible to: SUPER_ADMIN, ADMIN (any ticket) or the ticket's own userId.
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get("/api/support/tickets/:id/stream", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const ticketId = req.params.id;
+    const userId = req.user?.id;
+    const role = req.user?.role;
+
+    // Load the ticket so we can check access.
+    const [ticket] = await db
+      .select({ id: supportTickets.id, userId: supportTickets.userId, organizationId: supportTickets.organizationId })
+      .from(supportTickets)
+      .where(eq(supportTickets.id, ticketId));
+
+    if (!ticket) return res.status(404).json({ error: "Ticket not found" });
+
+    // Auth parity with the REST reply endpoints:
+    //   Admin path  GET /api/support/tickets/:id/replies   → requireRole("SUPER_ADMIN")
+    //   User path   GET /api/support/my-tickets/:id/replies → requireAuth + owner check
+    // SSE mirrors exactly the same rules:
+    //   - SUPER_ADMIN: any ticket
+    //   - All other roles: only their own ticket (userId match)
+    // ADMIN / HUSTLER are intentionally excluded from the admin-side reply path
+    // to match the least-privilege policy of the REST layer.
+    const isSuperAdmin = role === "SUPER_ADMIN";
+    const isOwner = userId != null && ticket.userId === userId;
+
+    if (!isSuperAdmin && !isOwner) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    // Open SSE connection.
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    const send = (event: string, data: unknown) => {
+      try {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      } catch {
+        // Connection already closed
+      }
+    };
+
+    // Send an initial confirmation that the stream is open.
+    send("connected", { ticketId });
+
+    // Register domain event listener.
+    const unsubscribe = supportEventBus.onReplyCreated(ticketId, (payload) => {
+      send("reply", payload.reply);
+    });
+
+    // 60-second keepalive ping so proxies don't time out the connection.
+    const keepalive = setInterval(() => {
+      try {
+        res.write(": ping\n\n");
+      } catch {
+        clearInterval(keepalive);
+      }
+    }, 60_000);
+
+    req.on("close", () => {
+      clearInterval(keepalive);
+      unsubscribe();
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SendGrid Inbound Parse webhook
+// POST /api/support/inbound-email
+// Public — no session required. Protected by X-Support-Inbound-Token header.
+// ──────────────────────────────────────────────────────────────────────────────
+
+const TICKET_REF_RE = /\[Ticket #([a-f0-9-]{8,})\]/i;
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Wrap multer middleware so a single oversized-file MulterError (LIMIT_FILE_SIZE)
+ * is logged and swallowed rather than aborting the entire multipart parse. Other
+ * multer errors (e.g. LIMIT_UNEXPECTED_FILE) still propagate to Express.
+ */
+function multerAny(req: import("express").Request, res: import("express").Response, next: import("express").NextFunction) {
+  upload.any()(req, res, (err: unknown) => {
+    if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+      logInfo(`[support/inbound] multer LIMIT_FILE_SIZE — oversized attachment skipped, continuing with partial payload`);
+      return next();
+    }
+    next(err as Error | undefined);
+  });
+}
+
+/**
+ * Lightweight auth guard — runs BEFORE multer so unauthenticated requests are
+ * rejected without parsing the (potentially large) multipart body.
+ * Fail-closed: if SUPPORT_INBOUND_SECRET is not configured, every request is
+ * rejected so the endpoint is never accidentally left public.
+ */
+function inboundSecretGuard(
+  req: import("express").Request,
+  res: import("express").Response,
+  next: import("express").NextFunction,
+) {
+  const expectedSecret = process.env.SUPPORT_INBOUND_SECRET;
+  if (!expectedSecret || req.headers["x-support-inbound-token"] !== expectedSecret) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  next();
+}
+
+router.post(
+  "/api/support/inbound-email",
+  inboundEmailLimiter,
+  inboundSecretGuard,
+  multerAny,
+  async (req, res, next) => {
+    try {
+
+      const correlationId = (req.headers["x-request-id"] as string | undefined) ?? "";
+      const rawFrom = String(req.body?.from || "");
+      const subject = String(req.body?.subject || "(no subject)").slice(0, 500);
+      const textBody = String(req.body?.text || "").slice(0, 20_000);
+      const htmlBody = String(req.body?.html || "");
+
+      const { name: senderName, email: senderEmail } = parseFrom(rawFrom);
+
+      // Prefer plain-text; fall back to HTML-stripped version.
+      const body = (textBody.trim() || stripHtml(htmlBody)).slice(0, 20_000) || "(no body)";
+
+      // Match sender email to an existing user.
+      const [matchedUser] = senderEmail
+        ? await db
+            .select({ id: users.id, organizationId: users.organizationId })
+            .from(users)
+            .where(eq(users.email, senderEmail))
+            .limit(1)
+        : [];
+
+      // For anonymous senders the audit_log FK (users.id NOT NULL) prevents
+      // inserting without a real user.  Find a SUPER_ADMIN as system actor so
+      // every inbound event is guaranteed an audit_log row.
+      const [systemActor] = matchedUser
+        ? [matchedUser]
+        : await db
+            .select({ id: users.id, organizationId: users.organizationId })
+            .from(users)
+            .where(eq(users.role, "SUPER_ADMIN"))
+            .limit(1);
+
+      // Check for a ticket reference in the subject line.
+      const refMatch = TICKET_REF_RE.exec(subject);
+      const referencedId = refMatch ? refMatch[1] : null;
+
+      // Save attachments to object storage (best-effort; skip files > 10 MB).
+      const files = (req.files as Express.Multer.File[]) ?? [];
+      const attachmentKeys: string[] = [];
+      const privateDir = process.env.PRIVATE_OBJECT_DIR;
+      if (privateDir) {
+        for (const file of files) {
+          if (file.size > MAX_ATTACHMENT_BYTES) {
+            logInfo(`[support/inbound] skipping oversized attachment ${file.originalname} (${file.size} bytes)`);
+            continue;
+          }
+          try {
+            const { randomUUID } = await import("crypto");
+            const objectKey = `${privateDir}/support/email-attachments/${randomUUID()}`;
+            const { bucketName, objectName } = parseObjectPath(objectKey);
+            const bucket = objectStorageClient.bucket(bucketName);
+            await bucket.file(objectName).save(file.buffer, {
+              metadata: { contentType: file.mimetype },
+            });
+            attachmentKeys.push(objectKey);
+          } catch (err) {
+            logError(`[support/inbound] attachment upload failed for ${file.originalname}`, err);
+          }
+        }
+      }
+
+      let ticketId: string;
+      let eventAction: string;
+
+      if (referencedId) {
+        // Try to append a reply to the existing ticket.  Outbound notification
+        // emails embed only the first 8 hex chars of the ticket UUID in the
+        // subject (e.g. [Ticket #a1b2c3d4]).  Use a LIKE prefix match so both
+        // short refs (from customer reply-to-email) and full UUIDs (deep links)
+        // resolve correctly.  The trailing '%' is safe because UUIDs are
+        // canonical and the 8-char prefix has 16^8 ≈ 4 billion combinations.
+        const refPattern = referencedId.endsWith("%") ? referencedId : `${referencedId}%`;
+        const [existingTicket] = await db
+          .select()
+          .from(supportTickets)
+          .where(like(supportTickets.id, refPattern))
+          .limit(1);
+
+        if (existingTicket) {
+          const authorName = senderName ?? senderEmail;
+
+          // Build reply body — append attachment info when present.
+          const replyBody = attachmentKeys.length
+            ? `${body}\n\n[${attachmentKeys.length} attachment(s) saved: ${attachmentKeys.join(", ")}]`
+            : body;
+
+          const [reply] = await db
+            .insert(supportTicketReplies)
+            .values({
+              ticketId: existingTicket.id,
+              authorId: matchedUser?.id ?? null,
+              authorName,
+              body: replyBody,
+            } as typeof supportTicketReplies.$inferInsert)
+            .returning();
+
+          // Move ticket back to in_progress if it was waiting on customer.
+          // Also persist attachment keys on the ticket metadata.
+          const ticketMeta = {
+            ...(existingTicket.metadata ?? {}),
+            ...(attachmentKeys.length ? { emailAttachments: [
+              ...((existingTicket.metadata as Record<string, unknown> & { emailAttachments?: string[] })?.emailAttachments ?? []),
+              ...attachmentKeys,
+            ]} : {}),
+          };
+          const ticketUpdate: Partial<typeof supportTickets.$inferInsert> = { updatedAt: new Date(), metadata: ticketMeta };
+          if (existingTicket.status === "waiting_on_customer") {
+            ticketUpdate.status = "in_progress";
+          }
+          await db.update(supportTickets).set(ticketUpdate).where(eq(supportTickets.id, existingTicket.id));
+
+          // Emit real-time event.
+          supportEventBus.emitReplyCreated({ ticketId: existingTicket.id, reply });
+
+          ticketId = existingTicket.id;
+          eventAction = "email_reply";
+        } else {
+          // Referenced ticket not found — create a new ticket instead.
+          eventAction = "email_new_ticket";
+          const [newTicket] = await db
+            .insert(supportTickets)
+            .values({
+              organizationId: matchedUser?.organizationId ?? null,
+              userId: matchedUser?.id ?? null,
+              submitterEmail: senderEmail,
+              submitterName: senderName,
+              subject,
+              body,
+              metadata: attachmentKeys.length ? { emailAttachments: attachmentKeys } : {},
+              tier: "starter",
+              priority: "normal",
+              slaFirstResponseDueAt: new Date(Date.now() + 48 * 3_600_000),
+              slaResolutionDueAt: new Date(Date.now() + 5 * 24 * 3_600_000),
+            } as typeof supportTickets.$inferInsert)
+            .returning();
+          ticketId = newTicket.id;
+        }
+      } else {
+        // No reference — create a new ticket.
+        eventAction = "email_new_ticket";
+        const [newTicket] = await db
+          .insert(supportTickets)
+          .values({
+            organizationId: matchedUser?.organizationId ?? null,
+            userId: matchedUser?.id ?? null,
+            submitterEmail: senderEmail,
+            submitterName: senderName,
+            subject,
+            body,
+            metadata: attachmentKeys.length ? { emailAttachments: attachmentKeys } : {},
+            tier: "starter",
+            priority: "normal",
+            slaFirstResponseDueAt: new Date(Date.now() + 48 * 3_600_000),
+            slaResolutionDueAt: new Date(Date.now() + 5 * 24 * 3_600_000),
+          } as typeof supportTickets.$inferInsert)
+          .returning();
+        ticketId = newTicket.id;
+      }
+
+      // Structured audit log — guaranteed for every inbound email event.
+      // The audit_log.userId column has a NOT NULL FK to users.id so we can't
+      // insert without a real user. When the sender is anonymous we use a
+      // SUPER_ADMIN as system actor (resolved above as `systemActor`). This
+      // ensures complete SOC 2 trail even for guest senders.
+      const auditPayload = {
+        senderEmail,
+        senderName,
+        action: eventAction,
+        attachmentCount: attachmentKeys.length,
+        correlationId,
+        ticketId,
+        isAnonymousSender: !matchedUser,
+      };
+      logInfo(`[support/inbound] ${eventAction} ticket=${ticketId} from=${senderEmail} attachments=${attachmentKeys.length} correlationId=${correlationId}`);
+
+      if (systemActor?.id) {
+        void logCreate(
+          systemActor.id,
+          "support_inbound_email",
+          ticketId,
+          auditPayload,
+        ).catch((err) => logError("[support/inbound] audit log failed", err));
+      }
+
+      res.status(200).json({ ok: true, ticketId });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // SLA breach sweep — flips the breach flags so the weekly report can pick
 // them up. Locked to SUPER_ADMIN because the sweep mutates platform-wide

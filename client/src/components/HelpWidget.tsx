@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useTicketStream } from "@/hooks/use-ticket-stream";
 import type { SupportTicket, SupportTicketReply } from "@shared/schema";
 
 interface HelpSummary {
@@ -97,6 +98,16 @@ function TicketThreadView({
     queryFn: () => apiRequest("GET", `/api/support/my-tickets/${ticket.id}/replies`).then((r) => r.json()),
   });
 
+  const { newReplyArrived, clearNewReplyFlag, usingPolling } = useTicketStream(ticket.id, false, {
+    onNewReply: () => {
+      toast({ title: "New reply received", description: "The support team has replied to your ticket." });
+    },
+  });
+
+  useEffect(() => {
+    if (newReplyArrived) clearNewReplyFlag();
+  }, [newReplyArrived, clearNewReplyFlag]);
+
   const replyMutation = useMutation({
     mutationFn: async () => {
       return await apiRequest("POST", `/api/support/my-tickets/${ticket.id}/replies`, {
@@ -119,14 +130,21 @@ function TicketThreadView({
 
   return (
     <div className="space-y-3" data-testid="ticket-thread-view">
-      <button
-        type="button"
-        className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
-        onClick={onBack}
-        data-testid="button-ticket-back"
-      >
-        <ChevronLeft className="h-3 w-3" /> Back to my tickets
-      </button>
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          className="text-xs text-muted-foreground hover:underline inline-flex items-center gap-1"
+          onClick={onBack}
+          data-testid="button-ticket-back"
+        >
+          <ChevronLeft className="h-3 w-3" /> Back to my tickets
+        </button>
+        {usingPolling && (
+          <span className="text-[10px] text-muted-foreground" data-testid="text-polling-fallback">
+            Refreshing every 30s
+          </span>
+        )}
+      </div>
 
       <div className="rounded-md border border-border p-3 space-y-1">
         <div className="flex items-start justify-between gap-2">
