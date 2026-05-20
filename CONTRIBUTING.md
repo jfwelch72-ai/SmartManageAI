@@ -91,5 +91,19 @@ const TypedView = EntityCalendarView as typeof EntityCalendarView<TaskItem>;
 
 ## Where things live
 
-See `replit.md` for the canonical map of the codebase, run commands,
-and architecture decisions.
+See `replit.md` for the canonical map of the codebase and run commands.
+It is intentionally kept short (≤ 120 lines); a CI check enforces this.
+
+When documenting new work, write to the appropriate dedicated file instead
+of adding content back to `replit.md`:
+
+| What you are documenting | Where to write it |
+| ------------------------ | ----------------- |
+| Significant design or architectural decision | `docs/architecture/decisions.md` |
+| Known pitfall, rule, or non-obvious constraint | `docs/ops/gotchas.md` |
+| Security control, mitigation, or hygiene note | `docs/ops/security-quickref.md` |
+| New end-user-facing product feature | `docs/product/features.md` |
+
+`replit.md` should only contain a short summary and a pointer to these files.
+Adding substantive content to `replit.md` will fail the
+`scripts/check-replit-md-size.mjs` CI guard.

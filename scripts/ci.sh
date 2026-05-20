@@ -95,6 +95,12 @@ run_step "SSE org-context guard self-test (scripts/check-sse-org-context.mjs --s
 run_step "SSE org-context lint (scripts/check-sse-org-context.mjs)" \
   node scripts/check-sse-org-context.mjs
 
+# Task #2949 — keep replit.md lean; architectural decisions, gotchas,
+# security notes, and product features belong in the dedicated docs files.
+# Fails if replit.md exceeds the defined line threshold. Cheap (<1s).
+run_step "replit.md size guard (scripts/check-replit-md-size.mjs)" \
+  node scripts/check-replit-md-size.mjs
+
 # Task #2685 — block new duplicate 4-digit prefixes in migrations/ from
 # slipping into main. Historical duplicates (Task #2435) are allowlisted
 # inside the script. Cheap (<1s).
