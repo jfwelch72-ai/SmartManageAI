@@ -72,6 +72,8 @@ export const supportTickets = pgTable(
     csatSubmittedAt: timestamp("csat_submitted_at"),
     csatToken: varchar("csat_token"),
     csatTokenExpiresAt: timestamp("csat_token_expires_at"),
+    /** Message-ID header of the original inbound email that opened this ticket, if any. */
+    emailMessageId: text("email_message_id"),
     createdAt: timestamp("created_at").notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
   },
@@ -96,6 +98,8 @@ export const supportTicketReplies = pgTable(
     body: text("body").notNull(),
     attachments: jsonb("attachments").$type<SupportAttachment[]>().default([]),
     emailedAt: timestamp("emailed_at"),
+    /** Message-ID header of the inbound email that produced this reply (null for outbound agent replies). */
+    emailMessageId: text("email_message_id"),
     createdAt: timestamp("created_at").notNull().default(sql`now()`),
   },
   (t) => ({
@@ -125,6 +129,7 @@ export const insertSupportTicketReplySchema = createInsertSchema(supportTicketRe
   authorName: true,
   attachments: true,
   emailedAt: true,
+  emailMessageId: true,
   createdAt: true,
 });
 
@@ -150,6 +155,7 @@ export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit
   csatSubmittedAt: true,
   csatToken: true,
   csatTokenExpiresAt: true,
+  emailMessageId: true,
   createdAt: true,
   updatedAt: true,
 });

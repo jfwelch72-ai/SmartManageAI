@@ -60,6 +60,17 @@ function stripHtml(html: string): string {
     .trim();
 }
 
+/**
+ * Extract the Message-ID value from a raw headers string as provided by
+ * SendGrid Inbound Parse (e.g. "Message-ID: <abc@mail.example.com>\n...").
+ * Returns the angle-bracket-wrapped value including the brackets, which is
+ * the canonical form expected by In-Reply-To / References.
+ */
+function parseMessageId(rawHeaders: string): string | null {
+  const match = /^message-id:\s*(\S+)/im.exec(rawHeaders);
+  return match ? match[1].trim() : null;
+}
+
 /** Parse the From header into { name, email }. */
 function parseFrom(from: string): { name: string | null; email: string } {
   const match = /^(?:"?(.+?)"?\s+)?<([^>]+)>$/.exec(from.trim());
@@ -491,6 +502,31 @@ router.post(
         return { reply, updatedTicket };
       });
 
+      // Build email threading headers so the customer's email client shows the
+      // reply as part of the original conversation thread.
+      // In-Reply-To = most recent inbound Message-ID; References = full chain.
+      const inboundMessageIds: string[] = [];
+      if (ticket.emailMessageId) inboundMessageIds.push(ticket.emailMessageId);
+      const inboundReplies = await db
+        .select({ emailMessageId: supportTicketReplies.emailMessageId })
+        .from(supportTicketReplies)
+        .where(
+          and(
+            eq(supportTicketReplies.ticketId, ticket.id),
+            isNotNull(supportTicketReplies.emailMessageId),
+          ),
+        )
+        .orderBy(supportTicketReplies.createdAt);
+      for (const r of inboundReplies) {
+        if (r.emailMessageId) inboundMessageIds.push(r.emailMessageId);
+      }
+      const threadingHeaders: Record<string, string> = {};
+      if (inboundMessageIds.length > 0) {
+        threadingHeaders["In-Reply-To"] = inboundMessageIds[inboundMessageIds.length - 1];
+        threadingHeaders["References"] = inboundMessageIds.join(" ");
+      }
+
+      // Send email to submitter — best effort
       let emailedAt: Date | null = null;
       const emailPromise = sendEmail({
         to: ticket.submitterEmail,
@@ -509,6 +545,7 @@ Best regards,
 ${authorName}
 SmartManageAI Support`,
         replyTo: SUPPORT_INBOX,
+        headers: Object.keys(threadingHeaders).length > 0 ? threadingHeaders : undefined,
       })
         .then(async () => {
           emailedAt = new Date();
@@ -785,6 +822,12 @@ router.post(
       const textBody = String(req.body?.text || "").slice(0, 20_000);
       const htmlBody = String(req.body?.html || "");
 
+      // Capture the Message-ID from the raw headers field SendGrid provides.
+      // We persist this so outbound admin replies can reference it in
+      // In-Reply-To / References and keep the thread intact in email clients.
+      const rawEmailHeaders = String(req.body?.headers || "");
+      const inboundMessageId = parseMessageId(rawEmailHeaders);
+
       const { name: senderName, email: senderEmail } = parseFrom(rawFrom);
 
       // Prefer plain-text; fall back to HTML-stripped version.
@@ -871,6 +914,7 @@ router.post(
               authorId: matchedUser?.id ?? null,
               authorName,
               body: replyBody,
+              emailMessageId: inboundMessageId ?? null,
             } as typeof supportTicketReplies.$inferInsert)
             .returning();
 
@@ -911,6 +955,7 @@ router.post(
               priority: "normal",
               slaFirstResponseDueAt: new Date(Date.now() + 48 * 3_600_000),
               slaResolutionDueAt: new Date(Date.now() + 5 * 24 * 3_600_000),
+              emailMessageId: inboundMessageId ?? null,
             } as typeof supportTickets.$inferInsert)
             .returning();
           ticketId = newTicket.id;
@@ -932,6 +977,7 @@ router.post(
             priority: "normal",
             slaFirstResponseDueAt: new Date(Date.now() + 48 * 3_600_000),
             slaResolutionDueAt: new Date(Date.now() + 5 * 24 * 3_600_000),
+            emailMessageId: inboundMessageId ?? null,
           } as typeof supportTickets.$inferInsert)
           .returning();
         ticketId = newTicket.id;
