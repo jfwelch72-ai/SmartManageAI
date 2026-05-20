@@ -152,6 +152,8 @@ export default function BidWizardPage() {
   const [newItemDescription, setNewItemDescription] = useState("");
   const [newItemQuantity, setNewItemQuantity] = useState("");
   const [newItemUnit, setNewItemUnit] = useState("");
+  const [newItemMaterialCost, setNewItemMaterialCost] = useState("");
+  const [newItemLaborCost, setNewItemLaborCost] = useState("");
   
   const [selectedGcOrg, setSelectedGcOrg] = useState<CrmOrganisation | null>(null);
   const [selectedGcContact, setSelectedGcContact] = useState<CrmContact | null>(null);
@@ -449,6 +451,9 @@ export default function BidWizardPage() {
     // Safely parse quantity with Number.isFinite guard
     const parsedQty = parseFloat(newItemQuantity);
     const safeQuantity = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+
+    const parsedMat = parseFloat(newItemMaterialCost);
+    const parsedLab = parseFloat(newItemLaborCost);
     
     const newItem: AIExtractedItem = {
       id: `custom-${Date.now()}`,
@@ -457,12 +462,28 @@ export default function BidWizardPage() {
       unit: newItemUnit || "EA",
       category: "CUSTOM",
       selected: true,
+      unitMaterialCost: Number.isFinite(parsedMat) && parsedMat >= 0 ? parsedMat : null,
+      unitLaborCost: Number.isFinite(parsedLab) && parsedLab >= 0 ? parsedLab : null,
     };
     
     setCustomItems(prev => [...prev, newItem]);
     setNewItemDescription("");
     setNewItemQuantity("");
     setNewItemUnit("");
+    setNewItemMaterialCost("");
+    setNewItemLaborCost("");
+  };
+
+  const updateCustomItem = (itemId: string, field: string, value: string) => {
+    setCustomItems(prev => prev.map(item => {
+      if (item.id !== itemId) return item;
+      if (field === 'unitMaterialCost' || field === 'unitLaborCost') {
+        const parsed = parseFloat(value);
+        const current = field === 'unitMaterialCost' ? item.unitMaterialCost : item.unitLaborCost;
+        return { ...item, [field]: value === '' ? null : (Number.isFinite(parsed) && parsed >= 0 ? parsed : current) };
+      }
+      return { ...item, [field]: value };
+    }));
   };
 
   const removeCustomItem = (itemId: string) => {
@@ -1058,27 +1079,67 @@ export default function BidWizardPage() {
                   <div className="space-y-2">
                     <h4 className="font-medium text-sm">Your Custom Items</h4>
                     <div className="space-y-2">
-                      {customItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex items-center justify-between p-3 rounded-md border bg-muted/30"
-                          data-testid={`custom-item-${item.id}`}
-                        >
-                          <div className="flex items-center gap-4">
-                            <CheckCircle2 className="h-4 w-4 text-primary" />
-                            <span className="font-medium">{item.description}</span>
-                            <Badge variant="outline">{item.quantity} {item.unit}</Badge>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeCustomItem(item.id)}
-                            data-testid={`remove-custom-${item.id}`}
+                      {customItems.map((item) => {
+                        const qty = typeof item.quantity === 'number' && item.quantity > 0 ? item.quantity : 1;
+                        const lineTotal = ((item.unitMaterialCost ?? 0) + (item.unitLaborCost ?? 0)) * qty;
+                        const hasCostData = item.unitMaterialCost != null || item.unitLaborCost != null;
+                        return (
+                          <div
+                            key={item.id}
+                            className="p-3 rounded-md border bg-muted/30 space-y-2"
+                            data-testid={`custom-item-${item.id}`}
                           >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      ))}
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                                <span className="font-medium">{item.description}</span>
+                                <Badge variant="outline">{item.quantity} {item.unit}</Badge>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => removeCustomItem(item.id)}
+                                data-testid={`remove-custom-${item.id}`}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                            <div className="flex items-center gap-3 pl-7">
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">Unit Mat. $</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="h-7 w-24 text-sm"
+                                  value={item.unitMaterialCost ?? ""}
+                                  placeholder="0.00"
+                                  onChange={(e) => updateCustomItem(item.id, 'unitMaterialCost', e.target.value)}
+                                  data-testid={`input-custom-mat-cost-${item.id}`}
+                                />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-xs text-muted-foreground whitespace-nowrap">Unit Labor $</span>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="0.01"
+                                  className="h-7 w-24 text-sm"
+                                  value={item.unitLaborCost ?? ""}
+                                  placeholder="0.00"
+                                  onChange={(e) => updateCustomItem(item.id, 'unitLaborCost', e.target.value)}
+                                  data-testid={`input-custom-labor-cost-${item.id}`}
+                                />
+                              </div>
+                              {hasCostData && (
+                                <span className="text-sm font-medium ml-2" data-testid={`custom-ai-est-${item.id}`}>
+                                  Est. {lineTotal.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1087,12 +1148,12 @@ export default function BidWizardPage() {
 
                 <div className="space-y-3">
                   <h4 className="font-medium text-sm">Add Custom Scope Item</h4>
-                  <div className="flex gap-2">
+                  <div className="flex gap-2 flex-wrap">
                     <Input
                       placeholder="Description"
                       value={newItemDescription}
                       onChange={(e) => setNewItemDescription(e.target.value)}
-                      className="flex-1"
+                      className="flex-1 min-w-40"
                       data-testid="input-custom-description"
                     />
                     <Input
@@ -1109,6 +1170,26 @@ export default function BidWizardPage() {
                       onChange={(e) => setNewItemUnit(e.target.value)}
                       className="w-20"
                       data-testid="input-custom-unit"
+                    />
+                    <Input
+                      placeholder="Unit Mat. $"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newItemMaterialCost}
+                      onChange={(e) => setNewItemMaterialCost(e.target.value)}
+                      className="w-28"
+                      data-testid="input-custom-mat-cost"
+                    />
+                    <Input
+                      placeholder="Unit Labor $"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={newItemLaborCost}
+                      onChange={(e) => setNewItemLaborCost(e.target.value)}
+                      className="w-28"
+                      data-testid="input-custom-labor-cost"
                     />
                     <Button onClick={addCustomItem} data-testid="button-add-custom-item">
                       <Plus className="h-4 w-4" />
