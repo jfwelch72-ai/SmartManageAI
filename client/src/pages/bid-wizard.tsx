@@ -1088,6 +1088,29 @@ export default function BidWizardPage() {
                 </div>
               </div>
 
+              {(() => {
+                const selectedWithCost = scopeItems.filter(
+                  i => i.selected && (i.unitMaterialCost != null || i.unitLaborCost != null)
+                );
+                if (selectedWithCost.length === 0) return null;
+                const estimatedTotal = scopeItems
+                  .filter(i => i.selected)
+                  .reduce((sum, item) => {
+                    const qty = item.quantity ?? 0;
+                    return sum + ((item.unitMaterialCost ?? 0) + (item.unitLaborCost ?? 0)) * qty;
+                  }, 0);
+                return (
+                  <div className="flex justify-center pt-2 pb-1">
+                    <span className="text-sm text-muted-foreground" data-testid="text-estimated-total">
+                      Estimated Total:{" "}
+                      <span className="font-semibold text-foreground">
+                        {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(estimatedTotal)}
+                      </span>
+                    </span>
+                  </div>
+                );
+              })()}
+
               <div className="flex justify-between pt-4">
                 <Button variant="outline" onClick={() => setCurrentStep(3)} data-testid="button-back-to-ai-review">
                   <ArrowLeft className="h-4 w-4 mr-2" />
