@@ -1577,6 +1577,306 @@ router.get(
 );
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Analytics  GET /api/support/analytics  (SUPER_ADMIN only)
+// ──────────────────────────────────────────────────────────────────────────────
+
+const analyticsQuerySchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+  granularity: z.enum(["day", "week"]).optional().default("day"),
+});
+
+router.get(
+  "/api/support/analytics",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = analyticsQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid query params" });
+
+      const { granularity } = parsed.data;
+      const toDate = parsed.data.to ? new Date(parsed.data.to) : new Date();
+      const fromDate = parsed.data.from
+        ? new Date(parsed.data.from)
+        : new Date(toDate.getTime() - 29 * 24 * 3_600_000);
+
+      // Clamp to sane range (max 365 days)
+      const maxRange = 365 * 24 * 3_600_000;
+      const clampedFrom = new Date(Math.max(fromDate.getTime(), toDate.getTime() - maxRange));
+
+      const truncUnit = granularity === "week" ? "week" : "day";
+
+      // ── 1. Volume trend ──────────────────────────────────────────────────────
+      const volumeRows = await db.execute(sql`
+        SELECT
+          date_trunc(${truncUnit}, created_at)::date AS day,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status IN ('resolved','closed'))::int AS resolved,
+          COUNT(*) FILTER (WHERE status NOT IN ('resolved','closed'))::int AS open
+        FROM support_tickets
+        WHERE created_at >= ${clampedFrom} AND created_at <= ${toDate}
+        GROUP BY 1
+        ORDER BY 1
+      `);
+
+      // ── 2. SLA adherence trend ───────────────────────────────────────────────
+      const slaRows = await db.execute(sql`
+        SELECT
+          date_trunc(${truncUnit}, created_at)::date AS day,
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (
+            WHERE sla_first_response_breached = 0 AND sla_resolution_breached = 0
+          )::int AS on_track
+        FROM support_tickets
+        WHERE created_at >= ${clampedFrom} AND created_at <= ${toDate}
+        GROUP BY 1
+        ORDER BY 1
+      `);
+
+      // ── 3. Median response / resolution times (overall + by tier) ───────────
+      const medianRows = await db.execute(sql`
+        SELECT
+          tier::text AS tier,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60
+          ) AS median_first_response_min,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (resolved_at - created_at)) / 60
+          ) AS median_resolution_min
+        FROM support_tickets
+        WHERE created_at >= ${clampedFrom} AND created_at <= ${toDate}
+          AND first_response_at IS NOT NULL
+        GROUP BY tier
+
+        UNION ALL
+
+        SELECT
+          'overall'::text AS tier,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (first_response_at - created_at)) / 60
+          ) AS median_first_response_min,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (
+            ORDER BY EXTRACT(EPOCH FROM (resolved_at - created_at)) / 60
+          ) AS median_resolution_min
+        FROM support_tickets
+        WHERE created_at >= ${clampedFrom} AND created_at <= ${toDate}
+          AND first_response_at IS NOT NULL
+      `);
+
+      // ── 4. Category breakdown ────────────────────────────────────────────────
+      const categoryRows = await db.execute(sql`
+        SELECT
+          COALESCE(category::text, 'general') AS category,
+          COUNT(*)::int AS count
+        FROM support_tickets
+        WHERE created_at >= ${clampedFrom} AND created_at <= ${toDate}
+        GROUP BY 1
+        ORDER BY 2 DESC
+      `);
+
+      // ── 5. Agent performance ─────────────────────────────────────────────────
+      const agentRows = await db.execute(sql`
+        WITH first_replies AS (
+          SELECT DISTINCT ON (r.ticket_id)
+            r.ticket_id,
+            r.author_id,
+            r.created_at AS reply_at
+          FROM support_ticket_replies r
+          WHERE r.author_id IS NOT NULL
+          ORDER BY r.ticket_id, r.created_at ASC
+        ),
+        ticket_stats AS (
+          SELECT
+            t.assigned_to,
+            t.id AS ticket_id,
+            t.first_response_at,
+            t.resolved_at,
+            t.created_at,
+            t.csat_score,
+            EXTRACT(EPOCH FROM (t.first_response_at - t.created_at)) / 60 AS fr_min,
+            EXTRACT(EPOCH FROM (t.resolved_at - t.created_at)) / 60 AS res_min
+          FROM support_tickets t
+          WHERE t.created_at >= ${clampedFrom} AND t.created_at <= ${toDate}
+            AND t.assigned_to IS NOT NULL
+        )
+        SELECT
+          ts.assigned_to AS agent_id,
+          u.first_name,
+          u.last_name,
+          u.email,
+          COUNT(ts.ticket_id)::int AS tickets_assigned,
+          COUNT(ts.resolved_at)::int AS tickets_resolved,
+          ROUND(AVG(ts.fr_min)::numeric, 1) AS avg_first_response_min,
+          ROUND(AVG(ts.res_min)::numeric, 1) AS avg_resolution_min,
+          ROUND(AVG(ts.csat_score)::numeric, 2) AS avg_csat
+        FROM ticket_stats ts
+        LEFT JOIN users u ON u.id = ts.assigned_to
+        GROUP BY ts.assigned_to, u.first_name, u.last_name, u.email
+        ORDER BY tickets_assigned DESC
+      `);
+
+      // ── 6. Ticket age distribution (open tickets only) ───────────────────────
+      const ageRows = await db.execute(sql`
+        SELECT
+          CASE
+            WHEN age_hours < 24 THEN '< 1 day'
+            WHEN age_hours < 72 THEN '1-3 days'
+            WHEN age_hours < 168 THEN '3-7 days'
+            WHEN age_hours < 720 THEN '1-4 weeks'
+            ELSE '> 4 weeks'
+          END AS bucket,
+          COUNT(*)::int AS count
+        FROM (
+          SELECT
+            EXTRACT(EPOCH FROM (NOW() - created_at)) / 3600 AS age_hours
+          FROM support_tickets
+          WHERE status NOT IN ('resolved','closed')
+            AND created_at >= ${clampedFrom} AND created_at <= ${toDate}
+        ) sub
+        GROUP BY 1
+        ORDER BY MIN(age_hours)
+      `);
+
+      // Normalise output
+      type Row = Record<string, unknown>;
+      const volumeSeries = (volumeRows.rows as Row[]).map((r) => ({
+        day: r.day,
+        total: Number(r.total),
+        resolved: Number(r.resolved),
+        open: Number(r.open),
+      }));
+      const slaSeries = (slaRows.rows as Row[]).map((r) => ({
+        day: r.day,
+        adherence: r.total === 0 ? 100 : Math.round((Number(r.on_track) / Number(r.total)) * 100),
+      }));
+      const medianByTier: Record<string, { medianFirstResponseMin: number | null; medianResolutionMin: number | null }> = {};
+      for (const r of medianRows.rows as Row[]) {
+        medianByTier[r.tier as string] = {
+          medianFirstResponseMin: r.median_first_response_min != null ? Math.round(Number(r.median_first_response_min)) : null,
+          medianResolutionMin: r.median_resolution_min != null ? Math.round(Number(r.median_resolution_min)) : null,
+        };
+      }
+      const categoryBreakdown = (categoryRows.rows as Row[]).map((r) => ({
+        category: r.category as string,
+        count: Number(r.count),
+      }));
+      const agentPerformance = (agentRows.rows as Row[]).map((r) => ({
+        agentId: r.agent_id as string,
+        name: [r.first_name, r.last_name].filter(Boolean).join(" ") || (r.email as string) || "Unknown",
+        email: r.email as string,
+        ticketsAssigned: Number(r.tickets_assigned),
+        ticketsResolved: Number(r.tickets_resolved),
+        avgFirstResponseMin: r.avg_first_response_min != null ? Number(r.avg_first_response_min) : null,
+        avgResolutionMin: r.avg_resolution_min != null ? Number(r.avg_resolution_min) : null,
+        avgCsat: r.avg_csat != null ? Number(r.avg_csat) : null,
+      }));
+      const ageBuckets = (ageRows.rows as Row[]).map((r) => ({
+        bucket: r.bucket as string,
+        count: Number(r.count),
+      }));
+
+      res.json({
+        from: clampedFrom.toISOString(),
+        to: toDate.toISOString(),
+        granularity,
+        volumeSeries,
+        slaSeries,
+        medianByTier,
+        categoryBreakdown,
+        agentPerformance,
+        ageBuckets,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Analytics CSV export  GET /api/support/analytics/export  (SUPER_ADMIN only)
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/analytics/export",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = analyticsQuerySchema.safeParse(req.query);
+      if (!parsed.success) return res.status(400).json({ error: "Invalid query params" });
+
+      const toDate = parsed.data.to ? new Date(parsed.data.to) : new Date();
+      const fromDate = parsed.data.from
+        ? new Date(parsed.data.from)
+        : new Date(toDate.getTime() - 29 * 24 * 3_600_000);
+      const maxRange = 365 * 24 * 3_600_000;
+      const clampedFrom = new Date(Math.max(fromDate.getTime(), toDate.getTime() - maxRange));
+
+      const rows = await db
+        .select({
+          id: supportTickets.id,
+          subject: supportTickets.subject,
+          category: supportTickets.category,
+          priority: supportTickets.priority,
+          tier: supportTickets.tier,
+          status: supportTickets.status,
+          submitterEmail: supportTickets.submitterEmail,
+          submitterName: supportTickets.submitterName,
+          assignedTo: supportTickets.assignedTo,
+          firstResponseAt: supportTickets.firstResponseAt,
+          resolvedAt: supportTickets.resolvedAt,
+          csatScore: supportTickets.csatScore,
+          createdAt: supportTickets.createdAt,
+        })
+        .from(supportTickets)
+        .where(and(gte(supportTickets.createdAt, clampedFrom), lte(supportTickets.createdAt, toDate)))
+        .orderBy(desc(supportTickets.createdAt));
+
+      const header = [
+        "id","subject","category","priority","tier","status",
+        "submitter_email","submitter_name","assigned_to",
+        "created_at","first_response_at","resolved_at",
+        "first_response_min","resolution_min","csat_score",
+      ].join(",");
+
+      const escape = (v: unknown): string => {
+        if (v == null) return "";
+        const s = String(v);
+        if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+          return `"${s.replace(/"/g, '""')}"`;
+        }
+        return s;
+      };
+
+      const lines = rows.map((r) => {
+        const frMin = r.firstResponseAt
+          ? Math.round((new Date(r.firstResponseAt).getTime() - new Date(r.createdAt).getTime()) / 60_000)
+          : "";
+        const resMin = r.resolvedAt
+          ? Math.round((new Date(r.resolvedAt).getTime() - new Date(r.createdAt).getTime()) / 60_000)
+          : "";
+        return [
+          r.id, r.subject, r.category ?? "", r.priority, r.tier, r.status,
+          r.submitterEmail, r.submitterName ?? "", r.assignedTo ?? "",
+          r.createdAt, r.firstResponseAt ?? "", r.resolvedAt ?? "",
+          frMin, resMin, r.csatScore ?? "",
+        ].map(escape).join(",");
+      });
+
+      const csv = [header, ...lines].join("\n");
+      const filename = `support-analytics-${clampedFrom.toISOString().slice(0, 10)}-to-${toDate.toISOString().slice(0, 10)}.csv`;
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+      res.send(csv);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Metrics
 // ──────────────────────────────────────────────────────────────────────────────
 

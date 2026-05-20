@@ -1,11 +1,13 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { format, isPast } from "date-fns";
+import { format, isPast, subDays } from "date-fns";
 import {
   AlertTriangle,
+  BarChart2,
   CheckCircle2,
   ChevronLeft,
   Clock,
+  FileDown,
   Inbox,
   MessageSquare,
   MessageSquareText,
@@ -21,6 +23,21 @@ import {
   X,
   Download,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import { Link } from "wouter";
 import SupportSettingsCard from "./support-settings";
 import {
@@ -1068,6 +1085,393 @@ function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefine
   );
 }
 
+// ── Analytics types ──────────────────────────────────────────────────────────
+
+interface VolumeSeries { day: string; total: number; resolved: number; open: number; }
+interface SlaSeries { day: string; adherence: number; }
+interface MedianTierStats { medianFirstResponseMin: number | null; medianResolutionMin: number | null; }
+interface CategoryBreakdown { category: string; count: number; }
+interface AgentStat {
+  agentId: string; name: string; email: string;
+  ticketsAssigned: number; ticketsResolved: number;
+  avgFirstResponseMin: number | null; avgResolutionMin: number | null;
+  avgCsat: number | null;
+}
+interface AgeBucket { bucket: string; count: number; }
+
+interface AnalyticsData {
+  from: string; to: string; granularity: string;
+  volumeSeries: VolumeSeries[];
+  slaSeries: SlaSeries[];
+  medianByTier: Record<string, MedianTierStats>;
+  categoryBreakdown: CategoryBreakdown[];
+  agentPerformance: AgentStat[];
+  ageBuckets: AgeBucket[];
+}
+
+const RANGE_OPTIONS = [
+  { label: "Last 7 days", days: 7 },
+  { label: "Last 30 days", days: 30 },
+  { label: "Last 90 days", days: 90 },
+];
+
+const CHART_COLORS = ["#6366f1", "#22c55e", "#f59e0b", "#ec4899", "#14b8a6", "#f97316"];
+
+function fmtMinutes(min: number | null | undefined): string {
+  if (min == null) return "—";
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function KpiCard({ label, value, sub, testId }: { label: string; value: string | number; sub?: string; testId?: string }) {
+  return (
+    <Card data-testid={testId}>
+      <CardContent className="p-4">
+        <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{label}</p>
+        <p className="text-2xl font-bold mt-1">{value}</p>
+        {sub && <p className="text-xs text-muted-foreground mt-0.5">{sub}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+function VolumeBarChart({ data }: { data: VolumeSeries[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground text-center py-8">No data in range</p>;
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+        <XAxis dataKey="day" tick={{ fontSize: 11 }} tickFormatter={(v) => format(new Date(v), "MMM d")} />
+        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+        <Tooltip labelFormatter={(v) => format(new Date(v as string), "MMM d, yyyy")} />
+        <Legend />
+        <Bar dataKey="open" name="Open" stackId="a" fill="#6366f1" />
+        <Bar dataKey="resolved" name="Resolved" stackId="a" fill="#22c55e" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function SlaAdherenceLineChart({ data }: { data: SlaSeries[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground text-center py-8">No data in range</p>;
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <LineChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+        <XAxis dataKey="day" tick={{ fontSize: 11 }} tickFormatter={(v) => format(new Date(v), "MMM d")} />
+        <YAxis tick={{ fontSize: 11 }} domain={[0, 100]} unit="%" />
+        <Tooltip labelFormatter={(v) => format(new Date(v as string), "MMM d, yyyy")} formatter={(v: number) => [`${v}%`, "Adherence"]} />
+        <Line type="monotone" dataKey="adherence" name="SLA Adherence %" stroke="#6366f1" dot={false} strokeWidth={2} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function CategoryDonutChart({ data }: { data: CategoryBreakdown[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground text-center py-8">No data in range</p>;
+  const LABELS: Record<string, string> = {
+    bids: "Bids", payroll: "Payroll", ai_estimator: "AI Estimator",
+    change_orders: "Change Orders", documents: "Documents", general: "General",
+  };
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <PieChart>
+        <Pie data={data} dataKey="count" nameKey="category" cx="50%" cy="50%" innerRadius={50} outerRadius={85} paddingAngle={2}>
+          {data.map((entry, i) => (
+            <Cell key={entry.category} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+          ))}
+        </Pie>
+        <Tooltip formatter={(v: number, name: string) => [v, LABELS[name] ?? name]} />
+        <Legend formatter={(v) => LABELS[v] ?? v} />
+      </PieChart>
+    </ResponsiveContainer>
+  );
+}
+
+function TicketAgeHistogram({ data }: { data: AgeBucket[] }) {
+  if (!data.length) return <p className="text-sm text-muted-foreground text-center py-8">No open tickets in range</p>;
+  return (
+    <ResponsiveContainer width="100%" height={220}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+        <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
+        <YAxis tick={{ fontSize: 11 }} allowDecimals={false} />
+        <Tooltip />
+        <Bar dataKey="count" name="Open Tickets" fill="#f59e0b" />
+      </BarChart>
+    </ResponsiveContainer>
+  );
+}
+
+function AgentPerformanceTable({ agents }: { agents: AgentStat[] }) {
+  if (!agents.length) {
+    return (
+      <div className="text-center py-8 text-sm text-muted-foreground">
+        No assigned tickets in the selected range
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Agent</TableHead>
+            <TableHead className="text-right">Assigned</TableHead>
+            <TableHead className="text-right">Resolved</TableHead>
+            <TableHead className="text-right hidden sm:table-cell">Avg First Response</TableHead>
+            <TableHead className="text-right hidden sm:table-cell">Avg Resolution</TableHead>
+            <TableHead className="text-right hidden md:table-cell">Avg CSAT</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {agents.map((agent) => (
+            <TableRow key={agent.agentId} data-testid={`agent-row-${agent.agentId}`}>
+              <TableCell>
+                <p className="font-medium text-sm">{agent.name}</p>
+                <p className="text-xs text-muted-foreground">{agent.email}</p>
+              </TableCell>
+              <TableCell className="text-right font-mono">{agent.ticketsAssigned}</TableCell>
+              <TableCell className="text-right font-mono">{agent.ticketsResolved}</TableCell>
+              <TableCell className="text-right font-mono hidden sm:table-cell">
+                {fmtMinutes(agent.avgFirstResponseMin)}
+              </TableCell>
+              <TableCell className="text-right font-mono hidden sm:table-cell">
+                {fmtMinutes(agent.avgResolutionMin)}
+              </TableCell>
+              <TableCell className="text-right hidden md:table-cell">
+                {agent.avgCsat != null ? (
+                  <span className="flex items-center justify-end gap-1">
+                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                    {agent.avgCsat.toFixed(1)}
+                  </span>
+                ) : "—"}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function AnalyticsTab() {
+  const [rangeDays, setRangeDays] = useState(30);
+  const [granularity, setGranularity] = useState<"day" | "week">("day");
+
+  const toDate = new Date();
+  const fromDate = subDays(toDate, rangeDays);
+
+  const params = new URLSearchParams({
+    from: fromDate.toISOString(),
+    to: toDate.toISOString(),
+    granularity,
+  });
+
+  const { data, isLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/support/analytics", rangeDays, granularity],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/support/analytics?${params}`);
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  const overall = data?.medianByTier?.overall;
+
+  const handleExport = () => {
+    const exportParams = new URLSearchParams({
+      from: fromDate.toISOString(),
+      to: toDate.toISOString(),
+    });
+    window.open(`/api/support/analytics/export?${exportParams}`, "_blank");
+  };
+
+  return (
+    <div className="space-y-6" data-testid="analytics-tab">
+      {/* Controls */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex gap-1 rounded-lg border p-1 bg-muted/40">
+          {RANGE_OPTIONS.map((opt) => (
+            <button
+              key={opt.days}
+              onClick={() => setRangeDays(opt.days)}
+              data-testid={`range-btn-${opt.days}`}
+              className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${
+                rangeDays === opt.days
+                  ? "bg-background shadow text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 rounded-lg border p-1 bg-muted/40">
+          {(["day", "week"] as const).map((g) => (
+            <button
+              key={g}
+              onClick={() => setGranularity(g)}
+              data-testid={`gran-btn-${g}`}
+              className={`px-3 py-1 rounded-md text-sm font-medium capitalize transition-colors ${
+                granularity === g
+                  ? "bg-background shadow text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {g}
+            </button>
+          ))}
+        </div>
+        <div className="ml-auto">
+          <Button variant="outline" size="sm" onClick={handleExport} className="gap-2" data-testid="button-export-csv">
+            <FileDown className="h-4 w-4" />
+            Export CSV
+          </Button>
+        </div>
+      </div>
+
+      {/* KPI cards */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[1,2,3,4].map((i) => <Skeleton key={i} className="h-20" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <KpiCard
+            label="Median First Response"
+            value={fmtMinutes(overall?.medianFirstResponseMin)}
+            sub="Overall"
+            testId="kpi-median-fr"
+          />
+          <KpiCard
+            label="Median Resolution"
+            value={fmtMinutes(overall?.medianResolutionMin)}
+            sub="Overall"
+            testId="kpi-median-res"
+          />
+          <KpiCard
+            label="Total Tickets"
+            value={data?.volumeSeries.reduce((s, d) => s + d.total, 0) ?? 0}
+            sub={`${rangeDays}-day window`}
+            testId="kpi-total"
+          />
+          <KpiCard
+            label="Avg SLA Adherence"
+            value={
+              data?.slaSeries.length
+                ? `${Math.round(data.slaSeries.reduce((s, d) => s + d.adherence, 0) / data.slaSeries.length)}%`
+                : "—"
+            }
+            sub="Across selected range"
+            testId="kpi-sla"
+          />
+        </div>
+      )}
+
+      {/* Charts row 1 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Volume Trend</CardTitle>
+            <CardDescription>Daily open vs resolved ticket counts</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-[220px]" /> : <VolumeBarChart data={data?.volumeSeries ?? []} />}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">SLA Adherence Trend</CardTitle>
+            <CardDescription>Daily % of tickets meeting SLA targets</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-[220px]" /> : <SlaAdherenceLineChart data={data?.slaSeries ?? []} />}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts row 2 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Category Breakdown</CardTitle>
+            <CardDescription>Ticket volume by category</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-[220px]" /> : <CategoryDonutChart data={data?.categoryBreakdown ?? []} />}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Ticket Age Distribution</CardTitle>
+            <CardDescription>How long open tickets have been waiting</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isLoading ? <Skeleton className="h-[220px]" /> : <TicketAgeHistogram data={data?.ageBuckets ?? []} />}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Median by tier */}
+      {!isLoading && data && Object.keys(data.medianByTier).filter((k) => k !== "overall").length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Median Response Times by Tier</CardTitle>
+            <CardDescription>First response and resolution median (minutes) broken down by support tier</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tier</TableHead>
+                    <TableHead className="text-right">Median First Response</TableHead>
+                    <TableHead className="text-right">Median Resolution</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(["starter", "pro", "enterprise"] as const)
+                    .filter((t) => data.medianByTier[t])
+                    .map((tier) => {
+                      const stats = data.medianByTier[tier];
+                      return (
+                        <TableRow key={tier} data-testid={`median-row-${tier}`}>
+                          <TableCell className="capitalize font-medium">{tier}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtMinutes(stats.medianFirstResponseMin)}</TableCell>
+                          <TableCell className="text-right font-mono">{fmtMinutes(stats.medianResolutionMin)}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Agent performance */}
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Agent Performance</CardTitle>
+          <CardDescription>Per-agent ticket counts, response times, and satisfaction scores</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="space-y-2">
+              {[1,2,3].map((i) => <Skeleton key={i} className="h-10" />)}
+            </div>
+          ) : (
+            <AgentPerformanceTable agents={data?.agentPerformance ?? []} />
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function AdminSupportTicketsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -1169,6 +1573,10 @@ export default function AdminSupportTicketsPage() {
             <TabsTrigger value="satisfaction" className="gap-1.5" data-testid="tab-satisfaction">
               <Star className="h-4 w-4" />
               Satisfaction
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="gap-1.5" data-testid="tab-analytics">
+              <BarChart2 className="h-4 w-4" />
+              Analytics
             </TabsTrigger>
             <TabsTrigger value="settings" className="gap-1.5" data-testid="tab-settings">
               <Settings className="h-4 w-4" />
@@ -1362,6 +1770,10 @@ export default function AdminSupportTicketsPage() {
 
           <TabsContent value="satisfaction" className="mt-4">
             <CsatDashboard />
+          </TabsContent>
+
+          <TabsContent value="analytics" className="mt-4">
+            <AnalyticsTab />
           </TabsContent>
 
           <TabsContent value="settings" className="mt-4">
