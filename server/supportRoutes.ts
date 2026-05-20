@@ -1086,6 +1086,7 @@ router.post(
           entityType: "support_inbound_email",
           entityId: ticketId,
           action: "CREATE",
+          oldValue: null,
           newValue: JSON.stringify(auditPayload),
         }).catch((err) => logError("[support/inbound] audit log failed", err));
       }

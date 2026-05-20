@@ -9,6 +9,9 @@ import { requireAuth, type AuthRequest } from "./auth";
 import { logError, logInfo } from "./utils/logger";
 import { ObjectStorageService, parseObjectPath } from "./objectStorage";
 import { randomUUID } from "crypto";
+import { scanConfirmedUpload } from "./uploadAvScanner";
+import { logAudit } from "./auditLogger";
+import { getCorrelationId } from "./middleware/correlationId";
 
 const router = Router();
 
@@ -42,9 +45,20 @@ const upload = multer({
 
 const objectStorageService = new ObjectStorageService();
 
+class ScanBlockedError extends Error {
+  readonly reason: string | undefined;
+  constructor(reason: string | undefined) {
+    super("Upload rejected by malware scan");
+    this.name = "ScanBlockedError";
+    this.reason = reason;
+  }
+}
+
 async function uploadSupportFile(
   file: Express.Multer.File,
   organizationId: string | null,
+  req: AuthRequest,
+  userId: string,
 ): Promise<SupportAttachment> {
   const privateDir = objectStorageService.getPrivateObjectDir();
   const objectId = randomUUID();
@@ -58,6 +72,53 @@ async function uploadSupportFile(
   await gcsFile.save(file.buffer, {
     metadata: { contentType: file.mimetype },
   });
+
+  const scanResult = await scanConfirmedUpload({
+    objectKey: fullPath,
+    organizationId,
+    contentType: file.mimetype,
+    sizeBytes: file.size,
+  });
+
+  const correlationId = getCorrelationId() ?? null;
+  const action = scanResult.status === "blocked" ? "REJECT" : "APPROVE";
+  const payload = {
+    op: "upload_av_scan",
+    route: "support_attachment",
+    status: scanResult.status,
+    reason: scanResult.reason ?? null,
+    scannerId: scanResult.scannerId ?? null,
+    objectKey: fullPath,
+    contentType: file.mimetype,
+    sizeBytes: file.size,
+    organizationId,
+    correlationId,
+  };
+
+  await logAudit(
+    {
+      userId,
+      entityType: "upload_av_scan",
+      entityId: objectId,
+      action,
+      oldValue: null,
+      newValue: JSON.stringify(payload),
+    },
+    req,
+  );
+
+  if (scanResult.status === "blocked") {
+    try {
+      await objectStorageService.deleteObjectByKey(fullPath);
+    } catch (delErr) {
+      logError(
+        "[upload-av] Failed to quarantine infected support attachment",
+        { objectKey: fullPath, organizationId },
+        delErr instanceof Error ? delErr : new Error(String(delErr)),
+      );
+    }
+    throw new ScanBlockedError(scanResult.reason);
+  }
 
   return {
     objectKey: fullPath,
@@ -103,9 +164,12 @@ router.post(
 
       for (const file of files) {
         try {
-          const attachment = await uploadSupportFile(file, orgId);
+          const attachment = await uploadSupportFile(file, orgId, req, userId);
           uploadedAttachments.push(attachment);
         } catch (err) {
+          if (err instanceof ScanBlockedError) {
+            return res.status(422).json({ error: "Upload rejected by malware scan", reason: err.reason });
+          }
           logError(`[support] Failed to upload attachment for ticket ${ticket.id}`, err);
         }
       }
@@ -170,9 +234,12 @@ router.post(
 
       for (const file of files) {
         try {
-          const attachment = await uploadSupportFile(file, orgId);
+          const attachment = await uploadSupportFile(file, orgId, req, userId);
           uploadedAttachments.push(attachment);
         } catch (err) {
+          if (err instanceof ScanBlockedError) {
+            return res.status(422).json({ error: "Upload rejected by malware scan", reason: err.reason });
+          }
           logError(`[support] Failed to upload attachment for reply ${reply.id}`, err);
         }
       }
