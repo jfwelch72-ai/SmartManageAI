@@ -473,7 +473,7 @@ export function DraftFullTakeoffButton({ bidId, projectId, standaloneTakeoffId }
                                 {f.fileName}
                               </span>
                               <span className="text-muted-foreground shrink-0 capitalize">
-                                {f.source === "bid_document" ? "bid" : "project"}
+                                {f.source === "bid_document" ? "bid" : f.source === "plan_document" ? "plan" : "project"}
                               </span>
                             </li>
                           );

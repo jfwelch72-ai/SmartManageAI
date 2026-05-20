@@ -33,7 +33,7 @@ import {
 // lines with org waste factors when a matching assembly exists.
 import { applyAssembliesToDraftLines } from "./applyAssembliesToDraft";
 import type { AssemblyExpansion } from "./explodeAssembly";
-import { resolveEstimatorFiles, type EstimatorFileType } from "./fileResolver";
+import { classifyFile, resolveEstimatorFiles, type EstimatorFileType } from "./fileResolver";
 import { extractSpreadsheetFromUrl } from "./extractSpreadsheet";
 
 const TAKEOFF_DRAFT_OUTPUT_SCHEMA = z.object({
@@ -107,6 +107,11 @@ export interface TakeoffDraftResult {
   filesAnalyzed: AnalyzedFileRef[];
 }
 
+interface PlanDocumentRef {
+  fileUrl: string;
+  fileName: string;
+}
+
 async function resolveOrgPlanDocuments(
   organizationId: string,
   opts: {
@@ -119,7 +124,7 @@ async function resolveOrgPlanDocuments(
     // (org-scoped). projectId/documentIds are ignored in this branch.
     standaloneTakeoffId?: string;
   },
-): Promise<string[]> {
+): Promise<PlanDocumentRef[]> {
   // Task #2551 — Standalone takeoff source path. The standalone takeoff
   // owns its own file table (`standalone_takeoff_files`) keyed by
   // organizationId; verify ownership before reading.
@@ -131,10 +136,10 @@ async function resolveOrgPlanDocuments(
       .limit(1);
     if (!takeoff || takeoff.organizationId !== organizationId) return [];
     const files = await db
-      .select({ fileUrl: standaloneTakeoffFiles.fileUrl })
+      .select({ fileUrl: standaloneTakeoffFiles.fileUrl, fileName: standaloneTakeoffFiles.fileName })
       .from(standaloneTakeoffFiles)
       .where(eq(standaloneTakeoffFiles.standaloneTakeoffId, opts.standaloneTakeoffId));
-    return files.map((f) => f.fileUrl).filter((u): u is string => !!u);
+    return files.filter((f): f is PlanDocumentRef => !!f.fileUrl);
   }
 
   // Always restrict to documents whose project belongs to this organization.
@@ -142,6 +147,7 @@ async function resolveOrgPlanDocuments(
     .select({
       id: planDocuments.id,
       fileUrl: planDocuments.fileUrl,
+      fileName: planDocuments.fileName,
       projectId: planDocuments.projectId,
     })
     .from(planDocuments)
@@ -182,7 +188,7 @@ async function resolveOrgPlanDocuments(
     // route surfaces a banner when this happens.
   }
 
-  return scoped.map((r) => r.fileUrl).filter((u): u is string => !!u);
+  return scoped.filter((r): r is typeof r & { fileUrl: string } => !!r.fileUrl);
 }
 
 /**
@@ -224,19 +230,20 @@ export async function draftTakeoffFromPlans(opts: {
     }
   };
   await reportProgress(10, "Indexing plan sheets");
-  const urls = await resolveOrgPlanDocuments(opts.organizationId, {
+  const planDocRefs = await resolveOrgPlanDocuments(opts.organizationId, {
     documentIds: opts.planDocumentIds,
     projectId: opts.projectId,
     bidId: opts.bidId,
     standaloneTakeoffId: opts.standaloneTakeoffId,
     disciplines: opts.disciplines,
   });
-  if (urls.length === 0) {
+  if (planDocRefs.length === 0) {
     return { result: null, reason: "No plan documents found for your organization" };
   }
+  const urls = planDocRefs.map((r) => r.fileUrl);
   await reportProgress(
     25,
-    `Reading ${Math.min(urls.length, MAX_PLAN_DOCS_PER_DRAFT)} plan document${urls.length === 1 ? "" : "s"}`,
+    `Reading ${Math.min(planDocRefs.length, MAX_PLAN_DOCS_PER_DRAFT)} plan document${planDocRefs.length === 1 ? "" : "s"}`,
   );
   // Task #2466 Phase 1 — cap raised to MAX_PLAN_DOCS_PER_DRAFT (8) and
   // every doc is wrapped in try/catch so a single oversized PDF can't
@@ -244,7 +251,7 @@ export async function draftTakeoffFromPlans(opts: {
   // discipline → summarise per-trade → merge) is tracked as follow-up.
   const rawBlocks = (
     await Promise.all(
-      urls.slice(0, MAX_PLAN_DOCS_PER_DRAFT).map(async (u) => {
+      planDocRefs.slice(0, MAX_PLAN_DOCS_PER_DRAFT).map(async ({ fileUrl: u }) => {
         try {
           return await extractDocumentContent(u);
         } catch (err) {
@@ -287,7 +294,16 @@ export async function draftTakeoffFromPlans(opts: {
   // (PDFs, spreadsheets, images that were NOT already included via the
   // plan-sheet resolver above). These give the AI richer context: spec
   // books, cost estimates, schedules, etc.
-  const filesAnalyzed: AnalyzedFileRef[] = [];
+  // Task #2945 — Seed filesAnalyzed with the core plan-sheet files so
+  // the "Files analyzed" panel shows what the AI actually read, not just
+  // the supplemental extras.
+  const filesAnalyzed: AnalyzedFileRef[] = planDocRefs
+    .slice(0, MAX_PLAN_DOCS_PER_DRAFT)
+    .map((ref) => ({
+      fileName: ref.fileName,
+      fileType: classifyFile(ref.fileName, null),
+      source: "plan_document" as const,
+    }));
   const extraBlocks: typeof rawBlocks = [];
   try {
     // Only resolve when we have a concrete bid or project scope (skip
