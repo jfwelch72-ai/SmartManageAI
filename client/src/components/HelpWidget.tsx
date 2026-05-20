@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
@@ -13,6 +13,8 @@ import {
   ChevronLeft,
   MessageSquare,
   Clock,
+  Paperclip,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,7 +26,16 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTicketStream } from "@/hooks/use-ticket-stream";
-import type { SupportTicket, SupportTicketReply } from "@shared/schema";
+import type { SupportTicket, SupportTicketReply, SupportAttachment } from "@shared/schema";
+
+const CATEGORY_OPTIONS = [
+  { value: "general", label: "General" },
+  { value: "bids", label: "Bids" },
+  { value: "payroll", label: "Payroll" },
+  { value: "ai_estimator", label: "AI Estimator" },
+  { value: "change_orders", label: "Change Orders" },
+  { value: "documents", label: "Documents" },
+] as const;
 
 interface HelpSummary {
   slug: string;
@@ -81,6 +92,74 @@ const STATUS_LABELS: Record<SupportTicket["status"], string> = {
   closed: "Closed",
 };
 
+function AttachmentList({ attachments }: { attachments: SupportAttachment[] | null | undefined }) {
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2" data-testid="attachment-list">
+      {attachments.map((att, i) => (
+        <a
+          key={i}
+          href={`/api/support/attachments/download?key=${encodeURIComponent(att.objectKey)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1 hover:bg-muted/70 transition-colors"
+          data-testid={`attachment-link-${i}`}
+        >
+          {att.contentType.startsWith("image/") ? (
+            <img
+              src={`/api/support/attachments/download?key=${encodeURIComponent(att.objectKey)}`}
+              alt={att.fileName}
+              className="h-5 w-5 object-cover rounded"
+            />
+          ) : (
+            <Paperclip className="h-3 w-3" />
+          )}
+          <span className="max-w-[120px] truncate">{att.fileName}</span>
+          <Download className="h-3 w-3 text-muted-foreground" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function FilePickerButton({
+  onFiles,
+  disabled,
+}: {
+  onFiles: (files: File[]) => void;
+  disabled?: boolean;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <>
+      <input
+        ref={inputRef}
+        type="file"
+        multiple
+        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+        className="hidden"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          if (files.length) onFiles(files);
+          e.target.value = "";
+        }}
+      />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-muted-foreground"
+        onClick={() => inputRef.current?.click()}
+        disabled={disabled}
+        data-testid="button-attach-file"
+        title="Attach file"
+      >
+        <Paperclip className="h-4 w-4" />
+      </Button>
+    </>
+  );
+}
+
 function TicketThreadView({
   ticket,
   onBack,
@@ -92,6 +171,7 @@ function TicketThreadView({
 }) {
   const { toast } = useToast();
   const [replyBody, setReplyBody] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
 
   const repliesQuery = useQuery<{ replies: SupportTicketReply[] }>({
     queryKey: ["/api/support/my-tickets", ticket.id, "replies"],
@@ -110,12 +190,25 @@ function TicketThreadView({
 
   const replyMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", `/api/support/my-tickets/${ticket.id}/replies`, {
+      const res = await apiRequest("POST", `/api/support/my-tickets/${ticket.id}/replies`, {
         body: replyBody,
       });
+      const data = await res.json();
+      // If there are files, upload them attached to this reply
+      if (pendingFiles.length > 0 && data.reply?.id) {
+        const formData = new FormData();
+        pendingFiles.forEach((f) => formData.append("files", f));
+        await fetch(`/api/support/tickets/${ticket.id}/replies/${data.reply.id}/attachments`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+      }
+      return data;
     },
     onSuccess: () => {
       setReplyBody("");
+      setPendingFiles([]);
       queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets", ticket.id, "replies"] });
       queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets"] });
       toast({ title: "Reply sent", description: "Your reply has been sent to the support team." });
@@ -127,6 +220,7 @@ function TicketThreadView({
 
   const replies = repliesQuery.data?.replies ?? [];
   const isClosedOrResolved = ticket.status === "resolved" || ticket.status === "closed";
+  const ticketAttachments = (ticket.attachments as SupportAttachment[] | null) ?? [];
 
   return (
     <div className="space-y-3" data-testid="ticket-thread-view">
@@ -163,6 +257,7 @@ function TicketThreadView({
         <div className="text-sm text-foreground whitespace-pre-wrap mt-2 pt-2 border-t border-border">
           {ticket.body}
         </div>
+        <AttachmentList attachments={ticketAttachments} />
       </div>
 
       {repliesQuery.isLoading ? (
@@ -177,6 +272,7 @@ function TicketThreadView({
         <div className="space-y-2" data-testid="ticket-replies-list">
           {replies.map((reply) => {
             const isCustomer = reply.authorId === currentUserId;
+            const replyAttachments = (reply.attachments as SupportAttachment[] | null) ?? [];
             return (
               <div
                 key={reply.id}
@@ -201,6 +297,7 @@ function TicketThreadView({
                   </span>
                 </div>
                 <div className="whitespace-pre-wrap">{reply.body}</div>
+                <AttachmentList attachments={replyAttachments} />
               </div>
             );
           })}
@@ -227,21 +324,44 @@ function TicketThreadView({
             minLength={1}
             data-testid="input-ticket-reply-body"
           />
-          <Button
-            type="submit"
-            size="sm"
-            disabled={replyMutation.isPending || !replyBody.trim()}
-            className="w-full"
-            data-testid="button-ticket-reply-submit"
-          >
-            {replyMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Send className="h-3 w-3 mr-1" /> Send Reply
-              </>
-            )}
-          </Button>
+          {pendingFiles.length > 0 && (
+            <div className="flex flex-wrap gap-1" data-testid="pending-files-list">
+              {pendingFiles.map((f, i) => (
+                <div key={i} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
+                  <Paperclip className="h-3 w-3" />
+                  <span className="max-w-[100px] truncate">{f.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
+            <FilePickerButton
+              onFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+              disabled={replyMutation.isPending}
+            />
+            <Button
+              type="submit"
+              size="sm"
+              disabled={replyMutation.isPending || !replyBody.trim()}
+              className="flex-1"
+              data-testid="button-ticket-reply-submit"
+            >
+              {replyMutation.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <>
+                  <Send className="h-3 w-3 mr-1" /> Send Reply
+                </>
+              )}
+            </Button>
+          </div>
         </form>
       )}
 
@@ -346,26 +466,44 @@ export default function HelpWidget() {
 
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [category, setCategory] = useState<string>("general");
   const [priority, setPriority] = useState<"low" | "normal" | "high" | "urgent">("normal");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [submitted, setSubmitted] = useState(false);
+  const [newTicketId, setNewTicketId] = useState<string | null>(null);
 
   const ticketMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/support/tickets", {
+      const res = await apiRequest("POST", "/api/support/tickets", {
         subject,
         body,
         priority,
+        category,
         submitterEmail: user?.email,
         submitterName: [user?.firstName, user?.lastName].filter(Boolean).join(" ") || undefined,
         route: location,
         userAgent: typeof navigator !== "undefined" ? navigator.userAgent : undefined,
         metadata: { url: typeof window !== "undefined" ? window.location.href : undefined },
       });
+      const data = await res.json();
+      // Upload attachments if any
+      if (pendingFiles.length > 0 && data.id) {
+        const formData = new FormData();
+        pendingFiles.forEach((f) => formData.append("files", f));
+        await fetch(`/api/support/tickets/${data.id}/attachments`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        }).catch(() => {/* best-effort */});
+      }
+      return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       setSubmitted(true);
+      setNewTicketId(data.id ?? null);
       setSubject("");
       setBody("");
+      setPendingFiles([]);
       queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/support/my-tickets"] });
       toast({ title: "Ticket submitted", description: "Our team will respond per your plan SLA." });
@@ -545,6 +683,20 @@ export default function HelpWidget() {
                     className="space-y-3"
                   >
                     <div>
+                      <Label htmlFor="help-category" className="text-xs">Category</Label>
+                      <select
+                        id="help-category"
+                        value={category}
+                        onChange={(e) => setCategory(e.target.value)}
+                        className="w-full rounded-md border border-input bg-background text-sm px-2 py-1.5"
+                        data-testid="select-help-ticket-category"
+                      >
+                        {CATEGORY_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
                       <Label htmlFor="help-subject" className="text-xs">Subject</Label>
                       <Input
                         id="help-subject"
@@ -563,7 +715,7 @@ export default function HelpWidget() {
                         value={body}
                         onChange={(e) => setBody(e.target.value)}
                         placeholder="What happened? What did you expect?"
-                        rows={5}
+                        rows={4}
                         required
                         minLength={5}
                         data-testid="input-help-ticket-body"
@@ -583,6 +735,33 @@ export default function HelpWidget() {
                         <option value="high">High</option>
                         <option value="urgent">Urgent</option>
                       </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs">Attachments (optional)</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <FilePickerButton
+                          onFiles={(files) => setPendingFiles((prev) => [...prev, ...files])}
+                          disabled={ticketMutation.isPending}
+                        />
+                        <span className="text-xs text-muted-foreground">Images, PDFs, Office docs up to 25 MB each</span>
+                      </div>
+                      {pendingFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-2" data-testid="ticket-pending-files">
+                          {pendingFiles.map((f, i) => (
+                            <div key={i} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
+                              <Paperclip className="h-3 w-3" />
+                              <span className="max-w-[100px] truncate">{f.name}</span>
+                              <button
+                                type="button"
+                                onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))}
+                                className="text-muted-foreground hover:text-foreground"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="text-xs text-muted-foreground">
                       We'll attach this page ({location}), your user, and your organization automatically.

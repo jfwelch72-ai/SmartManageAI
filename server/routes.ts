@@ -267,6 +267,7 @@ import myWorkRoutes from "./myWorkRoutes";
 import devEmailRoutes from "./devEmailRoutes";
 import statusPageRoutes from "./statusPageRoutes";
 import supportRoutes from "./supportRoutes";
+import supportAttachmentRoutes from "./supportAttachmentRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Task #2780 — Demo request form (unauthenticated).
@@ -715,6 +716,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(publicLeadsRoutes);
   app.use(statusPageRoutes);
   app.use(supportRoutes);
+  app.use(supportAttachmentRoutes);
   app.use(crmCatalogRoutes);
   app.use(crmCustomFieldsRoutes);
   app.use(crmAnalyticsRoutes);

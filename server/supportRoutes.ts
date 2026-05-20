@@ -1,16 +1,19 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, gte, like, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, like, lte, sql } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import multer from "multer";
+import { randomUUID } from "crypto";
 import { db } from "./db";
 import {
   organizationSubscriptions,
   supportTickets,
   supportTicketReplies,
+  supportCannedResponses,
   users,
   insertSupportTicketSchema,
+  insertSupportCannedResponseSchema,
   type SupportTicket,
   type SupportTicketReply,
 } from "@shared/schema";
@@ -187,6 +190,7 @@ const ticketBodySchema = insertSupportTicketSchema.extend({
   subject: z.string().min(3).max(200),
   body: z.string().min(5).max(20_000),
   priority: z.enum(["low", "normal", "high", "urgent"]).optional(),
+  category: z.enum(["bids", "payroll", "ai_estimator", "change_orders", "documents", "general"]).optional(),
 });
 
 router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, next) => {
@@ -196,11 +200,6 @@ router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, n
       return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
     }
 
-    // Tier is derived server-side only — never trust a client-supplied value,
-    // since SLA windows are tied to the billing plan. SUPER_ADMIN can override
-    // for diagnostics; everyone else gets the org's billing plan tier mapped
-    // through `planTierToSupportTier`. Orgs without a record fall back to
-    // "starter".
     const adminOverride =
       req.user?.role === "SUPER_ADMIN" && typeof req.query.tier === "string"
         ? (req.query.tier as SupportTier)
@@ -237,6 +236,7 @@ router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, n
       submitterName,
       subject: parsed.data.subject,
       body: parsed.data.body,
+      category: parsed.data.category ?? null,
       route: parsed.data.route ?? null,
       userAgent: parsed.data.userAgent ?? req.headers["user-agent"] ?? null,
       metadata: parsed.data.metadata ?? {},
@@ -248,7 +248,6 @@ router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, n
 
     const [row] = await db.insert(supportTickets).values(insertRow).returning();
 
-    // Best-effort: notify the support inbox. Don't block the response on email.
     void sendEmail({
       to: SUPPORT_INBOX,
       subject: `[Support][${tier}/${row.priority}] ${row.subject}`,
@@ -257,6 +256,7 @@ Org: ${row.organizationId || "—"}
 Route: ${row.route || "—"}
 Tier: ${tier}
 Priority: ${priority}
+Category: ${row.category || "—"}
 First-response SLA: ${frTarget.amount} ${frTarget.unit} (${frTarget.clock}) — due ${slaFirstResponseDueAt.toISOString()}
 Resolution SLA: ${resTarget.amount} ${resTarget.unit} (${resTarget.clock}) — due ${slaResolutionDueAt.toISOString()}
 Ticket ID: ${row.id}
@@ -283,14 +283,11 @@ router.get(
     try {
       const status = typeof req.query.status === "string" ? req.query.status : undefined;
       const priority = typeof req.query.priority === "string" ? req.query.priority : undefined;
+      const category = typeof req.query.category === "string" ? req.query.category : undefined;
       const limit = Math.min(Number(req.query.limit) || 50, 200);
       const orgId = req.user?.organizationId || null;
       const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
 
-      // Fail-closed tenant scoping: a non-SUPER_ADMIN admin without an
-      // organizationId has no tenant to scope to and must NOT see the
-      // global ticket pool. Return an empty set rather than risk leaking
-      // cross-tenant support content (subjects, bodies, submitter PII).
       if (!isSuperAdmin && !orgId) {
         return res.json({ tickets: [] });
       }
@@ -304,6 +301,23 @@ router.get(
       }
       if (priority) {
         conditions.push(eq(supportTickets.priority, priority as SupportTicket["priority"]));
+      }
+      if (category) {
+        type CategoryValue = "bids" | "payroll" | "ai_estimator" | "change_orders" | "documents" | "general";
+        conditions.push(eq(supportTickets.category, category as CategoryValue));
+      }
+
+      const csat = typeof req.query.csat === "string" ? req.query.csat : undefined;
+      if (csat === "rated") {
+        conditions.push(isNotNull(supportTickets.csatScore));
+      } else if (csat === "unrated") {
+        conditions.push(sql`(${supportTickets.csatScore} IS NULL OR ${supportTickets.csatToken} IS NULL)`);
+      } else if (csat === "high") {
+        conditions.push(isNotNull(supportTickets.csatScore));
+        conditions.push(gte(supportTickets.csatScore, 4));
+      } else if (csat === "low") {
+        conditions.push(isNotNull(supportTickets.csatScore));
+        conditions.push(lte(supportTickets.csatScore, 3));
       }
 
       const rows = await db
@@ -339,11 +353,8 @@ router.patch(
         .safeParse(req.body);
       if (!patch.success) return res.status(400).json({ error: "Invalid input" });
 
-      // Tenant scoping: a non-SUPER_ADMIN may only mutate tickets that belong
-      // to their own organization. We do this with a 404 (not 403) so callers
-      // can't probe for ticket IDs outside their tenant.
       const [existing] = await db
-        .select({ id: supportTickets.id, organizationId: supportTickets.organizationId })
+        .select({ id: supportTickets.id, organizationId: supportTickets.organizationId, status: supportTickets.status, submitterEmail: supportTickets.submitterEmail, submitterName: supportTickets.submitterName, subject: supportTickets.subject })
         .from(supportTickets)
         .where(eq(supportTickets.id, req.params.id));
       if (!existing) return res.status(404).json({ error: "Ticket not found" });
@@ -361,6 +372,34 @@ router.patch(
       if (patch.data.markFirstResponse) updates.firstResponseAt = new Date();
       if (patch.data.status === "resolved" || patch.data.status === "closed") {
         updates.resolvedAt = new Date();
+        // Generate CSAT token if moving to resolved/closed for first time
+        const wasNotResolved = existing.status !== "resolved" && existing.status !== "closed";
+        if (wasNotResolved) {
+          const csatToken = randomUUID();
+          const csatTokenExpiresAt = new Date(Date.now() + 7 * 24 * 3_600_000);
+          updates.csatToken = csatToken;
+          updates.csatTokenExpiresAt = csatTokenExpiresAt;
+
+          // Send CSAT email best-effort
+          const ratingUrl = `${process.env.APP_URL || "https://smartmanageai.com"}/support/rate/${csatToken}`;
+          void sendEmail({
+            to: existing.submitterEmail,
+            subject: `How did we do? Rate your support experience — Ticket #${existing.id.slice(0, 8)}`,
+            text: `Hello ${existing.submitterName || ""},
+
+Your support ticket "${existing.subject}" has been resolved.
+
+We'd love to hear how we did! Please take a moment to rate your experience (1–5 stars):
+
+${ratingUrl}
+
+This link expires in 7 days.
+
+Thank you,
+SmartManageAI Support`,
+            replyTo: SUPPORT_INBOX,
+          }).catch((err) => logError("CSAT email failed", err));
+        }
       }
 
       const [row] = await db
@@ -413,7 +452,6 @@ router.post(
         return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
       }
 
-      // Verify ticket exists
       const [ticket] = await db
         .select()
         .from(supportTickets)
@@ -423,7 +461,6 @@ router.post(
       const authorName =
         [req.user?.firstName, req.user?.lastName].filter(Boolean).join(" ") || "Support Team";
 
-      // Insert the reply and update the ticket atomically
       const ticketUpdates: Partial<typeof supportTickets.$inferInsert> = {
         updatedAt: new Date(),
       };
@@ -454,7 +491,6 @@ router.post(
         return { reply, updatedTicket };
       });
 
-      // Send email to submitter — best effort
       let emailedAt: Date | null = null;
       const emailPromise = sendEmail({
         to: ticket.submitterEmail,
@@ -497,9 +533,7 @@ SmartManageAI Support`,
 );
 
 // ──────────────────────────────────────────────────────────────────────────────
-// My-tickets endpoints — authenticated user can view their own tickets + thread
-// and post a customer reply. No admin role required; ownership is enforced by
-// comparing userId on the ticket to req.user.id (fail-closed 404 on mismatch).
+// My-tickets endpoints
 // ──────────────────────────────────────────────────────────────────────────────
 
 router.get("/api/support/my-tickets", requireAuth, async (req: AuthRequest, res, next) => {
@@ -572,7 +606,6 @@ router.post("/api/support/my-tickets/:id/replies", requireAuth, async (req: Auth
     const ticketUpdates: Partial<typeof supportTickets.$inferInsert> = {
       updatedAt: new Date(),
     };
-    // A customer reply moves the ticket back to "waiting on support"
     if (ticket.status === "waiting_on_customer") {
       ticketUpdates.status = "in_progress";
     }
@@ -597,7 +630,6 @@ router.post("/api/support/my-tickets/:id/replies", requireAuth, async (req: Auth
       return { reply, updatedTicket };
     });
 
-    // Notify support inbox — best effort
     void sendEmail({
       to: SUPPORT_INBOX,
       subject: `Re: [Ticket #${ticket.id.slice(0, 8)}] ${ticket.subject}`,
@@ -937,11 +969,210 @@ router.post(
   },
 );
 
-// SLA breach sweep — flips the breach flags so the weekly report can pick
-// them up. Locked to SUPER_ADMIN because the sweep mutates platform-wide
-// support state across every tenant. The hourly background scheduler
-// (see server/supportWeeklyReport.ts) handles the routine case; this
-// endpoint is only for ops to force a manual run.
+// ──────────────────────────────────────────────────────────────────────────────
+// Canned responses
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/canned-responses",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
+      const orgId = req.user?.organizationId ?? null;
+
+      // SUPER_ADMIN sees all; admins see global (organizationId IS NULL) + their own org
+      const rows = isSuperAdmin
+        ? await db.select().from(supportCannedResponses).orderBy(supportCannedResponses.title)
+        : await db
+            .select()
+            .from(supportCannedResponses)
+            .where(
+              orgId
+                ? sql`(${supportCannedResponses.organizationId} IS NULL OR ${supportCannedResponses.organizationId} = ${orgId})`
+                : isNull(supportCannedResponses.organizationId),
+            )
+            .orderBy(supportCannedResponses.title);
+
+      res.json({ cannedResponses: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+router.post(
+  "/api/support/canned-responses",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = insertSupportCannedResponseSchema
+        .extend({
+          title: z.string().min(1).max(200),
+          body: z.string().min(1).max(20_000),
+        })
+        .safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const [row] = await db
+        .insert(supportCannedResponses)
+        .values({
+          organizationId: parsed.data.organizationId ?? null,
+          title: parsed.data.title,
+          body: parsed.data.body,
+        })
+        .returning();
+      res.status(201).json(row);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.patch(
+  "/api/support/canned-responses/:id",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const patch = z
+        .object({
+          title: z.string().min(1).max(200).optional(),
+          body: z.string().min(1).max(20_000).optional(),
+        })
+        .safeParse(req.body);
+      if (!patch.success) return res.status(400).json({ error: "Invalid input" });
+
+      const [existing] = await db
+        .select({ id: supportCannedResponses.id })
+        .from(supportCannedResponses)
+        .where(eq(supportCannedResponses.id, req.params.id));
+      if (!existing) return res.status(404).json({ error: "Not found" });
+
+      const updates: Partial<typeof supportCannedResponses.$inferInsert> = { updatedAt: new Date() };
+      if (patch.data.title) updates.title = patch.data.title;
+      if (patch.data.body) updates.body = patch.data.body;
+
+      const [row] = await db
+        .update(supportCannedResponses)
+        .set(updates)
+        .where(eq(supportCannedResponses.id, req.params.id))
+        .returning();
+      res.json(row);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.delete(
+  "/api/support/canned-responses/:id",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const [existing] = await db
+        .select({ id: supportCannedResponses.id })
+        .from(supportCannedResponses)
+        .where(eq(supportCannedResponses.id, req.params.id));
+      if (!existing) return res.status(404).json({ error: "Not found" });
+
+      await db.delete(supportCannedResponses).where(eq(supportCannedResponses.id, req.params.id));
+      res.status(204).send();
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// CSAT rating (token-authenticated, no session required)
+// ──────────────────────────────────────────────────────────────────────────────
+
+// GET /api/support/csat/:token — validate token and return ticket info (for the rating page)
+router.get("/api/support/csat/:token", async (req, res, next) => {
+  try {
+    const [ticket] = await db
+      .select({
+        id: supportTickets.id,
+        subject: supportTickets.subject,
+        csatToken: supportTickets.csatToken,
+        csatTokenExpiresAt: supportTickets.csatTokenExpiresAt,
+        csatScore: supportTickets.csatScore,
+        csatSubmittedAt: supportTickets.csatSubmittedAt,
+        status: supportTickets.status,
+      })
+      .from(supportTickets)
+      .where(eq(supportTickets.csatToken, req.params.token));
+
+    if (!ticket) return res.status(404).json({ error: "Invalid or expired rating link" });
+    if (ticket.csatTokenExpiresAt && new Date() > new Date(ticket.csatTokenExpiresAt)) {
+      return res.status(410).json({ error: "Rating link has expired" });
+    }
+    if (ticket.csatSubmittedAt) {
+      return res.json({ ticket, alreadyRated: true });
+    }
+    res.json({ ticket, alreadyRated: false });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/support/csat/:token — submit a rating
+const csatSchema = z.object({
+  score: z.number().int().min(1).max(5),
+  comment: z.string().max(2000).optional(),
+});
+
+router.post("/api/support/csat/:token", async (req, res, next) => {
+  try {
+    const parsed = csatSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+    }
+
+    const [ticket] = await db
+      .select({
+        id: supportTickets.id,
+        csatToken: supportTickets.csatToken,
+        csatTokenExpiresAt: supportTickets.csatTokenExpiresAt,
+        csatSubmittedAt: supportTickets.csatSubmittedAt,
+      })
+      .from(supportTickets)
+      .where(eq(supportTickets.csatToken, req.params.token));
+
+    if (!ticket) return res.status(404).json({ error: "Invalid or expired rating link" });
+    if (ticket.csatTokenExpiresAt && new Date() > new Date(ticket.csatTokenExpiresAt)) {
+      return res.status(410).json({ error: "Rating link has expired" });
+    }
+    if (ticket.csatSubmittedAt) {
+      return res.status(409).json({ error: "Rating already submitted" });
+    }
+
+    const [row] = await db
+      .update(supportTickets)
+      .set({
+        csatScore: parsed.data.score,
+        csatComment: parsed.data.comment ?? null,
+        csatSubmittedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(supportTickets.id, ticket.id))
+      .returning({ id: supportTickets.id, csatScore: supportTickets.csatScore });
+
+    logInfo(`[support] CSAT rating submitted for ticket ${ticket.id}: score=${parsed.data.score}`);
+    res.json({ success: true, ticket: row });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ──────────────────────────────────────────────────────────────────────────────
+// SLA sweep
+// ──────────────────────────────────────────────────────────────────────────────
+
 router.post(
   "/api/support/tickets/sla/sweep",
   requireAuth,
@@ -956,7 +1187,10 @@ router.post(
   },
 );
 
-// Recent KPI metrics, used by both the weekly report job and the admin dashboard.
+// ──────────────────────────────────────────────────────────────────────────────
+// Metrics
+// ──────────────────────────────────────────────────────────────────────────────
+
 router.get(
   "/api/support/tickets/metrics",
   requireAuth,
@@ -967,9 +1201,6 @@ router.get(
       const orgId = req.user?.organizationId || null;
       const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
 
-      // Same fail-closed scoping as the list endpoint — never expose
-      // cross-tenant aggregate metrics to a non-SUPER_ADMIN admin who
-      // happens to have a null organizationId.
       if (!isSuperAdmin && !orgId) {
         return res.json({
           windowDays: 7,
@@ -978,6 +1209,9 @@ router.get(
           resolved: 0,
           firstResponseBreached: 0,
           resolutionBreached: 0,
+          avgCsatScore: null,
+          csatResponseRate: 0,
+          categoryCounts: {},
         });
       }
 
@@ -996,6 +1230,32 @@ router.get(
       const firstRespBreached = rows.filter((r) => r.slaFirstResponseBreached === 1).length;
       const resBreached = rows.filter((r) => r.slaResolutionBreached === 1).length;
 
+      // CSAT metrics (all time, not just 7d window)
+      const csatConditions = isSuperAdmin ? [] : orgId ? [eq(supportTickets.organizationId, orgId)] : [];
+      const csatEligibleConditions = [
+        ...csatConditions,
+        isNotNull(supportTickets.csatToken),
+      ];
+      const csatRows = await db
+        .select({ score: supportTickets.csatScore, submittedAt: supportTickets.csatSubmittedAt })
+        .from(supportTickets)
+        .where(csatEligibleConditions.length ? and(...csatEligibleConditions) : undefined);
+
+      const ratedRows = csatRows.filter((r) => r.score != null);
+      const avgCsatScore =
+        ratedRows.length > 0
+          ? ratedRows.reduce((sum, r) => sum + (r.score ?? 0), 0) / ratedRows.length
+          : null;
+      const csatResponseRate =
+        csatRows.length > 0 ? ratedRows.length / csatRows.length : 0;
+
+      // Category counts for the window
+      const categoryCounts: Record<string, number> = {};
+      for (const row of rows) {
+        const cat = row.category ?? "general";
+        categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
+      }
+
       res.json({
         windowDays: 7,
         total,
@@ -1004,6 +1264,9 @@ router.get(
         firstResponseBreached: firstRespBreached,
         resolutionBreached: resBreached,
         adherence: total === 0 ? 1 : 1 - (firstRespBreached + resBreached) / (total * 2),
+        avgCsatScore: avgCsatScore !== null ? Math.round(avgCsatScore * 10) / 10 : null,
+        csatResponseRate: Math.round(csatResponseRate * 100),
+        categoryCounts,
       });
     } catch (err) {
       next(err);

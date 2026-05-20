@@ -6,7 +6,7 @@
 // (tickets, events) is stored in the database.
 
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, pgEnum, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, pgEnum, index, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { organizations, users } from "../core";
@@ -25,6 +25,22 @@ export const supportTicketPriorityEnum = pgEnum("support_ticket_priority", [
   "high",
   "urgent",
 ]);
+export const supportTicketCategoryEnum = pgEnum("support_ticket_category", [
+  "bids",
+  "payroll",
+  "ai_estimator",
+  "change_orders",
+  "documents",
+  "general",
+]);
+
+export interface SupportAttachment {
+  objectKey: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedAt: string;
+}
 
 export const supportTickets = pgTable(
   "support_tickets",
@@ -36,6 +52,8 @@ export const supportTickets = pgTable(
     submitterName: text("submitter_name"),
     subject: text("subject").notNull(),
     body: text("body").notNull(),
+    category: supportTicketCategoryEnum("category"),
+    attachments: jsonb("attachments").$type<SupportAttachment[]>().default([]),
     route: text("route"),
     userAgent: text("user_agent"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
@@ -49,6 +67,11 @@ export const supportTickets = pgTable(
     slaResolutionDueAt: timestamp("sla_resolution_due_at"),
     slaFirstResponseBreached: integer("sla_first_response_breached").notNull().default(0),
     slaResolutionBreached: integer("sla_resolution_breached").notNull().default(0),
+    csatScore: integer("csat_score"),
+    csatComment: text("csat_comment"),
+    csatSubmittedAt: timestamp("csat_submitted_at"),
+    csatToken: varchar("csat_token"),
+    csatTokenExpiresAt: timestamp("csat_token_expires_at"),
     createdAt: timestamp("created_at").notNull().default(sql`now()`),
     updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
   },
@@ -56,6 +79,8 @@ export const supportTickets = pgTable(
     orgIdx: index("support_tickets_org_idx").on(t.organizationId),
     statusIdx: index("support_tickets_status_idx").on(t.status),
     createdIdx: index("support_tickets_created_idx").on(t.createdAt),
+    categoryIdx: index("support_tickets_category_idx").on(t.category),
+    csatTokenIdx: index("support_tickets_csat_token_idx").on(t.csatToken),
   }),
 );
 
@@ -69,6 +94,7 @@ export const supportTicketReplies = pgTable(
     authorId: varchar("author_id").references(() => users.id, { onDelete: "set null" }),
     authorName: text("author_name"),
     body: text("body").notNull(),
+    attachments: jsonb("attachments").$type<SupportAttachment[]>().default([]),
     emailedAt: timestamp("emailed_at"),
     createdAt: timestamp("created_at").notNull().default(sql`now()`),
   },
@@ -78,10 +104,26 @@ export const supportTicketReplies = pgTable(
   }),
 );
 
+export const supportCannedResponses = pgTable(
+  "support_canned_responses",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    body: text("body").notNull(),
+    createdAt: timestamp("created_at").notNull().default(sql`now()`),
+    updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+  },
+  (t) => ({
+    orgIdx: index("support_canned_responses_org_idx").on(t.organizationId),
+  }),
+);
+
 export const insertSupportTicketReplySchema = createInsertSchema(supportTicketReplies).omit({
   id: true,
   authorId: true,
   authorName: true,
+  attachments: true,
   emailedAt: true,
   createdAt: true,
 });
@@ -102,9 +144,23 @@ export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit
   slaFirstResponseBreached: true,
   slaResolutionBreached: true,
   tier: true,
+  attachments: true,
+  csatScore: true,
+  csatComment: true,
+  csatSubmittedAt: true,
+  csatToken: true,
+  csatTokenExpiresAt: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSupportCannedResponseSchema = createInsertSchema(supportCannedResponses).omit({
+  id: true,
   createdAt: true,
   updatedAt: true,
 });
 
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
+export type InsertSupportCannedResponse = z.infer<typeof insertSupportCannedResponseSchema>;
+export type SupportCannedResponse = typeof supportCannedResponses.$inferSelect;

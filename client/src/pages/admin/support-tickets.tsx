@@ -8,11 +8,16 @@ import {
   Clock,
   Inbox,
   MessageSquare,
+  MessageSquareText,
+  Paperclip,
   Search,
   Send,
   ShieldAlert,
   ShieldCheck,
+  Star,
   TicketCheck,
+  X,
+  Download,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -29,7 +34,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useTicketStream } from "@/hooks/use-ticket-stream";
-import type { SupportTicket, SupportTicketReply } from "@shared/schema";
+import type { SupportTicket, SupportTicketReply, SupportCannedResponse, SupportAttachment } from "@shared/schema";
 
 type TicketWithReplyCount = SupportTicket & { replyCount: number };
 
@@ -49,6 +54,33 @@ const PRIORITY_OPTIONS = [
   { value: "normal", label: "Normal" },
   { value: "low", label: "Low" },
 ] as const;
+
+const CATEGORY_OPTIONS = [
+  { value: "all", label: "All Categories" },
+  { value: "general", label: "General" },
+  { value: "bids", label: "Bids" },
+  { value: "payroll", label: "Payroll" },
+  { value: "ai_estimator", label: "AI Estimator" },
+  { value: "change_orders", label: "Change Orders" },
+  { value: "documents", label: "Documents" },
+] as const;
+
+const CSAT_FILTER_OPTIONS = [
+  { value: "all", label: "All CSAT" },
+  { value: "rated", label: "Rated" },
+  { value: "unrated", label: "Not Yet Rated" },
+  { value: "high", label: "High (4-5 ★)" },
+  { value: "low", label: "Low (1-3 ★)" },
+] as const;
+
+const CATEGORY_LABELS: Record<string, string> = {
+  bids: "Bids",
+  payroll: "Payroll",
+  ai_estimator: "AI Estimator",
+  change_orders: "Change Orders",
+  documents: "Documents",
+  general: "General",
+};
 
 function statusBadge(status: SupportTicket["status"]) {
   const map: Record<SupportTicket["status"], { label: string; variant: "default" | "secondary" | "destructive" | "outline"; className?: string }> = {
@@ -73,6 +105,15 @@ function priorityBadge(priority: SupportTicket["priority"]) {
   return <Badge variant="secondary" className={cfg.className}>{cfg.label}</Badge>;
 }
 
+function categoryBadge(category: SupportTicket["category"]) {
+  if (!category) return null;
+  return (
+    <Badge variant="outline" className="text-xs font-normal">
+      {CATEGORY_LABELS[category] ?? category}
+    </Badge>
+  );
+}
+
 function tierBadge(tier: SupportTicket["tier"]) {
   const map: Record<SupportTicket["tier"], { label: string; className: string }> = {
     starter: { label: "Starter", className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
@@ -81,6 +122,21 @@ function tierBadge(tier: SupportTicket["tier"]) {
   };
   const cfg = map[tier] ?? { label: tier, className: "" };
   return <Badge variant="secondary" className={cfg.className}>{cfg.label}</Badge>;
+}
+
+function csatStars(score: number | null | undefined) {
+  if (!score) return <span className="text-xs text-muted-foreground italic">—</span>;
+  return (
+    <div className="flex items-center gap-0.5" data-testid="csat-stars">
+      {[1, 2, 3, 4, 5].map((s) => (
+        <Star
+          key={s}
+          className={`h-3 w-3 ${s <= score ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}`}
+        />
+      ))}
+      <span className="text-xs ml-1 text-muted-foreground">{score}/5</span>
+    </div>
+  );
 }
 
 function SlaIndicator({ ticket }: { ticket: SupportTicket }) {
@@ -139,10 +195,42 @@ function SlaDeadlineRow({
   );
 }
 
+function AttachmentList({ attachments }: { attachments: SupportAttachment[] | null | undefined }) {
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-2" data-testid="admin-attachment-list">
+      {attachments.map((att, i) => (
+        <a
+          key={i}
+          href={`/api/support/attachments/download?key=${encodeURIComponent(att.objectKey)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1 hover:bg-muted/70 transition-colors"
+          data-testid={`admin-attachment-link-${i}`}
+        >
+          {att.contentType.startsWith("image/") ? (
+            <img
+              src={`/api/support/attachments/download?key=${encodeURIComponent(att.objectKey)}`}
+              alt={att.fileName}
+              className="h-5 w-5 object-cover rounded"
+            />
+          ) : (
+            <Paperclip className="h-3 w-3" />
+          )}
+          <span className="max-w-[120px] truncate">{att.fileName}</span>
+          <Download className="h-3 w-3 text-muted-foreground" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
 function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTicketUpdate: (t: SupportTicket) => void }) {
   const { toast } = useToast();
   const [replyText, setReplyText] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const onNewReply = useCallback(() => {
     toast({ title: "New reply received", description: "A customer replied to this ticket." });
@@ -160,6 +248,15 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
     },
   });
 
+  const { data: cannedData } = useQuery<{ cannedResponses: SupportCannedResponse[] }>({
+    queryKey: ["/api/support/canned-responses"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/support/canned-responses");
+      return res.json();
+    },
+  });
+
+  const cannedResponses = cannedData?.cannedResponses ?? [];
   const replies = repliesData?.replies ?? [];
 
   useEffect(() => {
@@ -178,10 +275,22 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
   const replyMutation = useMutation({
     mutationFn: async (body: string) => {
       const res = await apiRequest("POST", `/api/support/tickets/${ticket.id}/replies`, { body });
-      return res.json() as Promise<{ reply: SupportTicketReply; ticket: SupportTicket }>;
+      const data = await res.json() as { reply: SupportTicketReply; ticket: SupportTicket };
+      // Upload attachments if any
+      if (pendingFiles.length > 0 && data.reply?.id) {
+        const formData = new FormData();
+        pendingFiles.forEach((f) => formData.append("files", f));
+        await fetch(`/api/support/tickets/${ticket.id}/replies/${data.reply.id}/attachments`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        }).catch(() => {/* best-effort */});
+      }
+      return data;
     },
     onSuccess: ({ ticket: updatedTicket }) => {
       setReplyText("");
+      setPendingFiles([]);
       queryClient.invalidateQueries({ queryKey: ["/api/support/tickets", ticket.id, "replies"] });
       queryClient.invalidateQueries({ queryKey: ["/api/support/tickets"] });
       onTicketUpdate(updatedTicket);
@@ -194,6 +303,12 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
     const trimmed = replyText.trim();
     if (!trimmed) return;
     replyMutation.mutate(trimmed);
+  };
+
+  const handleCannedResponseSelect = (responseId: string) => {
+    if (responseId === "__none__") return;
+    const found = cannedResponses.find((r) => r.id === responseId);
+    if (found) setReplyText(found.body);
   };
 
   return (
@@ -218,29 +333,51 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
             No replies yet. Send the first reply below.
           </p>
         ) : (
-          replies.map((reply) => (
-            <div key={reply.id} className="rounded-md bg-primary/5 border border-primary/10 p-3 space-y-1" data-testid={`reply-${reply.id}`}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-primary" data-testid={`reply-author-${reply.id}`}>
-                  {reply.authorName || "Support Team"}
-                </span>
-                <span className="text-xs text-muted-foreground" data-testid={`reply-time-${reply.id}`}>
-                  {format(new Date(reply.createdAt), "MMM d, yyyy h:mm a")}
-                  {reply.emailedAt && (
-                    <span className="ml-1 text-green-600 dark:text-green-400" title="Email delivered">✓ emailed</span>
-                  )}
-                </span>
+          replies.map((reply) => {
+            const replyAttachments = (reply.attachments as SupportAttachment[] | null) ?? [];
+            return (
+              <div key={reply.id} className="rounded-md bg-primary/5 border border-primary/10 p-3 space-y-1" data-testid={`reply-${reply.id}`}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-primary" data-testid={`reply-author-${reply.id}`}>
+                    {reply.authorName || "Support Team"}
+                  </span>
+                  <span className="text-xs text-muted-foreground" data-testid={`reply-time-${reply.id}`}>
+                    {format(new Date(reply.createdAt), "MMM d, yyyy h:mm a")}
+                    {reply.emailedAt && (
+                      <span className="ml-1 text-green-600 dark:text-green-400" title="Email delivered">✓ emailed</span>
+                    )}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed" data-testid={`reply-body-${reply.id}`}>
+                  {reply.body}
+                </p>
+                <AttachmentList attachments={replyAttachments} />
               </div>
-              <p className="text-sm whitespace-pre-wrap leading-relaxed" data-testid={`reply-body-${reply.id}`}>
-                {reply.body}
-              </p>
-            </div>
-          ))
+            );
+          })
         )}
         <div ref={bottomRef} />
       </div>
 
       <div className="px-4 pb-4 space-y-2 border-t pt-3">
+        {cannedResponses.length > 0 && (
+          <div className="flex items-center gap-2">
+            <MessageSquareText className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Select onValueChange={handleCannedResponseSelect} defaultValue="__none__">
+              <SelectTrigger className="h-8 text-xs" data-testid="select-canned-response">
+                <SelectValue placeholder="Use template…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Use template…</SelectItem>
+                {cannedResponses.map((r) => (
+                  <SelectItem key={r.id} value={r.id} data-testid={`canned-response-option-${r.id}`}>
+                    {r.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <Textarea
           placeholder="Type your reply… (will be emailed to the submitter)"
           value={replyText}
@@ -252,8 +389,51 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) handleSend();
           }}
         />
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-muted-foreground">Ctrl+Enter to send · reply is emailed to {ticket.submitterEmail}</p>
+        {pendingFiles.length > 0 && (
+          <div className="flex flex-wrap gap-1" data-testid="admin-pending-files">
+            {pendingFiles.map((f, i) => (
+              <div key={i} className="inline-flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
+                <Paperclip className="h-3 w-3" />
+                <span className="max-w-[120px] truncate">{f.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setPendingFiles((prev) => prev.filter((_, j) => j !== i))}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+          className="hidden"
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            if (files.length) setPendingFiles((prev) => [...prev, ...files]);
+            e.target.value = "";
+          }}
+        />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 px-2 text-muted-foreground"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={replyMutation.isPending}
+              data-testid="button-attach-reply-file"
+              title="Attach file"
+            >
+              <Paperclip className="h-4 w-4" />
+            </Button>
+            <p className="text-xs text-muted-foreground">Ctrl+Enter · reply emailed to {ticket.submitterEmail}</p>
+          </div>
           <Button
             size="sm"
             onClick={handleSend}
@@ -309,6 +489,7 @@ function TicketDetailSheet({
   const frBreached = ticket.slaFirstResponseBreached === 1;
   const resBreached = ticket.slaResolutionBreached === 1;
   const anyBreached = frBreached || resBreached;
+  const ticketAttachments = (ticket.attachments as SupportAttachment[] | null) ?? [];
 
   return (
     <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
@@ -325,6 +506,9 @@ function TicketDetailSheet({
           </div>
           <SheetDescription>
             Ticket #{ticket.id.slice(0, 8)} · Submitted {format(new Date(ticket.createdAt), "MMM d, yyyy h:mm a")}
+            {ticket.category && (
+              <span className="ml-2">{categoryBadge(ticket.category)}</span>
+            )}
           </SheetDescription>
         </SheetHeader>
 
@@ -389,10 +573,25 @@ function TicketDetailSheet({
               {priorityBadge(ticket.priority)}
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Status</p>
-              {statusBadge(ticket.status)}
+              <p className="text-xs text-muted-foreground mb-1">Category</p>
+              {ticket.category ? categoryBadge(ticket.category) : <span className="text-xs text-muted-foreground">—</span>}
             </div>
           </div>
+
+          {(ticket.csatScore || ticket.csatSubmittedAt) && (
+            <div className="rounded-lg border p-4 space-y-2 bg-yellow-50 dark:bg-yellow-950/20 border-yellow-200 dark:border-yellow-900">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer Satisfaction</p>
+              <div data-testid="csat-detail">{csatStars(ticket.csatScore)}</div>
+              {ticket.csatComment && (
+                <p className="text-sm text-muted-foreground italic">"{ticket.csatComment}"</p>
+              )}
+              {ticket.csatSubmittedAt && (
+                <p className="text-xs text-muted-foreground">
+                  Rated {format(new Date(ticket.csatSubmittedAt), "MMM d, yyyy")}
+                </p>
+              )}
+            </div>
+          )}
 
           <div className="rounded-lg border p-4 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SLA Deadlines</p>
@@ -421,6 +620,7 @@ function TicketDetailSheet({
           <div className="rounded-lg border p-4 space-y-2">
             <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Message</p>
             <p className="text-sm whitespace-pre-wrap leading-relaxed">{ticket.body}</p>
+            <AttachmentList attachments={ticketAttachments} />
           </div>
 
           <ReplyThread ticket={ticket} onTicketUpdate={onUpdate} />
@@ -444,11 +644,17 @@ interface TicketMetrics {
   firstResponseBreached: number;
   resolutionBreached: number;
   adherence?: number;
+  avgCsatScore?: number | null;
+  csatResponseRate?: number;
+  categoryCounts?: Record<string, number>;
 }
 
 function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefined; isLoading: boolean }) {
   const breachedCount = (metrics?.firstResponseBreached ?? 0) + (metrics?.resolutionBreached ?? 0);
   const adherencePct = metrics?.adherence !== undefined ? Math.round(metrics.adherence * 100) : null;
+  const csatDisplay = metrics?.avgCsatScore != null
+    ? `${metrics.avgCsatScore}/5`
+    : "—";
 
   const cards = [
     {
@@ -486,10 +692,17 @@ function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefine
       className: breachedCount > 0 ? "border-destructive/50 bg-destructive/5" : "",
       testId: "metric-breached",
     },
+    {
+      label: "Avg CSAT",
+      value: csatDisplay,
+      icon: <Star className={`h-5 w-5 ${metrics?.avgCsatScore != null ? "text-yellow-500 fill-yellow-400" : "text-muted-foreground"}`} />,
+      className: "",
+      testId: "metric-csat",
+    },
   ] as const;
 
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
       {cards.map((card) => (
         <Card key={card.label} className={card.className} data-testid={card.testId}>
           <CardContent className="p-4">
@@ -525,6 +738,8 @@ function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefine
 export default function AdminSupportTicketsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [csatFilter, setCsatFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
   const [selectedTicket, setSelectedTicket] = useState<SupportTicket | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -532,6 +747,8 @@ export default function AdminSupportTicketsPage() {
   const queryParams = new URLSearchParams();
   if (statusFilter !== "all") queryParams.set("status", statusFilter);
   if (priorityFilter !== "all") queryParams.set("priority", priorityFilter);
+  if (categoryFilter !== "all") queryParams.set("category", categoryFilter);
+  if (csatFilter !== "all") queryParams.set("csat", csatFilter);
   queryParams.set("limit", "200");
   const queryString = queryParams.toString();
 
@@ -545,7 +762,7 @@ export default function AdminSupportTicketsPage() {
   });
 
   const { data, isLoading } = useQuery<{ tickets: TicketWithReplyCount[] }>({
-    queryKey: ["/api/support/tickets", statusFilter, priorityFilter, "admin-200"],
+    queryKey: ["/api/support/tickets", statusFilter, priorityFilter, categoryFilter, csatFilter, "admin-200"],
     queryFn: async () => {
       const res = await apiRequest("GET", `/api/support/tickets?${queryString}`);
       return res.json();
@@ -564,7 +781,7 @@ export default function AdminSupportTicketsPage() {
       );
     }
     return list;
-  }, [data?.tickets, priorityFilter, searchText]);
+  }, [data?.tickets, searchText]);
 
   const breachedCount = tickets.filter(
     (t) => t.slaFirstResponseBreached === 1 || t.slaResolutionBreached === 1,
@@ -586,20 +803,26 @@ export default function AdminSupportTicketsPage() {
   return (
     <div className="min-h-screen bg-background">
       <main className="px-3 sm:px-6 py-4 sm:py-6 space-y-6">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <Link href="/admin">
             <Button variant="ghost" size="sm" className="gap-1" data-testid="link-back-admin">
               <ChevronLeft className="h-4 w-4" />
               Admin
             </Button>
           </Link>
-          <div>
+          <div className="flex-1">
             <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2" data-testid="heading-support-tickets">
               <TicketCheck className="h-6 w-6" />
               Support Tickets
             </h1>
             <p className="text-muted-foreground text-sm">All submitted support tickets across every organization</p>
           </div>
+          <Link href="/admin/support-canned-responses">
+            <Button variant="outline" size="sm" className="gap-1" data-testid="link-canned-responses">
+              <MessageSquareText className="h-4 w-4" />
+              Canned Responses
+            </Button>
+          </Link>
         </div>
 
         <MetricCards metrics={metricsData} isLoading={metricsLoading} />
@@ -614,11 +837,11 @@ export default function AdminSupportTicketsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Filter &amp; Search</CardTitle>
-            <CardDescription>Narrow down tickets by status, priority, or keyword</CardDescription>
+            <CardDescription>Narrow down tickets by status, priority, category, or keyword</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-3">
-              <div className="flex-1 min-w-[180px]">
+              <div className="flex-1 min-w-[160px]">
                 <Select value={statusFilter} onValueChange={setStatusFilter}>
                   <SelectTrigger data-testid="select-status-filter">
                     <SelectValue placeholder="All Statuses" />
@@ -633,7 +856,7 @@ export default function AdminSupportTicketsPage() {
                 </Select>
               </div>
 
-              <div className="flex-1 min-w-[180px]">
+              <div className="flex-1 min-w-[160px]">
                 <Select value={priorityFilter} onValueChange={setPriorityFilter}>
                   <SelectTrigger data-testid="select-priority-filter">
                     <SelectValue placeholder="All Priorities" />
@@ -641,6 +864,36 @@ export default function AdminSupportTicketsPage() {
                   <SelectContent>
                     {PRIORITY_OPTIONS.map((o) => (
                       <SelectItem key={o.value} value={o.value} data-testid={`priority-option-${o.value}`}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex-1 min-w-[160px]">
+                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                  <SelectTrigger data-testid="select-category-filter">
+                    <SelectValue placeholder="All Categories" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORY_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} data-testid={`category-option-${o.value}`}>
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="flex-1 min-w-[160px]">
+                <Select value={csatFilter} onValueChange={setCsatFilter}>
+                  <SelectTrigger data-testid="select-csat-filter">
+                    <SelectValue placeholder="All CSAT" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CSAT_FILTER_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value} data-testid={`csat-option-${o.value}`}>
                         {o.label}
                       </SelectItem>
                     ))}
@@ -683,11 +936,12 @@ export default function AdminSupportTicketsPage() {
                     <TableRow>
                       <TableHead>Subject</TableHead>
                       <TableHead className="hidden md:table-cell">Submitter</TableHead>
-                      <TableHead className="hidden lg:table-cell">Org</TableHead>
+                      <TableHead className="hidden lg:table-cell">Category</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="hidden sm:table-cell">Priority</TableHead>
                       <TableHead className="hidden sm:table-cell">Tier</TableHead>
                       <TableHead className="hidden sm:table-cell">Replies</TableHead>
+                      <TableHead className="hidden md:table-cell">CSAT</TableHead>
                       <TableHead>SLA</TableHead>
                       <TableHead className="hidden md:table-cell">Created</TableHead>
                     </TableRow>
@@ -704,14 +958,14 @@ export default function AdminSupportTicketsPage() {
                           onClick={() => openTicket(ticket)}
                           data-testid={`row-ticket-${ticket.id}`}
                         >
-                          <TableCell className="font-medium max-w-[240px] truncate" data-testid={`text-ticket-subject-${ticket.id}`}>
+                          <TableCell className="font-medium max-w-[200px] truncate" data-testid={`text-ticket-subject-${ticket.id}`}>
                             {ticket.subject}
                           </TableCell>
-                          <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[160px] truncate" data-testid={`text-ticket-submitter-${ticket.id}`}>
+                          <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[140px] truncate" data-testid={`text-ticket-submitter-${ticket.id}`}>
                             {ticket.submitterName || ticket.submitterEmail}
                           </TableCell>
-                          <TableCell className="hidden lg:table-cell text-xs text-muted-foreground max-w-[120px] truncate" data-testid={`text-ticket-org-${ticket.id}`}>
-                            {ticket.organizationId ? ticket.organizationId.slice(0, 8) : "—"}
+                          <TableCell className="hidden lg:table-cell" data-testid={`badge-ticket-category-${ticket.id}`}>
+                            {categoryBadge(ticket.category)}
                           </TableCell>
                           <TableCell data-testid={`badge-ticket-status-${ticket.id}`}>
                             {statusBadge(ticket.status)}
@@ -731,6 +985,9 @@ export default function AdminSupportTicketsPage() {
                             ) : (
                               <span className="text-xs text-muted-foreground italic">No reply</span>
                             )}
+                          </TableCell>
+                          <TableCell className="hidden md:table-cell" data-testid={`csat-ticket-${ticket.id}`}>
+                            {csatStars(ticket.csatScore)}
                           </TableCell>
                           <TableCell data-testid={`sla-ticket-${ticket.id}`}>
                             <SlaIndicator ticket={ticket} />
