@@ -1,4 +1,5 @@
 // Support routing & escalation settings card — Task #2962
+// Holiday calendar section added — Task #2973
 // Rendered inside the admin support tickets page as a separate tab/section.
 
 import { useState } from "react";
@@ -13,7 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Globe, Bell, UserPlus, Star, X, Plus, Save } from "lucide-react";
+import { Globe, Bell, UserPlus, Star, X, Plus, CalendarDays, Trash2 } from "lucide-react";
 
 const IANA_TIMEZONES = [
   "UTC",
@@ -54,6 +55,13 @@ interface SupportSettingsData {
   enterpriseAgentIds: string[];
 }
 
+interface Holiday {
+  id: string;
+  date: string;
+  name: string;
+  country: string;
+}
+
 const DEFAULT: SupportSettingsData = {
   supportTimezone: "UTC",
   escalationEmails: [],
@@ -61,6 +69,218 @@ const DEFAULT: SupportSettingsData = {
   autoAssignGraceMinutes: 60,
   enterpriseAgentIds: [],
 };
+
+const CURRENT_YEAR = new Date().getFullYear();
+
+// ─── Holiday Calendar sub-component ─────────────────────────────────────────
+
+function HolidayCalendarCard() {
+  const { toast } = useToast();
+  const [selectedYear, setSelectedYear] = useState(String(CURRENT_YEAR));
+  const [newDate, setNewDate] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newCountry, setNewCountry] = useState("US");
+
+  const yearOptions = [
+    String(CURRENT_YEAR - 1),
+    String(CURRENT_YEAR),
+    String(CURRENT_YEAR + 1),
+    String(CURRENT_YEAR + 2),
+  ];
+
+  const { data, isLoading } = useQuery<{ holidays: Holiday[] }>({
+    queryKey: ["/api/support/holidays", selectedYear],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/support/holidays?year=${selectedYear}`);
+      return res.json();
+    },
+  });
+
+  const holidays = data?.holidays ?? [];
+
+  const addMutation = useMutation({
+    mutationFn: async (body: { date: string; name: string; country: string }) => {
+      const res = await apiRequest("POST", "/api/support/holidays", body);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error ?? "Failed to add holiday");
+      }
+      return res.json() as Promise<Holiday>;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/support/holidays"] });
+      setNewDate("");
+      setNewName("");
+      toast({ title: "Holiday added" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Add failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/support/holidays/${id}`);
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}));
+        throw new Error(json?.error ?? "Failed to delete holiday");
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/support/holidays"] });
+      toast({ title: "Holiday removed" });
+    },
+    onError: (e: Error) =>
+      toast({ title: "Delete failed", description: e.message, variant: "destructive" }),
+  });
+
+  const handleAdd = () => {
+    if (!newDate || !newName.trim()) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      toast({ title: "Invalid date", description: "Use YYYY-MM-DD format", variant: "destructive" });
+      return;
+    }
+    addMutation.mutate({ date: newDate, name: newName.trim(), country: newCountry.toUpperCase() });
+  };
+
+  const isMutating = addMutation.isPending || deleteMutation.isPending;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CalendarDays className="h-4 w-4 text-muted-foreground" />
+          Holiday Calendar
+        </CardTitle>
+        <CardDescription>
+          Holidays are excluded from SLA business-hour calculations. Changes take effect immediately.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Label className="shrink-0">Year</Label>
+          <Select
+            value={selectedYear}
+            onValueChange={setSelectedYear}
+            data-testid="select-holiday-year"
+          >
+            <SelectTrigger className="w-32" data-testid="trigger-holiday-year">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {yearOptions.map((y) => (
+                <SelectItem key={y} value={y} data-testid={`option-year-${y}`}>
+                  {y}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-9 w-full" />
+            ))}
+          </div>
+        ) : holidays.length === 0 ? (
+          <p
+            className="text-sm text-muted-foreground italic py-2"
+            data-testid="text-no-holidays"
+          >
+            No holidays configured for {selectedYear}.
+          </p>
+        ) : (
+          <ul className="divide-y divide-border rounded-md border" data-testid="list-holidays">
+            {holidays.map((h) => (
+              <li
+                key={h.id}
+                className="flex items-center justify-between gap-3 px-3 py-2"
+                data-testid={`holiday-row-${h.id}`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span
+                    className="font-mono text-xs text-muted-foreground shrink-0"
+                    data-testid={`text-holiday-date-${h.id}`}
+                  >
+                    {h.date}
+                  </span>
+                  <span
+                    className="text-sm truncate"
+                    data-testid={`text-holiday-name-${h.id}`}
+                  >
+                    {h.name}
+                  </span>
+                  <Badge variant="outline" className="text-xs shrink-0">
+                    {h.country}
+                  </Badge>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7 text-muted-foreground hover:text-destructive shrink-0"
+                  onClick={() => deleteMutation.mutate(h.id)}
+                  disabled={isMutating}
+                  aria-label={`Remove ${h.name}`}
+                  data-testid={`button-delete-holiday-${h.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <div className="space-y-2 pt-1">
+          <Label>Add Holiday</Label>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+              className="w-40"
+              disabled={isMutating}
+              data-testid="input-holiday-date"
+            />
+            <Input
+              placeholder="Holiday name"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleAdd()}
+              className="flex-1 min-w-[160px]"
+              disabled={isMutating}
+              data-testid="input-holiday-name"
+            />
+            <Input
+              placeholder="Country"
+              value={newCountry}
+              onChange={(e) => setNewCountry(e.target.value.toUpperCase().slice(0, 2))}
+              className="w-20 uppercase"
+              maxLength={2}
+              disabled={isMutating}
+              data-testid="input-holiday-country"
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleAdd}
+              disabled={!newDate || !newName.trim() || isMutating}
+              className="gap-1 shrink-0"
+              data-testid="button-add-holiday"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Add
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Use ISO 8601 date format (YYYY-MM-DD) and a 2-letter country code (e.g. US).
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main settings component ─────────────────────────────────────────────────
 
 export default function SupportSettingsCard() {
   const { toast } = useToast();
@@ -370,6 +590,9 @@ export default function SupportSettingsCard() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Holiday Calendar */}
+      <HolidayCalendarCard />
     </div>
   );
 }

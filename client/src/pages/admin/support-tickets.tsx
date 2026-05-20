@@ -40,18 +40,6 @@ import {
 } from "recharts";
 import { Link } from "wouter";
 import SupportSettingsCard from "./support-settings";
-import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-} from "recharts";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";

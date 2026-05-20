@@ -13,6 +13,7 @@ import {
   supportCannedResponses,
   users,
   supportSettings,
+  supportHolidays,
   insertSupportTicketSchema,
   insertSupportCannedResponseSchema,
   type SupportTicket,
@@ -28,6 +29,7 @@ import {
   firstResponseDueAt,
   resolutionDueAt,
   getHolidaySet,
+  invalidateHolidayCache,
   type SupportTier,
   type SupportPriority,
 } from "./support/slaPolicy";
@@ -1439,6 +1441,110 @@ router.patch(
           enterpriseAgentIds: row?.enterpriseAgentIds ?? [],
         },
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Holiday calendar CRUD (SUPER_ADMIN only for writes; ADMIN_ROLES for reads)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * GET /api/support/holidays
+ * Returns all holidays, optionally filtered by ?year=2026 and/or ?country=US.
+ */
+router.get(
+  "/api/support/holidays",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const year = typeof req.query.year === "string" ? req.query.year : null;
+      const country = typeof req.query.country === "string" ? req.query.country : null;
+
+      const conditions: SQL[] = [];
+      if (year) conditions.push(like(supportHolidays.date, `${year}-%`));
+      if (country) conditions.push(eq(supportHolidays.country, country));
+
+      const rows = await db
+        .select()
+        .from(supportHolidays)
+        .where(conditions.length ? and(...conditions) : undefined)
+        .orderBy(supportHolidays.date);
+
+      res.json({ holidays: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+const holidayBodySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "date must be ISO 8601 (YYYY-MM-DD)"),
+  name: z.string().min(1).max(120),
+  country: z.string().length(2).toUpperCase().default("US"),
+});
+
+/**
+ * POST /api/support/holidays
+ * Adds a custom holiday. Body: { date, name, country? }.
+ * ADMIN_ROLES and above (org admins can manage the global holiday calendar).
+ */
+router.post(
+  "/api/support/holidays",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = holidayBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+
+      const [row] = await db
+        .insert(supportHolidays)
+        .values(parsed.data)
+        .onConflictDoNothing()
+        .returning();
+
+      if (!row) {
+        return res.status(409).json({ error: "A holiday already exists for that date and country" });
+      }
+
+      invalidateHolidayCache();
+      logInfo(`[support] holiday added: ${parsed.data.date} "${parsed.data.name}" by ${req.user?.id}`);
+      res.status(201).json(row);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * DELETE /api/support/holidays/:id
+ * Removes a holiday by ID.
+ * ADMIN_ROLES and above.
+ */
+router.delete(
+  "/api/support/holidays/:id",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const [deleted] = await db
+        .delete(supportHolidays)
+        .where(eq(supportHolidays.id, req.params.id))
+        .returning();
+
+      if (!deleted) {
+        return res.status(404).json({ error: "Holiday not found" });
+      }
+
+      invalidateHolidayCache();
+      logInfo(`[support] holiday deleted: ${deleted.date} "${deleted.name}" by ${req.user?.id}`);
+      res.json({ ok: true });
     } catch (err) {
       next(err);
     }

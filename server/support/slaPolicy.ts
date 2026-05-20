@@ -85,6 +85,11 @@ export const US_FEDERAL_HOLIDAYS: ReadonlySet<string> = new Set([
 let _holidayCache: { at: number; country: string; set: ReadonlySet<string> } | null = null;
 const HOLIDAY_CACHE_TTL_MS = 60 * 60 * 1_000; // 1 hour
 
+/** Bust the in-process holiday cache (call after any INSERT/DELETE to support_holidays). */
+export function invalidateHolidayCache(): void {
+  _holidayCache = null;
+}
+
 /**
  * Fetch the holiday set for `country` from the `support_holidays` DB table.
  * Results are cached for 1 hour so the SLA hot-path isn't DB-bound.
