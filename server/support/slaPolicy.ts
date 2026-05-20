@@ -151,12 +151,15 @@ function getLocalParts(
 
 /**
  * Find the UTC timestamp corresponding to `targetHour:00` local time on
- * `isoDate` in timezone `tz`. Searches ±15 hours from midnight UTC on that
- * date in 15-minute steps, which covers all IANA offsets (UTC-12 to UTC+14).
+ * `isoDate` in timezone `tz`. Searches from -15 to +36 hours from midnight
+ * UTC on that date in 15-minute steps, which covers all IANA offsets
+ * (UTC+14 through UTC-12):
+ *   - UTC+14: local midnight ≈ UTC-14h → -840 min
+ *   - UTC-12: local 23:00 ≈ UTC+35h → +2100 min
  */
 function utcForLocalHour(isoDate: string, targetHour: number, tz: string): Date {
   const midnightUtc = new Date(`${isoDate}T00:00:00Z`);
-  for (let m = -15 * 60; m <= 15 * 60; m += 15) {
+  for (let m = -15 * 60; m <= 36 * 60; m += 15) {
     const candidate = new Date(midnightUtc.getTime() + m * 60_000);
     const { hours: localH, isoDate: localD } = getLocalParts(candidate, tz);
     if (localD === isoDate && localH === targetHour) {
