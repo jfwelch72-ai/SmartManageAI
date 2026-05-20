@@ -26,8 +26,10 @@ import SupportSettingsCard from "./support-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -260,6 +262,7 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
 
   const cannedResponses = cannedData?.cannedResponses ?? [];
   const replies = repliesData?.replies ?? [];
+  const [cannedOpen, setCannedOpen] = useState(false);
 
   useEffect(() => {
     if (replies.length > 0) {
@@ -365,19 +368,48 @@ function ReplyThread({ ticket, onTicketUpdate }: { ticket: SupportTicket; onTick
         {cannedResponses.length > 0 && (
           <div className="flex items-center gap-2">
             <MessageSquareText className="h-4 w-4 text-muted-foreground shrink-0" />
-            <Select onValueChange={handleCannedResponseSelect} defaultValue="__none__">
-              <SelectTrigger className="h-8 text-xs" data-testid="select-canned-response">
-                <SelectValue placeholder="Use template…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__none__">Use template…</SelectItem>
-                {cannedResponses.map((r) => (
-                  <SelectItem key={r.id} value={r.id} data-testid={`canned-response-option-${r.id}`}>
-                    {r.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={cannedOpen} onOpenChange={setCannedOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-normal text-muted-foreground justify-start w-full"
+                  data-testid="select-canned-response"
+                >
+                  <Search className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+                  Use template…
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="p-0 w-80" align="start">
+                <Command>
+                  <CommandInput
+                    placeholder="Search templates…"
+                    data-testid="input-canned-response-search"
+                  />
+                  <CommandList>
+                    <CommandEmpty>No templates found.</CommandEmpty>
+                    <CommandGroup>
+                      {cannedResponses.map((r) => (
+                        <CommandItem
+                          key={r.id}
+                          value={`${r.title} ${r.body}`}
+                          onSelect={() => {
+                            handleCannedResponseSelect(r.id);
+                            setCannedOpen(false);
+                          }}
+                          data-testid={`canned-response-option-${r.id}`}
+                        >
+                          <div className="flex flex-col gap-0.5 min-w-0">
+                            <span className="font-medium text-xs truncate">{r.title}</span>
+                            <span className="text-xs text-muted-foreground line-clamp-1">{r.body}</span>
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
         )}
         <Textarea

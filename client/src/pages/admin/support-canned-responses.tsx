@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   Plus,
   Pencil,
+  Search,
   Trash2,
   MessageSquareText,
   Loader2,
@@ -98,6 +99,7 @@ export default function AdminCannedResponsesPage() {
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
 
   const { data, isLoading } = useQuery<{ cannedResponses: SupportCannedResponse[] }>({
     queryKey: ["/api/support/canned-responses"],
@@ -150,6 +152,14 @@ export default function AdminCannedResponsesPage() {
 
   const responses = data?.cannedResponses ?? [];
   const deletingResponse = responses.find((r) => r.id === deletingId);
+  const searchLower = search.toLowerCase();
+  const filteredResponses = search.trim()
+    ? responses.filter(
+        (r) =>
+          r.title.toLowerCase().includes(searchLower) ||
+          r.body.toLowerCase().includes(searchLower)
+      )
+    : responses;
 
   return (
     <div className="min-h-screen bg-background">
@@ -199,6 +209,18 @@ export default function AdminCannedResponsesPage() {
             <CardDescription>
               Select a template in the reply composer to pre-fill the reply body. Templates are editable before sending.
             </CardDescription>
+            {responses.length > 0 && (
+              <div className="relative mt-1">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                <Input
+                  placeholder="Search by title or body…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                  data-testid="input-canned-response-filter"
+                />
+              </div>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             {isLoading ? (
@@ -211,9 +233,15 @@ export default function AdminCannedResponsesPage() {
                 <p className="text-sm font-medium">No templates yet</p>
                 <p className="text-xs">Click "New Template" to create your first canned response.</p>
               </div>
+            ) : filteredResponses.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground" data-testid="empty-state-canned-responses-filtered">
+                <Search className="h-8 w-8" />
+                <p className="text-sm font-medium">No templates match "{search}"</p>
+                <p className="text-xs">Try a different keyword.</p>
+              </div>
             ) : (
               <div className="divide-y">
-                {responses.map((r) => (
+                {filteredResponses.map((r) => (
                   <div key={r.id} className="p-4 space-y-2" data-testid={`canned-response-${r.id}`}>
                     {editingId === r.id ? (
                       <CannedResponseEditor
