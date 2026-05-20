@@ -3960,7 +3960,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           rawMessage.includes("AbortError") ||
           rawMessage.includes("Worker was terminated") ||
           rawMessage.includes("Worker terminated") ||
-          rawMessage.includes("worker is not supported");
+          rawMessage.includes("worker is not supported") ||
+          rawMessage.includes("Rendering cancelled");
         if (isBenignRace) return;
         // pdf.js wraps server JSON errors in messages like
         //   "Unexpected server response (404) while retrieving PDF ..."
@@ -4655,23 +4656,27 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // different "InvalidPDFException" messages) still both surface.
       // The ref is reset on every sheet change above and on every
       // successful placeholder arrival, so retries can re-toast.
-      const errKey = `${currentSheet.id}|${tileRenderer.placeholderError.name ?? ""}|${tileRenderer.placeholderError.status ?? ""}|${tileRenderer.placeholderError.message ?? ""}`;
-      if (lastPlaceholderErrorSheetRef.current !== errKey) {
-        lastPlaceholderErrorSheetRef.current = errKey;
-        const sheetName = currentSheet.sheetName || "this sheet";
-        const status = tileRenderer.placeholderError.status;
-        const detail =
-          status === 401 || status === 403
-            ? "You don't have access to this sheet's PDF. Try signing back in."
-            : status === 404
-              ? "The PDF file is missing. Re-import the document and try again."
-              : tileRenderer.placeholderError.message ||
-                "The file may not be a valid PDF document.";
-        toast({
-          title: `Couldn't load "${sheetName}"`,
-          description: detail,
-          variant: "destructive",
-        });
+      const placeholderMsg = tileRenderer.placeholderError.message ?? "";
+      const isPlaceholderBenign = placeholderMsg.includes("Rendering cancelled");
+      if (!isPlaceholderBenign) {
+        const errKey = `${currentSheet.id}|${tileRenderer.placeholderError.name ?? ""}|${tileRenderer.placeholderError.status ?? ""}|${placeholderMsg}`;
+        if (lastPlaceholderErrorSheetRef.current !== errKey) {
+          lastPlaceholderErrorSheetRef.current = errKey;
+          const sheetName = currentSheet.sheetName || "this sheet";
+          const status = tileRenderer.placeholderError.status;
+          const detail =
+            status === 401 || status === 403
+              ? "You don't have access to this sheet's PDF. Try signing back in."
+              : status === 404
+                ? "The PDF file is missing. Re-import the document and try again."
+                : tileRenderer.placeholderError.message ||
+                  "The file may not be a valid PDF document.";
+          toast({
+            title: `Couldn't load "${sheetName}"`,
+            description: detail,
+            variant: "destructive",
+          });
+        }
       }
       setPdfImage(null);
       setPdfImageSheetId(null);

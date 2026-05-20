@@ -277,7 +277,11 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
       setCanvasSize({ w: result.width, h: result.height });
     } catch (err: unknown) {
       const isCancel =
-        err instanceof Error && (err.message === "cancelled" || err.name === "RenderingCancelledException");
+        err instanceof Error && (
+          err.message === "cancelled" ||
+          err.name === "RenderingCancelledException" ||
+          err.message.startsWith("Rendering cancelled")
+        );
       if (!isCancel) {
         // eslint-disable-next-line no-console
         console.error("PDF render error:", err);
