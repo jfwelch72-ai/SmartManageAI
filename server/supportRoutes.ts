@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, gte, isNotNull, isNull, like, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNotNull, isNull, like, lte, ne, sql } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import multer from "multer";
@@ -498,6 +498,11 @@ router.post(
         ticketUpdates.status = "in_progress";
       }
 
+      // Generate a stable Message-ID for this outbound agent reply so the
+      // customer's email client can thread it, and so the inbound-email handler
+      // can reference it when notifying SUPPORT_INBOX of a subsequent customer reply.
+      const outboundMessageId = `<${randomUUID()}@support.smartmanageai.com>`;
+
       const { reply, updatedTicket } = await db.transaction(async (tx) => {
         const [reply] = await tx
           .insert(supportTicketReplies)
@@ -506,6 +511,7 @@ router.post(
             authorId: req.user?.id ?? null,
             authorName,
             body: parsed.data.body,
+            emailMessageId: outboundMessageId,
           } as typeof supportTicketReplies.$inferInsert)
           .returning();
 
@@ -521,6 +527,8 @@ router.post(
       // Build email threading headers so the customer's email client shows the
       // reply as part of the original conversation thread.
       // In-Reply-To = most recent inbound Message-ID; References = full chain.
+      // Message-ID is set to the locally-generated outboundMessageId so future
+      // inbound replies from the customer can reference it.
       const inboundMessageIds: string[] = [];
       if (ticket.emailMessageId) inboundMessageIds.push(ticket.emailMessageId);
       const inboundReplies = await db
@@ -530,6 +538,7 @@ router.post(
           and(
             eq(supportTicketReplies.ticketId, ticket.id),
             isNotNull(supportTicketReplies.emailMessageId),
+            ne(supportTicketReplies.id, reply.id),
           ),
         )
         .orderBy(supportTicketReplies.createdAt);
@@ -537,6 +546,7 @@ router.post(
         if (r.emailMessageId) inboundMessageIds.push(r.emailMessageId);
       }
       const threadingHeaders: Record<string, string> = {};
+      threadingHeaders["Message-ID"] = outboundMessageId;
       if (inboundMessageIds.length > 0) {
         threadingHeaders["In-Reply-To"] = inboundMessageIds[inboundMessageIds.length - 1];
         threadingHeaders["References"] = inboundMessageIds.join(" ");
@@ -939,6 +949,69 @@ router.post(
 
           // Emit real-time event.
           supportEventBus.emitReplyCreated({ ticketId: existingTicket.id, reply });
+
+          // Notify SUPPORT_INBOX that a customer email reply was received, threaded
+          // under the most recent agent reply so the conversation stays intact in
+          // the support team's email client (bidirectional threading).
+          void (async () => {
+            try {
+              // Find the most recent agent reply that has a stored outbound Message-ID.
+              // Join to users and filter role = SUPER_ADMIN to reliably distinguish
+              // agent-sent replies from inbound customer replies (which can also have
+              // authorId set when the sender is a registered user). Exclude the
+              // just-inserted customer reply row to avoid self-reference.
+              const [lastAgentReply] = await db
+                .select({ emailMessageId: supportTicketReplies.emailMessageId })
+                .from(supportTicketReplies)
+                .innerJoin(users, eq(supportTicketReplies.authorId, users.id))
+                .where(
+                  and(
+                    eq(supportTicketReplies.ticketId, existingTicket.id),
+                    isNotNull(supportTicketReplies.emailMessageId),
+                    eq(users.role, "SUPER_ADMIN"),
+                    ne(supportTicketReplies.id, reply.id),
+                  ),
+                )
+                .orderBy(desc(supportTicketReplies.createdAt))
+                .limit(1);
+
+              // Collect all Message-IDs in the thread (ticket root + all replies) for
+              // the References header, which lets email clients reconstruct the full chain.
+              const threadMessageIds: string[] = [];
+              if (existingTicket.emailMessageId) threadMessageIds.push(existingTicket.emailMessageId);
+              const allReplyMsgIds = await db
+                .select({ emailMessageId: supportTicketReplies.emailMessageId })
+                .from(supportTicketReplies)
+                .where(
+                  and(
+                    eq(supportTicketReplies.ticketId, existingTicket.id),
+                    isNotNull(supportTicketReplies.emailMessageId),
+                    ne(supportTicketReplies.id, reply.id),
+                  ),
+                )
+                .orderBy(supportTicketReplies.createdAt);
+              for (const r of allReplyMsgIds) {
+                if (r.emailMessageId) threadMessageIds.push(r.emailMessageId);
+              }
+
+              const inboxThreadingHeaders: Record<string, string> = {};
+              if (lastAgentReply?.emailMessageId) {
+                inboxThreadingHeaders["In-Reply-To"] = lastAgentReply.emailMessageId;
+              }
+              if (threadMessageIds.length > 0) {
+                inboxThreadingHeaders["References"] = threadMessageIds.join(" ");
+              }
+
+              await sendEmail({
+                to: SUPPORT_INBOX,
+                subject: `Re: [Ticket #${existingTicket.id.slice(0, 8)}] ${existingTicket.subject}`,
+                text: `Customer reply received from ${authorName} <${senderEmail}>:\n\n----\n${replyBody}\n----\n\nTicket #${existingTicket.id.slice(0, 8)}`,
+                headers: Object.keys(inboxThreadingHeaders).length > 0 ? inboxThreadingHeaders : undefined,
+              });
+            } catch (err) {
+              logError("[support/inbound] SUPPORT_INBOX threading notification failed", err);
+            }
+          })();
 
           ticketId = existingTicket.id;
           eventAction = "email_reply";
