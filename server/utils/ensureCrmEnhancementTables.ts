@@ -122,6 +122,9 @@ export async function ensureCrmEnhancementTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_catalog_items_org_idx" ON "crm_catalog_items"("organization_id")`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_catalog_items_active_idx" ON "crm_catalog_items"("organization_id","is_active")`);
+  // Add sku and item_type columns if they were not present at table-create time.
+  await db.execute(sql`ALTER TABLE "crm_catalog_items" ADD COLUMN IF NOT EXISTS "sku" varchar`);
+  await db.execute(sql`ALTER TABLE "crm_catalog_items" ADD COLUMN IF NOT EXISTS "item_type" varchar NOT NULL DEFAULT 'PRODUCT'`);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "crm_quote_templates" (

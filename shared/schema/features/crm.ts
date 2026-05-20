@@ -603,6 +603,8 @@ export const crmCatalogItems = pgTable("crm_catalog_items", {
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   description: text("description"),
+  sku: varchar("sku"),
+  itemType: varchar("item_type").notNull().default("PRODUCT"),
   category: text("category"),
   unit: text("unit"),
   unitPrice: decimal("unit_price", { precision: 14, scale: 4 }).notNull().default("0"),

@@ -1695,7 +1695,7 @@ export default function CRMPage() {
                   <div
                     ref={contactsScrollRef}
                     className="overflow-auto"
-                    style={{ maxHeight: "70vh", contain: "strict" }}
+                    style={{ maxHeight: "70vh" }}
                     data-testid="contacts-virtual-scroll"
                   >
                     <table className="w-full text-sm" data-testid="table-contacts">

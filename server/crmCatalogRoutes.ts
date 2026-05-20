@@ -19,7 +19,11 @@ router.get("/api/crm/catalog-items", requireAuth, requireRole(...ROLES), async (
   } catch (e) { next(e); }
 });
 
-const catalogBody = insertCrmCatalogItemSchema.omit({ organizationId: true });
+const catalogBody = insertCrmCatalogItemSchema.omit({ organizationId: true }).extend({
+  // Frontend may send unitPrice as a JS number; coerce to string since
+  // Drizzle decimal columns generate z.string() in the insert schema.
+  unitPrice: z.coerce.string(),
+});
 
 router.post("/api/crm/catalog-items", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
