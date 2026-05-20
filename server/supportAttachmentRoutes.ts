@@ -10,8 +10,7 @@ import { logError, logInfo } from "./utils/logger";
 import { ObjectStorageService, parseObjectPath } from "./objectStorage";
 import { randomUUID } from "crypto";
 import { scanConfirmedUpload } from "./uploadAvScanner";
-import { logAudit } from "./auditLogger";
-import { getCorrelationId } from "./middleware/correlationId";
+import { recordUploadScanAudit } from "./uploadAvScanAudit";
 
 const router = Router();
 
@@ -80,43 +79,19 @@ async function uploadSupportFile(
     sizeBytes: file.size,
   });
 
-  const correlationId = getCorrelationId() ?? null;
-  const action = scanResult.status === "blocked" ? "REJECT" : "APPROVE";
-  const payload = {
-    op: "upload_av_scan",
-    route: "support_attachment",
-    status: scanResult.status,
-    reason: scanResult.reason ?? null,
-    scannerId: scanResult.scannerId ?? null,
+  await recordUploadScanAudit({
+    userId,
+    entityId: objectId,
     objectKey: fullPath,
     contentType: file.mimetype,
     sizeBytes: file.size,
     organizationId,
-    correlationId,
-  };
-
-  await logAudit(
-    {
-      userId,
-      entityType: "upload_av_scan",
-      entityId: objectId,
-      action,
-      oldValue: null,
-      newValue: JSON.stringify(payload),
-    },
+    scanResult,
+    route: "support_attachment",
     req,
-  );
+  });
 
   if (scanResult.status === "blocked") {
-    try {
-      await objectStorageService.deleteObjectByKey(fullPath);
-    } catch (delErr) {
-      logError(
-        "[upload-av] Failed to quarantine infected support attachment",
-        { objectKey: fullPath, organizationId },
-        delErr instanceof Error ? delErr : new Error(String(delErr)),
-      );
-    }
     throw new ScanBlockedError(scanResult.reason);
   }
 
