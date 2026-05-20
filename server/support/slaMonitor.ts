@@ -14,11 +14,13 @@
 //     enterprise tickets preferring enterpriseAgentIds first.
 
 import { and, eq, gt, isNull, lte, sql, inArray, lt, or } from "drizzle-orm";
+import { randomUUID } from "crypto";
 import { db } from "../db";
-import { supportTickets, supportSettings, users } from "@shared/schema";
+import { organizations, supportTickets, supportSettings, users } from "@shared/schema";
 import { sendEmail } from "../email";
 import { logError, logInfo } from "../utils/logger";
 import { logSystemAudit } from "../auditLogger";
+import { supportEventBus } from "../supportEventBus";
 import type { InsertAuditLog } from "@shared/schema";
 
 const SUPPORT_INBOX = process.env.SUPPORT_INBOX_EMAIL || "support@smartmanageai.local";
@@ -79,6 +81,7 @@ export async function runSlaSweep(): Promise<SweepResult> {
       id: supportTickets.id,
       subject: supportTickets.subject,
       tier: supportTickets.tier,
+      organizationId: supportTickets.organizationId,
     });
 
   if (firstResp.length || resolution.length) {
@@ -96,6 +99,33 @@ export async function runSlaSweep(): Promise<SweepResult> {
     logInfo(
       `[support-sla] sweep flipped ${firstResp.length} first-response and ${resolution.length} resolution breach(es)`,
     );
+
+    // Emit activity events for each newly-breached ticket so the live feed
+    // captures breaches at the exact moment the sweep flags them.
+    const allBreached = [
+      ...firstResp.map((r) => ({ ...r, breachType: "first_response" as const })),
+      ...resolution.map((r) => ({ ...r, breachType: "resolution" as const })),
+    ];
+    const orgIds = [...new Set(allBreached.map((r) => r.organizationId).filter(Boolean))] as string[];
+    const orgRows =
+      orgIds.length > 0
+        ? await db.select({ id: organizations.id, name: organizations.name }).from(organizations).then(
+            (rows) => rows.filter((r) => orgIds.includes(r.id)),
+          )
+        : [];
+    const orgNameById = new Map(orgRows.map((r) => [r.id, r.name]));
+    const breachTimestamp = new Date().toISOString();
+    for (const ticket of allBreached) {
+      supportEventBus.emitActivity({
+        id: randomUUID(),
+        type: "sla_breach",
+        ticketId: ticket.id,
+        subject: ticket.subject,
+        orgName: ticket.organizationId ? (orgNameById.get(ticket.organizationId) ?? null) : null,
+        timestamp: breachTimestamp,
+        meta: { breachType: ticket.breachType },
+      });
+    }
   }
 
   return { firstResponseBreached: firstResp.length, resolutionBreached: resolution.length };

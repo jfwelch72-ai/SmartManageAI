@@ -7,6 +7,7 @@ import multer from "multer";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import {
+  organizations,
   organizationSubscriptions,
   supportTickets,
   supportTicketReplies,
@@ -34,7 +35,7 @@ import {
   type SupportPriority,
 } from "./support/slaPolicy";
 import { runSlaSweep } from "./support/slaMonitor";
-import { supportEventBus } from "./supportEventBus";
+import { supportEventBus, getRecentActivity, type SupportActivityEvent } from "./supportEventBus";
 import { inboundEmailLimiter } from "./rateLimiter";
 import { logCreate, logSystemAudit } from "./auditLogger";
 import { objectStorageClient, parseObjectPath } from "./objectStorage";
@@ -277,6 +278,21 @@ router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, n
 
     const [row] = await db.insert(supportTickets).values(insertRow).returning();
 
+    // Emit activity event for the global feed
+    {
+      const [orgRow] = row.organizationId
+        ? await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, row.organizationId))
+        : [];
+      supportEventBus.emitActivity({
+        id: randomUUID(),
+        type: "created",
+        ticketId: row.id,
+        subject: row.subject,
+        orgName: orgRow?.name ?? null,
+        timestamp: row.createdAt.toISOString(),
+      });
+    }
+
     void sendEmail({
       to: SUPPORT_INBOX,
       subject: `[Support][${tier}/${row.priority}] ${row.subject}`,
@@ -437,6 +453,25 @@ SmartManageAI Support`,
         .where(eq(supportTickets.id, req.params.id))
         .returning();
       if (!row) return res.status(404).json({ error: "Ticket not found" });
+
+      // Emit activity event for status changes.
+      // Always use type "status_changed" here — sla_breach events are emitted
+      // exclusively by the SLA sweep at the moment breach flags flip.
+      if (patch.data.status) {
+        const [orgRow] = row.organizationId
+          ? await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, row.organizationId))
+          : [];
+        supportEventBus.emitActivity({
+          id: randomUUID(),
+          type: "status_changed",
+          ticketId: row.id,
+          subject: row.subject,
+          orgName: orgRow?.name ?? null,
+          timestamp: new Date().toISOString(),
+          meta: { status: patch.data.status },
+        });
+      }
+
       res.json(row);
     } catch (err) {
       next(err);
@@ -1292,9 +1327,26 @@ router.post("/api/support/csat/:token", async (req, res, next) => {
         updatedAt: new Date(),
       })
       .where(eq(supportTickets.id, ticket.id))
-      .returning({ id: supportTickets.id, csatScore: supportTickets.csatScore });
+      .returning({ id: supportTickets.id, csatScore: supportTickets.csatScore, subject: supportTickets.subject, organizationId: supportTickets.organizationId });
 
     logInfo(`[support] CSAT rating submitted for ticket ${ticket.id}: score=${parsed.data.score}`);
+
+    // Emit activity event for CSAT rating
+    {
+      const [orgRow] = row.organizationId
+        ? await db.select({ name: organizations.name }).from(organizations).where(eq(organizations.id, row.organizationId))
+        : [];
+      supportEventBus.emitActivity({
+        id: randomUUID(),
+        type: "csat_rated",
+        ticketId: row.id,
+        subject: row.subject,
+        orgName: orgRow?.name ?? null,
+        timestamp: new Date().toISOString(),
+        meta: { score: parsed.data.score },
+      });
+    }
+
     res.json({ success: true, ticket: row });
   } catch (err) {
     next(err);
@@ -2062,6 +2114,72 @@ router.get(
         avgCsatScore: avgCsatScore !== null ? Math.round(avgCsatScore * 10) / 10 : null,
         csatResponseRate: Math.round(csatResponseRate * 100),
         categoryCounts,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Activity feed  GET /api/support/activity-feed  (SUPER_ADMIN only)
+// Returns last 10 ticket events across all event types (polling endpoint).
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/activity-feed",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res, _next) => {
+    // Serve directly from the in-memory ring buffer so timestamps and event
+    // types reflect actual occurrences rather than synthesised ticket snapshots.
+    const events = getRecentActivity(10);
+    res.json({ events });
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Activity feed SSE stream  GET /api/support/activity-feed/stream  (SUPER_ADMIN)
+// Pushes real-time activity events to connected admin dashboards.
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/activity-feed/stream",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      res.setHeader("Content-Type", "text/event-stream");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.flushHeaders();
+
+      const send = (event: string, data: unknown) => {
+        try {
+          res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+        } catch {
+          // Connection already closed
+        }
+      };
+
+      send("connected", { ok: true });
+
+      const unsubscribe = supportEventBus.onActivity((payload) => {
+        send("activity", payload);
+      });
+
+      const keepalive = setInterval(() => {
+        try {
+          res.write(": ping\n\n");
+        } catch {
+          clearInterval(keepalive);
+        }
+      }, 60_000);
+
+      req.on("close", () => {
+        clearInterval(keepalive);
+        unsubscribe();
       });
     } catch (err) {
       next(err);

@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { format, isPast, subDays } from "date-fns";
 import {
+  Activity,
   AlertTriangle,
   BarChart2,
   CheckCircle2,
@@ -1245,6 +1246,216 @@ function AgentPerformanceTable({ agents }: { agents: AgentStat[] }) {
   );
 }
 
+// ── Activity feed ─────────────────────────────────────────────────────────────
+
+interface ActivityEvent {
+  id: string;
+  type: "created" | "status_changed" | "sla_breach" | "csat_rated";
+  ticketId: string;
+  subject: string;
+  orgName: string | null;
+  timestamp: string;
+  meta?: { value?: string; score?: number; status?: string };
+}
+
+const ACTIVITY_TYPE_CONFIG: Record<
+  ActivityEvent["type"],
+  { label: string; className: string; icon: React.ReactNode }
+> = {
+  created: {
+    label: "New Ticket",
+    className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100",
+    icon: <TicketCheck className="h-3 w-3" />,
+  },
+  status_changed: {
+    label: "Status Change",
+    className: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+    icon: <Activity className="h-3 w-3" />,
+  },
+  sla_breach: {
+    label: "SLA Breach",
+    className: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100",
+    icon: <AlertTriangle className="h-3 w-3" />,
+  },
+  csat_rated: {
+    label: "CSAT Rated",
+    className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100",
+    icon: <Star className="h-3 w-3" />,
+  },
+};
+
+const MAX_FEED_ITEMS = 10;
+const FEED_POLLING_MS = 30_000;
+
+function RecentActivityFeed() {
+  const [liveEvents, setLiveEvents] = useState<ActivityEvent[]>([]);
+  const [usingPolling, setUsingPolling] = useState(false);
+  const esRef = useRef<EventSource | null>(null);
+  const retryRef = useRef(0);
+
+  const { data, isLoading } = useQuery<{ events: ActivityEvent[] }>({
+    queryKey: ["/api/support/activity-feed"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/support/activity-feed");
+      return res.json();
+    },
+    refetchInterval: FEED_POLLING_MS,
+  });
+
+  // Merge live events with polled events, deduplicate by ticketId+type, cap at 10
+  const events = useMemo(() => {
+    const polled = data?.events ?? [];
+    const merged = [...liveEvents, ...polled];
+    const seen = new Set<string>();
+    const deduped: ActivityEvent[] = [];
+    for (const ev of merged) {
+      const key = `${ev.ticketId}:${ev.type}:${ev.timestamp.slice(0, 19)}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduped.push(ev);
+      }
+    }
+    return deduped
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, MAX_FEED_ITEMS);
+  }, [liveEvents, data?.events]);
+
+  useEffect(() => {
+    if (typeof EventSource === "undefined") {
+      setUsingPolling(true);
+      return;
+    }
+
+    function connect() {
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+      const es = new EventSource("/api/support/activity-feed/stream", { withCredentials: true });
+      esRef.current = es;
+
+      es.addEventListener("connected", () => {
+        retryRef.current = 0;
+        setUsingPolling(false);
+      });
+
+      es.addEventListener("activity", (e: MessageEvent) => {
+        try {
+          const event = JSON.parse(e.data) as ActivityEvent;
+          setLiveEvents((prev) => {
+            const key = `${event.ticketId}:${event.type}:${event.timestamp.slice(0, 19)}`;
+            if (prev.some((ev) => `${ev.ticketId}:${ev.type}:${ev.timestamp.slice(0, 19)}` === key)) return prev;
+            return [event, ...prev].slice(0, MAX_FEED_ITEMS);
+          });
+        } catch {
+          // malformed event — ignore
+        }
+      });
+
+      es.onerror = () => {
+        es.close();
+        retryRef.current += 1;
+        if (retryRef.current >= 3) {
+          setUsingPolling(true);
+        } else {
+          const delay = Math.min(1_000 * 2 ** retryRef.current, 30_000);
+          setTimeout(() => {
+            if (retryRef.current < 3) connect();
+          }, delay);
+        }
+      };
+    }
+
+    connect();
+
+    return () => {
+      if (esRef.current) {
+        esRef.current.close();
+        esRef.current = null;
+      }
+    };
+  }, []);
+
+  return (
+    <Card data-testid="card-recent-activity">
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Activity className="h-4 w-4" />
+              Recent Activity
+            </CardTitle>
+            <CardDescription>Last 10 ticket events in real time</CardDescription>
+          </div>
+          {usingPolling && (
+            <span className="text-[10px] text-muted-foreground" data-testid="text-activity-polling-fallback">
+              Refreshing every 30s
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading && events.length === 0 ? (
+          <div className="p-4 space-y-2">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className="h-10 w-full" />
+            ))}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground" data-testid="text-no-activity">
+            No recent activity
+          </div>
+        ) : (
+          <ul className="divide-y" data-testid="list-activity-feed">
+            {events.map((ev) => {
+              const cfg = ACTIVITY_TYPE_CONFIG[ev.type] ?? ACTIVITY_TYPE_CONFIG.status_changed;
+              return (
+                <li
+                  key={`${ev.id}-${ev.type}`}
+                  className="flex items-center gap-3 px-4 py-2.5 hover:bg-muted/40 transition-colors"
+                  data-testid={`activity-item-${ev.ticketId}`}
+                >
+                  <Badge
+                    variant="secondary"
+                    className={`shrink-0 gap-1 text-[10px] py-0.5 ${cfg.className}`}
+                    data-testid={`activity-badge-${ev.type}`}
+                  >
+                    {cfg.icon}
+                    {cfg.label}
+                  </Badge>
+                  <span
+                    className="flex-1 text-sm truncate"
+                    title={ev.subject}
+                    data-testid={`activity-subject-${ev.ticketId}`}
+                  >
+                    {ev.subject.length > 50 ? `${ev.subject.slice(0, 50)}…` : ev.subject}
+                  </span>
+                  {ev.orgName && (
+                    <span
+                      className="text-xs text-muted-foreground shrink-0 hidden sm:block max-w-[120px] truncate"
+                      title={ev.orgName}
+                      data-testid={`activity-org-${ev.ticketId}`}
+                    >
+                      {ev.orgName}
+                    </span>
+                  )}
+                  <span
+                    className="text-xs text-muted-foreground shrink-0 tabular-nums"
+                    title={new Date(ev.timestamp).toLocaleString()}
+                    data-testid={`activity-time-${ev.ticketId}`}
+                  >
+                    {format(new Date(ev.timestamp), "MMM d, h:mm a")}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function AnalyticsTab() {
   const [rangeDays, setRangeDays] = useState(30);
   const [granularity, setGranularity] = useState<"day" | "week">("day");
@@ -1456,6 +1667,9 @@ function AnalyticsTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Recent Activity feed */}
+      <RecentActivityFeed />
     </div>
   );
 }
