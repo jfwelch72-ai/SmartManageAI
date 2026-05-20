@@ -85,6 +85,8 @@ interface AIExtractedItem {
   selected: boolean;
   unitMaterialCost?: number | null;
   unitLaborCost?: number | null;
+  aiPrefilledMat?: boolean;
+  aiPrefilledLabor?: boolean;
 }
 
 interface AIAnalysisResult {
@@ -249,6 +251,8 @@ export default function BidWizardPage() {
         selected: true,
         unitMaterialCost: typeof item.unitMaterialCost === 'number' && item.unitMaterialCost > 0 ? item.unitMaterialCost : null,
         unitLaborCost: typeof item.unitLaborCost === 'number' && item.unitLaborCost > 0 ? item.unitLaborCost : null,
+        aiPrefilledMat: typeof item.unitMaterialCost === 'number' && item.unitMaterialCost > 0,
+        aiPrefilledLabor: typeof item.unitLaborCost === 'number' && item.unitLaborCost > 0,
       }));
       setScopeItems(items);
       
@@ -505,7 +509,8 @@ export default function BidWizardPage() {
       if (field === 'unitMaterialCost' || field === 'unitLaborCost') {
         const parsed = parseFloat(value);
         const current = field === 'unitMaterialCost' ? item.unitMaterialCost : item.unitLaborCost;
-        return { ...item, [field]: value === '' ? null : (Number.isFinite(parsed) ? parsed : current) };
+        const prefilledKey = field === 'unitMaterialCost' ? 'aiPrefilledMat' : 'aiPrefilledLabor';
+        return { ...item, [field]: value === '' ? null : (Number.isFinite(parsed) ? parsed : current), [prefilledKey]: false };
       }
       return { ...item, [field]: value };
     }));
@@ -976,28 +981,52 @@ export default function BidWizardPage() {
                                       <span className="text-xs text-muted-foreground" data-testid={`text-category-${item.id}`}>{item.category || "GENERAL"}</span>
                                     </TableCell>
                                     <TableCell>
-                                      <Input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        className="h-7 w-24 text-sm"
-                                        value={item.unitMaterialCost ?? ""}
-                                        placeholder={hasCostData ? "0.00" : "—"}
-                                        onChange={(e) => updateScopeItem(item.id, 'unitMaterialCost', e.target.value)}
-                                        data-testid={`input-mat-cost-${item.id}`}
-                                      />
+                                      <div className="relative inline-flex items-center">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          className={cn(
+                                            "h-7 w-24 text-sm",
+                                            item.aiPrefilledMat && "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 pr-6"
+                                          )}
+                                          value={item.unitMaterialCost ?? ""}
+                                          placeholder={hasCostData ? "0.00" : "—"}
+                                          onChange={(e) => updateScopeItem(item.id, 'unitMaterialCost', e.target.value)}
+                                          data-testid={`input-mat-cost-${item.id}`}
+                                          title={item.aiPrefilledMat ? "AI-estimated — edit to confirm" : undefined}
+                                        />
+                                        {item.aiPrefilledMat && (
+                                          <Sparkles
+                                            className="absolute right-1.5 h-3 w-3 text-amber-500 pointer-events-none"
+                                            data-testid={`ai-badge-mat-${item.id}`}
+                                          />
+                                        )}
+                                      </div>
                                     </TableCell>
                                     <TableCell>
-                                      <Input
-                                        type="number"
-                                        min="0"
-                                        step="0.01"
-                                        className="h-7 w-24 text-sm"
-                                        value={item.unitLaborCost ?? ""}
-                                        placeholder={hasCostData ? "0.00" : "—"}
-                                        onChange={(e) => updateScopeItem(item.id, 'unitLaborCost', e.target.value)}
-                                        data-testid={`input-labor-cost-${item.id}`}
-                                      />
+                                      <div className="relative inline-flex items-center">
+                                        <Input
+                                          type="number"
+                                          min="0"
+                                          step="0.01"
+                                          className={cn(
+                                            "h-7 w-24 text-sm",
+                                            item.aiPrefilledLabor && "bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 pr-6"
+                                          )}
+                                          value={item.unitLaborCost ?? ""}
+                                          placeholder={hasCostData ? "0.00" : "—"}
+                                          onChange={(e) => updateScopeItem(item.id, 'unitLaborCost', e.target.value)}
+                                          data-testid={`input-labor-cost-${item.id}`}
+                                          title={item.aiPrefilledLabor ? "AI-estimated — edit to confirm" : undefined}
+                                        />
+                                        {item.aiPrefilledLabor && (
+                                          <Sparkles
+                                            className="absolute right-1.5 h-3 w-3 text-amber-500 pointer-events-none"
+                                            data-testid={`ai-badge-labor-${item.id}`}
+                                          />
+                                        )}
+                                      </div>
                                     </TableCell>
                                     <TableCell className="text-right">
                                       {hasCostData ? (
