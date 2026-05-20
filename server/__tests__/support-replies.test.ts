@@ -1,4 +1,5 @@
 // Task #2825 — Integration tests for the ticket reply flow.
+// Task #2975 — Email threading header assertions (In-Reply-To / References).
 // Covers: POST /api/support/tickets/:id/replies and GET /api/support/tickets/:id/replies
 //
 // Behaviours under test:
@@ -370,3 +371,4 @@ describe("GET /api/support/tickets/:id/replies", () => {
       .expect(403);
   });
 });
+

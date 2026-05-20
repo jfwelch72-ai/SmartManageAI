@@ -121,6 +121,7 @@ export async function sendEmailWithResult(
       html: options.html,
       text: options.text,
       replyTo: options.replyTo,
+      headers: options.headers && Object.keys(options.headers).length > 0 ? options.headers : undefined,
       source: 'sendgrid',
     });
     return { ok: true, recipientCount };

@@ -23,6 +23,8 @@ export interface CapturedEmail {
   replyTo?: string;
   cc?: string[];
   bcc?: string[];
+  /** Custom email headers such as In-Reply-To and References for threading. */
+  headers?: Record<string, string>;
   source: 'sendgrid' | 'smtp';
   capturedAt: Date;
 }

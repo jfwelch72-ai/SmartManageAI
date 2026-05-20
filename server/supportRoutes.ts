@@ -1009,11 +1009,12 @@ router.post(
           auditPayload,
         ).catch((err) => logError("[support/inbound] audit log failed", err));
       } else {
-        void logSystemAudit(
-          "support_inbound_email",
-          ticketId,
-          auditPayload,
-        ).catch((err) => logError("[support/inbound] audit log failed", err));
+        void logSystemAudit({
+          entityType: "support_inbound_email",
+          entityId: ticketId,
+          action: "CREATE",
+          newValue: JSON.stringify(auditPayload),
+        }).catch((err) => logError("[support/inbound] audit log failed", err));
       }
 
       res.status(200).json({ ok: true, ticketId });
