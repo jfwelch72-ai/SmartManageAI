@@ -64,7 +64,7 @@ const BID_DOC_ANALYSIS_SCHEMA = z.object({
   riskFactors: z.array(z.any()).optional(),
   confidenceScore: z.number().optional(),
 }).passthrough();
-const BID_WIZARD_RESULT_SCHEMA = z.object({
+export const BID_WIZARD_RESULT_SCHEMA = z.object({
   scopeItems: z.array(z.object({
     description: z.string(),
     quantity: z.number().nullable().optional(),
@@ -72,8 +72,8 @@ const BID_WIZARD_RESULT_SCHEMA = z.object({
     csiDivision: z.string().nullable().optional(),
     category: z.string().nullable().optional(),
     notes: z.string().nullable().optional(),
-    unitMaterialCost: z.number().nullable().optional(),
-    unitLaborCost: z.number().nullable().optional(),
+    unitMaterialCost: z.number().positive().nullable().optional(),
+    unitLaborCost: z.number().positive().nullable().optional(),
   })).optional(),
   scopeDocument: z.string().nullable().optional(),
   projectName: z.string().nullable().optional(),
