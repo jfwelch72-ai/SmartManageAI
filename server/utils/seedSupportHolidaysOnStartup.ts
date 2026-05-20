@@ -90,7 +90,7 @@ export async function seedSupportHolidaysOnStartup(): Promise<void> {
 
     logInfo(`[migration] support_holidays seed — inserted ${rows.length} US federal holidays for ${years.join(", ")}`);
   } catch (err) {
-    logError(err, { helper: "seedSupportHolidaysOnStartup" });
+    logError("[migration] support_holidays seed — failed", {}, err instanceof Error ? err : new Error(String(err)));
     throw err;
   }
 }
