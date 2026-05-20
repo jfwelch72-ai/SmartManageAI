@@ -1463,6 +1463,119 @@ router.post(
 );
 
 // ──────────────────────────────────────────────────────────────────────────────
+// CSAT trend analytics
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/csat-trend",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 365);
+      const since = new Date(Date.now() - days * 24 * 3_600_000);
+      const orgId = req.user?.organizationId || null;
+      const isSuperAdmin = req.user?.role === "SUPER_ADMIN";
+
+      if (!isSuperAdmin && !orgId) {
+        return res.json({ weeklyTrend: [], distribution: [], byCategory: [], lowestScored: [] });
+      }
+
+      const orgConditions: SQL[] = isSuperAdmin
+        ? [isNotNull(supportTickets.csatScore), gte(supportTickets.csatSubmittedAt, since)]
+        : [
+            isNotNull(supportTickets.csatScore),
+            gte(supportTickets.csatSubmittedAt, since),
+            eq(supportTickets.organizationId, orgId!),
+          ];
+
+      const ratedTickets = await db
+        .select({
+          id: supportTickets.id,
+          subject: supportTickets.subject,
+          submitterName: supportTickets.submitterName,
+          submitterEmail: supportTickets.submitterEmail,
+          csatScore: supportTickets.csatScore,
+          csatComment: supportTickets.csatComment,
+          csatSubmittedAt: supportTickets.csatSubmittedAt,
+          category: supportTickets.category,
+          resolvedAt: supportTickets.resolvedAt,
+        })
+        .from(supportTickets)
+        .where(and(...orgConditions))
+        .orderBy(desc(supportTickets.csatSubmittedAt));
+
+      // Weekly trend — group by Monday of ISO week
+      const weekMap = new Map<string, { sum: number; count: number }>();
+      for (const t of ratedTickets) {
+        if (!t.csatSubmittedAt || t.csatScore == null) continue;
+        const d = new Date(t.csatSubmittedAt);
+        const day = d.getUTCDay(); // 0=Sun
+        const diff = (day === 0 ? -6 : 1 - day); // offset to Monday
+        const mon = new Date(d);
+        mon.setUTCDate(d.getUTCDate() + diff);
+        const weekKey = mon.toISOString().slice(0, 10);
+        const entry = weekMap.get(weekKey) ?? { sum: 0, count: 0 };
+        entry.sum += t.csatScore;
+        entry.count += 1;
+        weekMap.set(weekKey, entry);
+      }
+      const weeklyTrend = Array.from(weekMap.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([week, { sum, count }]) => ({
+          week,
+          avgScore: Math.round((sum / count) * 10) / 10,
+          count,
+        }));
+
+      // Score distribution (1-5)
+      const distMap: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      for (const t of ratedTickets) {
+        if (t.csatScore != null) distMap[t.csatScore] = (distMap[t.csatScore] ?? 0) + 1;
+      }
+      const distribution = [1, 2, 3, 4, 5].map((score) => ({ score, count: distMap[score] ?? 0 }));
+
+      // By category
+      const catMap = new Map<string, { sum: number; count: number }>();
+      for (const t of ratedTickets) {
+        if (t.csatScore == null) continue;
+        const cat = t.category ?? "general";
+        const entry = catMap.get(cat) ?? { sum: 0, count: 0 };
+        entry.sum += t.csatScore;
+        entry.count += 1;
+        catMap.set(cat, entry);
+      }
+      const byCategory = Array.from(catMap.entries())
+        .map(([category, { sum, count }]) => ({
+          category,
+          avgScore: Math.round((sum / count) * 10) / 10,
+          count,
+        }))
+        .sort((a, b) => a.avgScore - b.avgScore);
+
+      // Lowest-scoring recent tickets (score <= 3, up to 10)
+      const lowestScored = ratedTickets
+        .filter((t) => t.csatScore != null && t.csatScore <= 3)
+        .slice(0, 10)
+        .map((t) => ({
+          id: t.id,
+          subject: t.subject,
+          submitterName: t.submitterName,
+          submitterEmail: t.submitterEmail,
+          csatScore: t.csatScore,
+          csatComment: t.csatComment,
+          csatSubmittedAt: t.csatSubmittedAt,
+          category: t.category,
+        }));
+
+      res.json({ weeklyTrend, distribution, byCategory, lowestScored });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Metrics
 // ──────────────────────────────────────────────────────────────────────────────
 

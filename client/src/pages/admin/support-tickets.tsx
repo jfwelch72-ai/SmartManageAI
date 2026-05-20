@@ -15,6 +15,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  SmilePlus,
   Star,
   TicketCheck,
   X,
@@ -22,6 +23,18 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import SupportSettingsCard from "./support-settings";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +47,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -683,6 +697,291 @@ interface TicketMetrics {
   categoryCounts?: Record<string, number>;
 }
 
+interface CsatWeekPoint { week: string; avgScore: number; count: number; }
+interface CsatDistPoint { score: number; count: number; }
+interface CsatCategoryPoint { category: string; avgScore: number; count: number; }
+interface CsatLowestTicket {
+  id: string;
+  subject: string;
+  submitterName: string | null;
+  submitterEmail: string;
+  csatScore: number | null;
+  csatComment: string | null;
+  csatSubmittedAt: string | Date | null;
+  category: string | null;
+}
+interface CsatTrendData {
+  weeklyTrend: CsatWeekPoint[];
+  distribution: CsatDistPoint[];
+  byCategory: CsatCategoryPoint[];
+  lowestScored: CsatLowestTicket[];
+}
+
+const SCORE_COLORS: Record<number, string> = {
+  1: "#ef4444",
+  2: "#f97316",
+  3: "#eab308",
+  4: "#84cc16",
+  5: "#22c55e",
+};
+
+const CATEGORY_LABELS_FULL: Record<string, string> = {
+  bids: "Bids",
+  payroll: "Payroll",
+  ai_estimator: "AI Estimator",
+  change_orders: "Change Orders",
+  documents: "Documents",
+  general: "General",
+};
+
+function CsatDashboard() {
+  const [days, setDays] = useState<number>(30);
+
+  const { data, isLoading } = useQuery<CsatTrendData>({
+    queryKey: ["/api/support/csat-trend", days],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/support/csat-trend?days=${days}`);
+      return res.json();
+    },
+    refetchInterval: 120_000,
+  });
+
+  const weeklyTrend = data?.weeklyTrend ?? [];
+  const distribution = data?.distribution ?? [];
+  const byCategory = data?.byCategory ?? [];
+  const lowestScored = data?.lowestScored ?? [];
+
+  const totalRated = distribution.reduce((s, d) => s + d.count, 0);
+  const overallAvg =
+    totalRated > 0
+      ? distribution.reduce((s, d) => s + d.score * d.count, 0) / totalRated
+      : null;
+
+  const formatWeek = (w: string) => {
+    try {
+      const d = new Date(w + "T00:00:00Z");
+      return format(d, "MMM d");
+    } catch {
+      return w;
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4" data-testid="csat-dashboard-loading">
+        <Skeleton className="h-48 w-full" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Skeleton className="h-48 w-full" />
+          <Skeleton className="h-48 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (totalRated === 0 && !isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 gap-3 text-muted-foreground" data-testid="csat-dashboard-empty">
+        <SmilePlus className="h-10 w-10" />
+        <p className="text-sm font-medium">No CSAT ratings in the last {days} days</p>
+        <p className="text-xs">Ratings are collected automatically when tickets are resolved.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5" data-testid="csat-dashboard">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          {overallAvg !== null && (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0.5">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <Star
+                    key={s}
+                    className={`h-5 w-5 ${s <= Math.round(overallAvg) ? "fill-yellow-400 text-yellow-400" : "text-gray-300"}`}
+                  />
+                ))}
+              </div>
+              <span className="text-2xl font-bold" data-testid="csat-overall-avg">
+                {overallAvg.toFixed(1)}
+              </span>
+              <span className="text-sm text-muted-foreground">/ 5 ({totalRated} rated)</span>
+            </div>
+          )}
+        </div>
+        <Select
+          value={String(days)}
+          onValueChange={(v) => setDays(Number(v))}
+        >
+          <SelectTrigger className="w-36" data-testid="select-csat-days">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="7">Last 7 days</SelectItem>
+            <SelectItem value="30">Last 30 days</SelectItem>
+            <SelectItem value="90">Last 90 days</SelectItem>
+            <SelectItem value="180">Last 180 days</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {weeklyTrend.length > 1 && (
+        <Card data-testid="csat-weekly-trend-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Average Score by Week</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={weeklyTrend} margin={{ top: 4, right: 16, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                <XAxis
+                  dataKey="week"
+                  tickFormatter={formatWeek}
+                  tick={{ fontSize: 11 }}
+                  tickLine={false}
+                />
+                <YAxis domain={[1, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} tickLine={false} />
+                <Tooltip
+                  formatter={(value: number) => [`${value}/5`, "Avg Score"]}
+                  labelFormatter={(label: string) => `Week of ${formatWeek(label)}`}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="avgScore"
+                  stroke="#6366f1"
+                  strokeWidth={2}
+                  dot={{ r: 4, fill: "#6366f1" }}
+                  activeDot={{ r: 6 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card data-testid="csat-distribution-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Score Distribution</CardTitle>
+            <CardDescription className="text-xs">{totalRated} total ratings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={distribution} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" className="stroke-muted" vertical={false} />
+                <XAxis
+                  dataKey="score"
+                  tickFormatter={(v) => `${"★".repeat(v)}`}
+                  tick={{ fontSize: 12 }}
+                  tickLine={false}
+                />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} />
+                <Tooltip
+                  formatter={(value: number) => [value, "Tickets"]}
+                  labelFormatter={(label: number) => `${label} star${label === 1 ? "" : "s"}`}
+                />
+                <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                  {distribution.map((entry) => (
+                    <Cell key={entry.score} fill={SCORE_COLORS[entry.score] ?? "#94a3b8"} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {byCategory.length > 0 && (
+          <Card data-testid="csat-by-category-card">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-semibold">Avg Score by Category</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart
+                  data={byCategory.map((b) => ({ ...b, label: CATEGORY_LABELS_FULL[b.category] ?? b.category }))}
+                  layout="vertical"
+                  margin={{ top: 4, right: 40, left: 8, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" horizontal={false} />
+                  <XAxis type="number" domain={[0, 5]} ticks={[1, 2, 3, 4, 5]} tick={{ fontSize: 11 }} tickLine={false} />
+                  <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} tickLine={false} width={90} />
+                  <Tooltip
+                    formatter={(value: number, _: string, props: { payload?: CsatCategoryPoint }) => [
+                      `${value}/5 (${props.payload?.count ?? 0} rated)`,
+                      "Avg Score",
+                    ]}
+                  />
+                  <Bar dataKey="avgScore" radius={[0, 4, 4, 0]}>
+                    {byCategory.map((entry) => (
+                      <Cell
+                        key={entry.category}
+                        fill={entry.avgScore >= 4 ? "#22c55e" : entry.avgScore >= 3 ? "#eab308" : "#ef4444"}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      {lowestScored.length > 0 && (
+        <Card data-testid="csat-lowest-tickets-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-semibold">Lowest-Scoring Tickets</CardTitle>
+            <CardDescription className="text-xs">Recent tickets with score ≤ 3 — review these for quality improvements</CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Subject</TableHead>
+                    <TableHead className="hidden sm:table-cell">Submitter</TableHead>
+                    <TableHead className="hidden sm:table-cell">Category</TableHead>
+                    <TableHead>Score</TableHead>
+                    <TableHead className="hidden md:table-cell">Comment</TableHead>
+                    <TableHead className="hidden md:table-cell">Rated</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lowestScored.map((t) => (
+                    <TableRow key={t.id} data-testid={`csat-low-row-${t.id}`}>
+                      <TableCell className="font-medium max-w-[180px] truncate" data-testid={`csat-low-subject-${t.id}`}>
+                        {t.subject}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell text-sm text-muted-foreground max-w-[120px] truncate">
+                        {t.submitterName || t.submitterEmail}
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        {t.category ? (
+                          <Badge variant="outline" className="text-xs font-normal">
+                            {CATEGORY_LABELS_FULL[t.category] ?? t.category}
+                          </Badge>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell data-testid={`csat-low-score-${t.id}`}>
+                        {csatStars(t.csatScore)}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground max-w-[200px] truncate">
+                        {t.csatComment || <span className="italic">No comment</span>}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell text-xs text-muted-foreground">
+                        {t.csatSubmittedAt ? format(new Date(t.csatSubmittedAt), "MMM d, yyyy") : "—"}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefined; isLoading: boolean }) {
   const breachedCount = (metrics?.firstResponseBreached ?? 0) + (metrics?.resolutionBreached ?? 0);
   const adherencePct = metrics?.adherence !== undefined ? Math.round(metrics.adherence * 100) : null;
@@ -770,7 +1069,6 @@ function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefine
 }
 
 export default function AdminSupportTicketsPage() {
-  const [activeTab, setActiveTab] = useState<"tickets" | "settings">("tickets");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -860,224 +1158,216 @@ export default function AdminSupportTicketsPage() {
           </Link>
         </div>
 
-        {/* Tab switcher */}
-        <div className="flex gap-1 border-b">
-          <button
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "tickets"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setActiveTab("tickets")}
-            data-testid="tab-tickets"
-          >
-            <TicketCheck className="h-4 w-4" />
-            Tickets
-          </button>
-          <button
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "settings"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-            onClick={() => setActiveTab("settings")}
-            data-testid="tab-settings"
-          >
-            <Settings className="h-4 w-4" />
-            Support Settings
-          </button>
-        </div>
-
-        {activeTab === "settings" ? (
-          <SupportSettingsCard />
-        ) : (
-          <>
-
         <MetricCards metrics={metricsData} isLoading={metricsLoading} />
 
-        {breachedCount > 0 && (
-          <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="alert-sla-breached">
-            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
-            <span><strong>{breachedCount}</strong> ticket{breachedCount === 1 ? "" : "s"} with SLA breaches</span>
-          </div>
-        )}
+        <Tabs defaultValue="tickets" data-testid="support-tabs">
+          <TabsList data-testid="support-tabs-list">
+            <TabsTrigger value="tickets" className="gap-1.5" data-testid="tab-tickets">
+              <TicketCheck className="h-4 w-4" />
+              Tickets
+            </TabsTrigger>
+            <TabsTrigger value="satisfaction" className="gap-1.5" data-testid="tab-satisfaction">
+              <Star className="h-4 w-4" />
+              Satisfaction
+            </TabsTrigger>
+            <TabsTrigger value="settings" className="gap-1.5" data-testid="tab-settings">
+              <Settings className="h-4 w-4" />
+              Support Settings
+            </TabsTrigger>
+          </TabsList>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Filter &amp; Search</CardTitle>
-            <CardDescription>Narrow down tickets by status, priority, category, or keyword</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              <div className="flex-1 min-w-[160px]">
-                <Select value={statusFilter} onValueChange={setStatusFilter}>
-                  <SelectTrigger data-testid="select-status-filter">
-                    <SelectValue placeholder="All Statuses" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {STATUS_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} data-testid={`status-option-${o.value}`}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[160px]">
-                <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-                  <SelectTrigger data-testid="select-priority-filter">
-                    <SelectValue placeholder="All Priorities" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PRIORITY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} data-testid={`priority-option-${o.value}`}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[160px]">
-                <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                  <SelectTrigger data-testid="select-category-filter">
-                    <SelectValue placeholder="All Categories" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CATEGORY_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} data-testid={`category-option-${o.value}`}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[160px]">
-                <Select value={csatFilter} onValueChange={setCsatFilter}>
-                  <SelectTrigger data-testid="select-csat-filter">
-                    <SelectValue placeholder="All CSAT" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CSAT_FILTER_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value} data-testid={`csat-option-${o.value}`}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="flex-1 min-w-[240px] relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  className="pl-9"
-                  placeholder="Search subject, name, or email…"
-                  value={searchText}
-                  onChange={(e) => setSearchText(e.target.value)}
-                  data-testid="input-ticket-search"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="p-0">
-            {isLoading ? (
-              <div className="p-6 space-y-3">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : tickets.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground" data-testid="empty-state-tickets">
-                <Inbox className="h-10 w-10" />
-                <p className="text-sm font-medium">No tickets found</p>
-                <p className="text-xs">Try adjusting your filters</p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Subject</TableHead>
-                      <TableHead className="hidden md:table-cell">Submitter</TableHead>
-                      <TableHead className="hidden lg:table-cell">Category</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="hidden sm:table-cell">Priority</TableHead>
-                      <TableHead className="hidden sm:table-cell">Tier</TableHead>
-                      <TableHead className="hidden sm:table-cell">Replies</TableHead>
-                      <TableHead className="hidden md:table-cell">CSAT</TableHead>
-                      <TableHead>SLA</TableHead>
-                      <TableHead className="hidden md:table-cell">Created</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {tickets.map((ticket) => {
-                      const anyBreached =
-                        ticket.slaFirstResponseBreached === 1 ||
-                        ticket.slaResolutionBreached === 1;
-                      return (
-                        <TableRow
-                          key={ticket.id}
-                          className={`cursor-pointer hover:bg-muted/50 ${anyBreached ? "bg-destructive/5" : ""}`}
-                          onClick={() => openTicket(ticket)}
-                          data-testid={`row-ticket-${ticket.id}`}
-                        >
-                          <TableCell className="font-medium max-w-[200px] truncate" data-testid={`text-ticket-subject-${ticket.id}`}>
-                            {ticket.subject}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[140px] truncate" data-testid={`text-ticket-submitter-${ticket.id}`}>
-                            {ticket.submitterName || ticket.submitterEmail}
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell" data-testid={`badge-ticket-category-${ticket.id}`}>
-                            {categoryBadge(ticket.category)}
-                          </TableCell>
-                          <TableCell data-testid={`badge-ticket-status-${ticket.id}`}>
-                            {statusBadge(ticket.status)}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell" data-testid={`badge-ticket-priority-${ticket.id}`}>
-                            {priorityBadge(ticket.priority)}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell" data-testid={`badge-ticket-tier-${ticket.id}`}>
-                            {tierBadge(ticket.tier)}
-                          </TableCell>
-                          <TableCell className="hidden sm:table-cell" data-testid={`badge-reply-count-${ticket.id}`}>
-                            {ticket.replyCount > 0 ? (
-                              <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
-                                <MessageSquare className="h-3 w-3" />
-                                {ticket.replyCount}
-                              </Badge>
-                            ) : (
-                              <span className="text-xs text-muted-foreground italic">No reply</span>
-                            )}
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell" data-testid={`csat-ticket-${ticket.id}`}>
-                            {csatStars(ticket.csatScore)}
-                          </TableCell>
-                          <TableCell data-testid={`sla-ticket-${ticket.id}`}>
-                            <SlaIndicator ticket={ticket} />
-                          </TableCell>
-                          <TableCell className="hidden md:table-cell text-xs text-muted-foreground" data-testid={`text-ticket-created-${ticket.id}`}>
-                            {format(new Date(ticket.createdAt), "MMM d, yyyy")}
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+          <TabsContent value="tickets" className="space-y-4 mt-4">
+            {breachedCount > 0 && (
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/40 bg-destructive/10 px-4 py-3 text-sm text-destructive" data-testid="alert-sla-breached">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span><strong>{breachedCount}</strong> ticket{breachedCount === 1 ? "" : "s"} with SLA breaches</span>
               </div>
             )}
-          </CardContent>
-        </Card>
 
-        <p className="text-xs text-muted-foreground text-right" data-testid="text-ticket-count">
-          Showing {tickets.length} ticket{tickets.length === 1 ? "" : "s"}
-        </p>
-          </>
-        )}
+            <Card>
+              <CardHeader>
+                <CardTitle>Filter &amp; Search</CardTitle>
+                <CardDescription>Narrow down tickets by status, priority, category, or keyword</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex-1 min-w-[160px]">
+                    <Select value={statusFilter} onValueChange={setStatusFilter}>
+                      <SelectTrigger data-testid="select-status-filter">
+                        <SelectValue placeholder="All Statuses" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {STATUS_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} data-testid={`status-option-${o.value}`}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[160px]">
+                    <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                      <SelectTrigger data-testid="select-priority-filter">
+                        <SelectValue placeholder="All Priorities" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PRIORITY_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} data-testid={`priority-option-${o.value}`}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[160px]">
+                    <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                      <SelectTrigger data-testid="select-category-filter">
+                        <SelectValue placeholder="All Categories" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} data-testid={`category-option-${o.value}`}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[160px]">
+                    <Select value={csatFilter} onValueChange={setCsatFilter}>
+                      <SelectTrigger data-testid="select-csat-filter">
+                        <SelectValue placeholder="All CSAT" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CSAT_FILTER_OPTIONS.map((o) => (
+                          <SelectItem key={o.value} value={o.value} data-testid={`csat-option-${o.value}`}>
+                            {o.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="flex-1 min-w-[240px] relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                    <Input
+                      className="pl-9"
+                      placeholder="Search subject, name, or email…"
+                      value={searchText}
+                      onChange={(e) => setSearchText(e.target.value)}
+                      data-testid="input-ticket-search"
+                    />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardContent className="p-0">
+                {isLoading ? (
+                  <div className="p-6 space-y-3">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Skeleton key={i} className="h-10 w-full" />
+                    ))}
+                  </div>
+                ) : tickets.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground" data-testid="empty-state-tickets">
+                    <Inbox className="h-10 w-10" />
+                    <p className="text-sm font-medium">No tickets found</p>
+                    <p className="text-xs">Try adjusting your filters</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Subject</TableHead>
+                          <TableHead className="hidden md:table-cell">Submitter</TableHead>
+                          <TableHead className="hidden lg:table-cell">Category</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead className="hidden sm:table-cell">Priority</TableHead>
+                          <TableHead className="hidden sm:table-cell">Tier</TableHead>
+                          <TableHead className="hidden sm:table-cell">Replies</TableHead>
+                          <TableHead className="hidden md:table-cell">CSAT</TableHead>
+                          <TableHead>SLA</TableHead>
+                          <TableHead className="hidden md:table-cell">Created</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {tickets.map((ticket) => {
+                          const anyBreached =
+                            ticket.slaFirstResponseBreached === 1 ||
+                            ticket.slaResolutionBreached === 1;
+                          return (
+                            <TableRow
+                              key={ticket.id}
+                              className={`cursor-pointer hover:bg-muted/50 ${anyBreached ? "bg-destructive/5" : ""}`}
+                              onClick={() => openTicket(ticket)}
+                              data-testid={`row-ticket-${ticket.id}`}
+                            >
+                              <TableCell className="font-medium max-w-[200px] truncate" data-testid={`text-ticket-subject-${ticket.id}`}>
+                                {ticket.subject}
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-[140px] truncate" data-testid={`text-ticket-submitter-${ticket.id}`}>
+                                {ticket.submitterName || ticket.submitterEmail}
+                              </TableCell>
+                              <TableCell className="hidden lg:table-cell" data-testid={`badge-ticket-category-${ticket.id}`}>
+                                {categoryBadge(ticket.category)}
+                              </TableCell>
+                              <TableCell data-testid={`badge-ticket-status-${ticket.id}`}>
+                                {statusBadge(ticket.status)}
+                              </TableCell>
+                              <TableCell className="hidden sm:table-cell" data-testid={`badge-ticket-priority-${ticket.id}`}>
+                                {priorityBadge(ticket.priority)}
+                              </TableCell>
+                              <TableCell className="hidden sm:table-cell" data-testid={`badge-ticket-tier-${ticket.id}`}>
+                                {tierBadge(ticket.tier)}
+                              </TableCell>
+                              <TableCell className="hidden sm:table-cell" data-testid={`badge-reply-count-${ticket.id}`}>
+                                {ticket.replyCount > 0 ? (
+                                  <Badge variant="secondary" className="gap-1 bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100">
+                                    <MessageSquare className="h-3 w-3" />
+                                    {ticket.replyCount}
+                                  </Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">No reply</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell" data-testid={`csat-ticket-${ticket.id}`}>
+                                {csatStars(ticket.csatScore)}
+                              </TableCell>
+                              <TableCell data-testid={`sla-ticket-${ticket.id}`}>
+                                <SlaIndicator ticket={ticket} />
+                              </TableCell>
+                              <TableCell className="hidden md:table-cell text-xs text-muted-foreground" data-testid={`text-ticket-created-${ticket.id}`}>
+                                {format(new Date(ticket.createdAt), "MMM d, yyyy")}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <p className="text-xs text-muted-foreground text-right" data-testid="text-ticket-count">
+              Showing {tickets.length} ticket{tickets.length === 1 ? "" : "s"}
+            </p>
+          </TabsContent>
+
+          <TabsContent value="satisfaction" className="mt-4">
+            <CsatDashboard />
+          </TabsContent>
+
+          <TabsContent value="settings" className="mt-4">
+            <SupportSettingsCard />
+          </TabsContent>
+        </Tabs>
       </main>
 
       <TicketDetailSheet
