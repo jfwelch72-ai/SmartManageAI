@@ -5,7 +5,7 @@ import { supportTickets } from "@shared/schema";
 import { sendEmail } from "./email";
 import { logError, logInfo } from "./utils/logger";
 import { withSchedulerLock } from "./utils/schedulerLock";
-import { runSlaSweep, runSlaRiskAlerts } from "./support/slaMonitor";
+import { runSlaSweep, runSlaRiskAlerts, runAutoAssign } from "./support/slaMonitor";
 
 const REPORT_RECIPIENTS = (process.env.SUPPORT_REPORT_RECIPIENTS || process.env.SUPPORT_INBOX_EMAIL || "")
   .split(",")
@@ -92,6 +92,7 @@ export async function runWeeklySupportReport(): Promise<void> {
 let weeklyTask: ReturnType<typeof cron.schedule> | null = null;
 let sweepTask: ReturnType<typeof cron.schedule> | null = null;
 let riskTask: ReturnType<typeof cron.schedule> | null = null;
+let autoAssignTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startSupportWeeklyReportScheduler(): void {
   if (!weeklyTask) {
@@ -117,7 +118,8 @@ export function startSupportWeeklyReportScheduler(): void {
   }
 
   // Every 15 minutes: proactively warn the support inbox when a ticket is
-  // ≥75% of the way through its first-response window without a reply.
+  // ≥ (org's threshold)% of the way through its first-response window without
+  // a reply; also bumps priority and writes to audit_log (Task #2962).
   if (!riskTask) {
     riskTask = cron.schedule("*/15 * * * *", () => {
       void withSchedulerLock("support-sla-risk", runSlaRiskAlerts).catch((err) =>
@@ -126,13 +128,26 @@ export function startSupportWeeklyReportScheduler(): void {
     });
     logInfo("[support-sla] risk-alert scheduler started (every 15 min)");
   }
+
+  // Hourly: auto-assign unassigned tickets to available agents (Task #2962).
+  // Runs at the 30-minute mark so it doesn't compete with the breach sweep.
+  if (!autoAssignTask) {
+    autoAssignTask = cron.schedule("30 * * * *", () => {
+      void withSchedulerLock("support-auto-assign", runAutoAssign).catch((err) =>
+        logError("[support-sla] auto-assign run failed", err),
+      );
+    });
+    logInfo("[support-sla] auto-assign scheduler started (every hour at :30)");
+  }
 }
 
 export function stopSupportWeeklyReportScheduler(): void {
   weeklyTask?.stop();
   sweepTask?.stop();
   riskTask?.stop();
+  autoAssignTask?.stop();
   weeklyTask = null;
   sweepTask = null;
   riskTask = null;
+  autoAssignTask = null;
 }

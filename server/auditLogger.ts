@@ -56,6 +56,30 @@ export async function logAudit(
   }
 }
 
+/**
+ * Write an audit row for a system-initiated event (no human actor).
+ *
+ * Unlike `logAudit`, this helper skips the assertStringUserId guard and
+ * inserts with `userId: null`. The audit_log.user_id column is nullable so
+ * NULL = system-initiated action (e.g. ESCALATE, AUTO_ASSIGN from the SLA
+ * monitor). This prevents the FK violation that previously caused system audit
+ * rows to be silently dropped.
+ */
+export async function logSystemAudit(
+  data: Omit<InsertAuditLog, "userId" | "ipAddress" | "userAgent">,
+): Promise<void> {
+  try {
+    await db.insert(auditLog).values({
+      ...data,
+      userId: null,
+      ipAddress: null,
+      userAgent: null,
+    });
+  } catch (error) {
+    logError("System audit logging failed:", {}, error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
 export async function logCreate(
   userId: string,
   entityType: string,

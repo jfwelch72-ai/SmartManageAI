@@ -12,6 +12,7 @@ import {
   Paperclip,
   Search,
   Send,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   Star,
@@ -20,6 +21,7 @@ import {
   Download,
 } from "lucide-react";
 import { Link } from "wouter";
+import SupportSettingsCard from "./support-settings";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -736,6 +738,7 @@ function MetricCards({ metrics, isLoading }: { metrics: TicketMetrics | undefine
 }
 
 export default function AdminSupportTicketsPage() {
+  const [activeTab, setActiveTab] = useState<"tickets" | "settings">("tickets");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -824,6 +827,39 @@ export default function AdminSupportTicketsPage() {
             </Button>
           </Link>
         </div>
+
+        {/* Tab switcher */}
+        <div className="flex gap-1 border-b">
+          <button
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "tickets"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setActiveTab("tickets")}
+            data-testid="tab-tickets"
+          >
+            <TicketCheck className="h-4 w-4" />
+            Tickets
+          </button>
+          <button
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === "settings"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+            onClick={() => setActiveTab("settings")}
+            data-testid="tab-settings"
+          >
+            <Settings className="h-4 w-4" />
+            Support Settings
+          </button>
+        </div>
+
+        {activeTab === "settings" ? (
+          <SupportSettingsCard />
+        ) : (
+          <>
 
         <MetricCards metrics={metricsData} isLoading={metricsLoading} />
 
@@ -1008,6 +1044,8 @@ export default function AdminSupportTicketsPage() {
         <p className="text-xs text-muted-foreground text-right" data-testid="text-ticket-count">
           Showing {tickets.length} ticket{tickets.length === 1 ? "" : "s"}
         </p>
+          </>
+        )}
       </main>
 
       <TicketDetailSheet

@@ -1953,7 +1953,7 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
           .limit(1);
         if (row) {
           lastEditor = {
-            id: row.userId,
+            id: row.userId ?? "",
             firstName: row.firstName ?? null,
             lastName: row.lastName ?? null,
             editedAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),

@@ -167,6 +167,10 @@ import { ensureWorkflowLifecycleEnumValues } from "./ensureWorkflowLifecycleEnum
 import { ensureWebsitePageTypeEnumValues } from "./ensureWebsitePageTypeEnumValues";
 import { ensureOrgAiKeys } from "./ensureOrgAiKeys";
 import { ensureAiActionAuditKeySource } from "./ensureAiActionAuditKeySource";
+import { ensureSupportSettings, ensureSupportHolidays } from "./ensureSupportSettings";
+import { ensureAuditActionEnumSlaValues } from "./ensureAuditActionEnumSlaValues";
+import { ensureAuditLogUserIdNullable } from "./ensureAuditLogUserIdNullable";
+import { seedSupportHolidaysOnStartup } from "./seedSupportHolidaysOnStartup";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -604,6 +608,23 @@ const migrations: MigrationStep[] = [
   // Mirrors migrations/0123_ai_action_audit_key_source.sql; adds the column +
   // index idempotently so production converges on first boot after deploy.
   { name: "ai_action_audit_key_source", category: "ADD_COLUMN", fn: ensureAiActionAuditKeySource },
+  // Task #2962 — SLA & routing intelligence.
+  // Creates support_settings (per-org timezone + escalation policy) and
+  // support_holidays (DB-backed holiday calendar) tables.
+  { name: "support_settings", category: "CREATE_TABLE", fn: ensureSupportSettings },
+  { name: "support_holidays", category: "CREATE_TABLE", fn: ensureSupportHolidays },
+  // Task #2962 — SLA & routing intelligence.
+  // Adds ESCALATE and AUTO_ASSIGN values to audit_action enum (used by the
+  // escalation engine and auto-assign round-robin in slaMonitor.ts).
+  { name: "audit_action_enum_sla_values", category: "ADD_ENUM", fn: ensureAuditActionEnumSlaValues },
+  // Task #2962 — SLA & routing intelligence.
+  // Makes audit_log.user_id nullable so system-initiated rows (ESCALATE,
+  // AUTO_ASSIGN) can be written without a FK violation against users.id.
+  { name: "audit_log_user_id_nullable", category: "ALTER_TABLE", fn: ensureAuditLogUserIdNullable },
+  // Task #2962 — SLA & routing intelligence.
+  // Seeds US federal holidays for current year + 3 years ahead. Idempotent
+  // via ON CONFLICT DO NOTHING; auto-extends on each new year's first deploy.
+  { name: "support_holidays_seed", category: "ALTER_TABLE", fn: seedSupportHolidaysOnStartup },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

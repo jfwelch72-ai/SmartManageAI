@@ -12,6 +12,7 @@ import {
   supportTicketReplies,
   supportCannedResponses,
   users,
+  supportSettings,
   insertSupportTicketSchema,
   insertSupportCannedResponseSchema,
   type SupportTicket,
@@ -26,13 +27,14 @@ import {
   planTierToSupportTier,
   firstResponseDueAt,
   resolutionDueAt,
+  getHolidaySet,
   type SupportTier,
   type SupportPriority,
 } from "./support/slaPolicy";
 import { runSlaSweep } from "./support/slaMonitor";
 import { supportEventBus } from "./supportEventBus";
 import { inboundEmailLimiter } from "./rateLimiter";
-import { logCreate } from "./auditLogger";
+import { logCreate, logSystemAudit } from "./auditLogger";
 import { objectStorageClient, parseObjectPath } from "./objectStorage";
 
 const router = Router();
@@ -235,8 +237,22 @@ router.post("/api/support/tickets", requireAuth, async (req: AuthRequest, res, n
 
     const now = new Date();
     const priority: SupportPriority = parsed.data.priority ?? "normal";
-    const slaFirstResponseDueAt = firstResponseDueAt(now, tier, priority);
-    const slaResolutionDueAt = resolutionDueAt(now, tier, priority);
+
+    // Resolve the org's support timezone + holiday calendar for SLA computation.
+    const orgId = req.user?.organizationId || null;
+    let slaTimezone = "UTC";
+    if (orgId) {
+      const [orgSettings] = await db
+        .select({ supportTimezone: supportSettings.supportTimezone })
+        .from(supportSettings)
+        .where(eq(supportSettings.organizationId, orgId));
+      if (orgSettings?.supportTimezone) slaTimezone = orgSettings.supportTimezone;
+    }
+    const holidays = await getHolidaySet("US");
+    const slaOpts = { timezone: slaTimezone, holidays };
+
+    const slaFirstResponseDueAt = firstResponseDueAt(now, tier, priority, slaOpts);
+    const slaResolutionDueAt = resolutionDueAt(now, tier, priority, slaOpts);
     const frTarget = SLA_TIERS[tier].firstResponse[priority];
     const resTarget = SLA_TIERS[tier].resolution[priority];
 
@@ -815,7 +831,6 @@ router.post(
   multerAny,
   async (req, res, next) => {
     try {
-
       const correlationId = (req.headers["x-request-id"] as string | undefined) ?? "";
       const rawFrom = String(req.body?.from || "");
       const subject = String(req.body?.subject || "(no subject)").slice(0, 500);
@@ -841,17 +856,6 @@ router.post(
             .where(eq(users.email, senderEmail))
             .limit(1)
         : [];
-
-      // For anonymous senders the audit_log FK (users.id NOT NULL) prevents
-      // inserting without a real user.  Find a SUPER_ADMIN as system actor so
-      // every inbound event is guaranteed an audit_log row.
-      const [systemActor] = matchedUser
-        ? [matchedUser]
-        : await db
-            .select({ id: users.id, organizationId: users.organizationId })
-            .from(users)
-            .where(eq(users.role, "SUPER_ADMIN"))
-            .limit(1);
 
       // Check for a ticket reference in the subject line.
       const refMatch = TICKET_REF_RE.exec(subject);
@@ -983,11 +987,9 @@ router.post(
         ticketId = newTicket.id;
       }
 
-      // Structured audit log — guaranteed for every inbound email event.
-      // The audit_log.userId column has a NOT NULL FK to users.id so we can't
-      // insert without a real user. When the sender is anonymous we use a
-      // SUPER_ADMIN as system actor (resolved above as `systemActor`). This
-      // ensures complete SOC 2 trail even for guest senders.
+      // Structured audit log — audit_log.user_id is nullable (Task #2962) so we
+      // can use logCreate for matched users and logSystemAudit for anonymous
+      // senders. No SUPER_ADMIN fallback required.
       const auditPayload = {
         senderEmail,
         senderName,
@@ -999,9 +1001,15 @@ router.post(
       };
       logInfo(`[support/inbound] ${eventAction} ticket=${ticketId} from=${senderEmail} attachments=${attachmentKeys.length} correlationId=${correlationId}`);
 
-      if (systemActor?.id) {
+      if (matchedUser?.id) {
         void logCreate(
-          systemActor.id,
+          matchedUser.id,
+          "support_inbound_email",
+          ticketId,
+          auditPayload,
+        ).catch((err) => logError("[support/inbound] audit log failed", err));
+      } else {
+        void logSystemAudit(
           "support_inbound_email",
           ticketId,
           auditPayload,
@@ -1047,6 +1055,7 @@ router.get(
     }
   },
 );
+
 router.post(
   "/api/support/canned-responses",
   requireAuth,
@@ -1214,6 +1223,152 @@ router.post("/api/support/csat/:token", async (req, res, next) => {
     next(err);
   }
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Support settings (per-org routing & escalation config) — Task #2962
+// ──────────────────────────────────────────────────────────────────────────────
+
+const IANA_TIMEZONE_RE = /^[A-Za-z_]+(?:\/[A-Za-z_+\-]+)+$|^UTC$|^GMT$|^EST$|^CST$|^MST$|^PST$/;
+
+const supportSettingsPatchSchema = z.object({
+  supportTimezone: z
+    .string()
+    .regex(IANA_TIMEZONE_RE, "Must be a valid IANA timezone string (e.g. America/New_York)")
+    .optional(),
+  escalationEmails: z
+    .array(z.string().email("Each value must be a valid email address"))
+    .max(20)
+    .optional(),
+  escalationThresholdPct: z.number().int().min(1).max(100).optional(),
+  autoAssignGraceMinutes: z.number().int().min(0).max(1440).optional(),
+  enterpriseAgentIds: z.array(z.string()).max(50).optional(),
+});
+
+// Defaults returned when no support_settings row exists for the org yet.
+const DEFAULT_SUPPORT_SETTINGS = {
+  supportTimezone: "UTC",
+  escalationEmails: [] as string[],
+  escalationThresholdPct: 75,
+  autoAssignGraceMinutes: 60,
+  enterpriseAgentIds: [] as string[],
+};
+
+/**
+ * GET /api/support/settings
+ * Returns the org's support routing & escalation settings.
+ * Returns defaults if no row exists yet.
+ */
+router.get(
+  "/api/support/settings",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = req.user?.organizationId ?? null;
+      if (!orgId && req.user?.role !== "SUPER_ADMIN") {
+        return res.json({ settings: DEFAULT_SUPPORT_SETTINGS });
+      }
+
+      if (orgId) {
+        const [row] = await db
+          .select()
+          .from(supportSettings)
+          .where(eq(supportSettings.organizationId, orgId));
+        if (row) {
+          return res.json({
+            settings: {
+              supportTimezone: row.supportTimezone,
+              escalationEmails: row.escalationEmails ?? [],
+              escalationThresholdPct: row.escalationThresholdPct,
+              autoAssignGraceMinutes: row.autoAssignGraceMinutes,
+              enterpriseAgentIds: row.enterpriseAgentIds ?? [],
+            },
+          });
+        }
+      }
+      res.json({ settings: DEFAULT_SUPPORT_SETTINGS });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * PATCH /api/support/settings
+ * Upserts the org's support routing & escalation settings.
+ * SUPER_ADMIN: may pass ?orgId=... to configure a specific org.
+ */
+router.patch(
+  "/api/support/settings",
+  requireAuth,
+  requireRole(...ADMIN_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const parsed = supportSettingsPatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+
+      const orgId =
+        req.user?.role === "SUPER_ADMIN" && typeof req.query.orgId === "string"
+          ? req.query.orgId
+          : req.user?.organizationId ?? null;
+
+      if (!orgId) {
+        return res.status(400).json({ error: "No organization context" });
+      }
+
+      const updates: Partial<typeof supportSettings.$inferInsert> = {
+        updatedAt: new Date(),
+      };
+      if (parsed.data.supportTimezone !== undefined) updates.supportTimezone = parsed.data.supportTimezone;
+      if (parsed.data.escalationEmails !== undefined) updates.escalationEmails = parsed.data.escalationEmails;
+      if (parsed.data.escalationThresholdPct !== undefined)
+        updates.escalationThresholdPct = parsed.data.escalationThresholdPct;
+      if (parsed.data.autoAssignGraceMinutes !== undefined)
+        updates.autoAssignGraceMinutes = parsed.data.autoAssignGraceMinutes;
+      if (parsed.data.enterpriseAgentIds !== undefined)
+        updates.enterpriseAgentIds = parsed.data.enterpriseAgentIds;
+
+      // Upsert: insert a defaults row if none exists, then apply the patch.
+      const [existing] = await db
+        .select({ id: supportSettings.id })
+        .from(supportSettings)
+        .where(eq(supportSettings.organizationId, orgId));
+
+      let row;
+      if (existing) {
+        [row] = await db
+          .update(supportSettings)
+          .set(updates)
+          .where(eq(supportSettings.organizationId, orgId))
+          .returning();
+      } else {
+        [row] = await db
+          .insert(supportSettings)
+          .values({
+            organizationId: orgId,
+            ...DEFAULT_SUPPORT_SETTINGS,
+            ...updates,
+          })
+          .returning();
+      }
+
+      logInfo(`[support] settings updated for org ${orgId} by ${req.user?.id}`);
+      res.json({
+        settings: {
+          supportTimezone: row?.supportTimezone ?? "UTC",
+          escalationEmails: row?.escalationEmails ?? [],
+          escalationThresholdPct: row?.escalationThresholdPct ?? 75,
+          autoAssignGraceMinutes: row?.autoAssignGraceMinutes ?? 60,
+          enterpriseAgentIds: row?.enterpriseAgentIds ?? [],
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // ──────────────────────────────────────────────────────────────────────────────
 // SLA sweep

@@ -4,9 +4,13 @@
 // weekly internal KPI digest. Help-center articles themselves live as Markdown
 // in `docs/help/` and are served from the filesystem — only operational data
 // (tickets, events) is stored in the database.
+//
+// Task #2962 adds:
+//   - support_settings: per-org timezone, escalation policy, auto-assign config
+//   - support_holidays: replaceable holiday calendar (seeds via scripts/seed-support-holidays.ts)
 
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, integer, pgEnum, index, jsonb, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, integer, pgEnum, index, jsonb, boolean, unique } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 import { organizations, users } from "../core";
@@ -170,3 +174,70 @@ export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
 export type InsertSupportCannedResponse = z.infer<typeof insertSupportCannedResponseSchema>;
 export type SupportCannedResponse = typeof supportCannedResponses.$inferSelect;
+
+// ─── Per-org support settings (Task #2962) ───────────────────────────────────
+//
+// One row per organization. Created on first PATCH; GET returns defaults if no
+// row exists so callers can treat the endpoint as always-available.
+
+export const supportSettings = pgTable("support_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id")
+    .notNull()
+    .unique()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  /** IANA timezone string. Business-hour windows are calculated in this TZ. */
+  supportTimezone: text("support_timezone").notNull().default("UTC"),
+  /** Extra email addresses notified on escalation (in addition to the assignee). */
+  escalationEmails: text("escalation_emails").array(),
+  /**
+   * When first-response SLA is this % consumed without a reply, priority is
+   * bumped one level and escalation emails are notified. 0–100.
+   */
+  escalationThresholdPct: integer("escalation_threshold_pct").notNull().default(75),
+  /**
+   * Minutes after ticket creation that an unassigned open ticket becomes
+   * eligible for auto-assignment. Default 60 min.
+   */
+  autoAssignGraceMinutes: integer("auto_assign_grace_minutes").notNull().default(60),
+  /**
+   * Explicit list of user IDs that should receive enterprise-tier tickets
+   * before falling back to the general agent pool.
+   */
+  enterpriseAgentIds: varchar("enterprise_agent_ids").array(),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export const insertSupportSettingsSchema = createInsertSchema(supportSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+export type InsertSupportSettings = z.infer<typeof insertSupportSettingsSchema>;
+export type SupportSettings = typeof supportSettings.$inferSelect;
+
+// ─── Holiday calendar (Task #2962) ───────────────────────────────────────────
+//
+// Replaces the hardcoded US_FEDERAL_HOLIDAYS constant in slaPolicy.ts.
+// Seeded by `scripts/seed-support-holidays.ts`; the script is run on deploy
+// and pads the calendar at least 3 years ahead. Extend by adding rows for
+// additional countries or observed dates.
+
+export const supportHolidays = pgTable(
+  "support_holidays",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    /** ISO date string, e.g. "2026-07-04". */
+    date: text("date").notNull(),
+    name: text("name").notNull(),
+    /** ISO 3166-1 alpha-2 country code, e.g. "US". */
+    country: text("country").notNull().default("US"),
+  },
+  (t) => ({
+    dateCountryUniq: unique("support_holidays_date_country_uniq").on(t.date, t.country),
+    dateCountryIdx: index("support_holidays_date_country_idx").on(t.date, t.country),
+  }),
+);
+
+export const insertSupportHolidaySchema = createInsertSchema(supportHolidays).omit({ id: true });
+export type InsertSupportHoliday = z.infer<typeof insertSupportHolidaySchema>;
+export type SupportHoliday = typeof supportHolidays.$inferSelect;

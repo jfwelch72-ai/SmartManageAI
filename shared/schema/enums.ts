@@ -276,7 +276,12 @@ export const auditActionEnum = pgEnum("audit_action", [
   "OVERRIDE_COMPLIANCE_HOLD",
   "SITE_LEAVE_STARTED", "SITE_LEAVE_RETURNED",
   "UPDATE_COST_CODE",
-  "AI_REVIEW_COMPLETED"
+  "AI_REVIEW_COMPLETED",
+  // Task #2962: support SLA escalation and auto-assignment audit trail.
+  // ESCALATE records that a ticket's priority was bumped automatically when the
+  // SLA window crossed the per-org escalation threshold. AUTO_ASSIGN records
+  // that a ticket was assigned to an agent by the round-robin auto-assigner.
+  "ESCALATE", "AUTO_ASSIGN"
 
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);

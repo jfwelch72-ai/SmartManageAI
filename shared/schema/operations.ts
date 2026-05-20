@@ -1468,7 +1468,7 @@ export type JobMetricAlertQuietHoursDigestSend = typeof jobMetricAlertQuietHours
 // Audit Log table
 export const auditLog = pgTable("audit_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
+  userId: varchar("user_id").references(() => users.id),
   entityType: text("entity_type").notNull(),
   entityId: varchar("entity_id").notNull(),
   action: auditActionEnum("action").notNull(),
