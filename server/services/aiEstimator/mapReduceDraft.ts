@@ -588,7 +588,7 @@ export async function mapReduceDraftFromPlans(opts: {
   const filesAnalyzed: AnalyzedFileRef[] = [];
   let supplementalContext = "";
   try {
-    const MAX_SUPPLEMENTAL_CHARS = 40_000;
+    const MAX_SUPPLEMENTAL_CHARS = 80_000;
     const MAX_SUPPLEMENTAL_FILE_BYTES = 50 * 1024 * 1024;
     const SPREADSHEET_EXTS_S = new Set(["xlsx", "xls", "csv", "ods"]);
     const SPREADSHEET_MIMES_S = new Set([
