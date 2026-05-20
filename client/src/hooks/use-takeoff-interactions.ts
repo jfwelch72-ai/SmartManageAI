@@ -1116,6 +1116,15 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   // drag transform still tracks the pointer in real time.
   const dragMoveRafScheduledRef = useRef(false);
   const dragMovePendingPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  // Wheel-zoom RAF coalescing — same pattern as drag-move above.
+  // Each wheel tick fires 60-120+ times/s; calling setStageScale +
+  // setStagePosition on every tick causes a React re-render storm.
+  // Instead we apply the transform directly to the Konva node for
+  // instant visual feedback and only sync React state once per frame.
+  const wheelRafScheduledRef = useRef(false);
+  const wheelPendingStateRef = useRef<{ scale: number; pos: { x: number; y: number } } | null>(null);
+
   const handleStageDragMove = useCallback((e: any) => {
     if (activeTool !== "pan") return;
     const stage = e.target;
@@ -1232,6 +1241,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const MIN_SCALE = 0.1;
     const MAX_SCALE = 10;
     const stage = e.target.getStage();
+    // Read from the Konva node directly — not React state — so rapid
+    // successive wheel ticks chain correctly even before React has flushed
+    // the previous RAF-coalesced state update.
     const oldScale = stage.scaleX();
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
@@ -1241,11 +1253,34 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     };
     let newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
     newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
-    setStageScale(newScale);
-    setStagePosition({
+    const newPos = {
       x: pointer.x - mousePointTo.x * newScale,
       y: pointer.y - mousePointTo.y * newScale,
-    });
+    };
+
+    // Apply imperatively to the Konva node for zero-latency visual
+    // feedback (no React re-render on this tick).
+    stage.scale({ x: newScale, y: newScale });
+    stage.position(newPos);
+    stage.batchDraw();
+
+    // RAF-coalesce React state sync — same pattern as handleStageDragMove.
+    // Only the last scale/position computed within a given animation frame
+    // is committed to React, capping re-renders at ~60/s regardless of
+    // how fast the wheel fires.
+    wheelPendingStateRef.current = { scale: newScale, pos: newPos };
+    if (!wheelRafScheduledRef.current) {
+      wheelRafScheduledRef.current = true;
+      requestAnimationFrame(() => {
+        wheelRafScheduledRef.current = false;
+        const pending = wheelPendingStateRef.current;
+        wheelPendingStateRef.current = null;
+        if (pending) {
+          setStageScale(pending.scale);
+          setStagePosition(pending.pos);
+        }
+      });
+    }
   }, [setStageScale, setStagePosition]);
 
   const lastPinchAngleRef = useRef<number | null>(null);
@@ -1275,21 +1310,42 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       if (!stage) return;
       const container = stage.container().getBoundingClientRect();
       const stageCenter = { x: center.x - container.left, y: center.y - container.top };
-      const oldScale = stageScale;
+      // Read from Konva node directly (not React state) so successive
+      // pinch frames chain correctly even before React flushes.
+      const oldScale = stage.scaleX();
       const scaleFactor = dist / lastPinchDistRef.current;
       let newScale = oldScale * scaleFactor;
       newScale = Math.max(0.1, Math.min(10, newScale));
       const mousePointTo = {
-        x: (stageCenter.x - stagePosition.x) / oldScale,
-        y: (stageCenter.y - stagePosition.y) / oldScale,
+        x: (stageCenter.x - stage.x()) / oldScale,
+        y: (stageCenter.y - stage.y()) / oldScale,
       };
       const dx = center.x - lastPinchCenterRef.current.x;
       const dy = center.y - lastPinchCenterRef.current.y;
-      setStageScale(newScale);
-      setStagePosition({
+      const pinchNewPos = {
         x: stageCenter.x - mousePointTo.x * newScale + dx,
         y: stageCenter.y - mousePointTo.y * newScale + dy,
-      });
+      };
+
+      // Apply imperatively for zero-latency visual feedback.
+      stage.scale({ x: newScale, y: newScale });
+      stage.position(pinchNewPos);
+      stage.batchDraw();
+
+      // RAF-coalesce React state sync (reuse the same refs as wheel).
+      wheelPendingStateRef.current = { scale: newScale, pos: pinchNewPos };
+      if (!wheelRafScheduledRef.current) {
+        wheelRafScheduledRef.current = true;
+        requestAnimationFrame(() => {
+          wheelRafScheduledRef.current = false;
+          const pending = wheelPendingStateRef.current;
+          wheelPendingStateRef.current = null;
+          if (pending) {
+            setStageScale(pending.scale);
+            setStagePosition(pending.pos);
+          }
+        });
+      }
 
       // Task #2142 — Apply 90° sheet rotation when the user has opted
       // in and the cumulative pinch rotation crosses a quarter turn.
