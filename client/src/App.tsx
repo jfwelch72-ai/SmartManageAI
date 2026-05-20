@@ -717,12 +717,12 @@ function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
       <CommandPaletteProvider>
         <KeyboardShortcutsProvider>
         <AppSidebar />
-        <SidebarInset className="flex flex-col min-h-screen">
+        <SidebarInset className="flex flex-col min-h-screen min-w-0">
           <ImpersonationBanner />
           <EmailVerificationBanner />
           <OfflineStatusBanner />
           <TopHeader />
-          <main className="flex-1 overflow-auto">
+          <main className="flex-1 overflow-y-auto overflow-x-hidden min-w-0">
             {children}
           </main>
         </SidebarInset>
