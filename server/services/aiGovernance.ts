@@ -4,6 +4,18 @@ import { eq, and, gte, sql } from "drizzle-orm";
 import { logInfo, logWarn, logError } from "../utils/logger";
 import { AI_MODEL_GPT5 } from "../ai/openaiClient";
 
+// Task #2951 — In-process counter for ai_calls_total{key_source}.
+// Incremented by every call path that writes to ai_action_audit.
+// Exported via getAiCallsCounterSnapshot() for the /metrics endpoint.
+const _aiCallsCounter = new Map<string, number>();
+function _incrementAiCallsCounter(keySource: string): void {
+  const safe = keySource || "unknown";
+  _aiCallsCounter.set(safe, (_aiCallsCounter.get(safe) ?? 0) + 1);
+}
+export function getAiCallsCounterSnapshot(): { keySource: string; value: number }[] {
+  return Array.from(_aiCallsCounter.entries()).map(([keySource, value]) => ({ keySource, value }));
+}
+
 export interface AiActionResult {
   success: boolean;
   output: any;
@@ -118,6 +130,8 @@ export async function executeAiAction(params: AiActionParams): Promise<AiActionR
 
   const durationMs = Date.now() - startTime;
 
+  const resolvedKeySource = result.keySource ?? "platform";
+  _incrementAiCallsCounter(resolvedKeySource);
   try {
     await db.insert(aiActionAudit).values({
       organizationId: params.orgId,
@@ -133,7 +147,7 @@ export async function executeAiAction(params: AiActionParams): Promise<AiActionR
       approvalRequired: params.approvalRequired || false,
       approvalStatus: params.approvalRequired ? "pending" : null,
       durationMs,
-      keySource: result.keySource ?? "platform",
+      keySource: resolvedKeySource,
     });
   } catch (err) {
     logError("Failed to record AI audit", { error: String(err) });
@@ -235,6 +249,8 @@ export async function governedAiCall<T>(opts: {
   const provider = completion.provider ?? null;
   const fallbackUsed = completion.fallbackUsed === true;
 
+  const resolvedGovernedKeySource = completion.keySource ?? "platform";
+  _incrementAiCallsCounter(resolvedGovernedKeySource);
   try {
     await db.insert(aiActionAudit).values({
       organizationId: opts.orgId,
@@ -252,7 +268,7 @@ export async function governedAiCall<T>(opts: {
       durationMs,
       provider,
       fallbackUsed,
-      keySource: completion.keySource ?? "platform",
+      keySource: resolvedGovernedKeySource,
     });
   } catch (err) {
     logError("Failed to record AI audit", { error: String(err) });
@@ -286,34 +302,35 @@ export async function getAiAuditLog(orgId: string, limit: number = 50, offset: n
   }
   const where = and(...conditions);
 
-  const rows = await db.select({
-    id: aiActionAudit.id,
-    organizationId: aiActionAudit.organizationId,
-    actorUserId: aiActionAudit.actorUserId,
-    actionType: aiActionAudit.actionType,
-    model: aiActionAudit.model,
-    tokensIn: aiActionAudit.tokensIn,
-    tokensOut: aiActionAudit.tokensOut,
-    costEstimate: aiActionAudit.costEstimate,
-    inputRefs: aiActionAudit.inputRefs,
-    outputRefs: aiActionAudit.outputRefs,
-    rationale: aiActionAudit.rationale,
-    approvalRequired: aiActionAudit.approvalRequired,
-    approvalStatus: aiActionAudit.approvalStatus,
-    durationMs: aiActionAudit.durationMs,
-    createdAt: aiActionAudit.createdAt,
-    actorFirstName: users.firstName,
-    actorLastName: users.lastName,
-  }).from(aiActionAudit)
-    .leftJoin(users, eq(aiActionAudit.actorUserId, users.id))
-    .where(where)
-    .orderBy(sql`${aiActionAudit.createdAt} DESC`)
-    .limit(limit)
-    .offset(offset);
-
-  const [countResult] = await db.select({
-    total: sql<number>`count(*)`,
-  }).from(aiActionAudit).where(where);
+  const [rows, countResult] = await Promise.all([
+    db.select({
+      id: aiActionAudit.id,
+      organizationId: aiActionAudit.organizationId,
+      actorUserId: aiActionAudit.actorUserId,
+      actionType: aiActionAudit.actionType,
+      model: aiActionAudit.model,
+      tokensIn: aiActionAudit.tokensIn,
+      tokensOut: aiActionAudit.tokensOut,
+      costEstimate: aiActionAudit.costEstimate,
+      inputRefs: aiActionAudit.inputRefs,
+      outputRefs: aiActionAudit.outputRefs,
+      rationale: aiActionAudit.rationale,
+      approvalRequired: aiActionAudit.approvalRequired,
+      approvalStatus: aiActionAudit.approvalStatus,
+      durationMs: aiActionAudit.durationMs,
+      provider: aiActionAudit.provider,
+      keySource: aiActionAudit.keySource,
+      createdAt: aiActionAudit.createdAt,
+      actorFirstName: users.firstName,
+      actorLastName: users.lastName,
+    }).from(aiActionAudit)
+      .leftJoin(users, eq(aiActionAudit.actorUserId, users.id))
+      .where(where)
+      .orderBy(sql`${aiActionAudit.createdAt} DESC`)
+      .limit(limit)
+      .offset(offset),
+    db.select({ total: sql<number>`count(*)` }).from(aiActionAudit).where(where),
+  ]);
 
   return {
     rows: rows.map(r => ({
@@ -322,8 +339,28 @@ export async function getAiAuditLog(orgId: string, limit: number = 50, offset: n
         ? `${r.actorFirstName} ${r.actorLastName}`
         : r.actorUserId || "System",
     })),
-    total: Number(countResult?.total || 0),
+    total: Number(countResult[0]?.total || 0),
   };
+}
+
+export async function getCostBreakdownByKeySource(orgId: string, dateFrom?: Date, dateTo?: Date) {
+  const conditions = [eq(aiActionAudit.organizationId, orgId)];
+  if (dateFrom) conditions.push(gte(aiActionAudit.createdAt, dateFrom));
+  if (dateTo) {
+    const { lte } = await import("drizzle-orm");
+    conditions.push(lte(aiActionAudit.createdAt, dateTo));
+  }
+
+  return db.select({
+    keySource: sql<string>`coalesce(${aiActionAudit.keySource}, 'platform')`,
+    count: sql<number>`count(*)`,
+    totalCost: sql<number>`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0)`,
+    totalTokensIn: sql<number>`coalesce(sum(${aiActionAudit.tokensIn}), 0)`,
+    totalTokensOut: sql<number>`coalesce(sum(${aiActionAudit.tokensOut}), 0)`,
+  }).from(aiActionAudit)
+    .where(and(...conditions))
+    .groupBy(sql`coalesce(${aiActionAudit.keySource}, 'platform')`)
+    .orderBy(sql`coalesce(sum(${aiActionAudit.costEstimate}::numeric), 0) DESC`);
 }
 
 export async function getCostBreakdownByActionType(orgId: string, dateFrom?: Date, dateTo?: Date) {

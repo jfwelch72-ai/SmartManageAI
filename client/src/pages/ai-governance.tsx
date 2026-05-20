@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Brain, Zap, DollarSign, Activity, Loader2, ChevronLeft, ChevronRight, BarChart3, User, Cpu, ArrowRight, ShieldCheck } from "lucide-react";
+import { Brain, Zap, DollarSign, Activity, Loader2, ChevronLeft, ChevronRight, BarChart3, User, Cpu, ArrowRight, ShieldCheck, Key } from "lucide-react";
 
 interface UsageLimitsData {
   tier: string;
@@ -34,6 +34,8 @@ interface AuditEntry {
   actorUserId: string | null;
   actorName: string;
   model: string | null;
+  provider: string | null;
+  keySource: string | null;
   tokensIn: number | null;
   tokensOut: number | null;
   costEstimate: string | null;
@@ -41,6 +43,14 @@ interface AuditEntry {
   approvalRequired: boolean;
   approvalStatus: string | null;
   createdAt: string;
+}
+
+interface KeySourceBreakdownEntry {
+  keySource: string;
+  count: number;
+  totalCost: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
 }
 
 interface AuditResponse {
@@ -145,6 +155,16 @@ export default function AIGovernancePage() {
       const params = new URLSearchParams({ dateRange });
       const res = await fetch(`/api/ai-governance/cost-breakdown?${params}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch cost breakdown");
+      return res.json();
+    },
+  });
+
+  const { data: keySourceBreakdown, isLoading: keySourceLoading } = useQuery<KeySourceBreakdownEntry[]>({
+    queryKey: ["/api/ai-governance/key-source-breakdown", { dateRange }],
+    queryFn: async () => {
+      const params = new URLSearchParams({ dateRange });
+      const res = await fetch(`/api/ai-governance/key-source-breakdown?${params}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch key source breakdown");
       return res.json();
     },
   });
@@ -370,6 +390,68 @@ export default function AIGovernancePage() {
       <Separator />
 
       <div className="space-y-4">
+        <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="text-key-source-breakdown-heading">
+          <Key className="h-5 w-5" />
+          Token Spend by Key Source
+        </h2>
+        {keySourceLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : (!keySourceBreakdown || keySourceBreakdown.length === 0) ? (
+          <Card>
+            <CardContent className="py-6 text-center text-muted-foreground" data-testid="text-no-key-source-breakdown">
+              No AI activity for this period.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2" data-testid="grid-key-source-breakdown">
+            {keySourceBreakdown.map((entry) => {
+              const isByok = entry.keySource === "org_byok";
+              const totalTokens = (Number(entry.totalTokensIn) || 0) + (Number(entry.totalTokensOut) || 0);
+              return (
+                <Card key={entry.keySource} data-testid={`card-key-source-${entry.keySource}`}>
+                  <CardContent className="py-4 space-y-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Key className={`h-4 w-4 shrink-0 ${isByok ? "text-amber-500" : "text-blue-500"}`} />
+                        <span className="font-semibold text-sm">
+                          {isByok ? "Org BYOK" : "Platform Key"}
+                        </span>
+                      </div>
+                      <Badge
+                        variant={isByok ? "outline" : "secondary"}
+                        className={isByok ? "border-amber-400 text-amber-700 dark:text-amber-400" : ""}
+                        data-testid={`badge-key-source-${entry.keySource}`}
+                      >
+                        {entry.keySource}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-sm text-center">
+                      <div>
+                        <p className="text-muted-foreground text-xs">Calls</p>
+                        <p className="font-medium" data-testid={`text-ks-calls-${entry.keySource}`}>{Number(entry.count).toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Tokens</p>
+                        <p className="font-medium" data-testid={`text-ks-tokens-${entry.keySource}`}>{totalTokens.toLocaleString()}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs">Cost</p>
+                        <p className="font-medium" data-testid={`text-ks-cost-${entry.keySource}`}>${(Number(entry.totalCost) || 0).toFixed(4)}</p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-xl font-semibold flex items-center gap-2" data-testid="text-cost-breakdown-heading">
             <BarChart3 className="h-5 w-5" />
@@ -466,6 +548,7 @@ export default function AIGovernancePage() {
                       <th className="text-left p-3 font-medium">Action</th>
                       <th className="text-left p-3 font-medium">User</th>
                       <th className="text-left p-3 font-medium">Model</th>
+                      <th className="text-left p-3 font-medium">Key Source</th>
                       <th className="text-right p-3 font-medium">Tokens In</th>
                       <th className="text-right p-3 font-medium">Tokens Out</th>
                       <th className="text-right p-3 font-medium">Cost</th>
@@ -493,6 +576,19 @@ export default function AIGovernancePage() {
                             </span>
                           </td>
                           <td className="p-3 text-muted-foreground">{entry.model || "—"}</td>
+                          <td className="p-3">
+                            {entry.keySource ? (
+                              <Badge
+                                variant={entry.keySource === "org_byok" ? "outline" : "secondary"}
+                                className={entry.keySource === "org_byok" ? "border-amber-400 text-amber-700 dark:text-amber-400 whitespace-nowrap" : "whitespace-nowrap"}
+                                data-testid={`badge-key-source-${entry.id}`}
+                              >
+                                {entry.keySource === "org_byok" ? "Org BYOK" : "platform"}
+                              </Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </td>
                           <td className="p-3 text-right">{(entry.tokensIn || 0).toLocaleString()}</td>
                           <td className="p-3 text-right">{(entry.tokensOut || 0).toLocaleString()}</td>
                           <td className="p-3 text-right">${cost.toFixed(4)}</td>

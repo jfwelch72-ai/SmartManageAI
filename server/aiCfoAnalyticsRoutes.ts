@@ -8,7 +8,7 @@ import { type AuthRequest, requireAuth, requireRole, requireAnyFeaturePermission
 import { logError } from "./utils/logger";
 import { getOrgId, parsePagination } from "./utils/routeHelpers";
 import { getLatestAIRun } from "./ai/orchestrator";
-import { getAiAuditLog, getOrgLimitsWithUsage, getCostBreakdownByActionType } from "./services/aiGovernance";
+import { getAiAuditLog, getOrgLimitsWithUsage, getCostBreakdownByActionType, getCostBreakdownByKeySource } from "./services/aiGovernance";
 
 const router = Router();
 
@@ -814,6 +814,18 @@ router.get("/cost-breakdown", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), 
     if (!orgId) return;
     const { dateFrom, dateTo } = parseDateRange(req);
     const breakdown = await getCostBreakdownByActionType(orgId, dateFrom, dateTo);
+    res.json(breakdown);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/key-source-breakdown", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"), async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
+    const { dateFrom, dateTo } = parseDateRange(req);
+    const breakdown = await getCostBreakdownByKeySource(orgId, dateFrom, dateTo);
     res.json(breakdown);
   } catch (err) {
     next(err);

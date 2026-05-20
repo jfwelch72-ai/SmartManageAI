@@ -55,6 +55,7 @@ import { getPoolStats } from './utils/poolHealth';
 import { getAllJobMetrics } from './utils/jobMetrics';
 import { getWebVitalsSnapshot } from './webVitalsRoutes';
 import { getPromptInjectionMetricsSnapshot } from './ai/promptInjectionGuard';
+import { getAiCallsCounterSnapshot } from './services/aiGovernance';
 import { getCronMissedTicksSnapshot } from './utils/cronMissedTicks';
 import { getZeroRecipientMetricsSnapshot } from './services/approvalNotificationService';
 import { getJobStallCounterSnapshot } from './jobs/jobRunner';
@@ -341,6 +342,25 @@ router.get('/metrics', opsRateLimiter, (req, res) => {
     }
   } catch (err) {
     logError('Failed to read web-vitals snapshot for /metrics', {}, err as Error);
+  }
+
+  // Task #2951 — BYOK key-source call counter. One series per key_source
+  // value ('platform' or 'org_byok'). Counter is incremented in-process
+  // by every executeAiAction / governedAiCall call path.  Allows alerting
+  // when BYOK usage exceeds expectations or the platform key is
+  // unexpectedly consumed by an org with a configured BYOK key.
+  try {
+    const aiCallsSnap = getAiCallsCounterSnapshot();
+    if (aiCallsSnap.length) {
+      lines.push('# HELP ai_calls_total Total AI calls recorded since process start, partitioned by key_source (platform|org_byok).');
+      lines.push('# TYPE ai_calls_total counter');
+      for (const { keySource, value } of aiCallsSnap) {
+        const safeKs = keySource.replace(/[^A-Za-z0-9_]/g, '_');
+        lines.push(`ai_calls_total{key_source="${safeKs}"} ${value}`);
+      }
+    }
+  } catch (err) {
+    logError('Failed to read ai_calls_total counters for /metrics', {}, err as Error);
   }
 
   // Task #2683 — Prompt-injection detection counter. One series per
