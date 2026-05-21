@@ -1460,26 +1460,28 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <Badge variant="outline" className="text-[10px]">{selectedDoc.type}</Badge>
                 </div>
-                <div className="flex gap-1">
-                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleOpenFile(selectedDoc.id, selectedDoc.fileUrl)} data-testid="button-view-selected-doc">
-                    <Eye className="w-3 h-3 mr-1" /> View
-                  </Button>
-                  {(selectedDoc.mimeType?.includes("pdf") || selectedDoc.fileName?.toLowerCase().endsWith(".pdf")) && (
-                    <>
+                <div className="flex flex-col gap-1">
+                  <div className="flex gap-1">
+                    <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleOpenFile(selectedDoc.id, selectedDoc.fileUrl)} data-testid="button-view-selected-doc">
+                      <Eye className="w-3 h-3 mr-1" /> View
+                    </Button>
+                    {(selectedDoc.mimeType?.includes("pdf") || selectedDoc.fileName?.toLowerCase().endsWith(".pdf")) && (
                       <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => handleImportToTakeoff(selectedDoc.id)} data-testid="button-import-selected-doc">
                         <FileText className="w-3 h-3 mr-1" /> Import
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs flex-1"
-                        onClick={() => handleIngestInBackground(selectedDoc)}
-                        data-testid="button-ingest-background-selected-doc"
-                        title="Ingest large plan sets in the background"
-                      >
-                        <Zap className="w-3 h-3 mr-1" /> Background
-                      </Button>
-                    </>
+                    )}
+                  </div>
+                  {(selectedDoc.mimeType?.includes("pdf") || selectedDoc.fileName?.toLowerCase().endsWith(".pdf")) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs w-full"
+                      onClick={() => handleIngestInBackground(selectedDoc)}
+                      data-testid="button-ingest-background-selected-doc"
+                      title="Ingest large plan sets in the background"
+                    >
+                      <Zap className="w-3 h-3 mr-1" /> Background
+                    </Button>
                   )}
                 </div>
               </div>
