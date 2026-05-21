@@ -16,6 +16,7 @@ import { assertWithinStorageQuota, isStorageQuotaExceededError } from "./utils/o
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 import { isSocialPlatformConfigured } from "./services/integrationStatusService";
+import { getOrgId } from "./utils/routeHelpers";
 
 const router = Router();
 
@@ -49,18 +50,14 @@ function encrypt(text: string): string {
   return iv.toString("hex") + ":" + encrypted;
 }
 
-function getOrgId(req: AuthRequest): string | null {
-  return req.user?.organizationId || null;
-}
-
 function isAdmin(req: AuthRequest): boolean {
   return ["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(req.user?.role || "");
 }
 
 router.get("/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { status, platform, campaign, from, to, limit: limitStr, offset: offsetStr } = req.query;
     const limit = parseInt(limitStr as string) || 50;
@@ -94,8 +91,8 @@ router.get("/posts", requireAuth, async (req: AuthRequest, res: Response, next: 
 router.post("/posts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const {
       title, content, platform, platforms, status, mediaUrls, hashtags,
@@ -179,8 +176,8 @@ router.post("/posts", requireAuth, async (req: AuthRequest, res: Response, next:
 
 router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { prompt } = req.body;
     if (!prompt || typeof prompt !== "string" || prompt.trim().length < 3) {
@@ -280,8 +277,8 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
 
 router.post("/upload-media", requireAuth, socialUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
 
     const file = req.file;
@@ -361,8 +358,8 @@ router.get("/image/:orgId/:fileName", async (req: Request, res: Response, next: 
 router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
 
@@ -419,8 +416,8 @@ router.patch("/posts/:id", requireAuth, async (req: AuthRequest, res: Response, 
 router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const existing = await db.query.socialMediaPosts.findFirst({
@@ -440,8 +437,8 @@ router.delete("/posts/:id", requireAuth, async (req: AuthRequest, res: Response,
 router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const post = await db.query.socialMediaPosts.findFirst({
@@ -512,8 +509,8 @@ router.post("/posts/:id/publish", requireAuth, async (req: AuthRequest, res: Res
 router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const [updated] = await db.update(socialMediaPosts)
@@ -537,8 +534,8 @@ router.post("/posts/:id/approve", requireAuth, async (req: AuthRequest, res: Res
 router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const original = await db.query.socialMediaPosts.findFirst({
@@ -577,8 +574,8 @@ router.post("/posts/:id/duplicate", requireAuth, async (req: AuthRequest, res: R
 router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const { scheduledAt } = req.body;
@@ -603,8 +600,8 @@ router.patch("/posts/:id/reschedule", requireAuth, async (req: AuthRequest, res:
 router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const { reason } = req.body;
@@ -637,8 +634,8 @@ router.post("/posts/:id/reject", requireAuth, async (req: AuthRequest, res: Resp
 
 router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const post = await db.query.socialMediaPosts.findFirst({
@@ -690,8 +687,8 @@ router.post("/sync-engagement/:id", requireAuth, async (req: AuthRequest, res: R
 router.post("/posts/bulk", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { posts: postsData } = req.body;
     if (!Array.isArray(postsData) || postsData.length === 0) {
@@ -765,8 +762,8 @@ function getPlatformCredentials(platform: string): { clientId: string; clientSec
 
 router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const accounts = await db.query.socialAccounts.findMany({
       where: eq(socialAccounts.organizationId, orgId),
@@ -788,8 +785,8 @@ router.get("/accounts", requireAuth, async (req: AuthRequest, res: Response, nex
 router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { platform, accountName, accountId, accessToken, refreshToken, permissionScopes } = req.body;
     if (!platform) return res.status(400).json({ error: "Platform is required" });
@@ -815,8 +812,8 @@ router.post("/accounts", requireAuth, async (req: AuthRequest, res: Response, ne
 router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const { accountName, accessToken, refreshToken, status } = req.body;
@@ -847,8 +844,8 @@ router.patch("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respons
 router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const [deleted] = await db.delete(socialAccounts)
@@ -864,8 +861,8 @@ router.delete("/accounts/:id", requireAuth, async (req: AuthRequest, res: Respon
 
 router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const account = await db.query.socialAccounts.findFirst({
@@ -896,8 +893,8 @@ router.get("/accounts/:id/status", requireAuth, async (req: AuthRequest, res: Re
 router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { id } = req.params;
     const account = await db.query.socialAccounts.findFirst({
@@ -947,8 +944,8 @@ router.post("/accounts/:id/refresh", requireAuth, async (req: AuthRequest, res: 
 
 router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { month, year } = req.query;
     const m = parseInt(month as string) || new Date().getMonth() + 1;
@@ -985,8 +982,8 @@ router.get("/calendar", requireAuth, async (req: AuthRequest, res: Response, nex
 
 router.get("/stats", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const now = new Date();
     const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -1064,8 +1061,8 @@ router.get("/stats", requireAuth, async (req: AuthRequest, res: Response, next: 
 router.post("/posts/generate", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isAdmin(req)) return res.status(403).json({ error: "Admin access required" });
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(400).json({ error: "Organization required" });
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
 
     const { platform, topic, tone, saveAsDraft } = req.body;
     if (!platform || !topic) return res.status(400).json({ error: "Platform and topic are required" });

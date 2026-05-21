@@ -671,6 +671,10 @@ router.get("/api/projects/:code/procurement", requireAuth, async (req: AuthReque
   }
 });
 
+// TODO (Task #3022): This lite endpoint operates on the `procurementItems` table which is a
+// different entity from the full procurement module's purchaseRequests/purchaseOrders tables.
+// There is no clean mapping to /api/procurement-module endpoints without a data migration.
+// Left in place to avoid breaking the frontend. Retire once the full module covers this use-case.
 router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = insertProcurementItemSchema.safeParse(req.body);
@@ -698,6 +702,7 @@ router.post("/api/procurement", requireAuth, requireRole("ADMIN", "MANAGER"), as
 
 const updateProcurementSchema = insertProcurementItemSchema.omit({ projectId: true }).partial();
 
+// TODO (Task #3022): Same as the POST above — retire after data migration to full procurement module.
 router.patch("/api/procurement/:id", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res, next) => {
   try {
     const validationResult = updateProcurementSchema.safeParse(req.body);

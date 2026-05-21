@@ -1,5 +1,6 @@
 import type { Express, Response, NextFunction } from "express";
 import { requireAuth, requireFeaturePermission, type AuthRequest } from "./auth";
+import { getOrgId } from "./utils/routeHelpers";
 import { db } from "./db";
 import { eq, and, sql, ne, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
@@ -25,15 +26,6 @@ const submitPeerRatingSchema = z.object({
 });
 
 export function registerPeerRatingRoutes(app: Express) {
-  const getOrgId = (req: AuthRequest, res: Response): string | null => {
-    const orgId = req.user?.organizationId;
-    if (!orgId) {
-      res.status(400).json({ error: "Organization required" });
-      return null;
-    }
-    return orgId;
-  };
-
   const isManagerOrAdmin = (role: string | undefined) =>
     role === "ADMIN" || role === "MANAGER";
 

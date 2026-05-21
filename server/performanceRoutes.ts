@@ -1,4 +1,5 @@
 import { logError } from "./utils/logger";
+import { getOrgId } from "./utils/routeHelpers";
 import type { Express, Response } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 import { db } from "./db";
@@ -104,15 +105,6 @@ export function registerPerformanceRoutes(app: Express) {
       return false;
     }
     return true;
-  };
-
-  const getOrgId = (req: AuthRequest, res: Response): string | null => {
-    const orgId = req.user?.organizationId;
-    if (!orgId) {
-      res.status(400).json({ error: "Organization required" });
-      return null;
-    }
-    return orgId;
   };
 
   app.get("/api/performance/criteria", requireAuth, async (req: AuthRequest, res, next) => {

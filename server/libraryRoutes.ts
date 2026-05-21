@@ -24,6 +24,7 @@ import { requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
 import { logAudit, logCreate, logDelete } from "./auditLogger";
 import { parseOrRespond } from "./utils/validation";
+import { getOrgId } from "./utils/routeHelpers";
 
 const router = Router();
 
@@ -32,10 +33,6 @@ const ESTIMATOR_PLUS: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER"
 // prebuilt item, category, and assembly for the org) so it is restricted to
 // org admins. HUSTLERs get owner-equivalent access via effectiveRole.
 const PREBUILT_RESET_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER"];
-
-function getOrgId(req: AuthRequest): string | null {
-  return req.user?.organizationId || null;
-}
 
 function getUserId(req: AuthRequest): string | null {
   return req.user?.id || null;
@@ -52,15 +49,15 @@ function checkAdmin(req: AuthRequest): boolean {
 }
 
 router.get("/api/custom-libraries", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   const results = await db.select().from(customLibraries).where(eq(customLibraries.organizationId, orgId));
   res.json(results);
 });
 
 router.post("/api/custom-libraries", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = parseOrRespond(insertCustomLibrarySchema, { ...req.body, organizationId: orgId }, res);
   if (!data) return;
@@ -69,8 +66,8 @@ router.post("/api/custom-libraries", async (req: AuthRequest, res: Response, nex
 });
 
 router.patch("/api/custom-libraries/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const { name, description } = req.body;
@@ -83,8 +80,8 @@ router.patch("/api/custom-libraries/:id", async (req: AuthRequest, res: Response
 });
 
 router.delete("/api/custom-libraries/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(customLibraries)
@@ -93,8 +90,8 @@ router.delete("/api/custom-libraries/:id", async (req: AuthRequest, res: Respons
 });
 
 router.get("/api/library-items", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   const { search, libraryId, costType, tradeType, categoryId } = req.query;
   const conditions: any[] = [eq(libraryItems.organizationId, orgId)];
   if (libraryId && libraryId !== "all") {
@@ -121,8 +118,8 @@ router.get("/api/library-items", async (req: AuthRequest, res: Response, next: N
 
 // Task #2068 — CRUD for the new "Category" tier between Trade and Item.
 router.get("/api/library-categories", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   const { libraryId, tradeType } = req.query;
   const conditions: any[] = [eq(libraryCategories.organizationId, orgId)];
   if (libraryId && libraryId !== "all") {
@@ -140,8 +137,8 @@ router.get("/api/library-categories", async (req: AuthRequest, res: Response, ne
 });
 
 router.post("/api/library-categories", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = parseOrRespond(insertLibraryCategorySchema, { ...req.body, organizationId: orgId }, res);
   if (!data) return;
@@ -150,8 +147,8 @@ router.post("/api/library-categories", async (req: AuthRequest, res: Response, n
 });
 
 router.patch("/api/library-categories/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const updateData = { ...req.body, updatedAt: new Date() };
@@ -167,8 +164,8 @@ router.patch("/api/library-categories/:id", async (req: AuthRequest, res: Respon
 });
 
 router.delete("/api/library-categories/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(libraryCategories)
@@ -177,8 +174,8 @@ router.delete("/api/library-categories/:id", async (req: AuthRequest, res: Respo
 });
 
 router.post("/api/library-items", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = parseOrRespond(insertLibraryItemSchema, { ...req.body, organizationId: orgId }, res);
   if (!data) return;
@@ -191,8 +188,8 @@ router.post("/api/library-items", async (req: AuthRequest, res: Response, next: 
 // allowed to move items back to "Uncategorized") so the endpoint stays narrow
 // and easy to authorize. All ids must belong to the caller's organization.
 router.patch("/api/library-items/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
 
   const { ids, categoryId } = req.body ?? {};
@@ -234,8 +231,8 @@ router.patch("/api/library-items/bulk", async (req: AuthRequest, res: Response, 
 // estimator wiping 500 items now leaves 500 audit rows, queryable by
 // entityId for accidental-deletion recovery investigations).
 router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -300,8 +297,8 @@ router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response,
 // originating sourceId in the payload so we can later trace which source
 // row each duplicate came from during forensic review.
 router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -385,8 +382,8 @@ router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: R
 });
 
 router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const updateData = { ...req.body, updatedAt: new Date() };
@@ -405,8 +402,8 @@ router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response, n
 // the single and bulk paths produce a consistent forensic trail for the
 // "library_item" entity type.
 router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const userId = getUserId(req);
   if (!userId) return res.status(401).json({ error: "Unauthorized" });
@@ -428,8 +425,8 @@ router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response, 
 });
 
 router.post("/api/library-items/import", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { items } = req.body;
   if (!Array.isArray(items) || items.length === 0) {
@@ -455,8 +452,8 @@ router.post("/api/library-items/import", async (req: AuthRequest, res: Response,
 });
 
 router.get("/api/library-assemblies", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   const { search, libraryId } = req.query;
   const conditions: any[] = [eq(libraryAssemblies.organizationId, orgId)];
   if (libraryId && libraryId !== "all") {
@@ -514,8 +511,8 @@ router.get("/api/library-assemblies", async (req: AuthRequest, res: Response, ne
 });
 
 router.post("/api/library-assemblies", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { items: assemblyItems, groups: assemblyGroups, ...assemblyData } = req.body ?? {};
   const data = parseOrRespond(insertLibraryAssemblySchema, { ...assemblyData, organizationId: orgId }, res);
@@ -556,8 +553,8 @@ router.post("/api/library-assemblies", async (req: AuthRequest, res: Response, n
 // and capped at MAX_BULK. Cascades to libraryAssemblyItems / Groups / GroupMembers
 // via the FK onDelete: cascade rules in the schema.
 router.delete("/api/library-assemblies/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
 
   const { ids } = req.body ?? {};
@@ -582,8 +579,8 @@ router.delete("/api/library-assemblies/bulk", async (req: AuthRequest, res: Resp
 // metadata but is saved as a custom (non-prebuilt) copy with an "(copy)"
 // name suffix so estimators can freely edit it.
 router.post("/api/library-assemblies/bulk-duplicate", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
 
   const { ids } = req.body ?? {};
@@ -674,8 +671,8 @@ router.post("/api/library-assemblies/bulk-duplicate", async (req: AuthRequest, r
 });
 
 router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   const { items: assemblyItems, groups: assemblyGroups, ...updateData } = req.body;
@@ -721,8 +718,8 @@ router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Respon
 });
 
 router.delete("/api/library-assemblies/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(libraryAssemblies)
@@ -731,8 +728,8 @@ router.delete("/api/library-assemblies/:id", async (req: AuthRequest, res: Respo
 });
 
 router.get("/api/saved-takeoffs", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   const { libraryId } = req.query;
   const conditions: any[] = [eq(savedTakeoffs.organizationId, orgId)];
   if (libraryId && libraryId !== "all") {
@@ -743,8 +740,8 @@ router.get("/api/saved-takeoffs", async (req: AuthRequest, res: Response, next: 
 });
 
 router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const data = parseOrRespond(insertSavedTakeoffSchema, { ...req.body, organizationId: orgId }, res);
   if (!data) return;
@@ -753,8 +750,8 @@ router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response, next:
 });
 
 router.delete("/api/saved-takeoffs/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
   const { id } = req.params;
   await db.delete(savedTakeoffs)
@@ -938,8 +935,8 @@ async function runPrebuiltSeed(orgId: string, tradeType: string): Promise<{
 }
 
 router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
-  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const orgId = getOrgId(req, res);
+  if (!orgId) return;
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
 
   try {
@@ -980,9 +977,9 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
 // is `ON DELETE SET NULL`, so any custom item that was filed under a deleted
 // prebuilt category simply becomes uncategorized rather than being deleted.
 router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest, res: Response, next: NextFunction) => {
-  const orgId = getOrgId(req);
+  const orgId = getOrgId(req, res);
   const userId = getUserId(req);
-  if (!orgId || !userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!orgId || !userId) return;
   if (!checkAdmin(req)) return res.status(403).json({ error: "Admin access required to reset the prebuilt catalog" });
 
   try {

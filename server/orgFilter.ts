@@ -221,6 +221,24 @@ export function verifyUserOrgAccess(req: AuthRequest, res: Response, targetUser:
  *     // Add eq(table.organizationId, orgCtx.orgId!) to WHERE clause
  *   }
  */
+/**
+ * Verifies that a bid belongs to the authenticated user's organization.
+ * SUPER_ADMIN bypasses the org check. Returns the bid if accessible, null if not found or denied.
+ * Importers should treat null as 404 (bid not found or access denied).
+ */
+export async function verifyBidOrgAccess(
+  bidId: string,
+  user: AuthRequest["user"],
+): Promise<{ id: string; gcOrganizationId: string | null; [key: string]: unknown } | null> {
+  const { db } = await import("./db");
+  const { bids } = await import("@shared/schema");
+  const { eq } = await import("drizzle-orm");
+  const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
+  if (!bid) return null;
+  if (user!.organizationId && bid.gcOrganizationId !== user!.organizationId) return null;
+  return bid as { id: string; gcOrganizationId: string | null; [key: string]: unknown };
+}
+
 export function requireOrgOwnership(req: AuthRequest, res: Response): { orgId: string | null; isSuperAdmin: boolean } | null {
   const { shouldFilter, orgId, isSuperAdmin: isSuper, mustDenyAccess } = getOrgIdForFilter(req);
   if (mustDenyAccess) {

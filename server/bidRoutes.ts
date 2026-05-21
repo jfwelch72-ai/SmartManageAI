@@ -680,55 +680,11 @@ router.delete(
   },
 );
 
-router.get("/api/bids/:id/estimate", requireAuth, async (req: AuthRequest, res, next) => {
-  try {
-    const storage = getBidStorage(req, res);
-    if (!storage) return;
-    const bidId = req.params.id;
-    logInfo(`[GET /api/bids/:id/estimate] Fetching estimate for bid ID: ${bidId}`);
-
-    const bid = await storage.getBidById(bidId);
-    if (!bid) return res.status(404).json({ error: "Bid not found" });
-
-    const active = await storage.getActiveEstimateWithLineItems(bidId);
-    if (!active) return res.json({ estimate: null });
-    res.json({ estimate: active });
-  } catch (error) {
-    if (handleStorageError(error, res, next)) return;
-    next(error);
-  }
-});
-
-router.post(
-  "/api/bids/:id/estimate",
-  requireAuth,
-  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
-  async (req: AuthRequest, res, next) => {
-    try {
-      const storage = getBidStorage(req, res);
-      if (!storage) return;
-      const bidId = req.params.id;
-      logInfo(`[POST /api/bids/:id/estimate] Creating estimate for bid ID: ${bidId}`);
-
-      const bid = await storage.getBidById(bidId);
-      if (!bid) return res.status(404).json({ error: "Bid not found" });
-
-      const { estimate, created } = await storage.getOrCreateEstimateForBid(
-        bidId,
-        req.user!.id,
-      );
-
-      if (created) {
-        logInfo(`[Estimate Created] New estimate ${estimate.id} created for bid ${bidId}`);
-        return res.status(201).json({ estimate });
-      }
-      res.json({ estimate });
-    } catch (error) {
-      if (handleStorageError(error, res, next)) return;
-      next(error);
-    }
-  },
-);
+// GET /api/bids/:id/estimate and POST /api/bids/:id/estimate are handled
+// exclusively by estimateRoutes.ts (mounted earlier in routes.ts).
+// The handlers that previously lived here were dead code — estimateRoutes
+// wins by virtue of being mounted first and returning responses directly.
+// Removed in Task #3022 (Resolve Duplicate Routes & Centralize Shared Helpers).
 
 router.post(
   "/api/bids/:code/convert",

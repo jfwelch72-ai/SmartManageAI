@@ -74,7 +74,7 @@ import {
   generateEquipmentRequirementsJson,
   type MaterialCalculationInputs 
 } from "./materialCalculator";
-import { getOrgIdForFilter } from "./orgFilter";
+import { getOrgIdForFilter, verifyBidOrgAccess as verifyBidOrgAccessFromOrgFilter } from "./orgFilter";
 import { successResponse, safeJsonParse } from "./responseHelper";
 import { 
   getProductionRateForSOW, 
@@ -379,12 +379,7 @@ const verifyProjectOrgAccess = async (projectId: string, user: AuthRequest["user
   return project;
 };
 
-const verifyBidOrgAccess = async (bidId: string, user: AuthRequest["user"]) => {
-  const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
-  if (!bid) return null;
-  if (user!.organizationId && bid.gcOrganizationId !== user!.organizationId) return null;
-  return bid;
-};
+const verifyBidOrgAccess = verifyBidOrgAccessFromOrgFilter;
 
 // Get active estimate for a project
 router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res, next) => {
@@ -626,10 +621,14 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     }
   });
 
-  // Create new estimate for bid
+  // Create (or return existing) estimate for bid.
+  // Get-or-create semantics: if a DRAFT/PENDING_APPROVAL/APPROVED estimate already
+  // exists for this bid, return it. Only create a new one if none is present.
+  // This preserves the behaviour that was previously in bidRoutes.ts via
+  // getOrCreateEstimateForBid() and prevents accidental version proliferation.
   router.post("/api/bids/:bidId/estimate", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
-      logInfo("[Estimate] Create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
+      logInfo("[Estimate] Get-or-create bid estimate request:", { bidId: req.params.bidId, user: req.user?.email });
       const { bidId } = req.params;
       const userId = req.user!.id;
 
@@ -645,17 +644,28 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(404).json({ error: "Bid not found" });
       }
 
-      // Get version number
-      const existingEstimates = await db.query.estimates.findMany({
+      // Get-or-create: return existing active estimate if present
+      const existingEstimate = await db.query.estimates.findFirst({
+        where: and(
+          eq(estimates.bidId, bidId),
+          sql`${estimates.status} IN ('DRAFT', 'PENDING_APPROVAL', 'APPROVED')`
+        ),
+        orderBy: [desc(estimates.createdAt)],
+      });
+
+      if (existingEstimate) {
+        logInfo("[Estimate] Returning existing bid estimate:", existingEstimate.id);
+        // Return bare estimate object — all frontend callers read .id directly from root
+        return res.json(existingEstimate);
+      }
+
+      // No active estimate — create the first one (version 1)
+      const allExisting = await db.query.estimates.findMany({
         where: eq(estimates.bidId, bidId),
         orderBy: [desc(estimates.versionNumber)],
       });
+      const versionNumber = allExisting.length > 0 ? allExisting[0].versionNumber + 1 : 1;
 
-      const versionNumber = existingEstimates.length > 0 
-        ? existingEstimates[0].versionNumber + 1 
-        : 1;
-
-      // Create estimate
       logInfo("[Estimate] Creating bid estimate with version:", versionNumber);
       const [newEstimate] = await db.insert(estimates).values({
         bidId,
@@ -666,7 +676,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       }).returning();
 
       logInfo("[Estimate] Created bid estimate:", newEstimate.id);
-      res.status(201).json(newEstimate);
+      // Return bare estimate object — all frontend callers read .id directly from root
+      return res.status(201).json(newEstimate);
     } catch (error) {
       next(error);
     }
