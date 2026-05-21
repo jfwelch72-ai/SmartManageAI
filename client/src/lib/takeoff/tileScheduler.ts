@@ -101,7 +101,7 @@ function defaultPoolSize(): number {
     typeof navigator !== "undefined" && typeof navigator.hardwareConcurrency === "number"
       ? navigator.hardwareConcurrency
       : 4;
-  return Math.max(1, Math.min(4, Math.floor(hw)));
+  return Math.max(1, Math.min(6, Math.floor(hw)));
 }
 
 export interface TileRequest {

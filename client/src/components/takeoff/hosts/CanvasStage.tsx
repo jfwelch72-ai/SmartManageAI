@@ -1,4 +1,4 @@
-import { Fragment, memo, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, memo, useEffect, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import {
@@ -466,6 +466,21 @@ function CanvasStageImpl(props: CanvasStageProps) {
       bottom: (-stagePosition.y + stageDimensions.height) / stageScale + pad,
     };
   }, [stagePosition.x, stagePosition.y, stageScale, stageDimensions.width, stageDimensions.height]);
+
+  // Register a non-passive wheel listener on the container element so that
+  // e.evt.preventDefault() in handleWheel is always honoured.  Modern
+  // browsers default wheel listeners to passive=true for scroll performance;
+  // if Konva's own listener is registered as passive, calling preventDefault()
+  // is silently ignored and the page scrolls instead of the canvas zooming.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const prevent = (e: WheelEvent) => { e.preventDefault(); };
+    container.addEventListener("wheel", prevent, { passive: false });
+    return () => container.removeEventListener("wheel", prevent);
+  // containerRef identity is stable for the component lifetime — no deps needed.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     // Wrap in a <div style="display:contents"> instead of a bare Fragment so
@@ -2228,6 +2243,30 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     </Group>
                   );
                 })()}
+
+                {!runningMeasurement && isDrawing && drawingPoints.length > 0 && cursorPosition && (
+                  <Group>
+                    <Rect
+                      x={cursorPosition.x + 18 / stageScale}
+                      y={cursorPosition.y - 28 / stageScale}
+                      width={120 / stageScale}
+                      height={22 / stageScale}
+                      fill="rgba(0,0,0,0.75)"
+                      cornerRadius={4 / stageScale}
+                      listening={false}
+                    />
+                    <Text
+                      x={cursorPosition.x + 24 / stageScale}
+                      y={cursorPosition.y - 24 / stageScale}
+                      text="Set scale to measure"
+                      fontSize={11 / stageScale}
+                      fill="#f59e0b"
+                      fontStyle="bold"
+                      fontFamily="monospace"
+                      listening={false}
+                    />
+                  </Group>
+                )}
 
                 {orthoLock && isDrawing && drawingPoints.length > 0 && cursorPosition && (
                   <Line
