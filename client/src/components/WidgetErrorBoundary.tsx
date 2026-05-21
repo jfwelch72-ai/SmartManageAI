@@ -1,4 +1,4 @@
-import { Component, type ReactNode, type ErrorInfo } from "react";
+import { Component, Fragment, type ReactNode, type ErrorInfo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw } from "lucide-react";
@@ -11,15 +11,28 @@ interface WidgetErrorBoundaryProps {
 interface WidgetErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
+  /**
+   * Incremented each time the user (or auto-retry logic) clicks Retry.
+   * Passing this as the `key` on the Fragment wrapper forces React to
+   * fully unmount and remount the children instead of patching the
+   * existing fiber in-place. Without this, a retry after a mid-render
+   * crash re-uses the stale fiber (which has fewer hook slots recorded
+   * from the partial failed render) and immediately re-throws
+   * "Rendered more hooks than during the previous render" or
+   * "Should have a queue. This is likely a bug in React." — both of
+   * which are downstream symptoms of a corrupted hook-list, not the
+   * true root cause.
+   */
+  retryKey: number;
 }
 
 export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, WidgetErrorBoundaryState> {
   constructor(props: WidgetErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, error: null };
+    this.state = { hasError: false, error: null, retryKey: 0 };
   }
 
-  static getDerivedStateFromError(error: Error): WidgetErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<WidgetErrorBoundaryState> {
     return { hasError: true, error };
   }
 
@@ -32,7 +45,11 @@ export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, Wid
   }
 
   handleRetry = () => {
-    this.setState({ hasError: false, error: null });
+    this.setState(prev => ({
+      hasError: false,
+      error: null,
+      retryKey: prev.retryKey + 1,
+    }));
   };
 
   render() {
@@ -62,6 +79,10 @@ export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, Wid
       );
     }
 
-    return this.props.children;
+    return (
+      <Fragment key={this.state.retryKey}>
+        {this.props.children}
+      </Fragment>
+    );
   }
 }

@@ -90,7 +90,11 @@ export function VideoCallOverlay({
     );
   }
 
-  if (!livekitToken || !livekitUrl) {
+  const livekitUrlValid =
+    typeof livekitUrl === "string" &&
+    (livekitUrl.startsWith("wss://") || livekitUrl.startsWith("ws://"));
+
+  if (!livekitToken || !livekitUrlValid) {
     return (
       <div className="fixed inset-0 z-50 bg-gray-900 flex items-center justify-center" data-testid="video-call-overlay">
         <div className="flex flex-col items-center gap-3">
