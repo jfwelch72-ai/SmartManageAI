@@ -875,6 +875,17 @@ const upload = multer({
         // /settings (and other org-scoped UIs) don't redirect to /onboarding.
         await db.update(users).set({ organizationId: devOrg.id }).where(eq(users.id, testUser.id));
         testUser.organizationId = devOrg.id;
+      } else if (role !== "SUPER_ADMIN" && devOrg && testUser.organizationId !== devOrg.id) {
+        // Re-sync existing test user to the current dev sandbox org.
+        // Without this, a test user created when devOrg was null or a
+        // different UUID keeps a stale organizationId.  Any bids they
+        // create would then carry gcOrganizationId = stale/null and
+        // would be invisible to the ADMIN user (who filters by the
+        // current devOrg.id).  This is the root cause of the
+        // "bids created by estimator not visible in admin account" bug.
+        await db.update(users).set({ organizationId: devOrg.id }).where(eq(users.id, testUser.id));
+        testUser.organizationId = devOrg.id;
+        logInfo(`[DEV] Re-synced ${testEmail} to current devOrg ${devOrg.id}`);
       }
 
       const token = generateToken(testUser.id, testUser.tokenVersion);

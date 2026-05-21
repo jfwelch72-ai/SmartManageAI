@@ -412,7 +412,15 @@ router.post(
       }
 
       const userOrgId = req.user?.organizationId;
-      const storage = new BidStorageDrizzle(userOrgId ?? null);
+      // Require org membership before creating a bid.  Without this guard,
+      // a user with no organizationId (e.g. a test account whose org link
+      // is stale) would create a bid with gcOrganizationId = null.  That
+      // bid is then invisible to every org-scoped query, including the
+      // admin's GET /api/bids which filters by gcOrganizationId = adminOrgId.
+      if (!userOrgId) {
+        return res.status(403).json({ error: "Organization membership required to create bids" });
+      }
+      const storage = new BidStorageDrizzle(userOrgId);
 
       const MAX_RETRIES = 3;
       let lastError: any = null;

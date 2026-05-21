@@ -1,4 +1,4 @@
-import { Fragment, memo, useEffect, useMemo, type Dispatch, type RefObject, type SetStateAction } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState, type Dispatch, type RefObject, type SetStateAction } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import {
@@ -481,6 +481,32 @@ function CanvasStageImpl(props: CanvasStageProps) {
   // containerRef identity is stable for the component lifetime — no deps needed.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Suppress expensive measurement-label rendering during active zoom.
+  // Labels (Text + background Rect) account for the majority of per-frame
+  // render cost (~12 ms on a planset with 200+ measurements); hiding them
+  // while stageScale is changing keeps each RAF re-render under ~8 ms so
+  // zoom stays smooth without breaking the must-stay-in-sync RAF pattern.
+  const isZoomingRef = useRef(false);
+  const prevScaleRef = useRef(stageScale);
+  const [, forceZoomRender] = useState(0);
+
+  if (prevScaleRef.current !== stageScale) {
+    prevScaleRef.current = stageScale;
+    isZoomingRef.current = true;
+  }
+
+  // Re-enable labels 250 ms after scale stops changing.
+  useEffect(() => {
+    if (!isZoomingRef.current) return;
+    const timer = setTimeout(() => {
+      isZoomingRef.current = false;
+      forceZoomRender(n => n + 1);
+    }, 250);
+    return () => clearTimeout(timer);
+  // stageScale is the trigger: reset the timer whenever scale changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageScale]);
 
   return (
     // Wrap in a <div style="display:contents"> instead of a bare Fragment so
@@ -1371,7 +1397,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   return null;
                 })}
 
-                {showMeasurementLabels && measurements.map((m) => {
+                {showMeasurementLabels && !isZoomingRef.current && measurements.map((m) => {
                   if (m.categoryId && hiddenCategoryIds.has(m.categoryId)) return null;
                   if (m.categoryId && labelHiddenCategories.has(m.categoryId)) return null;
                   if (hideAiMeasurements && m.source === "AI") return null;

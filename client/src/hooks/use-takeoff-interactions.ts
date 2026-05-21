@@ -1117,14 +1117,18 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const dragMoveRafScheduledRef = useRef(false);
   const dragMovePendingPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Wheel-zoom debounce — each wheel tick fires 60-120+ times/s.  Even
-  // RAF-coalescing (once per frame ≈ 60/s) still triggers a React re-render
-  // storm when there are hundreds of measurements; on low-end hardware that
-  // produces visible stutter and unresponsive zoom.  We apply the transform
-  // imperatively to the Konva node for zero-latency visual feedback and only
-  // sync React state ONCE, 150 ms after the last wheel event — i.e. after the
-  // gesture settles — eliminating all intermediate re-renders.
-  const wheelDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wheel-zoom RAF coalescing — each wheel tick fires 60-120+ times/s.
+  // Calling setStageScale + setStagePosition on every tick causes a React
+  // re-render storm.  We apply the transform directly to the Konva node for
+  // instant visual feedback and only sync React state once per animation
+  // frame (~60/s).  IMPORTANT: we must keep React state in sync every frame
+  // rather than debouncing it, because setCursorPosition (mousemove) triggers
+  // React re-renders independently; a debounced stageScale would cause React
+  // to re-apply stale scaleX/scaleY props to the Stage on those renders,
+  // resetting the visual zoom back — making zoom appear "not responding".
+  // CanvasStage suppresses its expensive label rendering during active zoom
+  // (via its own isZoomingRef) so each RAF render stays cheap.
+  const wheelRafScheduledRef = useRef(false);
   const wheelPendingStateRef = useRef<{ scale: number; pos: { x: number; y: number } } | null>(null);
 
   const handleStageDragMove = useCallback((e: any) => {
@@ -1266,21 +1270,22 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     stage.position(newPos);
     stage.batchDraw();
 
-    // Debounce React state sync — commit only once, 150 ms after the last
-    // wheel event.  Visual feedback is already instant via the Konva
-    // imperative update above; all intermediate React re-renders are
-    // eliminated so the canvas stays responsive even on complex plansets.
+    // RAF-coalesce React state sync — only the last scale/position in a
+    // given animation frame is committed to React, capping re-renders at
+    // ~60/s regardless of how fast the wheel fires.
     wheelPendingStateRef.current = { scale: newScale, pos: newPos };
-    if (wheelDebounceTimerRef.current !== null) clearTimeout(wheelDebounceTimerRef.current);
-    wheelDebounceTimerRef.current = setTimeout(() => {
-      wheelDebounceTimerRef.current = null;
-      const pending = wheelPendingStateRef.current;
-      wheelPendingStateRef.current = null;
-      if (pending) {
-        setStageScale(pending.scale);
-        setStagePosition(pending.pos);
-      }
-    }, 150);
+    if (!wheelRafScheduledRef.current) {
+      wheelRafScheduledRef.current = true;
+      requestAnimationFrame(() => {
+        wheelRafScheduledRef.current = false;
+        const pending = wheelPendingStateRef.current;
+        wheelPendingStateRef.current = null;
+        if (pending) {
+          setStageScale(pending.scale);
+          setStagePosition(pending.pos);
+        }
+      });
+    }
   }, [setStageScale, setStagePosition]);
 
   const lastPinchAngleRef = useRef<number | null>(null);
@@ -1332,18 +1337,20 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       stage.position(pinchNewPos);
       stage.batchDraw();
 
-      // Debounce React state sync (reuse the same refs as wheel).
+      // RAF-coalesce React state sync (reuse the same refs as wheel).
       wheelPendingStateRef.current = { scale: newScale, pos: pinchNewPos };
-      if (wheelDebounceTimerRef.current !== null) clearTimeout(wheelDebounceTimerRef.current);
-      wheelDebounceTimerRef.current = setTimeout(() => {
-        wheelDebounceTimerRef.current = null;
-        const pending = wheelPendingStateRef.current;
-        wheelPendingStateRef.current = null;
-        if (pending) {
-          setStageScale(pending.scale);
-          setStagePosition(pending.pos);
-        }
-      }, 150);
+      if (!wheelRafScheduledRef.current) {
+        wheelRafScheduledRef.current = true;
+        requestAnimationFrame(() => {
+          wheelRafScheduledRef.current = false;
+          const pending = wheelPendingStateRef.current;
+          wheelPendingStateRef.current = null;
+          if (pending) {
+            setStageScale(pending.scale);
+            setStagePosition(pending.pos);
+          }
+        });
+      }
 
       // Task #2142 — Apply 90° sheet rotation when the user has opted
       // in and the cumulative pinch rotation crosses a quarter turn.
