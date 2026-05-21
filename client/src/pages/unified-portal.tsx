@@ -29,6 +29,9 @@ import {
   Send,
   Lock,
   Mail,
+  ShieldCheck,
+  ShoppingCart,
+  CalendarRange,
 } from "lucide-react";
 import { PortalProgressTab } from "@/components/client-portal/PortalProgressTab";
 import { PortalPhotosTab } from "@/components/client-portal/PortalPhotosTab";
@@ -49,6 +52,9 @@ const VendorPricing = lazy(() => import("@/pages/vendor/pricing"));
 const VendorClients = lazy(() => import("@/pages/vendor/clients"));
 const VendorMessages = lazy(() => import("@/pages/vendor/messages"));
 const VendorDocuments = lazy(() => import("@/pages/vendor/documents"));
+const VendorCompliance = lazy(() => import("@/pages/vendor/compliance"));
+const VendorPurchaseOrders = lazy(() => import("@/pages/vendor/purchase-orders"));
+const VendorSchedule = lazy(() => import("@/pages/vendor/schedule"));
 
 type PortalRole = "client" | "subcontractor" | "vendor";
 
@@ -57,7 +63,7 @@ interface PortalSession {
   data: any;
 }
 
-const VALID_VENDOR_TABS = ["dashboard", "pricing", "clients", "messages", "documents"] as const;
+const VALID_VENDOR_TABS = ["dashboard", "pricing", "clients", "messages", "documents", "compliance", "purchase-orders", "schedule"] as const;
 const VALID_CLIENT_TABS = ["progress", "photos", "schedule", "documents", "change-orders", "payments", "chat"] as const;
 const VALID_SUB_TABS = ["rfis", "submittals", "transmittals", "chat"] as const;
 const ACCESS_TYPE_LABELS: Record<string, string> = {
@@ -595,9 +601,16 @@ function VendorPortalContent() {
   const initialTab = (VALID_VENDOR_TABS as readonly string[]).includes(rawTab) ? rawTab : "dashboard";
   const [activeTab, setActiveTab] = useState(initialTab);
 
+  function handleTabChange(tab: string) {
+    setActiveTab(tab);
+    const params = new URLSearchParams(window.location.search);
+    params.set("tab", tab);
+    history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  }
+
   return (
     <>
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList className="flex-wrap h-auto gap-1 mb-4" data-testid="tabs-vendor-nav">
           <TabsTrigger value="dashboard" data-testid="tab-vendor-dashboard">
             <LayoutDashboard className="w-4 h-4 mr-2" />
@@ -619,6 +632,18 @@ function VendorPortalContent() {
             <FileText className="w-4 h-4 mr-2" />
             Documents
           </TabsTrigger>
+          <TabsTrigger value="compliance" data-testid="tab-vendor-compliance">
+            <ShieldCheck className="w-4 h-4 mr-2" />
+            Compliance
+          </TabsTrigger>
+          <TabsTrigger value="purchase-orders" data-testid="tab-vendor-purchase-orders">
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Purchase Orders
+          </TabsTrigger>
+          <TabsTrigger value="schedule" data-testid="tab-vendor-schedule">
+            <CalendarRange className="w-4 h-4 mr-2" />
+            Schedule
+          </TabsTrigger>
         </TabsList>
       </Tabs>
       <Suspense fallback={<LoadingFallback />}>
@@ -627,6 +652,9 @@ function VendorPortalContent() {
         {activeTab === "clients" && <VendorClients />}
         {activeTab === "messages" && <VendorMessages />}
         {activeTab === "documents" && <VendorDocuments />}
+        {activeTab === "compliance" && <VendorCompliance />}
+        {activeTab === "purchase-orders" && <VendorPurchaseOrders />}
+        {activeTab === "schedule" && <VendorSchedule />}
       </Suspense>
     </>
   );
