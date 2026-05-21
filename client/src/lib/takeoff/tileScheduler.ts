@@ -206,20 +206,52 @@ export class TileScheduler {
   private queueDirty = false;
 
   constructor(poolSize: number = defaultPoolSize()) {
-    for (let i = 0; i < poolSize; i++) {
+    // Extracted so the error handler can spawn a replacement without
+    // duplicating the message + error listener wiring.
+    const addWorker = () => {
       const w = spawnWorker();
       const pw: PoolWorker = { worker: w, inflight: 0, pending: new Map() };
       w.addEventListener("message", (e: MessageEvent<WorkerResponse>) => {
         this.onMessage(pw, e.data);
       });
       w.addEventListener("error", () => {
+        // Reject all in-flight requests so .catch() / .finally(batchDecrement)
+        // handlers fire and loadingTileCount is properly decremented.
         pw.pending.forEach((req) => {
           req.reject(new Error("worker error"));
         });
         pw.pending.clear();
         pw.inflight = 0;
+        // Remove stale inflightTileDispatch entries pointing at this dead
+        // worker so that cancelOutsideViewport does not try to postMessage
+        // a terminated worker (silently dropped per the HTML spec).
+        this.inflightTileDispatch.forEach((entry, k) => {
+          if (entry.worker === pw.worker) {
+            this.inflightTileDispatch.delete(k);
+          }
+        });
+        // Remove the dead worker from the pool and spawn a fresh replacement.
+        // Without this fix, the dead worker (inflight=0) is first-picked by
+        // pickLeastBusy(), its postMessages are silently dropped (terminated
+        // workers ignore new messages per the HTML spec), and the in-flight
+        // promises hang forever — leaving the tile-loading spinner stuck and
+        // canvas cells permanently blank.
+        const idx = this.pool.indexOf(pw);
+        if (idx !== -1 && !this.destroyed) {
+          this.pool.splice(idx, 1);
+          try {
+            addWorker(); // replace with a fresh healthy worker
+          } catch {
+            // If spawning fails the pool runs with one fewer worker;
+            // tiles still render, just more slowly.
+          }
+          this.schedulePump(); // re-dispatch any queued tiles to healthy workers
+        }
       });
       this.pool.push(pw);
+    };
+    for (let i = 0; i < poolSize; i++) {
+      addWorker();
     }
   }
 
@@ -437,6 +469,12 @@ export class TileScheduler {
         cancel: () => undefined,
       };
     }
+    if (this.pool.length === 0) {
+      return {
+        promise: Promise.reject(new Error("no workers available")),
+        cancel: () => undefined,
+      };
+    }
     // Task #2292 — record the dispatch on the cross-engine counter so
     // the e2e spec can prove a full-page render flowed through the
     // worker pool on Firefox / Safari (where the longtask observer is
@@ -543,6 +581,7 @@ export class TileScheduler {
 
   private dispatchOnce<T>(payload: Record<string, unknown>): Promise<T> {
     if (this.destroyed) return Promise.reject(new Error("destroyed"));
+    if (this.pool.length === 0) return Promise.reject(new Error("no workers available"));
     const pw = this.pickLeastBusy();
     const requestId = nextRequestId++;
     return new Promise<T>((resolve, reject) => {
@@ -585,6 +624,10 @@ export class TileScheduler {
 
   private pump(): void {
     if (this.destroyed) return;
+    // Guard: if all workers crashed (addWorker failed inside the error handler's
+    // try/catch), the pool can be transiently empty. Stop here — schedulePump()
+    // will be called again once a replacement worker is available.
+    if (this.pool.length === 0) return;
     // Lazy sort: only re-order when new tiles were inserted since the
     // last sort (queueDirty=true). setViewport() sorts immediately and
     // clears the flag, so this is a no-op after a viewport change.
