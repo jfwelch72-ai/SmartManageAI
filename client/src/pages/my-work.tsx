@@ -2,21 +2,19 @@ import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useInfiniteQuery, useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { format, formatDistanceToNowStrict, isToday, isPast } from "date-fns";
+import { format } from "date-fns";
 import {
   Briefcase,
   CheckCircle2,
-  CheckSquare,
   ClipboardList,
   ExternalLink,
   FileText,
   Inbox,
   Search,
-  ShieldCheck,
   Users,
   X,
-  type LucideIcon,
 } from "lucide-react";
+import { TYPE_META, dueColor, dueLabel, type MyWorkType } from "@/lib/workItemUtils";
 import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -57,7 +55,6 @@ import ViewSwitcher, { type ViewType } from "@/components/ViewSwitcher";
 import SavedViewsDropdown, { type BuiltInView } from "@/components/SavedViewsDropdown";
 import EntityCalendarView, { type CalendarEntityItem } from "@/components/EntityCalendarView";
 
-type MyWorkType = "TASK" | "CRM_TASK" | "PUNCH" | "RFI" | "INSPECTION";
 type Bucket = "overdue" | "today" | "thisWeek" | "later" | "none";
 
 interface MyWorkItem {
@@ -98,39 +95,6 @@ interface MyWorkResponse {
     byType: Record<MyWorkType, number>;
   };
 }
-
-const TYPE_META: Record<MyWorkType, { label: string; short: string; icon: LucideIcon; badgeClass: string }> = {
-  TASK: {
-    label: "Project Task",
-    short: "TASK",
-    icon: CheckSquare,
-    badgeClass: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-800",
-  },
-  CRM_TASK: {
-    label: "CRM Task",
-    short: "CRM",
-    icon: Briefcase,
-    badgeClass: "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-800",
-  },
-  PUNCH: {
-    label: "Punch Item",
-    short: "PUNCH",
-    icon: ClipboardList,
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-800",
-  },
-  RFI: {
-    label: "RFI",
-    short: "RFI",
-    icon: FileText,
-    badgeClass: "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900 dark:text-violet-200 dark:border-violet-800",
-  },
-  INSPECTION: {
-    label: "Inspection",
-    short: "INSP",
-    icon: ShieldCheck,
-    badgeClass: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900 dark:text-rose-200 dark:border-rose-800",
-  },
-};
 
 const ALL_SOURCES: MyWorkType[] = ["TASK", "CRM_TASK", "PUNCH", "RFI", "INSPECTION"];
 const PRIORITIES = ["ALL", "CRITICAL", "HIGH", "MEDIUM", "LOW", "NORMAL"];
@@ -181,21 +145,6 @@ const BUILT_IN_VIEWS: BuiltInView<Filters>[] = [
     apply: { view: "calendar", filters: DEFAULT_FILTERS },
   },
 ];
-
-function dueColor(item: MyWorkItem): string {
-  if (!item.dueDate) return "text-muted-foreground";
-  const d = new Date(item.dueDate);
-  if (isPast(d) && !isToday(d)) return "text-red-600 dark:text-red-400";
-  if (isToday(d)) return "text-amber-600 dark:text-amber-400";
-  return "text-muted-foreground";
-}
-
-function dueLabel(item: MyWorkItem): string {
-  if (!item.dueDate) return "No due date";
-  const d = new Date(item.dueDate);
-  if (isToday(d)) return "Due today";
-  return `${format(d, "MMM d")} · ${formatDistanceToNowStrict(d, { addSuffix: true })}`;
-}
 
 function dueDateForBucket(bucket: Bucket): Date | null {
   const now = new Date();

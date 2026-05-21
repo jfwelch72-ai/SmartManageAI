@@ -1,21 +1,15 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { format, formatDistanceToNowStrict, isToday, isPast, startOfDay, endOfDay, addDays } from "date-fns";
+import { startOfDay, endOfDay, addDays } from "date-fns";
 import {
   Sun,
-  CheckSquare,
-  FileText,
-  FileSignature,
-  ClipboardList,
-  ShieldCheck,
-  Briefcase,
   ExternalLink,
   CheckCircle2,
   X,
   Inbox,
-  type LucideIcon,
 } from "lucide-react";
+import { MY_DAY_TYPE_META, dueColor, dueLabel, type MyDayType } from "@/lib/workItemUtils";
 import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,8 +20,6 @@ import { EmptyState } from "@/components/EmptyState";
 import { cn } from "@/lib/utils";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-
-type MyDayType = "TASK" | "RFI" | "SUBMITTAL" | "PUNCH" | "APPROVAL" | "CRM_TASK";
 
 interface MyDayItem {
   id: string;
@@ -65,45 +57,6 @@ interface MyDayResponse {
   };
 }
 
-const TYPE_META: Record<MyDayType, { label: string; short: string; icon: LucideIcon; badgeClass: string }> = {
-  TASK: {
-    label: "Task",
-    short: "TASK",
-    icon: CheckSquare,
-    badgeClass: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-800",
-  },
-  RFI: {
-    label: "RFI",
-    short: "RFI",
-    icon: FileText,
-    badgeClass: "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900 dark:text-violet-200 dark:border-violet-800",
-  },
-  SUBMITTAL: {
-    label: "Submittal",
-    short: "SUB",
-    icon: FileSignature,
-    badgeClass: "bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900 dark:text-emerald-200 dark:border-emerald-800",
-  },
-  PUNCH: {
-    label: "Punch",
-    short: "PUNCH",
-    icon: ClipboardList,
-    badgeClass: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900 dark:text-amber-200 dark:border-amber-800",
-  },
-  APPROVAL: {
-    label: "Approval",
-    short: "APPR",
-    icon: ShieldCheck,
-    badgeClass: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900 dark:text-rose-200 dark:border-rose-800",
-  },
-  CRM_TASK: {
-    label: "CRM Task",
-    short: "CRM",
-    icon: Briefcase,
-    badgeClass: "bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-800",
-  },
-};
-
 const FILTER_TYPES: { value: MyDayType; label: string }[] = [
   { value: "TASK", label: "Tasks" },
   { value: "RFI", label: "RFIs" },
@@ -125,22 +78,6 @@ function bucketFor(item: MyDayItem, now: Date): Bucket {
   if (d <= todayEnd) return "today";
   if (d <= weekEnd) return "thisWeek";
   return "later";
-}
-
-function dueColor(item: MyDayItem): string {
-  if (!item.dueDate) return "text-muted-foreground";
-  const d = new Date(item.dueDate);
-  if (isPast(d) && !isToday(d)) return "text-red-600 dark:text-red-400";
-  if (isToday(d)) return "text-amber-600 dark:text-amber-400";
-  return "text-muted-foreground";
-}
-
-function dueLabel(item: MyDayItem): string {
-  if (!item.dueDate) return "No due date";
-  const d = new Date(item.dueDate);
-  if (isToday(d)) return "Due today";
-  const rel = formatDistanceToNowStrict(d, { addSuffix: true });
-  return `${format(d, "MMM d")} · ${rel}`;
 }
 
 const SECTION_LABELS: Record<Bucket, { title: string; description: string; testId: string }> = {
@@ -510,7 +447,7 @@ function Row({
   onComplete: () => void;
   completing: boolean;
 }) {
-  const meta = TYPE_META[item.type];
+  const meta = MY_DAY_TYPE_META[item.type];
   const Icon = meta.icon;
   return (
     <div className="flex items-center gap-3 p-3 hover-elevate" data-testid={`row-${item.type.toLowerCase()}-${item.id}`}>

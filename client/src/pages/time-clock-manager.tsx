@@ -55,6 +55,7 @@ import {
   Timer,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { Link } from "wouter";
 import { ContextualHelpButton } from "@/components/ContextualHelpButton";
 
 export default function TimeClockManagerPage() {
@@ -1004,242 +1005,24 @@ export default function TimeClockManagerPage() {
           {/* Time Entry Approvals Tab */}
           <TabsContent value="time-entries" data-testid="content-time-entries">
             <Card>
-              <CardHeader className="space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-4">
-                  <CardTitle className="flex items-center gap-2">
-                    <FileText className="w-5 h-5" />
-                    Time Entry Approvals
-                    <Badge
-                      variant="secondary"
-                      data-testid="badge-entries-total"
-                    >
-                      {pendingEntries.length}
-                    </Badge>
-                  </CardTitle>
-
-                  <div className="flex items-center gap-2">
-                    {selectedEntryIds.length > 0 && (
-                      <Button
-                        variant="default"
-                        onClick={handleBulkApprove}
-                        disabled={bulkApproveTimeEntries.isPending}
-                        data-testid="button-bulk-approve"
-                      >
-                        <CheckCircle className="w-4 h-4 mr-2" />
-                        Approve Selected ({selectedEntryIds.length})
-                      </Button>
-                    )}
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search employee or project..."
-                        className="pl-9 w-[250px]"
-                        value={entrySearchTerm}
-                        onChange={(e) => setEntrySearchTerm(e.target.value)}
-                        data-testid="input-search-entries"
-                      />
-                    </div>
-                    {entrySearchTerm && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setEntrySearchTerm("")}
-                        data-testid="button-clear-entry-search"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
-                {entrySearchTerm && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">
-                      Filtering:
-                    </span>
-                    <Badge variant="secondary" className="gap-1">
-                      "{entrySearchTerm}"
-                      <X
-                        className="w-3 h-3 cursor-pointer"
-                        onClick={() => setEntrySearchTerm("")}
-                      />
-                    </Badge>
-                    <span className="text-sm text-muted-foreground">
-                      ({filteredPendingEntries.length} of{" "}
-                      {pendingEntries.length} entries)
-                    </span>
-                  </div>
-                )}
-              </CardHeader>
-              <CardContent>
-                {entriesLoading ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    Loading pending time entries...
-                  </div>
-                ) : filteredPendingEntries.length === 0 ? (
-                  <div className="text-center py-12 text-muted-foreground">
-                    {entrySearchTerm
-                      ? "No entries match your search"
-                      : "No pending time entry approvals"}
-                  </div>
-                ) : (
+              <CardContent className="py-12">
+                <div className="flex flex-col items-center gap-4 text-center">
+                  <FileText className="w-10 h-10 text-muted-foreground" />
                   <div>
-                    <div className="flex items-center gap-2 flex-wrap mb-3">
-                      <Checkbox
-                        checked={
-                          selectedEntryIds.length ===
-                            filteredPendingEntries.length &&
-                          filteredPendingEntries.length > 0
-                        }
-                        onCheckedChange={toggleAllEntries}
-                        data-testid="checkbox-select-all"
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        Select all
-                      </span>
-                    </div>
-                    <div className="space-y-3">
-                      {filteredPendingEntries.map((entry: any) => (
-                        <div
-                          key={entry.id}
-                          className="p-4 rounded-md border"
-                          data-testid={`row-entry-${entry.id}`}
-                        >
-                          <div className="flex items-start gap-3">
-                            <div className="pt-1">
-                              <Checkbox
-                                checked={selectedEntryIds.includes(entry.id)}
-                                onCheckedChange={() =>
-                                  toggleEntrySelection(entry.id)
-                                }
-                                data-testid={`checkbox-entry-${entry.id}`}
-                              />
-                            </div>
-                            <div className="flex-1 min-w-0 space-y-2">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="space-y-2 flex-1 min-w-0">
-                                  <div
-                                    className="flex items-center gap-2 flex-wrap"
-                                    data-testid={`cell-entry-employee-${entry.id}`}
-                                  >
-                                    <span className="font-medium">
-                                      {entry.userName}
-                                    </span>
-                                    <Badge
-                                      variant="secondary"
-                                      className="text-xs"
-                                    >
-                                      {entry.userRole}
-                                    </Badge>
-                                  </div>
-                                  <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
-                                    <div
-                                      className="flex items-center gap-1 flex-wrap"
-                                      data-testid={`cell-entry-project-${entry.id}`}
-                                    >
-                                      <Briefcase className="w-3.5 h-3.5 shrink-0" />
-                                      <span>
-                                        {entry.projectName || "Unknown"}
-                                      </span>
-                                      {entry.projectCode && (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs ml-1"
-                                        >
-                                          {entry.projectCode}
-                                        </Badge>
-                                      )}
-                                    </div>
-                                    <span
-                                      data-testid={`cell-entry-date-${entry.id}`}
-                                    >
-                                      {format(
-                                        new Date(entry.date),
-                                        "MMM d, yyyy",
-                                      )}
-                                    </span>
-                                  </div>
-                                  <div className="flex items-center gap-3 flex-wrap">
-                                    <div
-                                      className="flex items-center gap-1 text-sm"
-                                      data-testid={`cell-entry-regular-${entry.id}`}
-                                    >
-                                      <Clock className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                                      <span>
-                                        {entry.hoursRegular || "0"}h regular
-                                      </span>
-                                    </div>
-                                    {entry.hoursOvertime &&
-                                      parseFloat(entry.hoursOvertime) > 0 && (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-amber-600 dark:text-amber-400"
-                                          data-testid={`cell-entry-overtime-${entry.id}`}
-                                        >
-                                          +{entry.hoursOvertime}h OT
-                                        </Badge>
-                                      )}
-                                  </div>
-                                  {entry.notes && (
-                                    <p
-                                      className="text-sm text-muted-foreground truncate max-w-[300px]"
-                                      data-testid={`cell-entry-notes-${entry.id}`}
-                                    >
-                                      {entry.notes}
-                                    </p>
-                                  )}
-                                </div>
-                                <div className="text-right shrink-0">
-                                  <p className="text-lg font-bold">
-                                    {entry.hoursRegular || "0"}h
-                                  </p>
-                                  <p className="text-xs text-muted-foreground">
-                                    regular
-                                  </p>
-                                </div>
-                              </div>
-                              <div
-                                className="flex items-center gap-2 flex-wrap"
-                                data-testid={`cell-entry-actions-${entry.id}`}
-                              >
-                                <Button
-                                  size="sm"
-                                  variant="default"
-                                  onClick={() => handleApproveEntry(entry.id)}
-                                  disabled={approveTimeEntry.isPending}
-                                  data-testid={`button-approve-entry-${entry.id}`}
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-1" />
-                                  Approve
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="destructive"
-                                  onClick={() => openRejectEntryDialog(entry)}
-                                  disabled={rejectTimeEntry.isPending}
-                                  data-testid={`button-reject-entry-${entry.id}`}
-                                >
-                                  <XCircle className="w-4 h-4 mr-1" />
-                                  Reject
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {pendingEntries.length > 0 && (
-                  <div className="mt-6 p-4 bg-accent/50 rounded-lg">
-                    <p className="text-sm text-muted-foreground">
-                      <DollarSign className="inline w-4 h-4 mr-1" />
-                      Approved time entries will be forwarded to the Office
-                      Manager for payroll processing.
+                    <p className="text-lg font-semibold">Time Entry Approvals</p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Review and approve employee time entries on the dedicated Time Entry Management page.
                     </p>
+                    {pendingEntries.length > 0 && (
+                      <p className="text-sm font-medium text-amber-600 dark:text-amber-400 mt-2">
+                        {pendingEntries.length} entr{pendingEntries.length === 1 ? "y" : "ies"} pending approval
+                      </p>
+                    )}
                   </div>
-                )}
+                  <Button asChild data-testid="link-go-to-time-entry">
+                    <Link href="/time-entry">Go to Time Entry Management</Link>
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
