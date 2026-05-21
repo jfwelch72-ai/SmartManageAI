@@ -1,5 +1,15 @@
 # Feature D: Vendor Pricing Sync
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/vendorPricebookRoutes.ts`, `server/ai/vendorPriceListExtractor.ts`, and `client/src/pages/vendor-pricing.tsx` + `client/src/pages/pricebook-import.tsx`.
+>
+> **Implementation notes vs. spec:**
+> - AI-assisted column mapping in `server/ai/vendorPriceListExtractor.ts` uses `routedGeneralChatCompletion` (Anthropic Claude primary). Original spec assumed OpenAI-only.
+> - Pricebook import flow: CSV/XLSX upload → AI column-map suggestion → user confirmation → import to `vendorPricebooks` / `vendorPriceItems` tables.
+> - Material price index (`/material-price-index`) provides trend analysis.
+> - Vendor pricing syncs into bid estimates and material calculators via UI dropdowns.
+
+---
+
 ## Overview
 Allows vendors/suppliers to upload pricing catalogs (materials, rentals, trucking) and sync them into calculators, bids, and estimates. The system maps vendor items to **trade-specific** material categories and SOW items, maintaining price history for trend analysis.
 

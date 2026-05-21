@@ -452,19 +452,38 @@ Labor hours exceed estimate, triggering alerts and management review.
 
 ### Scenario 8: Multi-Org Access (Hustler)
 
-**Who Logs In:** HUSTLER
+**Who Logs In:** HUSTLER (user with role = HUSTLER, linked to 2+ orgs via `hustler_organizations`)
+
+**Setup:**
+- HUSTLER user must have entries in `hustler_organizations` table for at least two orgs
+- Each org entry has an `effectiveRole` (e.g., MANAGER) that controls access within that org
+- Link created by an ADMIN via org settings (link request flow) or Super Admin console
 
 **Steps:**
 1. Navigate to `/hustler-dashboard`
-2. View consolidated metrics across organizations
-3. Switch organization using org switcher
-4. Verify data changes to new org context
-5. Return to portfolio view
+2. Verify consolidated portfolio view shows:
+   - Aggregate metrics (projects, bids, cash position) across all linked orgs
+   - Benchmarking comparison between linked orgs
+3. Click on a specific organization to switch context
+4. System calls `POST /api/hustler/switch-org` → sets `organizationId` in session + applies `effectiveRole`
+5. Navigate to `/projects` — should show only that org's projects
+6. Navigate to `/bids` — should show only that org's bids
+7. Return to `/hustler-dashboard` to switch back to portfolio view
+8. Attempt to navigate to `/hustler-dashboard/some-unlinked-org-id` — should 403
 
 **Verify:**
-- Data from all owned orgs visible in portfolio
-- Individual org access shows only that org's data
-- Cannot access orgs not owned/delegated
+- Data from all owned orgs visible in portfolio view
+- After org switch: only the switched org's data visible everywhere
+- `effectiveRole` (e.g., MANAGER) enforced — if effectiveRole is MANAGER, cannot access `/users` or `/platform-admin`
+- Cannot access orgs not linked in `hustler_organizations`
+- ROLE_GRANTED / ROLE_REVOKED audit entries written when link is added or removed (check `audit_log`)
+
+**Audit Log Check:**
+```sql
+SELECT * FROM audit_log
+WHERE entity_type = 'hustler_organizations'
+ORDER BY created_at DESC LIMIT 5;
+```
 
 ---
 
@@ -492,23 +511,53 @@ Labor hours exceed estimate, triggering alerts and management review.
 
 ---
 
-### Scenario 10: Cross-Tenant Isolation Test
+### Scenario 10: Cross-Tenant Isolation Test (RLS + Application Layer)
 
-**Critical Security Test**
+**Critical Security Test — Must Pass Before Any Production Deployment**
 
 **Who Logs In:** User from Organization A
 
 **Steps:**
-1. Note your organizationId
-2. Attempt to access projects:
-   - Your projects → should work
-   - Direct URL with Org B project ID → should fail/404
-3. Check API responses don't leak data from other orgs
+1. Note your `organizationId` (visible in company settings or `GET /api/auth/me`)
+2. Note the ID of an active project belonging to your org (e.g., `prj-id-A`)
+3. Obtain (from a test seed) the ID of a project belonging to Org B (e.g., `prj-id-B`)
+
+**Application-layer test:**
+4. `GET /api/projects/prj-id-B` → should return **404** (not 403, not the project data)
+5. `GET /api/bids/code-from-org-B` → should return **404**
+6. `POST /api/projects/prj-id-B/notes` with valid body → should return **404**
+
+**RLS layer test (dev only):**
+7. Connect to the dev DB directly
+8. SET `app.current_org_id = '<org-A-id>'`
+9. `SELECT * FROM projects WHERE id = 'prj-id-B'` → should return **0 rows** (RLS drops it)
+10. Try without setting `app.current_org_id` → RLS forces empty result set (not superadmin mode)
 
 **Verify:**
-- All queries filter by organizationId
-- No data from other organizations visible
-- API returns 404 or 403 for other org's data
+- All queries filter by `organizationId` at the application layer
+- No data from other organizations visible through any API endpoint
+- Postgres RLS additionally enforces isolation even if application code has a bug
+- `STRICT_TENANT_RLS=true` must be set in any environment where this test is run against prod data
+
+### Scenario 11: Auth Event Audit Trail
+
+**Who Logs In:** Any user
+
+**Steps:**
+1. Log in successfully → verify `LOGIN` action in `audit_log`
+2. Log in with wrong password → verify `LOGIN_FAILED` action
+3. Trigger password reset flow → verify `PASSWORD_RESET_REQUESTED` then `PASSWORD_RESET`
+4. Enable 2FA (`/api/account/2fa/verify`) → verify `MFA_ENABLED`
+5. Disable 2FA (`/api/account/2fa/disable`) → verify `MFA_DISABLED`
+6. Log out → verify `LOGOUT`
+
+**SQL check (Super Admin / dev):**
+```sql
+SELECT action, entity_type, created_at
+FROM audit_log
+WHERE user_id = '<your-user-id>'
+ORDER BY created_at DESC LIMIT 20;
+```
 
 ---
 
@@ -521,11 +570,12 @@ Use this checklist to verify complete scenario coverage:
 - [ ] Scenario 3: Delay documentation and escalation
 - [ ] Scenario 4: Equipment tracking and maintenance
 - [ ] Scenario 5: T&M ticket to invoice
-- [ ] Scenario 6: AI task generation
+- [ ] Scenario 6: AI task generation (requires `ANTHROPIC_API_KEY` in env)
 - [ ] Scenario 7: Budget overrun detection
-- [ ] Scenario 8: Multi-org access (if applicable)
+- [ ] Scenario 8: Multi-org access — HUSTLER role + `hustler_organizations` link
 - [ ] Scenario 9: Password reset
-- [ ] Scenario 10: Multi-tenant isolation security
+- [ ] Scenario 10: Multi-tenant isolation security (application + RLS layers)
+- [ ] Scenario 11: Auth event audit trail
 
 ---
 

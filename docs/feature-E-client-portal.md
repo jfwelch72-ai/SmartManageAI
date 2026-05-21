@@ -1,5 +1,16 @@
 # Feature E: Customer/Client Portal
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/clientPortalRoutes.ts` (authenticated token-based portal access) and `client/src/components/ClientPortal.tsx` + the client portal page(s).
+>
+> **Implementation notes vs. spec:**
+> - Access via time-limited signed token link (not full user account). Portal users cannot log in via the main auth flow.
+> - Rate-limited via `authLimiter` on the portal verify endpoint to prevent brute-force token guessing.
+> - Portal displays: project status, milestone progress, change orders (approved/pending), uploaded documents, key contacts, and trade-specific terminology.
+> - No internal financial data (labor costs, payroll, vendor pricing) is ever exposed — enforced at the API level.
+> - Read-only; all portal requests are unauthenticated-equivalent (no org context write access).
+
+---
+
 ## Overview
 Provides a secure, read-only portal for clients/owners to view project status, schedules, photos, change orders, and key documents without access to internal contractor data. The portal adapts its display based on the **trade type** of the contractor, showing trade-relevant progress markers and terminology.
 

@@ -652,6 +652,120 @@ Production Rate Analysis (All projects with same SOW item)
 
 ---
 
+## Section 7 — Developer Quick Reference (Updated May 2026)
+
+### Key File Locations
+
+| What You Need | Where to Find It |
+|---------------|-----------------|
+| Database schema | `shared/schema/features/` (domain-split files; re-exported from `shared/schema/index.ts`) |
+| Express routes | `server/routes.ts`, `server/bidRoutes2.ts`, `server/aiRoutes.ts`, etc. |
+| Org context / RLS | `server/dbContext.ts` (`withOrgContext`, `runAsSuperadmin`, `withJobOrgContext`) |
+| AI provider router | `server/ai/providers/index.ts` (`routedChatCompletion`, `routedGeneralChatCompletion`) |
+| Prompt-injection guard | `server/ai/promptInjectionGuard.ts` |
+| Job queue | `server/jobQueue/index.ts` (pg-boss singleton) |
+| Worker process | `server/worker.ts` |
+| Bids domain seam (canonical example) | `server/bids/storage.ts` + `server/bids/storage.drizzle.ts` |
+| Auth | `server/auth.ts` |
+| Audit logger | `server/auditLogger.ts` |
+
+---
+
+### Required Environment Variables (local dev)
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | PostgreSQL connection string (Neon dev branch) |
+| `SESSION_SECRET` | JWT signing key — server fails fast on boot if missing |
+| `ANTHROPIC_API_KEY` | Primary AI provider — required for all AI features |
+| `OPENAI_API_KEY` | AI fallback + Vision pipelines |
+
+`STRICT_TENANT_RLS` is **not** required in dev (default off), but **must be `true`** in production.
+
+---
+
+### Green-Baseline Rules
+
+All three of these must stay green:
+
+1. **`Start application`** workflow — Express + Vite dev server on port 5000
+2. **`artifacts/mockup-sandbox: Component Preview Server`** — at `/__mockup/`
+3. **`typecheck`** — `tsc --build` (TypeScript project references). Zero errors — no `// @ts-ignore`, `// @ts-expect-error`, or `as any`.
+
+Run the full CI baseline before committing:
+```bash
+scripts/ci.sh  # typecheck + build + smoke + all CI guards
+```
+
+---
+
+### New Developer Gotchas (2026 additions to Section 6)
+
+#### 12. Using the Old Storage Monolith
+
+**Mistake:** Importing from `server/storage.ts` or importing a bare `./storage` path in server code.
+
+**Result:** Build fails — `check-legacy-storage.mjs` CI guard rejects it.
+
+**Fix:** Use the per-domain storage seam pattern (see `server/bids/storage.drizzle.ts`). Create an interface in `server/<domain>/storage.ts` and a Drizzle implementation.
+
+---
+
+#### 13. Calling OpenAI Directly Without the Provider Router
+
+**Mistake:** `openai.chat.completions.create(...)` in a new server file without importing the router.
+
+**Result:** Build fails — `check-ai-router-bypass.mjs` CI guard rejects it.
+
+**Fix:** Use `routedGeneralChatCompletion` or `routedChatCompletion` from `server/ai/providers/`. If you genuinely need a direct call (e.g., Vision pipeline with `image_url`), add an annotated bypass at the top of the file:
+```typescript
+// ai-router-bypass: vision (image_url) pipeline uses OpenAI-specific typed message shapes
+```
+
+---
+
+#### 14. Accessing the DB in a Background Job Without Tenant Context
+
+**Mistake:** Job handler calls `db.select().from(myTable)` directly.
+
+**Result:** Build fails — `check-job-context.mjs` CI guard rejects it. In production, the query also returns 0 rows (RLS blocks it silently).
+
+**Fix:** Wrap with the appropriate context:
+```typescript
+// Per-tenant job:
+await withJobOrgContext("myJob", payload.organizationId, async () => {
+  const rows = await db.select().from(myTable);
+});
+
+// Cross-tenant system job (no org filter):
+await withSystemJobContext("myJob", async () => {
+  const rows = await db.select().from(myTable);
+});
+```
+
+---
+
+#### 15. Sending Untrusted Text to the LLM Without Quarantine
+
+**Mistake:** Including user-uploaded document text directly in a system prompt or user message.
+
+**Result:** Build fails — `check-prompt-injection-guard.mjs` CI guard rejects the file.
+
+**Fix:** Import and use the guard:
+```typescript
+import { quarantineUntrustedText, detectPromptInjection, validateAiJsonOutput } from "./ai/promptInjectionGuard";
+```
+
+---
+
+#### 16. Schema File Location Changed
+
+**Mistake:** `import { myTable } from "@shared/schema"` assumes a single flat schema.ts.
+
+**Reality:** Schema is now split into `shared/schema/features/*.ts`, re-exported from `shared/schema/index.ts`. The barrel import still works, but when adding new tables, put them in the appropriate feature file (or create a new one if the domain is new).
+
+---
+
 ## Cross-References
 
 - [SYSTEM_FEATURE_BIBLE.md](./SYSTEM_FEATURE_BIBLE.md) - Complete feature documentation

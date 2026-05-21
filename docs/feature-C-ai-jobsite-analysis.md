@@ -1,5 +1,15 @@
 # Feature C: AI Jobsite Camera Analysis
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/aiRoutes.ts` (AI jobsite analysis endpoints) and `client/src/components/AiJobsiteAnalysis.tsx` (frontend).
+>
+> **Implementation notes vs. spec:**
+> - Uses OpenAI Vision API (annotated bypass: `// ai-router-bypass: vision pipeline`) since analysis requires `image_url` content type — a known Anthropic/OpenAI routing split.
+> - All untrusted image metadata and description text passes through `quarantineUntrustedText` before being sent to the LLM.
+> - Results are `validateAiJsonOutput` schema-checked before any DB write.
+> - Supports 5 output categories: SAFETY_ISSUE, PROGRESS, MATERIAL_USAGE, CREW_PRESENCE, SITE_CONDITIONS — same as spec.
+
+---
+
 ## Overview
 Enables users to upload jobsite photos for AI-powered analysis detecting safety issues, work progress, material usage, crew presence, and site conditions. Analysis is **trade-specific**, recognizing trade-relevant PPE, hazards, work quality, and completion markers.
 

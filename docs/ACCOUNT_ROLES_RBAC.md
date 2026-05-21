@@ -1,20 +1,26 @@
 # Account Roles & RBAC
 
+> **Last updated:** May 2026. Source of truth for roles is `client/src/lib/rbac.ts` and `server/auth.ts`. This document reflects the live codebase as of Task #2495 (auth audit events) and Task #2851 (Anthropic primary AI).
+
 ## Role Definitions
 
-SmartManageAI uses 10 user roles with hierarchical permissions.
+SmartManageAI uses **18 user roles** with hierarchical permissions, divided into four tiers: Platform, Organization Admin, Management, and Field/External.
+
+---
 
 ### SUPER_ADMIN
-**Purpose:** Platform-level administrator with access to all organizations.
+**Purpose:** Platform-level administrator with cross-tenant access.
 
 **Capabilities:**
-- Access all organizations
-- Manage platform settings
-- View audit logs across platform
-- Access support tools
-- Manage subscriptions
+- Access all organizations (via explicit `runAsSuperadmin` escape hatch)
+- Manage platform settings, feature flags, subscriptions
+- View audit logs across all organizations
+- Access support tools and job queue admin
+- Every cross-tenant DB elevation writes a row to `superadmin_access_log` before elevating
 
-**Data Access:** All data across all organizations
+**Data Access:** All data across all organizations — but only through `runAsSuperadmin(reason, fn)`, which fails closed if the audit insert fails.
+
+**Key Files:** `server/platformAdminRoutes.ts`, `server/dbContext.ts`
 
 ---
 
@@ -23,11 +29,11 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 
 **Capabilities:**
 - Full access to all organization features
-- User management (create, edit, deactivate)
-- Company settings configuration
+- User management (create, edit, deactivate, role assignment)
+- Company settings and branding configuration
 - Billing and subscription management
 - All project and financial access
-- AI feature configuration
+- AI feature configuration and feature flag management
 
 **Data Access:** All data within their organization
 
@@ -37,11 +43,11 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Purpose:** Project manager overseeing multiple projects.
 
 **Capabilities:**
-- Project management (create, edit)
+- Project management (create, edit, status transitions)
 - Bid management and estimating
-- View and manage all projects
+- View and manage all projects within org
 - Approve time entries
-- Access financial reports
+- Access financial reports and CFO dashboard
 - Manage crews and assignments
 - CRM access
 
@@ -55,11 +61,12 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Capabilities:**
 - Time clock approval for assigned projects
 - Daily notes and progress tracking
-- Delay documentation
+- Delay documentation and submission
 - Inspection management
 - T&M ticket creation
 - Equipment assignment
 - Crew management
+- View-only access to bids
 
 **Data Access:** Assigned projects only
 
@@ -71,12 +78,13 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Capabilities:**
 - Bid creation and management
 - Estimate development
-- Takeoff measurements
+- Takeoff measurements (including AI auto-takeoff)
 - Vendor quote collection
 - Cost analysis
 - Proposal generation
+- Can edit projects they are assigned to as estimator
 
-**Data Access:** All bids and related estimates
+**Data Access:** All bids and related estimates within organization
 
 ---
 
@@ -84,11 +92,11 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Purpose:** Administrative staff handling office operations.
 
 **Capabilities:**
-- Payroll processing
-- Billing and invoicing
+- Payroll processing (pay runs, time approvals)
+- Billing and invoicing (SoV, AIA pay applications)
 - Document management
-- Vendor coordination
-- Schedule of values
+- Vendor coordination and payables
+- Schedule of values management
 - Subcontractor payables
 - Calendar management
 
@@ -96,17 +104,31 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 
 ---
 
+### PROJECT_ENGINEER
+**Purpose:** RFIs, submittals, document control, drawings, change events.
+
+**Capabilities:**
+- RFI creation and tracking
+- Submittal management
+- Drawing management
+- Change event initiation
+- No payroll or banking access
+
+**Data Access:** Project documents within assigned projects
+
+---
+
 ### HOURLY_EMPLOYEE
 **Purpose:** Field worker with basic access.
 
 **Capabilities:**
-- Clock in/out
-- View assigned projects
+- Clock in/out (GPS-tracked)
+- View assigned ACTIVE projects
 - Submit time entries
 - View own time records
 - Basic messaging
 
-**Data Access:** Own records and assigned project info
+**Data Access:** Own records and assigned project info only
 
 ---
 
@@ -114,14 +136,38 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Purpose:** Equipment and maintenance specialist.
 
 **Capabilities:**
-- Equipment management
-- Maintenance scheduling
-- Work order creation
-- Repair tracking
-- Rental coordination
+- Equipment registry management
+- Maintenance scheduling and work orders
+- Repair tracking and rental coordination
 - Utilization analysis
+- Limited access to other modules
 
 **Data Access:** Equipment and maintenance data
+
+---
+
+### HUSTLER
+**Purpose:** Multi-organization business owner or executive overseeing several contracting firms.
+
+**Capabilities:**
+- Switch between linked organizations
+- Executive dashboard with consolidated metrics across all linked orgs
+- Consolidated reporting and benchmarking
+- Portfolio analysis and cross-org comparison
+- Management-level access within each linked organization
+- Can delegate access to COO/CFO via link requests
+
+**Data Access:** Management-level access across all linked organizations
+
+**Implementation Details:**
+- Role stored as `HUSTLER` on the user's `role` field
+- Org membership tracked in `hustler_organizations` table
+- `effectiveRole` field in `hustler_organizations` grants the HUSTLER user a scoped privilege level within each linked org
+- Org switching via `POST /api/hustler/switch-org` updates the active org context
+- Link requests approved via `/hustler/link-requests/respond`, `/accept-invite`, `/accept-token`
+- ROLE_GRANTED / ROLE_REVOKED audit entries written on link add/remove
+
+**Key Files:** `server/hustlerRoutes.ts`, `shared/schema/features/hustler.ts`
 
 ---
 
@@ -129,28 +175,26 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 **Purpose:** External vendor portal access.
 
 **Capabilities:**
-- View pricing requests
-- Submit quotes
+- View pricing requests from enrolled clients
+- Submit quotes to enrolled clients
 - Manage vendor profile
-- View purchase orders
+- View purchase orders directed to them
 - Communication access
 
-**Data Access:** Vendor-specific data only
+**Data Access:** Vendor-specific data only (no contractor internal data)
 
 ---
 
-### HUSTLER
-**Purpose:** Multi-organization business owner.
-
-**Capabilities:**
-- Switch between organizations
-- Executive dashboard across orgs
-- Consolidated reporting
-- Delegate access to COO/CFO
-- Portfolio analysis
-- Benchmarking across companies
-
-**Data Access:** All data across owned organizations
+### Additional Management Roles
+| Role | Primary Responsibility |
+|------|----------------------|
+| **DISPATCHER** | Crew and technician schedules, assignments, daily dispatch plans. No payroll or banking. |
+| **SAFETY_MANAGER** | Safety logs, incidents, training, certifications, jobsite roster. No payroll or banking. |
+| **HR_MANAGER** | Hiring, onboarding, employee profiles, certifications, performance. No banking or invoices. |
+| **EQUIPMENT_MANAGER** | Equipment registry, assignments, maintenance, utilization. No payroll or banking. |
+| **PROCUREMENT_MANAGER** | Material requests, POs, vendor catalogs, deliveries. No payroll or banking. |
+| **SALES** | CRM, leads, pipeline, proposals. No payroll, banking, or full financials. |
+| **MARKETING** | Marketing campaigns, lead sources, CRM analytics. No payroll or banking. |
 
 ---
 
@@ -161,8 +205,8 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 | Dashboard | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Projects | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
 | Project Detail | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | 🔒 | ✅ | - | ✅ |
-| Bids | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | ✅ |
-| Bid Detail | ✅ | ✅ | ✅ | - | ✅ | ✅ | - | - | - | ✅ |
+| Bids | ✅ | ✅ | ✅ | 👁 | ✅ | - | - | - | - | ✅ |
+| Bid Detail | ✅ | ✅ | ✅ | 👁 | ✅ | ✅ | - | - | - | ✅ |
 | Estimates | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | ✅ |
 | Users | ✅ | ✅ | ✅ | - | - | - | - | - | - | ✅ |
 | Time Clock | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | - | ✅ |
@@ -179,42 +223,48 @@ SmartManageAI uses 10 user roles with hierarchical permissions.
 | Delay Claims | ✅ | ✅ | ✅ | ✅ | - | - | - | - | - | ✅ |
 | Bid Network | ✅ | ✅ | ✅ | - | ✅ | - | - | - | - | ✅ |
 | Website Builder | ✅ | ✅ | - | - | - | - | - | - | - | ✅ |
+| Hustler Dashboard | - | - | - | - | - | - | - | - | - | ✅ |
+| Compliance Dashboard | ✅ | ✅ | ✅ | - | - | - | - | - | - | ✅ |
 | Platform Admin | ✅ | - | - | - | - | - | - | - | - | - |
 
 Legend:
 - ✅ = Full access
 - 🔒 = Limited/own records only
+- 👁 = View only
 - `-` = No access
 
 ---
 
 ## Data Boundaries
 
-### Organization Scoping
-All data is scoped to organizations. Users can only access data belonging to their organization.
+### Organization Scoping (Application Layer)
+All data is scoped to organizations through the org context middleware, which sets Postgres session variables consumed by RLS policies.
 
 ```typescript
-// Every query includes org filter
-const projects = await db.select()
-  .from(projects)
-  .where(eq(projects.organizationId, user.organizationId));
+// orgContextMiddleware wraps every authenticated request:
+withOrgContext({ organizationId: req.user.organizationId, isSuperadmin: false }, async () => {
+  // Every db.select() here is implicitly filtered by RLS
+});
 ```
+
+### Postgres Row-Level Security (Database Layer)
+Every multi-tenant table has a `tenant_isolation` RLS policy enabled with `FORCE`:
+
+```sql
+CREATE POLICY tenant_isolation ON <table>
+  USING (
+    current_setting('app.is_superadmin', true) = 'true'
+    OR organization_id = current_setting('app.current_org_id', true)
+  );
+```
+
+Even if application code forgets a WHERE clause, the database drops cross-tenant rows. `STRICT_TENANT_RLS=true` must be set in production; the server fails fast on boot otherwise.
 
 ### Project Scoping
-Some roles (SUPERINTENDENT, HOURLY_EMPLOYEE) may be limited to assigned projects:
-
-```typescript
-// Check project assignment
-const hasAccess = await checkProjectAssignment(userId, projectId);
-```
+Some roles (SUPERINTENDENT, HOURLY_EMPLOYEE) are limited to projects they are explicitly assigned to.
 
 ### Cross-Organization Access
-Only SUPER_ADMIN and HUSTLER roles can access multiple organizations:
-
-```typescript
-// HUSTLER can switch orgs
-const orgs = await getHustlerOrganizations(userId);
-```
+Only SUPER_ADMIN (via `runAsSuperadmin`) and HUSTLER (within linked orgs via `hustler_organizations`) can access multiple organizations.
 
 ---
 
@@ -227,7 +277,8 @@ const orgs = await getHustlerOrganizations(userId);
 ```typescript
 export function requireRole(...roles: string[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    const effectiveRole = req.user?.effectiveRole ?? req.user?.role;
+    if (!effectiveRole || !roles.includes(effectiveRole)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     next();
@@ -235,46 +286,68 @@ export function requireRole(...roles: string[]) {
 }
 ```
 
-**File:** `server/orgFilter.ts`
+**HUSTLER effectiveRole:** When a HUSTLER switches into an org, `effectiveRole` from `hustler_organizations` (e.g., `MANAGER`) is used instead of the literal `HUSTLER` role for permission checks within that org.
+
+**File:** `server/middleware/orgContext.ts`
 
 ```typescript
-export function applyOrgFilter(query: any, organizationId: string) {
-  return query.where(eq(table.organizationId, organizationId));
-}
+// Wraps every authenticated request automatically
+export const orgContextMiddleware = (req, res, next) => {
+  withOrgContext({ organizationId: req.user.organizationId, isSuperadmin: false }, next);
+};
+```
+
+**SUPER_ADMIN cross-tenant access:**
+```typescript
+// Must use explicit escape hatch — writes audit row before elevating
+await runAsSuperadmin("support-ticket-42", async () => {
+  // Queries here see all orgs
+}, { actorId: req.user.id });
 ```
 
 ### Frontend Enforcement
 
-**File:** `client/src/lib/protected-route.tsx`
+**File:** `client/src/lib/rbac.ts`
 
 ```typescript
-export function ProtectedRoute({ 
-  component: Component, 
-  permission 
-}: ProtectedRouteProps) {
-  const { user } = useAuth();
-  
-  if (permission && !hasPermission(user.role, permission)) {
-    return <Navigate to="/dashboard" />;
-  }
-  
-  return <Component />;
-}
-```
-
-### Route Permissions
-
-**File:** `client/src/App.tsx`
-
-```typescript
-const RoutePermissions = {
+export const RoutePermissions = {
   USERS: ["ADMIN", "MANAGER"],
   BIDS: ["ADMIN", "MANAGER", "ESTIMATOR"],
   TIME_CLOCK_MANAGER: ["ADMIN", "MANAGER", "SUPERINTENDENT", "OFFICE_MANAGER"],
   CFO: ["ADMIN", "OFFICE_MANAGER"],
+  HUSTLER: ["HUSTLER"],
+  PLATFORM_ADMIN: ["SUPER_ADMIN"],
   // ... more permissions
 };
 ```
+
+---
+
+## Session Management & Token Security
+
+### Token Versioning
+Every user has a `tokenVersion` integer. When a password changes or tokens are revoked, `tokenVersion` increments. Auth middleware validates `tokenVersion` on every request — stale JWTs are rejected immediately even within their TTL window.
+
+```typescript
+// Force-revoke all sessions for a user:
+await db.update(users).set({ tokenVersion: sql`token_version + 1` })
+  .where(eq(users.id, userId));
+```
+
+### Multi-Factor Authentication (MFA)
+- Users can enroll in TOTP-based 2FA via `/api/account/2fa/verify` (enable) and `/api/account/2fa/disable`
+- MFA enable/disable events are written to `audit_log` as `MFA_ENABLED` / `MFA_DISABLED` actions
+- Enforced based on organization policy
+
+### Account Security Features
+| Feature | Description |
+|---------|-------------|
+| bcrypt(10) | Password hashing |
+| `tokenVersion` | Instant revocation — all sessions invalidated on password change |
+| Failed login lockout | `failedLoginAttempts` + `lockedUntil` fields |
+| Password reset | Token-based, expiring, email via SendGrid |
+| Email verification | `verified` flag; required for sensitive operations |
+| Rate limiting | `authLimiter` (15/15min) on login, register, forgot-password, reset-password |
 
 ---
 
@@ -283,16 +356,14 @@ const RoutePermissions = {
 Beyond role-based access, features are gated by subscription tier and add-ons.
 
 ### Subscription Tiers
-
 | Tier | Features |
 |------|----------|
 | FREE | Basic project management, limited users |
 | STARTER | More users, basic reporting |
 | PROFESSIONAL | Full features, advanced reporting |
-| ENTERPRISE | Unlimited, custom integrations |
+| ENTERPRISE | Unlimited, custom integrations, SSO |
 
 ### Add-ons
-
 | Add-on | Key | Features |
 |--------|-----|----------|
 | AI PM | `ai_pm` | AI Project Manager, task automation |
@@ -302,8 +373,16 @@ Beyond role-based access, features are gated by subscription tier and add-ons.
 | Bid Network | `bid_network` | Platform bid solicitation |
 | AI Vision | `ai_vision` | Auto-takeoff, photo analysis |
 
-### Backend Feature Check
+### Feature Flag Permissions (Per-Org)
+Configurable via Super Admin UI:
+- `canAccessFinancials`, `canManagePayroll`, `canAccessReports`
+- `canUseAiFeatures`, `canManageWebsite`, `canPostSocialMedia`
+- `canManageEquipment`, `canManageProcurement`, `canManageContracts`
+- `canManageHiring`, `canManageSafety`, `canManageScheduling`
+- `canAccessBidNetwork`, `canManageLeave`, `canAccessTimeMaterial`
+- `AI_PROVIDER_TAKEOFF`, `AI_PROVIDER_GENERAL` — per-org Claude vs. OpenAI routing
 
+### Backend Feature Check
 **File:** `server/middleware/requireFeature.ts`
 
 ```typescript
@@ -318,53 +397,46 @@ export function requireFeature(feature: string) {
 }
 ```
 
-### Frontend Feature Check
-
-**File:** `client/src/hooks/useEntitlements.ts`
-
-```typescript
-const { hasFeature } = useEntitlements();
-
-if (hasFeature('ai_pm')) {
-  // Show AI PM features
-}
-```
-
 ---
 
-## Audit Trail
+## Audit Trail Coverage
 
-All permission-sensitive actions are logged:
-
-**Table:** `auditLog`
-
-| Field | Description |
-|-------|-------------|
-| userId | Who performed the action |
-| action | CREATE, UPDATE, DELETE, etc. |
-| entityType | What was affected |
-| entityId | Specific record ID |
-| organizationId | Tenant context |
-| changes | Before/after data |
-| createdAt | Timestamp |
+All permission-sensitive actions are logged to the append-only `audit_log` table. No DELETE or UPDATE routes are exposed on audit_log.
 
 **File:** `server/auditLogger.ts`
 
-```typescript
-export async function logCreate(
-  entityType: string,
-  entityId: string,
-  userId: string,
-  organizationId: string,
-  data: any
-) {
-  await db.insert(auditLog).values({
-    userId,
-    action: "CREATE",
-    entityType,
-    entityId,
-    organizationId,
-    changes: JSON.stringify(data),
-  });
-}
-```
+### Money-Path Coverage
+| Money Path | Covered |
+|------------|---------|
+| Pay runs (create/status/delete) | ✅ |
+| Change orders (create/status/approve) | ✅ |
+| Billing events (create) | ✅ |
+| AIA pay applications (create/status/record-payment) | ✅ |
+
+### Auth & Security Coverage (added Task #2495)
+| Event | Action Written |
+|-------|---------------|
+| Successful login | `LOGIN` |
+| Failed login | `LOGIN_FAILED` |
+| Logout | `LOGOUT` |
+| Password change | `PASSWORD_CHANGE` |
+| Password reset (complete) | `PASSWORD_RESET` |
+| Password reset (requested) | `PASSWORD_RESET_REQUESTED` |
+| MFA enabled | `MFA_ENABLED` |
+| MFA disabled | `MFA_DISABLED` |
+| Platform role change (`users.role`) | `ROLE_CHANGED` |
+| HUSTLER org link granted | `ROLE_GRANTED` |
+| HUSTLER org link revoked | `ROLE_REVOKED` |
+
+**`userId` type guarantee:** `logAudit` runtime-asserts that `userId` is a non-empty string to guard against the "pass the whole Express Request" footgun. A lint script at `scripts/audit-audit-logger-userid.mjs` enforces this.
+
+### Audit Log Table Schema
+| Field | Description |
+|-------|-------------|
+| userId | Who performed the action |
+| action | CREATE, UPDATE, DELETE, APPROVE, REJECT, LOGIN, LOGOUT, etc. |
+| entityType | What was affected (e.g., "projects", "upload_av_scan") |
+| entityId | Specific record ID |
+| organizationId | Tenant context |
+| newValue | JSON payload with before/after data |
+| createdAt | Timestamp |

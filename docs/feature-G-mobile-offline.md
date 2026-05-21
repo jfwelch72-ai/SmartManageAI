@@ -1,5 +1,25 @@
 # Feature G: Mobile App / Offline Field Mode
 
+> **Status: PARTIALLY IMPLEMENTED** — This doc was the original planning spec. Backend API support and offline-sync infrastructure have shipped. A native Expo mobile app is in active development.
+>
+> **What is implemented:**
+> - Backend REST API is fully mobile-compatible (JWT cookie auth works from native clients; all relevant endpoints support `application/json`).
+> - Offline sync infrastructure in `client/src/pages/offline-sync.tsx` and `client/src/pages/mobile-sync.tsx` — IndexedDB-backed queue with retry logic.
+> - Time clock (`/time-clock`) is mobile-optimized with GPS capture and works on iOS/Android browsers.
+> - Field workers can clock in/out, log daily notes, and submit scope progress from a mobile browser.
+> - Photo capture and upload work on mobile via the standard object storage flow.
+>
+> **What is still in progress:**
+> - Native Expo mobile app (iOS + Android) — in development. Talks to the same API with JWT cookie auth.
+> - Full offline-first data persistence (IndexedDB) for all modules — time clock and notes are done; full estimating/bids offline is not yet complete.
+> - Push notifications — not yet wired to a mobile push service.
+>
+> **Implementation notes vs. spec:**
+> - Background sync uses the pg-boss job queue (`server/worker.ts`) for server-side sync jobs rather than the original spec's REST-polling approach.
+> - Conflict resolution strategy: last-write-wins with server timestamp — same as spec.
+
+---
+
 ## Overview
 Provides backend API support and client scaffolding for mobile/field use with offline capabilities. The system enables field workers to access projects, clock in/out, log daily activities, and capture photos even without internet connectivity, with automatic sync when back online. Features are **trade-specific**, showing relevant tools and checklists for each trade.
 

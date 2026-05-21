@@ -2,7 +2,7 @@
 
 > The authoritative reference for every module, feature, integration, and user role in the SmartManageAI construction management platform.
 
-**Last validated:** April 2026
+**Last validated:** May 2026
 **Source of truth:** This document is derived from the live codebase — specifically the Drizzle schema files (`shared/schema/`), route registrations (`server/routes.ts`), RBAC configuration (`client/src/lib/rbac.ts`), and frontend page definitions (`client/src/App.tsx`). Features marked with *(flagged)* are gated behind feature flags and may not be enabled for all organizations. This document should be reviewed quarterly alongside the codebase to prevent drift.
 
 ---
@@ -88,7 +88,7 @@ The platform supports 70+ CSI-aligned trade types including General Contractor, 
 | Frontend | React 18 + TypeScript, Vite, TailwindCSS, shadcn/ui, Wouter routing, TanStack Query v5 |
 | Backend | Node.js + Express, TypeScript |
 | Database | PostgreSQL via Drizzle ORM |
-| AI | OpenAI GPT integration (configurable model) |
+| AI | Anthropic Claude (primary — Takeoff + General families); OpenAI GPT-4o (fallback + Vision pipelines) |
 | File Storage | Replit Object Storage |
 | Email | SendGrid |
 | Payments | Stripe (subscriptions, add-ons) |

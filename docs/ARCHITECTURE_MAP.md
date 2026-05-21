@@ -1,5 +1,7 @@
 # SmartManageAI Architecture Map
 
+> **Last updated:** May 2026. Source of truth for server structure, AI routing, storage pattern, job queue, and tenant isolation. If this document conflicts with the code, the code is authoritative.
+
 ## High-Level Architecture
 
 ```
@@ -7,23 +9,31 @@
 │                              CLIENT LAYER                                │
 │  ┌─────────────────────────────────────────────────────────────────────┐ │
 │  │  React + TypeScript + Vite                                           │ │
-│  │  ├── TanStack Query (data fetching)                                  │ │
+│  │  ├── TanStack Query v5 (data fetching)                              │ │
 │  │  ├── Wouter (routing)                                                │ │
 │  │  ├── Tailwind CSS + shadcn/ui (styling)                             │ │
 │  │  └── React Hook Form + Zod (forms & validation)                     │ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
-                                    ▼ HTTP/REST
+                                    ▼ HTTP/REST + SSE
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              SERVER LAYER                                │
 │  ┌─────────────────────────────────────────────────────────────────────┐ │
 │  │  Express.js + TypeScript                                             │ │
-│  │  ├── Authentication (JWT + httpOnly cookies)                         │ │
-│  │  ├── Rate Limiting (express-rate-limit)                             │ │
+│  │  ├── Authentication (JWT + httpOnly cookies, tokenVersion)           │ │
+│  │  ├── CSRF protection (server/csrf.ts)                               │ │
+│  │  ├── Rate Limiting (Postgres-backed, multi-limiter)                 │ │
 │  │  ├── RBAC Middleware (requireRole)                                  │ │
-│  │  ├── Organization Filtering (orgFilter)                             │ │
-│  │  └── Audit Logging                                                  │ │
+│  │  ├── Org Context Middleware (RLS session vars)                      │ │
+│  │  └── Audit Logging (append-only audit_log table)                   │ │
+│  └─────────────────────────────────────────────────────────────────────┘ │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────────┐ │
+│  │  Background Worker Process (server/worker.ts)                        │ │
+│  │  ├── pg-boss job queue (Postgres-backed)                            │ │
+│  │  ├── AI takeoff / document analysis handlers                        │ │
+│  │  └── Per-tenant RLS context (withJobOrgContext)                     │ │
 │  └─────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
@@ -31,8 +41,10 @@
                     ▼               ▼               ▼
 ┌──────────────────────┐ ┌──────────────────┐ ┌──────────────────────┐
 │      DATABASE        │ │   FILE STORAGE   │ │      AI SERVICE      │
-│  PostgreSQL (Neon)   │ │  Google Cloud    │ │  OpenAI GPT-4/4o     │
-│  Drizzle ORM         │ │  Storage         │ │  Vision API          │
+│  PostgreSQL (Neon)   │ │  Replit Object   │ │  Anthropic Claude    │
+│  Drizzle ORM         │ │  Storage (GCS)   │ │  (primary, Task#2851)│
+│  Row-Level Security  │ │  Signed URLs     │ │  OpenAI GPT (fallback│
+│  (STRICT_TENANT_RLS) │ │                  │ │  or vision-only)     │
 └──────────────────────┘ └──────────────────┘ └──────────────────────┘
 ```
 
@@ -44,36 +56,39 @@
 | React 18 | UI framework | `client/src/` |
 | TypeScript | Type safety | `*.tsx`, `*.ts` |
 | Vite | Build tool | `vite.config.ts` |
-| TanStack Query | Server state | `client/src/lib/queryClient.ts` |
+| TanStack Query v5 | Server state | `client/src/lib/queryClient.ts` |
 | Wouter | Client routing | `client/src/App.tsx` |
 | Tailwind CSS | Styling | `client/src/index.css` |
 | shadcn/ui | Components | `client/src/components/ui/` |
 | React Hook Form | Forms | Throughout pages |
-| Zod | Validation | `shared/schema.ts` |
+| Zod | Validation | `shared/schema/` |
 
 ### Backend
 | Technology | Purpose | Location |
 |------------|---------|----------|
 | Express.js | HTTP server | `server/index.ts` |
 | TypeScript | Type safety | `server/*.ts` |
-| Drizzle ORM | Database queries | `server/db.ts` |
+| Drizzle ORM | Database queries | `server/db.ts` (ALS proxy) |
 | bcrypt | Password hashing | `server/auth.ts` |
 | jsonwebtoken | JWT auth | `server/auth.ts` |
-| node-cron | Scheduled tasks | `server/ai/scheduler.ts` |
+| pg-boss | Background job queue | `server/jobQueue/index.ts` |
+| node-cron / schedulerLock | In-process scheduled tasks | `server/utils/schedulerLock.ts` |
 
 ### Database
 | Technology | Purpose | Location |
 |------------|---------|----------|
 | PostgreSQL | Primary database | Neon hosted |
 | Drizzle Kit | Migrations | `drizzle.config.ts` |
+| Postgres RLS | Tenant isolation | `migrations/0096_enable_tenant_rls.sql` |
 
 ### External Services
 | Service | Purpose | Integration |
 |---------|---------|-------------|
-| OpenAI GPT-4 | AI analysis | `server/ai/openaiClient.ts` |
-| OpenAI Vision | Image analysis | Auto-takeoff, jobsite photos |
-| Google Cloud Storage | File storage | `server/objectStorage.ts` |
-| Resend | Email delivery | `server/email.ts` |
+| Anthropic Claude | AI primary (Takeoff + General families) | `server/ai/providers/anthropicProvider.ts` |
+| OpenAI GPT-4o | AI fallback; Vision (image_url) pipelines | `server/ai/providers/openaiProvider.ts` |
+| Replit Object Storage | File storage | `server/objectStorage.ts` |
+| SendGrid | Email delivery | `server/email.ts` |
+| Stripe | Subscription billing | `server/billingRoutes.ts` |
 
 ## Module Map
 
@@ -81,111 +96,151 @@
 
 ```
 server/
-├── index.ts              # Express app entry point
+├── index.ts              # Express app entry point; STRICT_TENANT_RLS fail-fast
 ├── routes.ts             # Core route registration
-├── auth.ts               # Authentication logic
-├── db.ts                 # Database connection
-├── storage.ts            # In-memory storage fallback
+├── auth.ts               # Authentication logic, requireRole, tokenVersion
+├── db.ts                 # Database connection + ALS proxy (RLS-scoped client)
+├── dbContext.ts          # withOrgContext, runAsSuperadmin, withJobOrgContext
+├── worker.ts             # Dedicated background worker entrypoint (pg-boss)
 │
 ├── Route Files:
-│   ├── estimateRoutes.ts       # Estimating endpoints
-│   ├── timeClockRoutes.ts      # Time tracking
-│   ├── payrollSettingsRoutes.ts # Payroll config
-│   ├── changeOrderRoutes.ts    # Change orders
-│   ├── delayRoutes.ts          # Delay tracking
-│   ├── delayClaimsRoutes.ts    # Delay claims
-│   ├── inspectionRoutes.ts     # Inspections
-│   ├── tmTicketRoutes.ts       # T&M tickets
-│   ├── sovRoutes.ts            # Schedule of values
-│   ├── bidNetworkRoutes.ts     # Bid network
-│   ├── websiteBuilderRoutes.ts # Website builder
-│   ├── marketplaceRoutes.ts    # Marketplace features
-│   ├── vendorPricebookRoutes.ts # Vendor pricing
-│   ├── laborRateRoutes.ts      # Labor rates
-│   ├── subcontractRoutes.ts    # Subcontracts
+│   ├── bidRoutes2.ts               # Bid endpoints (uses BidStorageDrizzle seam)
+│   ├── estimateRoutes.ts           # Estimating endpoints
+│   ├── timeClockRoutes.ts          # Time tracking
+│   ├── payrollRoutes.ts            # Pay runs and payroll
+│   ├── payrollSettingsRoutes.ts    # Payroll config
+│   ├── changeOrderRoutes.ts        # Change orders (PCO workflow)
+│   ├── changeOrderHelpers.ts       # CO approval chain helpers
+│   ├── contractRoutes.ts           # Contract lifecycle
+│   ├── delayRoutes.ts              # Delay tracking
+│   ├── delayClaimsRoutes.ts        # Delay claims
+│   ├── inspectionRoutes.ts         # Inspections
+│   ├── tmTicketRoutes.ts           # T&M tickets
+│   ├── sovRoutes.ts                # Schedule of values + AIA pay apps
+│   ├── bidNetworkRoutes.ts         # Bid network
+│   ├── websiteBuilderRoutes.ts     # Website builder
+│   ├── marketplaceRoutes.ts        # Marketplace features
+│   ├── vendorPricebookRoutes.ts    # Vendor pricing
+│   ├── laborRateRoutes.ts          # Labor rates
+│   ├── subcontractRoutes.ts        # Subcontracts
 │   ├── subcontractorPayablesRoutes.ts # Payables
-│   ├── emailAccountRoutes.ts   # Email integration
-│   ├── emailAiRoutes.ts        # Email AI
-│   ├── fieldProductivityRoutes.ts # Field tools
-│   ├── organizationDocumentRoutes.ts # Org docs
-│   ├── dashboardCustomizationRoutes.ts # Dashboard
-│   ├── hustlerRoutes.ts        # Multi-org
-│   ├── platformAdminRoutes.ts  # Platform admin
-│   ├── billingRoutes.ts        # Subscription billing
-│   ├── weatherRoutes.ts        # Weather data
-│   ├── opsRoutes.ts            # Health/readiness
-│   └── notesRoutes.ts          # Notes
+│   ├── emailAccountRoutes.ts       # Email integration
+│   ├── emailAiRoutes.ts            # Email AI
+│   ├── fieldProductivityRoutes.ts  # Field tools
+│   ├── organizationDocumentRoutes.ts  # Org docs (compliance)
+│   ├── dashboardCustomizationRoutes.ts # Dashboard widgets
+│   ├── hustlerRoutes.ts            # Multi-org HUSTLER role
+│   ├── platformAdminRoutes.ts      # Platform admin (SUPER_ADMIN)
+│   ├── billingRoutes.ts            # Stripe subscription billing
+│   ├── weatherRoutes.ts            # Weather data
+│   ├── opsRoutes.ts                # /health, /ready, /metrics
+│   ├── auditBillingStorageRoutes.ts # Object upload + AV scan + billing
+│   ├── jobQueueAdminRoutes.ts      # pg-boss admin UI endpoints
+│   └── notesRoutes.ts              # Notes
+│
+├── Bids Domain Storage Seam (canonical pattern):
+│   └── bids/
+│       ├── storage.ts              # IBidStorage interface + CrossOrgAccessError
+│       ├── storage.drizzle.ts      # BidStorageDrizzle (Drizzle implementation)
+│       └── __tests__/storage.test.ts  # Tenancy contract tests
+│
+├── Other Domain Seams (Task #2672):
+│   ├── crm/transcriptBackfillStorage.ts  # CRM-related helpers
+│   ├── executiveDigest/storage.ts         # Executive digest snapshot helpers
+│   └── dot/payItemPickerFacetsStorage.ts  # DOT pay-item picker facets
 │
 ├── AI Modules:
-│   ├── aiRoutes.ts             # AI endpoints
-│   ├── aiAssistantRoutes.ts    # AI assistant
-│   ├── aiBidDocumentRoutes.ts  # Bid doc analysis
+│   ├── aiRoutes.ts                 # AI PM + takeoff endpoints
+│   ├── aiAssistantRoutes.ts        # AI assistant (chat)
+│   ├── aiBidDocumentRoutes.ts      # Bid doc analysis
 │   ├── aiContractDocumentRoutes.ts # Contract analysis
-│   ├── aiNotesRoutes.ts        # Note insights
-│   ├── aiFeatureRoutes.ts      # AI features
+│   ├── aiNotesRoutes.ts            # Note insights
+│   ├── aiDocumentRoutes.ts         # Document analysis (SSRF-guarded)
+│   ├── aiOnboardingRoutes.ts       # AI onboarding wizard
 │   └── ai/
-│       ├── orchestrator.ts     # AI run coordination
-│       ├── snapshotBuilder.ts  # Data snapshot
-│       ├── moduleAnalyzers.ts  # Analysis modules
-│       ├── systemPrompt.ts     # AI prompts
-│       ├── assistantPrompt.ts  # Assistant prompts
-│       ├── openaiClient.ts     # OpenAI integration
-│       ├── emailAi.ts          # Email classification
-│       ├── scheduler.ts        # AI scheduling
-│       ├── profitabilityEngine.ts # Profitability analysis
+│       ├── providers/              # AI provider abstraction (Task #2684)
+│       │   ├── index.ts            # routedChatCompletion, routedGeneralChatCompletion, routedEmbedding
+│       │   ├── types.ts            # AiChatRequest, TakeoffFeatureKey, GeneralFeatureKey
+│       │   ├── openaiProvider.ts   # OpenAI implementation
+│       │   ├── anthropicProvider.ts # Anthropic/Claude implementation
+│       │   └── embeddingProvider.ts # Embedding seam (OpenAI text-embedding-3-large)
+│       ├── orchestrator.ts         # AI run coordination
+│       ├── snapshotBuilder.ts      # Data snapshot for AI PM
+│       ├── moduleAnalyzers.ts      # Analysis modules
+│       ├── systemPrompt.ts         # AI prompts
+│       ├── assistantPrompt.ts      # Assistant prompts
+│       ├── openaiClient.ts         # Raw OpenAI client (vision bypass only)
+│       ├── promptInjectionGuard.ts # quarantineUntrustedText, detectPromptInjection, validateAiJsonOutput
+│       ├── emailAi.ts              # Email classification
+│       ├── scheduler.ts            # AI scheduling (cron)
+│       ├── profitabilityEngine.ts  # Profitability analysis
 │       ├── scopePredictionEngine.ts # Scope prediction
-│       ├── dataQualityScorer.ts # Data quality
+│       ├── dataQualityScorer.ts    # Data quality
 │       ├── tradeDiscoveryService.ts # Trade discovery
 │       ├── vendorPriceListExtractor.ts # Price extraction
-│       └── walkthroughContent.ts # Onboarding content
+│       └── walkthroughContent.ts   # Onboarding content
+│
+├── Job Queue (pg-boss):
+│   └── jobQueue/
+│       ├── index.ts                # Boss singleton, enqueueJob, getJobStatus, DLQ helpers
+│       └── handlers/               # Job handlers (ai_takeoff_analyze, ai_document_analyze, …)
+│
+├── Background Jobs (in-process schedulers):
+│   └── jobs/jobRunner.ts           # Cron scheduler: compliance-expiration, equipment PM, payroll digest, CRM digests
 │
 ├── Services:
-│   ├── pdf-service.ts          # PDF generation
-│   ├── sov-pdf-service.ts      # SoV PDFs
-│   ├── subcontract-pdf-service.ts # Subcontract PDFs
-│   ├── productionRateService.ts # Production rates
-│   ├── dataPipelineService.ts  # Data pipelines
-│   ├── aiNotesService.ts       # Note analysis
-│   ├── organizationBranding.ts # Branding
-│   └── bidNetworkNotifications.ts # Bid notifications
+│   ├── pdf-service.ts              # PDF generation
+│   ├── sov-pdf-service.ts          # SoV PDFs
+│   ├── subcontract-pdf-service.ts  # Subcontract PDFs
+│   ├── productionRateService.ts    # Production rates
+│   ├── dataPipelineService.ts      # Data pipelines
+│   ├── aiNotesService.ts           # Note analysis
+│   ├── organizationBranding.ts     # Branding
+│   ├── uploadAvScanner.ts          # AV scan on upload (EICAR + Cloudmersive)
+│   ├── fileValidation.ts           # MIME allowlist, size caps
+│   └── bidNetworkNotifications.ts  # Bid notifications
 │
 ├── Middleware:
-│   ├── rateLimiter.ts          # Rate limiting
-│   ├── orgFilter.ts            # Org-based filtering
-│   ├── fileValidation.ts       # File upload validation
-│   ├── sanitization.ts         # Input sanitization
+│   ├── rateLimiter.ts              # Postgres-backed rate limiters (authLimiter, uploadLimiter, etc.)
+│   ├── orgFilter.ts                # getOrgIdForFilter (legacy; prefer orgContextMiddleware)
+│   ├── sanitization.ts             # Input sanitization
+│   ├── csrf.ts                     # CSRF cookie+header pair
 │   └── middleware/
-│       └── requireFeature.ts   # Feature gating
+│       ├── orgContext.ts           # orgContextMiddleware (wraps every authenticated request in withOrgContext)
+│       └── requireFeature.ts       # Feature gating
 │
 ├── Utilities:
-│   ├── auditLogger.ts          # Audit logging
-│   ├── email.ts                # Email sending
-│   ├── objectStorage.ts        # File storage
-│   ├── objectAcl.ts            # File ACL
-│   ├── fileAccessHelpers.ts    # File helpers
-│   ├── materialCalculator.ts   # Material calcs
-│   ├── tradeCalculators.ts     # Trade-specific calcs
-│   ├── calculatorRoutes.ts     # Calculator API
-│   ├── calculatorVerification.ts # Calc verification
-│   └── utils/
-│       ├── logger.ts           # Logging
-│       └── monitoring.ts       # Monitoring
+│   ├── auditLogger.ts              # logCreate, logAuthEvent, logRoleChange — all money/auth paths covered
+│   ├── email.ts                    # Email sending (SendGrid)
+│   ├── objectStorage.ts            # Replit Object Storage (GCS)
+│   ├── objectAcl.ts                # Object ACL (per-tenant prefix)
+│   ├── fileAccessHelpers.ts        # Signed URL helpers
+│   ├── materialCalculator.ts       # Material calcs
+│   ├── tradeCalculators.ts         # Trade-specific calcs
+│   ├── calculatorRoutes.ts         # Calculator API
+│   ├── utils/
+│   │   ├── logger.ts               # Structured logging + redactForLog
+│   │   ├── monitoring.ts           # /metrics endpoint, recordJobMetrics
+│   │   ├── pagination.ts           # Cursor pagination contract
+│   │   ├── ensureRlsPolicies.ts    # Boot-time RLS policy applier
+│   │   └── schedulerLock.ts        # withSchedulerLock (wraps withSystemJobContext)
+│   └── correlationIdMiddleware.ts  # x-request-id stamping
 │
 └── Seed Files:
-    ├── seed.ts                 # Database seeding
-    ├── seedCalculators.ts      # Calculator seeds
-    └── seedTradeExpansion.ts   # Trade template seeds
+    ├── seed.ts                     # Database seeding
+    ├── seedCalculators.ts          # Calculator seeds
+    └── seedTradeExpansion.ts       # Trade template seeds
 ```
 
 ### Client Modules
 
 ```
 client/src/
-├── App.tsx                     # Main app with routing
+├── App.tsx                     # Main app with routing + RoutePermissions
 ├── main.tsx                    # Entry point
 ├── index.css                   # Global styles
 │
-├── pages/                      # Page components (70+)
+├── pages/                      # Page components (80+)
 │   ├── Auth:
 │   │   ├── login.tsx
 │   │   ├── register.tsx
@@ -255,6 +310,17 @@ client/src/
 │   │   ├── offline-sync.tsx
 │   │   └── mobile-sync.tsx
 │   │
+│   ├── Heavy Civil / DOT:
+│   │   ├── dot-pay-items.tsx       # DOT pay item management
+│   │   ├── mass-haul.tsx           # Mass-haul curve
+│   │   └── haul-tickets.tsx        # Haul ticket tracking
+│   │
+│   ├── Compliance:
+│   │   └── compliance-dashboard.tsx  # DBE/bond/certification expiration tracking
+│   │
+│   ├── Global Search:
+│   │   └── global-search.tsx       # Command palette + full-text search
+│   │
 │   ├── Website:
 │   │   └── website-builder.tsx
 │   │
@@ -270,7 +336,8 @@ client/src/
 │   │   ├── PlatformAuditDashboard.tsx
 │   │   ├── PlatformOrganizations.tsx
 │   │   ├── PlatformOrganizationDetail.tsx
-│   │   └── PlatformSupportTools.tsx
+│   │   ├── PlatformSupportTools.tsx
+│   │   └── admin/job-queue.tsx     # pg-boss job queue admin UI
 │   │
 │   └── Settings:
 │       ├── company-settings.tsx
@@ -280,13 +347,7 @@ client/src/
 │       └── users.tsx
 │
 ├── components/                 # Reusable components
-│   ├── ui/                     # shadcn components
-│   │   ├── button.tsx
-│   │   ├── card.tsx
-│   │   ├── dialog.tsx
-│   │   ├── form.tsx
-│   │   ├── table.tsx
-│   │   └── ... (40+ components)
+│   ├── ui/                     # shadcn components (40+)
 │   │
 │   ├── Feature Components:
 │   │   ├── TakeoffWorkspace.tsx
@@ -312,6 +373,7 @@ client/src/
 └── lib/                        # Utilities
     ├── queryClient.ts          # TanStack Query setup
     ├── utils.ts                # Helper functions
+    ├── rbac.ts                 # RoutePermissions + FeaturePermissions
     └── protected-route.tsx     # Auth route wrapper
 ```
 
@@ -319,52 +381,72 @@ client/src/
 
 ```
 shared/
-└── schema.ts                   # Database schema + types
-                                # - 100+ table definitions
-                                # - Zod insert schemas
-                                # - TypeScript types
+└── schema/
+    ├── index.ts                # Re-exports all features
+    └── features/               # Domain-specific schema files (split from legacy schema.ts)
+        ├── auth.ts             # users, sessions, password reset
+        ├── projects.ts         # projects, scope items, daily progress
+        ├── bids.ts             # bids, estimates, line items, takeoff
+        ├── payroll.ts          # pay runs, time clock, labor rates
+        ├── financial.ts        # change orders, SOV, AIA pay apps
+        ├── crm.ts              # CRM organisations, contacts, vendors
+        ├── equipment.ts        # equipment, maintenance
+        ├── compliance.ts       # DBE certs, surety bonds, expiration tracking
+        ├── heavyCivil.ts       # DOT pay items, mass-haul, haul tickets
+        ├── flags.ts            # FEATURE_FLAG_KEYS, AI_PROVIDER_* flags
+        └── ... (20+ domain files)
 ```
 
 ## Data Flow Diagrams
 
 ### Authentication Flow
 ```
-User Login → POST /api/auth/login → Validate Credentials
+User Login → POST /api/auth/login → Validate Credentials (bcrypt)
                                          │
                                          ▼
-                                   Generate JWT
+                                   Verify tokenVersion
                                          │
                                          ▼
-                              Set httpOnly Cookie
+                                   Generate JWT (SESSION_SECRET)
                                          │
                                          ▼
-                              Return User Data → Frontend Stores User
+                              Set httpOnly, SameSite=Lax Cookie
+                                         │
+                                         ▼
+                              Return User Data → logAuthEvent(LOGIN)
 ```
 
-### API Request Flow
+### API Request Flow (with RLS)
 ```
-Frontend Request → requireAuth Middleware → Validate JWT
-                                                 │
-                                                 ▼
-                                          requireRole Check
-                                                 │
-                                                 ▼
-                                          orgFilter Applied
-                                                 │
-                                                 ▼
-                                         Route Handler Executes
-                                                 │
-                                                 ▼
-                                         Database Query (with org filter)
-                                                 │
-                                                 ▼
-                                         Audit Log Created
-                                                 │
-                                                 ▼
-                                         Response to Client
+Frontend Request
+        │
+        ▼
+correlationIdMiddleware (x-request-id)
+        │
+        ▼
+requireAuth (validate JWT, check tokenVersion)
+        │
+        ▼
+orgContextMiddleware → withOrgContext({ organizationId, isSuperadmin })
+        │                    └── SET app.current_org_id = ?
+        │                    └── SET app.is_superadmin = false
+        ▼
+requireRole Check
+        │
+        ▼
+Route Handler
+        │
+        ▼
+DB Query via ALS proxy → Postgres applies tenant_isolation RLS policy
+        │
+        ▼
+Audit Log (if money/auth path)
+        │
+        ▼
+Response to Client
 ```
 
-### AI Analysis Flow
+### AI Analysis Flow (with Provider Router)
 ```
 User Triggers "Run Analysis" → POST /api/ai-pm/run
                                        │
@@ -372,78 +454,127 @@ User Triggers "Run Analysis" → POST /api/ai-pm/run
                                Build Data Snapshot
                                        │
                                        ▼
-                              Run Module Analyzers
-                              (Labor, Materials, Budget, etc.)
+                           governedAiCall (quota check)
                                        │
                                        ▼
-                              Call OpenAI API
+                         routedGeneralChatCompletion(...)
                                        │
-                                       ▼
-                              Parse AI Response
-                                       │
-                                       ▼
-                              Create Tasks/Insights
-                                       │
-                                       ▼
-                              Store AI Run Results
-                                       │
-                                       ▼
-                              Return to Frontend
+                           ┌───────────┴───────────┐
+                           ▼                       ▼
+                  Anthropic Claude (primary) → OpenAI GPT (fallback on error)
+                           │
+                           ▼
+                  validateAiJsonOutput (Zod schema check)
+                           │
+                           ▼
+                  Create Tasks/Insights → Store AI Run Results
+                           │
+                           ▼
+                  Return to Frontend
+```
+
+### Background Job Flow (pg-boss)
+```
+HTTP Route → enqueueJob(name, payload, { idempotencyKey })
+                  │
+                  ▼
+         pg-boss queue (Postgres)
+                  │
+                  ▼
+       server/worker.ts (dedicated process)
+                  │
+                  ▼
+       withOrgContext({ organizationId }) → handler(payload)
+                  │
+                  ├─ Progress events → SSE clients (via messagingBus)
+                  └─ Result row in pgboss.job
 ```
 
 ## Key Architectural Patterns
 
-### 1. Multi-Tenant Data Isolation
-Every database query includes organization ID filtering:
+### 1. Multi-Tenant Data Isolation (Defense in Depth)
+
+**Application layer** — `orgContextMiddleware` sets RLS session vars:
 ```typescript
-.where(eq(table.organizationId, user.organizationId))
+withOrgContext({ organizationId: req.user.organizationId, isSuperadmin: false }, async () => {
+  // db calls here are scoped by Postgres RLS automatically
+});
 ```
 
-### 2. Role-Based Access Control
+**Database layer** — RLS policy on every tenant table:
+```sql
+CREATE POLICY tenant_isolation ON <table>
+  USING (
+    current_setting('app.is_superadmin', true) = 'true'
+    OR organization_id = current_setting('app.current_org_id', true)
+  );
+```
+
+`STRICT_TENANT_RLS=true` is required in production; server fails fast on boot if missing.
+
+### 2. Role-Based Access Control (18 roles)
+
 Middleware chain enforces permissions:
 ```typescript
-app.get("/api/protected", 
+app.get("/api/protected",
   requireAuth,           // Must be logged in
   requireRole("ADMIN"),  // Must have role
   handler
 );
 ```
 
-### 3. Feature Gating
-Subscription-based feature access:
+HUSTLER role uses `effectiveRole` from `hustler_organizations` for org-scoped privilege. SUPER_ADMIN cross-tenant access must go through `runAsSuperadmin(reason, fn)` which writes an audit row before elevating.
+
+### 3. AI Provider Router (Two Families)
+
+All LLM calls must go through the router — direct `openai.chat.completions.create` calls fail the CI guard unless annotated:
+
+```typescript
+// Takeoff/Estimator family
+import { routedChatCompletion } from "./ai/providers";
+// General family
+import { routedGeneralChatCompletion } from "./ai/providers";
+```
+
+Anthropic Claude is the default primary for both families (Task #2851). OpenAI is the automatic fallback.
+
+### 4. Per-Domain Storage Seam
+
+The legacy `server/storage.ts` monolith has been deleted (Task #2672). New DB work uses per-domain seams:
+
+```typescript
+// server/bids/storage.drizzle.ts (canonical pattern)
+export class BidStorageDrizzle implements IBidStorage {
+  constructor(private readonly orgId: string | null) {}
+  // Every read filtered, every write ownership-checked
+}
+```
+
+Routes obtain storage via `getBidStorage(req, res)` which uses `getOrgIdForFilter`. CI guard at `scripts/check-legacy-storage.mjs` fails if `server/storage.ts` is recreated.
+
+### 5. Feature Gating
+
+Subscription-based feature access via `requireFeature` middleware:
 ```typescript
 app.get("/api/ai/analyze",
   requireAuth,
-  requireFeature("ai_pm"),  // Must have AI PM add-on
+  requireFeature("ai_pm"),
   handler
 );
 ```
 
-### 4. Audit Trail
-All mutations logged:
+### 6. Audit Trail (Append-Only)
+
+All money-path mutations, auth events, role changes, and MFA changes are logged:
 ```typescript
-await logCreate("projects", projectId, userId, orgId, projectData);
+await logAuthEvent({ userId, action: "LOGIN", organizationId, ... });
+await logRoleChange({ userId, action: "ROLE_CHANGED", ... });
 ```
 
-### 5. Type Safety
-Shared types between frontend and backend via `shared/schema.ts`.
+### 7. Unified SOW Tracking
 
-### 6. Unified SOW Tracking
 Cross-project scope of work item linking for production rate aggregation:
 
-**Foreign Keys Added (January 2026):**
-| Table | Column | References | Purpose |
-|-------|--------|------------|---------|
-| estimateLineItems | organizationSowItemId | organizationSowItems.id | Links estimate line item to master SOW item |
-| scopeItems | organizationSowItemId | organizationSowItems.id | Links project scope item to master SOW item |
-| dailyScopeProgress | organizationSowItemId | organizationSowItems.id | Links daily progress to master SOW item |
-
-**Indexes:**
-- `estimate_line_items_org_sow_item_idx` on estimateLineItems.organizationSowItemId
-- `scope_items_org_sow_item_idx` on scopeItems.organizationSowItemId
-- `daily_scope_progress_org_sow_item_idx` on dailyScopeProgress.organizationSowItemId
-
-**Data Flow:**
 ```
 organizationSowItems → estimateLineItems → scopeItems → dailyScopeProgress
                                                               │
@@ -452,6 +583,30 @@ organizationSowItems → estimateLineItems → scopeItems → dailyScopeProgress
                                             (by organizationSowItemId)
 ```
 
-**Key Service:**
-- `server/productionRateService.ts` - Contains `getProductionRateBySowItemId()` for historical rate lookup
-- API: `GET /api/estimates/production-rates/by-sow-item/:sowItemId`
+**Key Service:** `server/productionRateService.ts` — `getProductionRateBySowItemId()`
+**API:** `GET /api/estimates/production-rates/by-sow-item/:sowItemId`
+
+## Environment Variables
+
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `DATABASE_URL` | Yes | PostgreSQL connection |
+| `SESSION_SECRET` | Yes | JWT signing key; server fails fast if missing |
+| `ANTHROPIC_API_KEY` | Yes | Primary AI provider (Takeoff + General families) |
+| `OPENAI_API_KEY` | Yes | AI fallback + Vision pipelines |
+| `STRICT_TENANT_RLS` | Prod only | Must be `true`; server fails fast if missing/false in production |
+| `CLOUDMERSIVE_AV_API_KEY` | Optional | Enable Cloudmersive ClamAV-backed upload scanning |
+| `UPLOAD_AV_SCAN_MODE` | Optional | `enforce` (default prod), `permissive` (dev), `disabled` |
+
+## CI Guards
+
+All run in `scripts/ci.sh`:
+
+| Script | Purpose |
+|--------|---------|
+| `check-legacy-storage.mjs` | Fails if `server/storage.ts` is recreated or bare `./storage` imported |
+| `check-db-imports.mjs` | Fails if a new server file builds its own db client (bypasses RLS proxy) |
+| `check-job-context.mjs` | Fails if job files touch db without a tenant context wrapper |
+| `check-ai-router-bypass.mjs` | Fails if a server file calls openai directly without router or annotation |
+| `check-prompt-injection-guard.mjs` | Fails if an AI call site lacks the prompt-injection guard import or annotation |
+| `check-sse-org-context.mjs` | Fails if an SSE handler lacks `withOrgContext` or `// sse-org-context:` annotation |

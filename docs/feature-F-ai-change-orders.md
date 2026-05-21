@@ -1,5 +1,16 @@
 # Feature F: AI Change Order Generator
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/changeOrderRoutes.ts` (AI generation endpoint), `server/ai/` (prompt logic), and `client/src/components/AiChangeOrderGenerator.tsx` (frontend).
+>
+> **Implementation notes vs. spec:**
+> - AI provider is Anthropic Claude (primary) via `routedGeneralChatCompletion`. Original spec assumed OpenAI-only.
+> - All delay descriptions, RFI text, and scope narrative inputs pass through `quarantineUntrustedText` / `detectPromptInjection` before being sent to the LLM.
+> - Generated text is validated via `validateAiJsonOutput` (Zod schema) before populating the change order form.
+> - Trade-specific terminology applied via system prompt parameterized by `organization.tradeType`.
+> - Generated draft must still go through the human change order approval chain (PCO → SUBMITTED → APPROVED).
+
+---
+
 ## Overview
 Enhances the **existing change order system** with AI-powered generation that automatically drafts change order descriptions, justifications, and scope narratives based on linked delays, inspections, RFIs, and SOW changes. The AI adapts its language and formatting based on **trade-specific** terminology and industry standards.
 

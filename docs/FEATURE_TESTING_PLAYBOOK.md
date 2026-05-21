@@ -467,8 +467,10 @@ MANAGER, SUPERINTENDENT (with AI add-on)
 
 ### Preconditions
 - AI add-on enabled for organization
-- OpenAI API key configured
+- `ANTHROPIC_API_KEY` set in environment (primary provider — Claude handles both Takeoff and General families)
+- `OPENAI_API_KEY` set in environment (fallback + Vision pipelines)
 - Projects with data (more data = better analysis)
+- Organization has `ai_pm` add-on enabled (check `organizationAddOns` table)
 
 ### Step-by-Step Testing
 
@@ -501,9 +503,11 @@ MANAGER, SUPERINTENDENT (with AI add-on)
 ### Common Failure Modes
 | Symptom | Cause |
 |---------|-------|
-| "Analysis failed" | OpenAI API error, timeout, or quota |
+| "Analysis failed" | Missing `ANTHROPIC_API_KEY`, API error, timeout, or billing quota exhausted |
+| Falls back to OpenAI | Anthropic returned 5xx; check `AI_PROVIDER_GENERAL` / `AI_PROVIDER_TAKEOFF` flags |
 | No tasks generated | Not enough project data |
-| Insights empty | AI returned malformed response |
+| Insights empty | AI returned malformed response (check `validateAiJsonOutput` Zod errors in logs) |
+| 402 response | Org billing quota exhausted (`checkBillingQuota` blocked the call) |
 
 ### How to Tell If Broken
 - Run button does nothing

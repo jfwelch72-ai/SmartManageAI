@@ -1,5 +1,15 @@
 # Feature A: AI Auto-Takeoff from Blueprints & Photos
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/aiRoutes.ts` and `server/jobQueue/handlers/ai_takeoff_analyze.ts` (pg-boss background job). Frontend: `client/src/components/AiTakeoffPanel.tsx` + `client/src/components/TakeoffWorkspace.tsx`.
+>
+> **Implementation notes vs. spec:**
+> - AI provider is Anthropic Claude (primary) via `routedChatCompletion`; OpenAI Vision used for `image_url` content with annotated bypass (`// ai-router-bypass: vision pipeline`). Original spec assumed OpenAI-only.
+> - Heavy analysis is enqueued as a pg-boss background job (`ai_takeoff_analyze`) rather than blocking the HTTP response, allowing large multi-page plan sets to process without timeout.
+> - Trade-specific detection via system prompts parameterized by `organization.tradeType` — 22 trades supported.
+> - Quantities import directly to estimate line items via `POST /api/estimates/:id/import-takeoff`.
+
+---
+
 ## Overview
 Enhances the existing takeoff engine (react-konva, pdfjs-dist) with AI-powered computer vision to automatically detect and measure quantities from uploaded blueprints and jobsite photos. The AI analysis is **trade-specific**, adapting its detection algorithms and measurement outputs based on the organization's trade type.
 

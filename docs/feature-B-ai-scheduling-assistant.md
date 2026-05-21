@@ -1,5 +1,15 @@
 # Feature B: AI Scheduling Assistant
 
+> **Status: IMPLEMENTED** — This doc was the original planning spec. Feature shipped; see live code at `server/ai/scheduler.ts` (scheduling logic), `server/aiRoutes.ts` (endpoints), and `client/src/components/AiSchedulingPanel.tsx` (frontend).
+>
+> **Implementation notes vs. spec:**
+> - AI provider is Anthropic Claude (primary) via `routedGeneralChatCompletion`. Original spec assumed OpenAI-only.
+> - Schedule generation is trade-specific, applying industry-standard task sequences and production rates from `organizationSowItems`.
+> - Scheduling results are persisted and displayed in the project Gantt/schedule view.
+> - The scheduler runs on a cron via `withSchedulerLock` (in-process, not pg-boss) as it is a low-latency organizational task.
+
+---
+
 ## Overview
 Automatically generates, updates, and optimizes project schedules (Gantt-style) based on SOW items, production rates, crew sizes, trade types, delays, and inspections. The scheduling logic is **trade-specific**, applying industry-standard task sequences and dependencies for each trade.
 

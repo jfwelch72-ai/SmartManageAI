@@ -1,28 +1,77 @@
 # Automations & Events
 
+> **Last updated:** May 2026. Reflects pg-boss job queue (Task #2481), compliance-expiration job (Task #2674), RLS-scoped job context (Task #2673), and new event types added since January 2026.
+
 ## Overview
 
-SmartManageAI includes various automated processes, scheduled tasks, and event-driven notifications. This document catalogs all automation systems.
+SmartManageAI has two classes of background processing:
+
+1. **pg-boss Job Queue** (`server/jobQueue/`) — for heavyweight, long-running work that must run outside the HTTP request lifecycle with retries, dead-letter handling, and per-tenant fairness.
+2. **In-Process Schedulers** (`server/jobs/jobRunner.ts` + individual scheduler files) — for lightweight recurring cron tasks. All use `withSchedulerLock` which automatically wraps ticks in `withSystemJobContext`.
+
+All background jobs use RLS-scoped DB contexts (`withJobOrgContext` for per-tenant, `withSystemJobContext` for cross-tenant) — never raw DB access.
 
 ---
 
-## Scheduled Tasks
+## pg-boss Job Queue
+
+**Files:** `server/jobQueue/index.ts`, `server/worker.ts`, `server/jobQueue/handlers/`
+
+### How it works
+
+```
+HTTP route → enqueueJob(name, payload, { idempotencyKey })
+                 │
+                 ▼
+         pg-boss queue (Postgres)
+                 │
+                 ▼
+       server/worker.ts (dedicated process)
+                 │
+                 ▼
+       withOrgContext({ organizationId, source: "job:<name>" }) → handler(payload)
+                 │
+                 ├─ progress(%) → messagingBus → SSE clients
+                 └─ result in pgboss.job
+```
+
+### Queue Configuration
+- `retryLimit=5, retryBackoff=true, retryDelay=10s`
+- `teamSize=8, teamConcurrency=8` per queue
+- Per-tenant semaphore inside handler for fairness (one heavy tenant can't starve the queue)
+- Failed jobs surfaced in Super Admin job queue UI (`/admin/job-queue`)
+- Idempotency via `singletonKey` (same key = no-op while original is queued/running)
+
+### Current Job Handlers
+| Job Name | Handler | Trigger | Description |
+|----------|---------|---------|-------------|
+| `ai_takeoff_analyze` | `server/jobQueue/handlers/ai_takeoff_analyze.ts` | POST /api/ai/takeoff/analyze | AI plan analysis for auto-takeoff |
+| `ai_document_analyze` | `server/jobQueue/handlers/ai_document_analyze.ts` | POST /api/ai/document-analyze | AI document analysis + AV scan |
+
+### Worker Process
+**File:** `server/worker.ts`
+
+Boots only the pg-boss queue and handlers — no HTTP server. Runs as the `Job worker` workflow in development and as a separate Reserved-VM deployment in production.
+
+---
+
+## In-Process Schedulers (Cron)
+
+All schedulers use `withSchedulerLock(name, fn)` which:
+1. Acquires a distributed lock (prevents duplicate runs on multi-pod setups)
+2. Wraps the tick body in `withSystemJobContext(name, fn)` for cross-tenant RLS elevation
+3. Per-org loops inside the tick use `withJobOrgContext(jobName, orgId, fn)` for per-tenant RLS scoping
 
 ### AI Analysis Scheduler
 
-**Purpose:** Automatically run AI PM analysis on schedule.
+**File:** `server/ai/scheduler.ts`
 
-**Trigger:** Cron schedule (configurable, disabled in development)
-
-**Implementation:**
-- **File:** `server/ai/scheduler.ts`
-- **Condition:** `NODE_ENV=production`
-- **Default Schedule:** Daily at configured time
+**Trigger:** Cron schedule (configurable; disabled in dev by default, active in production)
 
 **Actions:**
 1. Iterate through active organizations
-2. Build data snapshot for each
-3. Run AI analysis
+2. Build data snapshot for each (wrapped in `withJobOrgContext`)
+3. Run AI PM analysis via `routedGeneralChatCompletion`
 4. Store results
 5. Create notification if critical issues found
 
@@ -32,16 +81,12 @@ SmartManageAI includes various automated processes, scheduled tasks, and event-d
 
 ### AI Notes Analysis Scheduler
 
-**Purpose:** Analyze daily notes for insights.
+**File:** `server/aiNotesScheduler.ts`
 
-**Trigger:** Cron schedule
-
-**Implementation:**
-- **File:** `server/aiNotesScheduler.ts`
-- **Default Schedule:** Every few hours
+**Trigger:** Every few hours via `withSchedulerLock`
 
 **Actions:**
-1. Fetch recent unanalyzed notes
+1. Fetch recent unanalyzed notes per org
 2. Send to AI for classification
 3. Create insights with severity
 4. Link to source notes
@@ -51,34 +96,77 @@ SmartManageAI includes various automated processes, scheduled tasks, and event-d
 
 ---
 
-### Payroll Report Generation
+### Compliance Expiration Job (added Task #2674)
 
-**Purpose:** Auto-generate weekly payroll reports when all shifts approved.
+**File:** `server/jobs/jobRunner.ts` — `processComplianceExpirations`
 
-**Trigger:** When last shift of week is approved
+**Trigger:** Nightly cron run (via `withSchedulerLock`)
 
-**Implementation:**
-- **File:** `server/payrollSettingsRoutes.ts`
+**Scope:** Checks each organization's compliance documents for upcoming or past expirations:
+- DBE certifications
+- Surety bonds
+- Insurance certificates
+- Other org compliance documents (`organization_documents` table)
 
-**Condition Logic:**
-```typescript
-// Check if all shifts for week are approved
-const pendingShifts = await getPendingShiftsForWeek(weekStart, weekEnd);
-if (pendingShifts.length === 0) {
-  await generateWeeklyReport(organizationId, weekStart);
-  await notifyOfficeManager();
-}
-```
-
-**Actions:**
-1. Check all shifts approved
-2. Calculate total hours per employee
-3. Generate report record
-4. Notify office administrators
-
-**Failure Handling:** Manual report generation available
+**Actions per org (wrapped in `withJobOrgContext("compliance.expirationCheck", org.organizationId, …)`):**
+1. Query `organization_documents` for records expiring within the alert window
+2. Create compliance expiration notifications
+3. Deduplicate notifications (same doc/org) — only new alerts inserted per run
 
 **Status:** ✅ Working
+
+---
+
+### Equipment PM Generation Job
+
+**File:** `server/jobs/jobRunner.ts` — `processEquipmentPmGeneration`
+
+**Trigger:** Nightly cron
+
+**Actions per org (wrapped in `withJobOrgContext("equipment.pmGeneration", orgId, …)`):**
+1. Check equipment with PM schedules due
+2. Create work order records for due maintenance
+3. Send MAINTENANCE_REQUEST notifications to Equipment/Maintenance Managers
+
+**Status:** ✅ Working
+
+---
+
+### CRM Contact Birthday Digests
+
+**File:** `server/jobs/jobRunner.ts` — `processCrmContactBirthdayDailyDigest` / `processCrmContactBirthdayWeeklyDigest`
+
+**Trigger:** Daily / Weekly cron
+
+**Actions per org (wrapped in `withJobOrgContext`):**
+1. Find contacts with upcoming birthdays
+2. Send digest notification to relationship owners
+
+**Status:** ✅ Working
+
+---
+
+### Certified Payroll Weekly Digest
+
+**File:** `server/jobs/jobRunner.ts` — `processCertifiedPayrollWeeklyDigest`
+
+**Trigger:** Weekly cron (day after payroll week end)
+
+**Actions per org (wrapped in `withJobOrgContext("payroll.certifiedPayrollDigest", org.id, …)`):**
+1. Aggregate certified payroll data for the closed week
+2. Send digest to Office Manager / Admin
+
+**Status:** ✅ Working
+
+---
+
+### Other Scheduled Tasks
+| Scheduler | File | Trigger | Purpose |
+|-----------|------|---------|---------|
+| CRM Task Reminders | `server/crmTaskReminderScheduler.ts` | Daily | Send reminders for overdue CRM tasks |
+| CRM Alert Digest Backfill | `server/crmBackfillAlertDigestScheduler.ts` | Hourly | Process pending alert digests |
+| Status Probe | `server/statusProbeScheduler.ts` | Every 5 min | Ping external integrations for health |
+| Support Weekly Report | `server/supportWeeklyReport.ts` | Weekly | Generate platform support summary |
 
 ---
 
@@ -87,89 +175,113 @@ if (pendingShifts.length === 0) {
 ### Time Clock Events
 
 **Trigger:** Clock in/out actions
+**File:** `server/timeClockRoutes.ts`
 
-**Events:**
 | Event | Actions |
 |-------|---------|
-| CLOCK_IN | Create shift record, log GPS, start timer |
+| CLOCK_IN | Create shift record (status: PENDING), log GPS, start timer |
 | CLOCK_OUT | Close shift, calculate hours, check overtime |
 | AUTO_CLOCK_OUT | System closes abandoned shifts at midnight |
-
-**Implementation:**
-- **File:** `server/timeClockRoutes.ts`
 
 ---
 
 ### Shift Approval Events
 
-**Trigger:** Superintendent approves shift
+**Trigger:** Superintendent/Manager approves shift
 
 **Actions:**
 1. Update shift status to APPROVED
 2. Update labor hours on project
-3. Check week completion for payroll
+3. Check week completion → trigger payroll report if all shifts approved
 4. Log approval in audit trail
+5. Audit log entry: `APPROVE` action on `timeClockShifts`
 
 ---
 
 ### Bid Status Changes
 
-**Trigger:** Bid status updated
+**File:** `server/bidRoutes2.ts`
 
-**Events:**
 | Status Change | Actions |
 |---------------|---------|
-| DRAFT → SUBMITTED | Log submission time, notify estimators |
-| SUBMITTED → WON | Create conversion task, notify team |
-| WON → (Convert) | Create project from bid data |
+| DRAFT → SUBMITTED | Log submission time (`submittedAt`), notify estimators, emit `bid.submitted` + `bid.status_changed` domain events |
+| → AWARDED (conversion) | Create project, carry over estimates/quotes/docs, seed SOV, create draft contract, notify team, emit `bid.converted_to_project` |
 | SUBMITTED → LOST | Archive bid, update analytics |
+| SUBMITTED → CANCELLED | Archive, log |
 
 ---
 
 ### Project Status Changes
 
-**Trigger:** Project status updated
+| Status Change | Trigger | Side Effects |
+|---------------|---------|-------------|
+| BID → PLANNING | Manual | Initialize project setup tasks |
+| PLANNING → ACTIVE | Manual | Notify superintendent, enable time tracking |
+| ACTIVE → COMPLETE | Manual | Trigger closeout checklist |
+| COMPLETE → CLOSED | Manual | Archive, generate final reports |
 
-**Events:**
-| Status Change | Actions |
-|---------------|---------|
-| BID → PLANNING | Initialize project setup tasks |
-| PLANNING → ACTIVE | Notify superintendent, enable time tracking |
-| ACTIVE → COMPLETE | Trigger closeout checklist |
-| COMPLETE → CLOSED | Archive, generate final reports |
+All transitions emit `project.status_changed` domain events and write audit log entries.
 
 ---
 
 ### Change Order Events
 
-**Trigger:** Change order status changes
+**File:** `server/changeOrderRoutes.ts`, `server/changeOrderHelpers.ts`
 
-**Events:**
 | Status Change | Actions |
 |---------------|---------|
-| DRAFT → SUBMITTED | Notify approvers, log submission |
-| SUBMITTED → APPROVED | Update contract amount, notify PM |
-| SUBMITTED → REJECTED | Notify submitter, log reason |
+| → SUBMITTED | Auto-bootstrap approval chain, notify approvers, start workflow engine if active for `CHANGE_ORDER` |
+| → APPROVED | Update budget line items, update SOV, notify requester + office managers, audit log |
+| → REJECTED | Notify submitter, revert to PCO or DRAFT |
+| → VOIDED | Reverse budget impact, audit log |
 
-**Implementation:**
-- **File:** `server/changeOrderRoutes.ts`
+---
+
+### Pay Run Events
+
+**File:** `server/payrollRoutes.ts`
+
+| Transition | Side Effect |
+|------------|-------------|
+| → APPROVED | `approvedById/At` set; cost ledger postings created in DB transaction; `payroll.run.completed` emitted |
+| → PAID | `paidAt` set; cost ledger postings created; payroll notifications to employees |
+| Any | Audit log entry (old/new status) |
+
+---
+
+### AIA Pay Application Events
+
+**File:** `server/sovRoutes.ts`
+
+| Action | Side Effect |
+|--------|-------------|
+| Create | Audit log `CREATE` on `payApplications` |
+| Status change | Audit log `APPROVE`/`REJECT` |
+| Record payment | Audit log payment event |
 
 ---
 
 ### Delay Events
 
-**Trigger:** Delay submitted or acknowledged
+**File:** `server/delayRoutes.ts`
 
-**Events:**
 | Event | Actions |
 |-------|---------|
-| Delay Created | Log delay record |
-| Delay Submitted | Generate notification email |
+| Delay Created | Log delay record (status: DRAFT) |
+| Delay Submitted | Generate notification email to GC/Owner; 48-hour reminder queued |
 | Delay Acknowledged | Update status, log response |
 | Delay Unresponded (48hrs) | Send reminder notification |
 
-**Implementation:**
-- **File:** `server/delayRoutes.ts`
+---
+
+### Upload & AV Scan Events
+
+**File:** `server/auditBillingStorageRoutes.ts`
+
+Every confirmed upload (`POST /api/objects/confirm` and multipart complete) triggers:
+1. AV scan via `scanConfirmedUpload(...)` (EICAR head-check → Cloudmersive if key set → custom scanner)
+2. Audit log entry (`entityType: "upload_av_scan"`, `action: APPROVE` for clean/skipped, `REJECT` for blocked)
+3. Blocked uploads: object deleted from GCS before 422 response (quarantine)
 
 ---
 
@@ -181,36 +293,26 @@ if (pendingShifts.length === 0) {
 |------|---------|------------|
 | BILLING_READY | SoV line item ready to bill | Office Manager |
 | CHANGE_ORDER_PENDING | CO awaiting approval | Approvers |
+| CHANGE_ORDER_APPROVED | CO approved | Requester, Office Manager |
 | TIME_OFF_REQUEST | PTO submitted | Manager |
 | GENERAL | Various system events | Relevant users |
-| MATERIAL_OVERAGE | Budget threshold exceeded | PM, Superintendent |
+| MATERIAL_OVERAGE | Budget threshold (90%) exceeded | PM, Superintendent |
 | PROJECT_ASSIGNMENT | User assigned to project | Assigned user |
-| MAINTENANCE_REQUEST | Equipment maintenance due | Maintenance Manager |
+| MAINTENANCE_REQUEST | Equipment maintenance due | Maintenance/Equipment Manager |
 | REPAIR_REQUEST | Equipment repair needed | Maintenance Manager |
 | DELAY_SUBMITTED | Delay logged | PM, Superintendent |
 | DELAY_ACKNOWLEDGED | GC responded to delay | PM |
 | DELAY_CHANGE_ORDER_NEEDED | Delay requires CO | Estimator, PM |
-
-### Implementation
-
-**Table:** `notifications`
-
-```typescript
-await db.insert(notifications).values({
-  userId: recipientId,
-  type: "CHANGE_ORDER_PENDING",
-  title: "Change Order Requires Approval",
-  message: `CO #${changeOrder.number} submitted for ${project.name}`,
-  projectId: project.id,
-});
-```
-
-**File:** `server/routes.ts` (notifications endpoints)
+| TM_TICKET_SUBMITTED | T&M ticket submitted | Project Manager |
+| TM_TICKET_APPROVED | T&M ticket approved | Submitter |
+| TM_INVOICE_AUTO_CREATED | Invoice generated from T&M | Office Manager |
+| COMPLIANCE_EXPIRING | Doc expiring within alert window | Admin, Office Manager |
+| PROCUREMENT_PR_SUBMITTED | Purchase request submitted | Approvers |
+| PROCUREMENT_PO_APPROVED | PO approved | Requester |
 
 ### Delivery Channels
-
-1. **In-App** - Notification bell in header
-2. **Email** - Critical notifications (configurable)
+1. **In-App** — Notification bell in header
+2. **Email** — Critical notifications (configurable; sent via SendGrid)
 
 ---
 
@@ -219,166 +321,64 @@ await db.insert(notifications).values({
 ### Bid Request Matching
 
 **Trigger:** New bid request published
+**File:** `server/bidNetworkNotifications.ts`
 
 **Actions:**
-1. Identify matching subcontractors by trade
+1. Identify matching subcontractors by trade type
 2. Generate invitation list
 3. Send notifications to matches
 4. Track view counts
-
-**Implementation:**
-- **File:** `server/bidNetworkNotifications.ts`
-
----
-
-### Bid Response Tracking
-
-**Trigger:** Subcontractor submits response
-
-**Actions:**
-1. Update response count
-2. Notify GC of new response
-3. Log response details
 
 ---
 
 ## Material Budget Alerts
 
-### Threshold Monitoring
-
 **Trigger:** Material usage updated
-
-**Condition:** Usage exceeds configured threshold (default 90%)
-
-**Actions:**
-1. Set `alertTriggered` flag
-2. Create notification for PM
-3. Include in AI analysis
-
-**Implementation:**
-- **File:** Embedded in material tracking routes
-
----
-
-## Equipment Maintenance Alerts
-
-### Scheduled Maintenance Due
-
-**Trigger:** Date-based check
-
-**Condition:** Next maintenance date approaching
+**Condition:** Usage ≥ configured threshold (default 90%)
 
 **Actions:**
-1. Create maintenance reminder
-2. Notify Maintenance Manager
-3. Log in equipment history
-
----
-
-## Email Processing Automation
-
-### Incoming Email Classification
-
-**Trigger:** Email synced from connected account
-
-**Actions:**
-1. Classify email category (15 types)
-2. Extract actionable tasks
-3. Link to projects if identifiable
-4. Create tasks in system
-5. Flag priority emails
-
-**Implementation:**
-- **File:** `server/ai/emailAi.ts`
+1. Set `alertTriggered` flag on `projectMaterialBudgets`
+2. Create `MATERIAL_OVERAGE` notification for PM
 
 ---
 
 ## Audit Trail Events
 
-### Logged Actions
-
-All significant actions are logged:
+All significant actions are logged to the append-only `audit_log` table. See `server/auditLogger.ts` for the typed helpers: `logCreate`, `logUpdate`, `logDelete`, `logAuthEvent`, `logRoleChange`.
 
 | Action | Logged Data |
 |--------|-------------|
 | CREATE | Entity type, ID, creator, org, full data |
 | UPDATE | Entity type, ID, updater, before/after |
 | DELETE | Entity type, ID, deleter, deleted data |
-| APPROVE | Entity type, ID, approver, what approved |
+| APPROVE | Entity type, ID, approver |
 | REJECT | Entity type, ID, rejecter, reason |
 | CLOCK_IN | User, project, time, GPS |
 | CLOCK_OUT | User, project, time, GPS, duration |
-
-**Implementation:**
-- **File:** `server/auditLogger.ts`
-
-```typescript
-export async function logCreate(
-  entityType: string,
-  entityId: string,
-  userId: string,
-  organizationId: string,
-  data: any
-) {
-  await db.insert(auditLog).values({
-    userId,
-    action: "CREATE",
-    entityType,
-    entityId,
-    organizationId,
-    changes: JSON.stringify(data),
-  });
-}
-```
-
----
-
-## Background Processes
-
-### Health Checks
-
-**Endpoint:** `GET /health`, `GET /ready`
-
-**Purpose:** Kubernetes/container health monitoring
-
-**Implementation:**
-- **File:** `server/opsRoutes.ts`
-
----
-
-### Data Pipeline Processing
-
-**Purpose:** Process data imports and exports
-
-**Implementation:**
-- **File:** `server/dataPipelineService.ts`
+| LOGIN / LOGIN_FAILED / LOGOUT | User, IP, timestamp |
+| PASSWORD_CHANGE / PASSWORD_RESET | User, timestamp |
+| MFA_ENABLED / MFA_DISABLED | User, timestamp |
+| ROLE_CHANGED / ROLE_GRANTED / ROLE_REVOKED | Actor, target user, old/new role |
 
 ---
 
 ## Failure Handling
 
-### Retry Logic
+### Retry Logic (pg-boss Jobs)
+- `retryLimit=5`, `retryBackoff=true`, `retryDelay=10s`
+- Jobs exhausting retries land in pg-boss `failed` archive
+- Super Admin can retry or archive failed jobs via `/admin/job-queue`
 
-For external API calls (AI, email):
-- Max 3 retries
-- Exponential backoff
-- Log failures
+### Retry Logic (In-Process Schedulers)
+- External API calls (AI, email): max 3 retries, exponential backoff
+- Log failures with correlation ID + Sentry
 
 ### Fallback Behavior
-
 When automation fails:
-1. Log error with context
-2. Continue with remaining items
+1. Log error with `x-request-id` correlation
+2. Continue with remaining items (per-org loops use `continue` or `return`)
 3. Alert admin if critical
-4. Provide manual fallback
-
-### Monitoring
-
-**File:** `server/utils/monitoring.ts`
-
-- Performance metrics
-- Error tracking
-- Usage statistics
+4. Provide manual fallback where available
 
 ---
 
@@ -388,13 +388,17 @@ When automation fails:
 
 | Variable | Purpose |
 |----------|---------|
-| NODE_ENV | Enable/disable schedulers |
-| AI_SCAN_CRON | AI analysis schedule |
-| NOTIFICATION_EMAIL_ENABLED | Email notifications |
+| `NODE_ENV` | Enable/disable schedulers (production only for some) |
+| `STRICT_TENANT_RLS` | Must be `true` in production; schedulers require correct context wrappers |
+| `AI_SCAN_CRON` | AI analysis schedule override |
+| `NOTIFICATION_EMAIL_ENABLED` | Email notifications toggle |
+| `UPLOAD_AV_SCAN_MODE` | `enforce` (default prod), `permissive` (dev), `disabled` |
+| `CLOUDMERSIVE_AV_API_KEY` | Enable Cloudmersive AV scanning for uploads |
 
 ### Feature Flags
 
 Automations can be enabled/disabled via:
 - Subscription tier
-- Add-on status
-- Organization settings
+- Add-on status (`ai_pm`, `ai_cfo`, etc.)
+- Organization-level feature flags (Super Admin UI)
+- Per-org AI provider flags (`AI_PROVIDER_TAKEOFF`, `AI_PROVIDER_GENERAL`)
