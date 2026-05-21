@@ -467,6 +467,14 @@ function CanvasStageImpl(props: CanvasStageProps) {
     };
   }, [stagePosition.x, stagePosition.y, stageScale, stageDimensions.width, stageDimensions.height]);
 
+  // Pre-build a Map from categoryId → category so the two render loops
+  // below (geometry layer + label layer) can look up a category in O(1)
+  // instead of doing a linear categories.find() per measurement per frame.
+  const categoryMap = useMemo(
+    () => new Map(categories.map((c: any) => [c.id, c])),
+    [categories],
+  );
+
   // Register a non-passive wheel listener on the container element so that
   // e.evt.preventDefault() in handleWheel is always honoured.  Modern
   // browsers default wheel listeners to passive=true for scroll performance;
@@ -997,7 +1005,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   }
                   const isSelected = selectedMeasurementId === m.id;
                   const isHovered = !isSelected && hoveredMeasurementId === m.id;
-                  const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const category = m.categoryId ? categoryMap.get(m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
                   const baseColor = catColor || (
                     m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" ? "#2563eb" :
@@ -1015,7 +1023,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     }
                   };
 
-                  const mCategory = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const mCategory = m.categoryId ? categoryMap.get(m.categoryId) : null;
                   const mLineStyle = m.lineStyle || mCategory?.lineStyle || "solid";
                   const mLineWidth = m.lineWidth || mCategory?.lineWidth || 3;
                   const dashMap: Record<string, number[]> = {
@@ -1408,7 +1416,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       center.y < viewportRect.top  || center.y > viewportRect.bottom) {
                     return null;
                   }
-                  const category = m.categoryId ? categories.find(c => c.id === m.categoryId) : null;
+                  const category = m.categoryId ? categoryMap.get(m.categoryId) : null;
                   const catColor = validateHexColor(category?.color);
                   const baseColor = catColor || (
                     m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR" ? "#2563eb" :

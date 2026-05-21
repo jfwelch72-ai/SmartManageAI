@@ -128,6 +128,18 @@ export function usePdfTileRenderer(
   const [loadingTileCount, setLoadingTileCount] = useState(0);
   const lastSheetRef = useRef<string | null>(null);
   const lastVisibleKeysRef = useRef<Set<string>>(new Set());
+  // Batch loadingTileCount decrements with RAF so N tiles completing in
+  // the same frame don't each fire a separate setState (N re-renders).
+  const pendingDecrRef = useRef(0);
+  const decrRafRef = useRef(false);
+  // Zoom-settle timer: when stageScale changes rapidly (wheel zoom),
+  // defer expensive tile cancellations and new requests by 150 ms so we
+  // don't thrash the scheduler — cancelling and re-requesting tiles on
+  // every ~16 ms RAF tick — while the user is still pinching/scrolling.
+  // Pure pans (same stageScale, different viewport x/y) still fire
+  // immediately because prevScaleRef stays equal.
+  const prevStageScaleRef = useRef<number | null>(null);
+  const zoomSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // RAF-coalesced re-render: many tiles can resolve in the same frame
   // (especially after a fast pan); per-tile setTick caused a setState
   // storm that re-ran the visibleTiles useMemo dozens of times per
@@ -264,51 +276,111 @@ export function usePdfTileRenderer(
     const sheetId = args.sheetId;
     const sheetUrl = args.sheetUrl;
     const pageIndex = args.pageIndex;
-    const bucket: ZoomBucket = pickZoomBucket(args.stageScale);
-    const coords = visibleTileCoords({
-      page: pageDims,
-      viewport: args.viewport,
-      zoomBucket: bucket,
-      sheetId,
-      pageIndex,
-    });
-    const visibleKeys = new Set(coords.map(tileKey));
-    lastVisibleKeysRef.current = visibleKeys;
-    scheduler.cancelOutsideViewport(visibleKeys);
-    // Update both the scheduler (so newly-enqueued tiles below pick the
-    // right priority on insertion) and the cache (so over-budget
-    // eviction prefers tiles farthest from the user's viewport).
-    scheduler.setViewport(args.viewport, sheetId);
-    cache.setViewport(args.viewport, sheetId);
+    const viewport = args.viewport;
+    const stageScale = args.stageScale;
 
-    let issued = 0;
-    for (const c of coords) {
-      if (cache.has(c)) continue;
-      issued++;
-      scheduler
-        .requestTile({ coord: c, sheetUrl, priority: 0 })
-        .then((res) => {
-          if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
-            cache.set(res.coord, res.bitmap);
-            scheduleFlush();
-          } else {
-            try {
-              res.bitmap.close();
-            } catch {
-              /* noop */
-            }
-          }
-        })
-        .catch(() => undefined)
-        .finally(() => {
-          setLoadingTileCount((n) => Math.max(0, n - 1));
+    // Detect whether stageScale actually changed since the last run.
+    // If it did, the user is mid-zoom: defer the expensive work so we
+    // don't cancel + re-request tiles on every ~16 ms wheel tick.
+    const scaleChanged =
+      prevStageScaleRef.current !== null &&
+      prevStageScaleRef.current !== stageScale;
+    prevStageScaleRef.current = stageScale;
+
+    // Always do the cheap priority update immediately so tiles that are
+    // already queued sort toward the new viewport center.
+    scheduler.setViewport(viewport, sheetId);
+    cache.setViewport(viewport, sheetId);
+
+    // RAF-batched decrement helper: N tiles completing in the same frame
+    // produce a single setState instead of N individual re-renders.
+    const batchDecrement = () => {
+      pendingDecrRef.current++;
+      if (decrRafRef.current) return;
+      decrRafRef.current = true;
+      if (typeof requestAnimationFrame === "function") {
+        requestAnimationFrame(() => {
+          decrRafRef.current = false;
+          const n = pendingDecrRef.current;
+          pendingDecrRef.current = 0;
+          if (n > 0) setLoadingTileCount((c) => Math.max(0, c - n));
         });
-    }
-    if (issued > 0) {
-      setLoadingTileCount((n) => n + issued);
+      } else {
+        Promise.resolve().then(() => {
+          decrRafRef.current = false;
+          const n = pendingDecrRef.current;
+          pendingDecrRef.current = 0;
+          if (n > 0) setLoadingTileCount((c) => Math.max(0, c - n));
+        });
+      }
+    };
+
+    // The expensive part: cancel stale tiles + request new ones.
+    // When scale is changing rapidly, defer this by 150 ms so we only
+    // thrash once per zoom gesture rather than once per wheel tick.
+    const doTileUpdates = () => {
+      const bucket: ZoomBucket = pickZoomBucket(stageScale);
+      const coords = visibleTileCoords({
+        page: pageDims,
+        viewport,
+        zoomBucket: bucket,
+        sheetId,
+        pageIndex,
+      });
+      const visibleKeys = new Set(coords.map(tileKey));
+      lastVisibleKeysRef.current = visibleKeys;
+      scheduler.cancelOutsideViewport(visibleKeys);
+
+      let issued = 0;
+      for (const c of coords) {
+        if (cache.has(c)) continue;
+        issued++;
+        scheduler
+          .requestTile({ coord: c, sheetUrl, priority: 0 })
+          .then((res) => {
+            if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
+              cache.set(res.coord, res.bitmap);
+              scheduleFlush();
+            } else {
+              try {
+                res.bitmap.close();
+              } catch {
+                /* noop */
+              }
+            }
+          })
+          .catch(() => undefined)
+          .finally(batchDecrement);
+      }
+      if (issued > 0) {
+        setLoadingTileCount((n) => n + issued);
+      } else {
+        scheduleFlush();
+      }
+    };
+
+    if (scaleChanged) {
+      // Scale is actively changing — cancel any earlier settle timer and
+      // restart the countdown. Only the last zoom position within the
+      // 150 ms window triggers tile work.
+      if (zoomSettleTimerRef.current !== null) {
+        clearTimeout(zoomSettleTimerRef.current);
+      }
+      zoomSettleTimerRef.current = setTimeout(() => {
+        zoomSettleTimerRef.current = null;
+        doTileUpdates();
+      }, 150);
     } else {
-      scheduleFlush();
+      // Pure pan (scale unchanged) — update tiles immediately.
+      doTileUpdates();
     }
+
+    return () => {
+      if (zoomSettleTimerRef.current !== null) {
+        clearTimeout(zoomSettleTimerRef.current);
+        zoomSettleTimerRef.current = null;
+      }
+    };
   }, [
     args.enabled,
     args.sheetUrl,

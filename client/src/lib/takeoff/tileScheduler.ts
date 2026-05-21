@@ -197,6 +197,13 @@ export class TileScheduler {
   private destroyed = false;
   private currentViewport: ViewportWorldRect | null = null;
   private currentSheetId: string | null = null;
+  // Batch-pump optimisation: instead of sorting + dispatching after every
+  // single requestTile insertion, we mark the queue dirty and schedule a
+  // microtask pump.  All requestTile calls that land in the same synchronous
+  // loop (e.g. the initial 50-tile viewport fill) accumulate before the first
+  // sort fires, reducing ~50 O(n log n) sorts to a single one.
+  private pumpScheduled = false;
+  private queueDirty = false;
 
   constructor(poolSize: number = defaultPoolSize()) {
     for (let i = 0; i < poolSize; i++) {
@@ -249,6 +256,9 @@ export class TileScheduler {
         a.request.priority - b.request.priority ||
         a.enqueueOrder - b.enqueueOrder,
     );
+    // A fresh sort was just applied — clear the dirty flag so pump()
+    // doesn't redundantly re-sort when it runs next.
+    this.queueDirty = false;
   }
 
   private computePriority(coord: TileCoord): number {
@@ -291,12 +301,10 @@ export class TileScheduler {
     p.finally(() => {
       this.inflightTiles.delete(k);
     }).catch(() => undefined);
-    this.queue.sort(
-      (a, b) =>
-        a.request.priority - b.request.priority ||
-        a.enqueueOrder - b.enqueueOrder,
-    );
-    this.pump();
+    // Mark dirty and defer — all tiles inserted in the same synchronous
+    // loop will accumulate before the single microtask sort+dispatch.
+    this.queueDirty = true;
+    this.schedulePump();
     return p;
   }
 
@@ -556,11 +564,44 @@ export class TileScheduler {
     return best;
   }
 
+  /**
+   * Defers a `pump()` call to the next microtask. All `requestTile`
+   * calls that land in the same synchronous loop accumulate on the
+   * queue first; the single microtask fires one sort + dispatch over
+   * the full batch instead of N separate per-insertion sorts.
+   *
+   * `onMessage` still calls `pump()` directly (not via this helper)
+   * so a just-freed worker slot is filled immediately rather than
+   * waiting an extra microtask tick.
+   */
+  private schedulePump(): void {
+    if (this.pumpScheduled || this.destroyed) return;
+    this.pumpScheduled = true;
+    Promise.resolve().then(() => {
+      this.pumpScheduled = false;
+      this.pump();
+    });
+  }
+
   private pump(): void {
     if (this.destroyed) return;
+    // Lazy sort: only re-order when new tiles were inserted since the
+    // last sort (queueDirty=true). setViewport() sorts immediately and
+    // clears the flag, so this is a no-op after a viewport change.
+    if (this.queueDirty && this.queue.length > 1) {
+      this.queue.sort(
+        (a, b) =>
+          a.request.priority - b.request.priority ||
+          a.enqueueOrder - b.enqueueOrder,
+      );
+      this.queueDirty = false;
+    }
     while (this.queue.length > 0) {
       const pw = this.pickLeastBusy();
-      if (pw.inflight >= 2) break;
+      // Raised from 2 → 3 inflight per worker (6 workers × 3 = 18
+      // concurrent tile renders vs the previous 12) for faster initial
+      // viewport fill without overloading a single worker.
+      if (pw.inflight >= 3) break;
       const item = this.queue.shift()!;
       const k = tileKey(item.request.coord);
       if (this.cancelledTiles.has(k)) continue;

@@ -1131,6 +1131,26 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const wheelRafScheduledRef = useRef(false);
   const wheelPendingStateRef = useRef<{ scale: number; pos: { x: number; y: number } } | null>(null);
 
+  // Mouse-move RAF coalescing — mousemove fires at up to 120+/s on
+  // high-refresh displays.  Each event calls setCursorPosition,
+  // setCurrentSnap, and setRunningMeasurement; React 18 batches them
+  // into one render per event, but that's still up to 120 re-renders/s.
+  // Coalescing to one RAF tick (~60/s) halves the CanvasStage render
+  // budget (which iterates 200+ measurements per frame even with
+  // viewport culling).  Stale-closure over `runningMeasurement` is
+  // avoided by keeping a sync ref rather than putting it in the dep
+  // array, which also prevents the useCallback from being recreated on
+  // every measurement update.
+  const mouseMoveRafRef = useRef(false);
+  const pendingMouseMoveRef = useRef<{
+    pt: Point;
+    snap: SnapResult | null;
+    running: { value: number; unit: string; segments?: number } | null;
+    clearRunning: boolean;
+  } | null>(null);
+  const runningMeasurementRef = useRef(runningMeasurement);
+  runningMeasurementRef.current = runningMeasurement;
+
   const handleStageDragMove = useCallback((e: any) => {
     if (activeTool !== "pan") return;
     const stage = e.target;
@@ -1185,7 +1205,6 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     if (pendingDimLengthFt && pendingDimLengthFt > 0 && moveAnchor && currentSheet?.scalePxPerFoot) {
       pt = applyFixedLength(pt, moveAnchor, pendingDimLengthFt * currentSheet.scalePxPerFoot);
     }
-    setCursorPosition(pt);
     // Mirror `resolvePoint`'s priority order so the HUD/badge highlight
     // matches whichever snap will actually be applied on click. Higher
     // priority wins: endpoint/midpoint/intersection/center →
@@ -1206,8 +1225,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         if (near.isSnapped) liveSnap = near;
       }
     }
-    setCurrentSnap(liveSnap);
 
+    let pendingRunning: { value: number; unit: string; segments?: number } | null = null;
+    let clearRunning = false;
     if (isDrawing && drawingPoints.length > 0 && currentSheet?.scalePxPerFoot) {
       const scale = currentSheet.scalePxPerFoot;
       const allPts = [...drawingPoints, pt];
@@ -1216,30 +1236,49 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         const radiusPx = computePixelDistance(drawingPoints[0], pt);
         const radiusFt = radiusPx / scale;
         const areaFt2 = Math.PI * radiusFt * radiusFt;
-        setRunningMeasurement({ value: areaFt2, unit: "SF", segments: 2 * Math.PI * radiusFt });
+        pendingRunning = { value: areaFt2, unit: "SF", segments: 2 * Math.PI * radiusFt };
       } else if (moveTool === "linear" || moveTool === "linear_with_drop" || moveTool === "pitched_linear") {
-        const len = computeDistanceInFeet(allPts, scale);
-        setRunningMeasurement({ value: len, unit: "LF" });
+        pendingRunning = { value: computeDistanceInFeet(allPts, scale), unit: "LF" };
       } else if (moveTool === "segment") {
         let total = 0;
         for (let i = 0; i < allPts.length - 1; i++) {
           total += computeDistanceInFeet([allPts[i], allPts[i + 1]], scale);
         }
-        setRunningMeasurement({ value: total, unit: "LF", segments: allPts.length - 1 });
+        pendingRunning = { value: total, unit: "LF", segments: allPts.length - 1 };
       } else if (moveTool === "area" || moveTool === "volume" || moveTool === "pitched_area" || moveTool === "surface_area") {
         if (allPts.length >= 3) {
           const area = computePolygonAreaInFt2(allPts, scale);
           const perim = computePolygonPerimeterInFt(allPts, scale);
-          setRunningMeasurement({ value: area, unit: "SF", segments: perim });
+          pendingRunning = { value: area, unit: "SF", segments: perim };
         } else {
-          const len = computeDistanceInFeet(allPts, scale);
-          setRunningMeasurement({ value: len, unit: "LF" });
+          pendingRunning = { value: computeDistanceInFeet(allPts, scale), unit: "LF" };
         }
       }
-    } else if (!isDrawing && runningMeasurement) {
-      setRunningMeasurement(null);
+    } else if (!isDrawing && runningMeasurementRef.current) {
+      clearRunning = true;
     }
-  }, [effectiveSnapEnabled, snapTargets, snapModeConfig, measurements, stageScale, angleStep, pendingDimLengthFt, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
+
+    // RAF-coalesce all visual state updates: cursor position, snap badge,
+    // and running-measurement readout.  mousemove fires at up to 120+/s
+    // on high-refresh displays; coalescing caps CanvasStage re-renders at
+    // ~60/s without any perceptible lag.
+    pendingMouseMoveRef.current = { pt, snap: liveSnap, running: pendingRunning, clearRunning };
+    if (!mouseMoveRafRef.current) {
+      mouseMoveRafRef.current = true;
+      requestAnimationFrame(() => {
+        mouseMoveRafRef.current = false;
+        const pending = pendingMouseMoveRef.current;
+        pendingMouseMoveRef.current = null;
+        if (!pending) return;
+        setCursorPosition(pending.pt);
+        setCurrentSnap(pending.snap);
+        if (pending.clearRunning) setRunningMeasurement(null);
+        else if (pending.running) setRunningMeasurement(pending.running);
+      });
+    }
+  // `runningMeasurement` removed from deps — accessed via runningMeasurementRef
+  // to prevent recreating this callback on every measurement update.
+  }, [effectiveSnapEnabled, snapTargets, snapModeConfig, measurements, stageScale, angleStep, pendingDimLengthFt, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();
