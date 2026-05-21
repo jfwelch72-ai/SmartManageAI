@@ -2010,7 +2010,9 @@ router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest
       : [eq(takeoffConditions.id, id), eq(takeoffConditions.organizationId, orgCtx.orgId!)];
     const [existing] = await db.select().from(takeoffConditions).where(and(...conditions)).limit(1);
     if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
-    const updateSchema = insertTakeoffConditionSchema.partial().omit({ organizationId: true });
+    const updateSchema = insertTakeoffConditionSchema.partial().omit({ organizationId: true }).extend({
+      lastUsedAt: z.coerce.date().optional().nullable(),
+    });
     const validated = parseOrRespond(updateSchema, req.body, res);
     if (!validated) return;
     const updateData = { ...validated, updatedAt: new Date() };
