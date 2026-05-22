@@ -321,6 +321,7 @@ export function usePdfTileRenderer(
     // thrash once per zoom gesture rather than once per wheel tick.
     const doTileUpdates = () => {
       const bucket: ZoomBucket = pickZoomBucket(stageScale);
+      const bucketIdx = (ZOOM_BUCKETS as ReadonlyArray<ZoomBucket>).indexOf(bucket);
       const coords = visibleTileCoords({
         page: pageDims,
         viewport,
@@ -328,11 +329,38 @@ export function usePdfTileRenderer(
         sheetId,
         pageIndex,
       });
-      const visibleKeys = new Set(coords.map(tileKey));
-      lastVisibleKeysRef.current = visibleKeys;
-      scheduler.cancelOutsideViewport(visibleKeys);
+
+      // Build a "keep" set spanning ALL pyramid levels (bucket 0.25 →
+      // current bucket) that are visible in the current viewport.
+      //
+      // Why both uses matter:
+      //   1. cancelOutsideViewport(keepKeys) — keeps any in-flight
+      //      lower-bucket renders alive so they can fill the pyramid
+      //      backdrop instead of being needlessly aborted.
+      //   2. lastVisibleKeysRef.current = keepKeys — the .then() handler
+      //      caches arriving lower-bucket tiles (instead of close()-ing
+      //      them), so the pyramid useMemo in visibleTiles can find them.
+      //
+      // Without this, zooming rapidly across bucket levels left the
+      // pyramid empty: lower-bucket in-flight tiles were cancelled by
+      // cancelOutsideViewport and any that did arrive were close()'d
+      // because lastVisibleKeysRef only contained current-bucket keys.
+      // The canvas then fell back to the 0.25× placeholder which at
+      // stageScale ≥ 4 appears completely dark/blurry — the "PDF can't
+      // render" symptom the user reported.
+      const keepKeys = new Set<string>();
+      coords.forEach((c) => keepKeys.add(tileKey(c)));
+      for (let bi = 0; bi < bucketIdx; bi++) {
+        const fb = ZOOM_BUCKETS[bi];
+        visibleTileCoords({ page: pageDims, viewport, zoomBucket: fb, sheetId, pageIndex })
+          .forEach((c) => keepKeys.add(tileKey(c)));
+      }
+      lastVisibleKeysRef.current = keepKeys;
+      scheduler.cancelOutsideViewport(keepKeys);
 
       let issued = 0;
+
+      // Current-bucket tiles — highest priority (0).
       for (const c of coords) {
         if (cache.has(c)) continue;
         issued++;
@@ -353,6 +381,39 @@ export function usePdfTileRenderer(
           .catch(() => undefined)
           .finally(batchDecrement);
       }
+
+      // Lower-bucket pyramid tiles — requested with progressively lower
+      // priority so current-bucket work always goes to the head of the
+      // queue.  The scheduler de-dupes inflight requests so re-issuing
+      // a coord that is already being rendered is a cheap no-op.
+      // These fill the pyramid backdrop while bucket=N tiles load,
+      // eliminating the dark-canvas gap after a rapid zoom-in.
+      for (let bi = bucketIdx - 1; bi >= 0; bi--) {
+        const fb = ZOOM_BUCKETS[bi];
+        const fbCoords = visibleTileCoords({ page: pageDims, viewport, zoomBucket: fb, sheetId, pageIndex });
+        const pyramidPriority = bucketIdx - bi; // 1 (coarsest current-1) … up to bucketIdx
+        for (const c of fbCoords) {
+          if (cache.has(c)) continue;
+          issued++;
+          scheduler
+            .requestTile({ coord: c, sheetUrl, priority: pyramidPriority })
+            .then((res) => {
+              if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
+                cache.set(res.coord, res.bitmap);
+                scheduleFlush();
+              } else {
+                try {
+                  res.bitmap.close();
+                } catch {
+                  /* noop */
+                }
+              }
+            })
+            .catch(() => undefined)
+            .finally(batchDecrement);
+        }
+      }
+
       if (issued > 0) {
         setLoadingTileCount((n) => n + issued);
       } else {
