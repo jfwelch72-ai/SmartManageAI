@@ -330,55 +330,92 @@ export function usePdfTileRenderer(
         pageIndex,
       });
 
-      // Build a "keep" set spanning ALL pyramid levels (bucket 0.25 →
-      // current bucket) that are visible in the current viewport.
-      //
-      // Why both uses matter:
-      //   1. cancelOutsideViewport(keepKeys) — keeps any in-flight
-      //      lower-bucket renders alive so they can fill the pyramid
-      //      backdrop instead of being needlessly aborted.
-      //   2. lastVisibleKeysRef.current = keepKeys — the .then() handler
-      //      caches arriving lower-bucket tiles (instead of close()-ing
-      //      them), so the pyramid useMemo in visibleTiles can find them.
-      //
-      // Without this, zooming rapidly across bucket levels left the
-      // pyramid empty: lower-bucket in-flight tiles were cancelled by
-      // cancelOutsideViewport and any that did arrive were close()'d
-      // because lastVisibleKeysRef only contained current-bucket keys.
-      // The canvas then fell back to the 0.25× placeholder which at
-      // stageScale ≥ 4 appears completely dark/blurry — the "PDF can't
-      // render" symptom the user reported.
-      const keepKeys = new Set<string>();
-      coords.forEach((c) => keepKeys.add(tileKey(c)));
+      // Current-bucket tile keys — used for the QUEUE phase of
+      // cancelOutsideViewport so unstarted tiles outside the viewport
+      // are rejected immediately (keeps workers free for new requests).
+      const visibleKeys = new Set<string>();
+      coords.forEach((c) => visibleKeys.add(tileKey(c)));
+
+      // Pyramid keep-set: ALL bucket levels visible in the current
+      // viewport.  Used for TWO purposes:
+      //   1. DISPATCH phase of cancelOutsideViewport — tiles already
+      //      being rendered inside a worker are NOT aborted if they're
+      //      in this set.  This lets dispatched lower-bucket tiles
+      //      finish and populate the pyramid cache, eliminating the
+      //      dark-canvas gap after a rapid zoom-in, without the
+      //      freezing that occurred when the queue phase also used this
+      //      wider set (unstarted pyramid tiles were blocking workers).
+      //   2. lastVisibleKeysRef — the .then() handler caches an
+      //      arriving tile only when its key is in this set; using the
+      //      wider pyramid set means a dispatched lower-bucket tile
+      //      that completes is stored rather than close()'d.
+      const keepKeys = new Set<string>(visibleKeys);
       for (let bi = 0; bi < bucketIdx; bi++) {
         const fb = ZOOM_BUCKETS[bi];
         visibleTileCoords({ page: pageDims, viewport, zoomBucket: fb, sheetId, pageIndex })
           .forEach((c) => keepKeys.add(tileKey(c)));
       }
       lastVisibleKeysRef.current = keepKeys;
-      scheduler.cancelOutsideViewport(keepKeys);
+
+      // Two-phase cancel:
+      //   queue  → visibleKeys  (tight: free workers fast)
+      //   dispatch → keepKeys   (wide: let pyramid renders finish)
+      scheduler.cancelOutsideViewport(visibleKeys, keepKeys);
+
+      // Helper that attaches cache/flush/batchDecrement callbacks to a
+      // fresh tile promise.  Only call this for tiles that are NOT
+      // already inflight (scheduler.isInflight guard below) so we
+      // never attach a second .finally(batchDecrement) to the same
+      // promise — that was the double-decrement bug from the earlier
+      // proactive-pyramid attempt.
+      const attachHandlers = (p: Promise<{ coord: TileCoord; bitmap: ImageBitmap; empty: boolean }>) => {
+        p.then((res) => {
+          if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
+            cache.set(res.coord, res.bitmap);
+            scheduleFlush();
+          } else {
+            try { res.bitmap.close(); } catch { /* noop */ }
+          }
+        })
+          .catch(() => undefined)
+          .finally(batchDecrement);
+      };
 
       let issued = 0;
+
+      // Current-bucket tiles — highest priority.
       for (const c of coords) {
         if (cache.has(c)) continue;
         issued++;
-        scheduler
-          .requestTile({ coord: c, sheetUrl, priority: 0 })
-          .then((res) => {
-            if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
-              cache.set(res.coord, res.bitmap);
-              scheduleFlush();
-            } else {
-              try {
-                res.bitmap.close();
-              } catch {
-                /* noop */
-              }
-            }
-          })
-          .catch(() => undefined)
-          .finally(batchDecrement);
+        attachHandlers(scheduler.requestTile({ coord: c, sheetUrl, priority: 0 }));
       }
+
+      // Pyramid tiles — request lower-bucket tiles that are NOT in
+      // cache and NOT already inflight.  The isInflight guard is
+      // critical: scheduler.requestTile de-dupes by returning the
+      // existing promise for an inflight coord, so attaching another
+      // .finally(batchDecrement) without it would decrement twice for
+      // a single completion.  Tiles issued here go into the queue;
+      // cancelOutsideViewport(visibleKeys, keepKeys) above already
+      // cleared any stale queued items, so these are fresh requests.
+      // Their dispatched renders are protected by the keepKeys dispatch
+      // set on the next cancelOutsideViewport call.
+      for (let bi = bucketIdx - 1; bi >= 0; bi--) {
+        const fb = ZOOM_BUCKETS[bi];
+        const fbCoords = visibleTileCoords({
+          page: pageDims,
+          viewport,
+          zoomBucket: fb,
+          sheetId,
+          pageIndex,
+        });
+        for (const c of fbCoords) {
+          if (cache.has(c) || scheduler.isInflight(c)) continue;
+          issued++;
+          attachHandlers(scheduler.requestTile({ coord: c, sheetUrl, priority: bucketIdx - bi }));
+        }
+      }
+
       if (issued > 0) {
         setLoadingTileCount((n) => n + issued);
       } else {

@@ -349,17 +349,42 @@ export class TileScheduler {
   }
 
   /**
-   * Drop queued requests whose coords are no longer in `keep`.
-   * In-flight requests are flagged so their results are discarded on
-   * arrival (the worker still finishes them — terminating mid-render
-   * is more expensive than letting a tile finish and throwing it
-   * away).
+   * Returns true when `coord` has already been dispatched to a worker
+   * or is sitting in the pending queue.  Callers use this to avoid
+   * attaching a second `.finally` callback to the same promise when
+   * they want to issue a speculative/pyramid request for a tile that
+   * is already in-flight.
    */
-  cancelOutsideViewport(keepKeys: Set<string>): void {
+  isInflight(coord: TileCoord): boolean {
+    return this.inflightTiles.has(tileKey(coord));
+  }
+
+  /**
+   * Drop queued requests whose coords are no longer in `queueKeepKeys`.
+   *
+   * Two-phase cancellation lets callers use a tighter set for the
+   * pending queue (so unstarted low-priority tiles don't hold a queue
+   * slot) while letting dispatched renders finish with a wider set:
+   *
+   *   • `queueKeepKeys`    — tiles NOT in this set are rejected from
+   *     the pending queue immediately (fast worker-slot reclaim).
+   *   • `dispatchKeepKeys` — tiles NOT in this set that are already
+   *     rendering inside a worker receive a `cancelTile` message.
+   *     Defaults to `queueKeepKeys` when omitted (original behaviour).
+   *
+   * Keeping dispatched pyramid tiles alive (via a wider
+   * `dispatchKeepKeys`) lets them finish and populate the cache as a
+   * backdrop while high-res tiles load, without letting unstarted
+   * pyramid tiles block the queue.
+   */
+  cancelOutsideViewport(
+    queueKeepKeys: Set<string>,
+    dispatchKeepKeys: Set<string> = queueKeepKeys,
+  ): void {
     const next: typeof this.queue = [];
     for (const item of this.queue) {
       const k = tileKey(item.request.coord);
-      if (keepKeys.has(k)) {
+      if (queueKeepKeys.has(k)) {
         next.push(item);
       } else {
         const req = item.request as TileRequest & {
@@ -372,10 +397,10 @@ export class TileScheduler {
       }
     }
     this.queue = next;
-    // Tell the worker to abort any tiles it has already started rendering
-    // that are no longer in the keep set.
+    // Tell the worker to abort dispatched tiles that are outside the
+    // (potentially wider) dispatch keep-set.
     this.inflightTileDispatch.forEach((entry, k) => {
-      if (!keepKeys.has(k)) {
+      if (!dispatchKeepKeys.has(k)) {
         this.cancelledTiles.add(k);
         this.postCancelTile(entry.worker, entry.requestId);
         this.inflightTileDispatch.delete(k);
