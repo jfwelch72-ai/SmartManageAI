@@ -79,7 +79,7 @@ function logOnce(source: string, value: unknown): void {
     (window as unknown as Record<string, unknown>)[WIN_WARNED_KEY] = true;
   }
   // eslint-disable-next-line no-console
-  console.warn(
+  console.debug(
     `[Takeoff] Suppressed transient "image source is detached" from ${source}. ` +
       `Konva will redraw on the next frame; this overlay is silenced in dev to ` +
       `avoid blocking the workspace. Underlying error:`,
