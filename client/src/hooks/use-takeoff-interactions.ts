@@ -1117,17 +1117,24 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const dragMoveRafScheduledRef = useRef(false);
   const dragMovePendingPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Wheel-zoom RAF coalescing — each wheel tick fires 60-120+ times/s.
-  // Calling setStageScale + setStagePosition on every tick causes a React
-  // re-render storm.  We apply the transform directly to the Konva node for
-  // instant visual feedback and only sync React state once per animation
-  // frame (~60/s).  IMPORTANT: we must keep React state in sync every frame
-  // rather than debouncing it, because setCursorPosition (mousemove) triggers
-  // React re-renders independently; a debounced stageScale would cause React
-  // to re-apply stale scaleX/scaleY props to the Stage on those renders,
-  // resetting the visual zoom back — making zoom appear "not responding".
-  // CanvasStage suppresses its expensive label rendering during active zoom
-  // (via its own isZoomingRef) so each RAF render stays cheap.
+  // Wheel-zoom state sync — we apply the transform directly to the Konva
+  // node for instant visual feedback AND call setStageScale/setStagePosition
+  // synchronously so React state is always up-to-date.  React 18 batches
+  // both setters into one re-render per wheel tick (~60/s).
+  //
+  // A prior RAF-coalescing approach (defer React sync to the next frame)
+  // introduced a race: setCursorPosition (mousemove) triggers independent
+  // React re-renders within the same 16ms frame.  Those re-renders saw the
+  // stale stageScale still in React state and react-konva re-applied the old
+  // scaleX/scaleY to the Stage node, snapping zoom back.  Syncing
+  // synchronously closes that window — any mousemove render now sees the
+  // already-committed newScale.  CanvasStage suppresses expensive label
+  // rendering while zoom is active (isZoomingRef) so each render stays fast.
+
+  // Pinch-zoom RAF coalescing — touch pinch events can fire faster than
+  // 120/s on some devices.  Unlike wheel events (fixed above), each pinch
+  // frame drives Konva imperatively AND defers the React state sync to a
+  // single RAF so we don't block the touch handler with re-render work.
   const wheelRafScheduledRef = useRef(false);
   const wheelPendingStateRef = useRef<{ scale: number; pos: { x: number; y: number } } | null>(null);
 
@@ -1287,11 +1294,20 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const MAX_SCALE = 10;
     const stage = e.target.getStage();
     // Read from the Konva node directly — not React state — so rapid
-    // successive wheel ticks chain correctly even before React has flushed
-    // the previous RAF-coalesced state update.
+    // successive wheel ticks chain correctly even before React flushes.
     const oldScale = stage.scaleX();
-    const pointer = stage.getPointerPosition();
-    if (!pointer) return;
+    // getPointerPosition() can return null on the very first wheel event if
+    // Konva hasn't processed a prior mousemove (e.g. user scrolls immediately
+    // after page load without moving the mouse first).  Fall back to the
+    // native event coordinates so zoom always has a valid centre point.
+    let pointer = stage.getPointerPosition();
+    if (!pointer) {
+      const rect = (stage.container() as HTMLElement).getBoundingClientRect();
+      pointer = {
+        x: e.evt.clientX - rect.left,
+        y: e.evt.clientY - rect.top,
+      };
+    }
     const mousePointTo = {
       x: (pointer.x - stage.x()) / oldScale,
       y: (pointer.y - stage.y()) / oldScale,
@@ -1303,28 +1319,15 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       y: pointer.y - mousePointTo.y * newScale,
     };
 
-    // Apply imperatively to the Konva node for zero-latency visual
-    // feedback (no React re-render on this tick).
+    // Apply imperatively for zero-latency visual feedback, then sync
+    // React state in the same synchronous call.  React 18 batches both
+    // setters into one re-render so the cost is identical to the old
+    // RAF approach but without the race window.
     stage.scale({ x: newScale, y: newScale });
     stage.position(newPos);
     stage.batchDraw();
-
-    // RAF-coalesce React state sync — only the last scale/position in a
-    // given animation frame is committed to React, capping re-renders at
-    // ~60/s regardless of how fast the wheel fires.
-    wheelPendingStateRef.current = { scale: newScale, pos: newPos };
-    if (!wheelRafScheduledRef.current) {
-      wheelRafScheduledRef.current = true;
-      requestAnimationFrame(() => {
-        wheelRafScheduledRef.current = false;
-        const pending = wheelPendingStateRef.current;
-        wheelPendingStateRef.current = null;
-        if (pending) {
-          setStageScale(pending.scale);
-          setStagePosition(pending.pos);
-        }
-      });
-    }
+    setStageScale(newScale);
+    setStagePosition(newPos);
   }, [setStageScale, setStagePosition]);
 
   const lastPinchAngleRef = useRef<number | null>(null);
