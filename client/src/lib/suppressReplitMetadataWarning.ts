@@ -37,7 +37,7 @@
  */
 
 const REPLIT_META_RE = /data-replit-metadata/;
-const INSTALL_KEY = "__suppress_replit_metadata_warning_installed__";
+const INSTALL_KEY = "__suppress_replit_metadata_warning_installed_v2__";
 
 export function installReplitMetadataWarningSuppressor(): void {
   if (typeof window === "undefined") return;
@@ -49,9 +49,13 @@ export function installReplitMetadataWarningSuppressor(): void {
 
   // eslint-disable-next-line no-console
   console.error = (...args: unknown[]) => {
-    if (typeof args[0] === "string" && REPLIT_META_RE.test(args[0])) {
-      return;
-    }
+    // React logs prop-type warnings with printf-style substitution:
+    //   console.error('Warning: Invalid prop %s supplied to %s...', 'data-replit-metadata', 'React.Fragment')
+    // The prop name is in args[1], not args[0].  Check ALL string args.
+    const isReplitMeta = args.some(
+      (a) => typeof a === "string" && REPLIT_META_RE.test(a),
+    );
+    if (isReplitMeta) return;
     original(...args);
   };
 
