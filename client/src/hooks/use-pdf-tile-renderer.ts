@@ -24,6 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TileCache, computeDeviceAwareTileBudget } from "@/lib/takeoff/tileCache";
 import {
   PLACEHOLDER_BUCKET,
+  ZOOM_BUCKETS,
   pickZoomBucket,
   tileKey,
   visibleTileCoords,
@@ -400,17 +401,32 @@ export function usePdfTileRenderer(
   const visibleTiles = useMemo(() => {
     if (!enabled || !args.sheetId || !args.viewport || !pageDims) return [];
     const bucket = pickZoomBucket(args.stageScale);
-    const coords = visibleTileCoords({
-      page: pageDims,
-      viewport: args.viewport,
-      zoomBucket: bucket,
-      sheetId: args.sheetId,
-      pageIndex: args.pageIndex,
-    });
+    const bucketIdx = ZOOM_BUCKETS.indexOf(bucket);
+
+    // Tile-pyramid fallback: walk from the coarsest bucket up to the
+    // current target bucket and include any tiles that are already in
+    // cache.  Lower-quality (lower-bucket) tiles are pushed first so
+    // Konva draws them behind the higher-quality ones — painter's
+    // algorithm.  This means that when the user zooms across a bucket
+    // boundary and the new-bucket tiles are still loading (150 ms
+    // debounce + worker render time), the canvas shows cached
+    // lower-res tiles for uncovered areas instead of falling back to
+    // the blurry full-page placeholder, eliminating the jarring
+    // "dark-split" artifact seen when rapidly zooming in.
     const out: Array<{ coord: TileCoord; bitmap: ImageBitmap }> = [];
-    for (const c of coords) {
-      const bm = cache.get(c);
-      if (bm) out.push({ coord: c, bitmap: bm });
+    for (let bi = 0; bi <= bucketIdx; bi++) {
+      const fb = ZOOM_BUCKETS[bi];
+      const coords = visibleTileCoords({
+        page: pageDims,
+        viewport: args.viewport,
+        zoomBucket: fb,
+        sheetId: args.sheetId,
+        pageIndex: args.pageIndex,
+      });
+      for (const c of coords) {
+        const bm = cache.get(c);
+        if (bm) out.push({ coord: c, bitmap: bm });
+      }
     }
     return out;
   }, [
