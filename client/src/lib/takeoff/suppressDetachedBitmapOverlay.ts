@@ -74,9 +74,9 @@ function isDetachedBitmapError(value: unknown): boolean {
 }
 
 function logOnce(source: string, value: unknown): void {
-  if (typeof window !== "undefined" && (window as Record<string, unknown>)[WIN_WARNED_KEY]) return;
+  if (typeof window !== "undefined" && (window as unknown as Record<string, unknown>)[WIN_WARNED_KEY]) return;
   if (typeof window !== "undefined") {
-    (window as Record<string, unknown>)[WIN_WARNED_KEY] = true;
+    (window as unknown as Record<string, unknown>)[WIN_WARNED_KEY] = true;
   }
   // eslint-disable-next-line no-console
   console.warn(
