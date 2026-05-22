@@ -16,6 +16,12 @@ import "./uppy-dashboard.css";
 // before any takeoff component can trigger a Konva draw. Production
 // builds get a no-op. See module header for the full rationale.
 import "./lib/takeoff/suppressDetachedBitmapOverlay";
+// Side-effect import: suppresses the React prop-types console.error for
+// "Invalid prop 'data-replit-metadata' supplied to 'React.Fragment'" —
+// a warning produced by the Replit IDE's JSX source-mapper injecting its
+// attribute onto every Fragment in the render tree. Dev-only no-op in
+// production. See module header for full rationale.
+import "./lib/suppressReplitMetadataWarning";
 
 // Fix for double-encoded URLs (e.g., /login%3Fredirect=%2Fdashboard)
 // This happens when opening the app in a new tab with encoded query params
