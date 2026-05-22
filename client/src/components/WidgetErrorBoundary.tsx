@@ -1,4 +1,4 @@
-import { Component, Fragment, type ReactNode, type ErrorInfo } from "react";
+import { Component, type ReactNode, type ErrorInfo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertCircle, RefreshCw } from "lucide-react";
@@ -80,9 +80,9 @@ export class WidgetErrorBoundary extends Component<WidgetErrorBoundaryProps, Wid
     }
 
     return (
-      <Fragment key={this.state.retryKey}>
+      <div key={this.state.retryKey} style={{ display: "contents" }}>
         {this.props.children}
-      </Fragment>
+      </div>
     );
   }
 }

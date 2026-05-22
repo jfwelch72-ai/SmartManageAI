@@ -57,7 +57,10 @@
 const DETACHED_RE = /image source is detached/i;
 
 let installed = false;
-let warnedOnce = false;
+// Stored on `window` so that Vite HMR module reloads (which re-evaluate
+// this file and reset module-level vars) don't reset the flag and re-fire
+// the console.warn on every save. One warn per browser session is enough.
+const WIN_WARNED_KEY = "__takeoff_detached_bitmap_warned__";
 
 function isDetachedBitmapError(value: unknown): boolean {
   if (!value) return false;
@@ -71,8 +74,10 @@ function isDetachedBitmapError(value: unknown): boolean {
 }
 
 function logOnce(source: string, value: unknown): void {
-  if (warnedOnce) return;
-  warnedOnce = true;
+  if (typeof window !== "undefined" && (window as Record<string, unknown>)[WIN_WARNED_KEY]) return;
+  if (typeof window !== "undefined") {
+    (window as Record<string, unknown>)[WIN_WARNED_KEY] = true;
+  }
   // eslint-disable-next-line no-console
   console.warn(
     `[Takeoff] Suppressed transient "image source is detached" from ${source}. ` +
