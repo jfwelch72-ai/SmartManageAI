@@ -56,12 +56,12 @@ vi.mock("@/hooks/use-toast", () => ({
 
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
+import { MarkupStylingPopoverSaveButton } from "@/components/TakeoffWorkspace";
 import {
-  MarkupStylingPopoverSaveButton,
   saveMarkupStylingPopover,
   type MarkupStylingDraft,
   type MarkupStylingTarget,
-} from "@/components/TakeoffWorkspace";
+} from "@/lib/takeoff/saveMarkupStylingPopover";
 
 const noopCallbacks = {
   setUploadDialogOpen: () => {},

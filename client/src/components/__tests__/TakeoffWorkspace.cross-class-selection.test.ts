@@ -25,7 +25,7 @@
  * the full Konva workspace.
  */
 import { describe, it, expect } from "vitest";
-import { resolveCrossClassSelection } from "@/components/TakeoffWorkspace";
+import { resolveCrossClassSelection } from "@/lib/takeoff/resolveCrossClassSelection";
 
 describe("resolveCrossClassSelection (Task #1884)", () => {
   it("returns noop on initial mount with empty selections", () => {

@@ -24,6 +24,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { resolveCrossClassSelection } from "@/lib/takeoff/resolveCrossClassSelection";
+import { saveMarkupStylingPopover } from "@/lib/takeoff/saveMarkupStylingPopover";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
@@ -5784,14 +5786,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setMarkupEditDraft(null);
         setMarkupEditInitial(null);
       };
-      // Task #1758 / #1765 — Real save logic lives in the exported
-      // `saveMarkupStylingPopover` helper at the bottom of this file
-      // so it can be exercised directly from tests (Task #1772)
-      // without mounting the entire workspace. Single-select still
-      // routes through `updateMarkupMutation` (one MARKUP_UPDATE
-      // entry); multi-select fans out into ONE bulk PATCH and ONE
-      // MARKUP_UPDATE_BATCH history entry pushed only after the PATCH
-      // resolves.
+      // Task #1758 / #1765 — Real save logic lives in the extracted
+      // `saveMarkupStylingPopover` lib helper (see
+      // client/src/lib/takeoff/saveMarkupStylingPopover.ts) so it can
+      // be exercised directly from tests (Task #1772) without mounting
+      // the entire workspace. Single-select still routes through
+      // `updateMarkupMutation` (one MARKUP_UPDATE entry); multi-select
+      // fans out into ONE bulk PATCH and ONE MARKUP_UPDATE_BATCH
+      // history entry pushed only after the PATCH resolves.
       const save = () =>
         saveMarkupStylingPopover({
           draft: markupEditDraft,
@@ -6464,63 +6466,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 // user intent).
 // ---------------------------------------------------------------------------
 
-// ---------------------------------------------------------------------------
-// Cross-class selection mutual exclusion (extracted for Task #1884
-// testability). Pure decision helper: given current and previous
-// selection sizes/ids for both measurements and markups, return which
-// (if any) class should be cleared so the canvas only ever has one
-// "active" entity class. The caller (the `useEffect` inside
-// `TakeoffWorkspace`) is responsible for actually invoking the
-// setters and resetting the markup edit panel state. Keeping the
-// decision pure means we can unit-test every mixed-selection edge
-// case without mounting the full workspace + Konva stage.
-// ---------------------------------------------------------------------------
-
-export type CrossClassSelectionInputs = {
-  selectedMeasurementId: string | null;
-  selectedMeasurementIdsSize: number;
-  selectedMarkupIdsSize: number;
-  prevSelectedMeasurementId: string | null;
-  prevSelectedMeasurementIdsSize: number;
-  prevSelectedMarkupIdsSize: number;
-};
-
-export type CrossClassSelectionDecision =
-  | "noop"
-  | "clear-markups"
-  | "clear-measurements";
-
-export function resolveCrossClassSelection(
-  inputs: CrossClassSelectionInputs,
-): CrossClassSelectionDecision {
-  const {
-    selectedMeasurementId,
-    selectedMeasurementIdsSize,
-    selectedMarkupIdsSize,
-    prevSelectedMeasurementId,
-    prevSelectedMeasurementIdsSize,
-    prevSelectedMarkupIdsSize,
-  } = inputs;
-
-  // "Grew" = the user expanded this class's selection on this render
-  // (selected a new measurement, added to the multi-set, or shift-clicked
-  // a new markup). Shrinking — deselecting, sheet change, escape — is
-  // intentionally a no-op so we don't fight existing teardown effects.
-  const measurementGrew =
-    (selectedMeasurementId !== null &&
-      selectedMeasurementId !== prevSelectedMeasurementId) ||
-    selectedMeasurementIdsSize > prevSelectedMeasurementIdsSize;
-  const markupGrew = selectedMarkupIdsSize > prevSelectedMarkupIdsSize;
-
-  if (measurementGrew && !markupGrew && selectedMarkupIdsSize > 0) {
-    return "clear-markups";
-  }
-  if (markupGrew && !measurementGrew) {
-    return "clear-measurements";
-  }
-  return "noop";
-}
-
 export function MarkupStylingPopoverSaveButton({
   onSave,
   updatePending,
@@ -6541,188 +6486,4 @@ export function MarkupStylingPopoverSaveButton({
       {isPending ? "Saving..." : "Save"}
     </Button>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Markup styling popover save handler (extracted for Task #1772 testability).
-//
-// Production wiring lives in the popover JSX above — the inline `save`
-// callback delegates to `saveMarkupStylingPopover` so the same code path
-// runs whether the user clicks Save in the workspace or a test invokes the
-// helper directly. Single-select edits stay on the `updateMarkupMutation`
-// path (one MARKUP_UPDATE history entry via the mutation's onSuccess).
-// Multi-select bulk style changes always collapse into ONE bulk PATCH and
-// ONE MARKUP_UPDATE_BATCH history entry, pushed only after the PATCH
-// resolves so a failed request never leaves a phantom Undo entry.
-// ---------------------------------------------------------------------------
-
-export type MarkupStylingDraft = {
-  color: string;
-  thickness: number;
-  text: string;
-};
-
-export type MarkupStylingTarget = {
-  id: string;
-  tool: string;
-  color: string;
-  thickness: number;
-  text: string | null;
-};
-
-export type MarkupSnapshot = {
-  id: string;
-  color?: string;
-  thickness?: number;
-  text?: string | null;
-};
-
-export type SaveMarkupStylingPopoverArgs = {
-  draft: MarkupStylingDraft;
-  initial: MarkupStylingDraft;
-  showTextInput: boolean;
-  isMulti: boolean;
-  anchor: MarkupStylingTarget;
-  selectedMarkups: MarkupStylingTarget[];
-  selectedSheet: string | null;
-  updateMarkupMutation: {
-    mutateAsync: (vars: {
-      id: string;
-      color?: string;
-      thickness?: number;
-      text?: string | null;
-      previous?: { color?: string; thickness?: number; text?: string | null };
-    }) => Promise<unknown>;
-  };
-  bulkUpdateMarkupsMutation: {
-    mutateAsync: (vars: {
-      updates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }>;
-    }) => Promise<unknown>;
-  };
-  takeoffHistory: {
-    pushMarkupUpdateBatchAction: (
-      before: MarkupSnapshot[],
-      after: MarkupSnapshot[],
-      sheetId: string,
-    ) => void;
-  };
-  toast: (opts: { title: string }) => void;
-  close: () => void;
-};
-
-export async function saveMarkupStylingPopover(
-  args: SaveMarkupStylingPopoverArgs,
-): Promise<void> {
-  const {
-    draft,
-    initial,
-    showTextInput,
-    isMulti,
-    anchor,
-    selectedMarkups,
-    selectedSheet,
-    updateMarkupMutation,
-    bulkUpdateMarkupsMutation,
-    takeoffHistory,
-    toast,
-    close,
-  } = args;
-
-  const colorChanged = draft.color !== initial.color;
-  const thicknessChanged = draft.thickness !== initial.thickness;
-  const textChanged = showTextInput && draft.text !== initial.text;
-  if (!colorChanged && !thicknessChanged && !textChanged) {
-    close();
-    return;
-  }
-
-  if (!isMulti) {
-    const editing = anchor;
-    const updates: {
-      id: string;
-      color?: string;
-      thickness?: number;
-      text?: string | null;
-      previous?: { color?: string; thickness?: number; text?: string | null };
-    } = { id: editing.id };
-    const previous: { color?: string; thickness?: number; text?: string | null } = {};
-    if (colorChanged) {
-      updates.color = draft.color;
-      previous.color = editing.color;
-    }
-    if (thicknessChanged && editing.tool !== "TEXT") {
-      updates.thickness = draft.thickness;
-      previous.thickness = editing.thickness;
-    }
-    if (textChanged && editing.tool === "TEXT") {
-      updates.text = draft.text;
-      previous.text = editing.text ?? "";
-    }
-    if (Object.keys(updates).length === 1) {
-      close();
-      return;
-    }
-    updates.previous = previous;
-    try {
-      await updateMarkupMutation.mutateAsync(updates);
-      toast({ title: "Markup updated" });
-      close();
-    } catch (err) {
-      console.warn("[Takeoff] Failed to update markup:", err);
-    }
-    return;
-  }
-
-  const beforeSnaps: MarkupSnapshot[] = [];
-  const afterSnaps: MarkupSnapshot[] = [];
-  const bulkUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }> = [];
-  for (const m of selectedMarkups) {
-    const before: MarkupSnapshot = { id: m.id };
-    const after: MarkupSnapshot = { id: m.id };
-    const updateFields: { color?: string; thickness?: number; text?: string | null } = {};
-    let hasChange = false;
-    if (colorChanged && m.color !== draft.color) {
-      before.color = m.color;
-      after.color = draft.color;
-      updateFields.color = draft.color;
-      hasChange = true;
-    }
-    // Skip thickness on TEXT members — they have no stroke.
-    if (thicknessChanged && m.tool !== "TEXT" && m.thickness !== draft.thickness) {
-      before.thickness = m.thickness;
-      after.thickness = draft.thickness;
-      updateFields.thickness = draft.thickness;
-      hasChange = true;
-    }
-    // Bulk text edit only for TEXT members; each member's before snapshot
-    // keeps its individual prior label so Undo restores them independently.
-    if (textChanged && m.tool === "TEXT" && (m.text ?? "") !== draft.text) {
-      before.text = m.text ?? "";
-      after.text = draft.text;
-      updateFields.text = draft.text;
-      hasChange = true;
-    }
-    if (!hasChange) continue;
-    beforeSnaps.push(before);
-    afterSnaps.push(after);
-    bulkUpdates.push({ id: m.id, ...updateFields });
-  }
-  if (bulkUpdates.length === 0) {
-    close();
-    return;
-  }
-  // Capture the sheet id before awaiting so a sheet switch mid-flight
-  // can't push the history batch into the wrong sheet.
-  const sheetIdForBatch = selectedSheet;
-  try {
-    await bulkUpdateMarkupsMutation.mutateAsync({ updates: bulkUpdates });
-  } catch (err) {
-    console.warn("[Takeoff] Failed to bulk-update markups:", err);
-    return;
-  }
-  if (sheetIdForBatch) {
-    takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
-  }
-  toast({ title: `Updated ${bulkUpdates.length} markups` });
-  close();
 }

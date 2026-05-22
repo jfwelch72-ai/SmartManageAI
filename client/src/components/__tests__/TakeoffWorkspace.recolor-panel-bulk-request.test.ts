@@ -38,7 +38,7 @@ import {
   type MarkupSnapshot,
   type MarkupStylingDraft,
   type MarkupStylingTarget,
-} from "@/components/TakeoffWorkspace";
+} from "@/lib/takeoff/saveMarkupStylingPopover";
 
 type UpdateVars = {
   id: string;

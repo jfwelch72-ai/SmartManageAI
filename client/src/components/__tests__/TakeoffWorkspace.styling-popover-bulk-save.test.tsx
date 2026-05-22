@@ -54,7 +54,7 @@ import {
   saveMarkupStylingPopover,
   type MarkupStylingDraft,
   type MarkupStylingTarget,
-} from "@/components/TakeoffWorkspace";
+} from "@/lib/takeoff/saveMarkupStylingPopover";
 
 const noopCallbacks = {
   setUploadDialogOpen: () => {},
