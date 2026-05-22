@@ -500,32 +500,37 @@ export function usePdfTileRenderer(
   const visibleTiles = useMemo(() => {
     if (!enabled || !args.sheetId || !args.viewport || !pageDims) return [];
     const bucket = pickZoomBucket(args.stageScale);
-    const bucketIdx = ZOOM_BUCKETS.indexOf(bucket);
 
-    // Tile-pyramid fallback: walk from the coarsest bucket up to the
-    // current target bucket and include any tiles that are already in
-    // cache.  Lower-quality (lower-bucket) tiles are pushed first so
-    // Konva draws them behind the higher-quality ones — painter's
-    // algorithm.  This means that when the user zooms across a bucket
-    // boundary and the new-bucket tiles are still loading (150 ms
-    // debounce + worker render time), the canvas shows cached
-    // lower-res tiles for uncovered areas instead of falling back to
-    // the blurry full-page placeholder, eliminating the jarring
-    // "dark-split" artifact seen when rapidly zooming in.
+    // Only emit current-bucket tiles.  The pdfImage placeholder (a
+    // low-res whole-page bitmap stretched to pageDims world dimensions)
+    // already supplies the blurry backdrop while higher-res tiles stream
+    // in — the same role the pyramid tiles were intended to play.
+    //
+    // Mixing lower-bucket pyramid tiles into the same Konva Layer as the
+    // placeholder produced the "duplicate content" artifact reported by
+    // the user: because visibleTileCoords uses padding=1, coarse-bucket
+    // tiles (tileWorld up to 2048 world units) were included for regions
+    // well outside the active viewport.  Those tiles — correctly
+    // positioned at their world coordinates — were visible alongside the
+    // current-bucket tiles wherever the latter hadn't finished loading
+    // yet, making the same page region appear twice at different Konva
+    // Z-levels.
+    //
+    // The proactive pyramid prefetch in doTileUpdates still populates the
+    // cache on every bucket transition (useful when the user zooms back
+    // out and finds tiles already hot), but those cached bitmaps are not
+    // drawn until the user's active bucket matches their zoom level.
+    const coords = visibleTileCoords({
+      page: pageDims,
+      viewport: args.viewport,
+      zoomBucket: bucket,
+      sheetId: args.sheetId,
+      pageIndex: args.pageIndex,
+    });
     const out: Array<{ coord: TileCoord; bitmap: ImageBitmap }> = [];
-    for (let bi = 0; bi <= bucketIdx; bi++) {
-      const fb = ZOOM_BUCKETS[bi];
-      const coords = visibleTileCoords({
-        page: pageDims,
-        viewport: args.viewport,
-        zoomBucket: fb,
-        sheetId: args.sheetId,
-        pageIndex: args.pageIndex,
-      });
-      for (const c of coords) {
-        const bm = cache.get(c);
-        if (bm) out.push({ coord: c, bitmap: bm });
-      }
+    for (const c of coords) {
+      const bm = cache.get(c);
+      if (bm) out.push({ coord: c, bitmap: bm });
     }
     return out;
   }, [
