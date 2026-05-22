@@ -24,7 +24,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TileCache, computeDeviceAwareTileBudget } from "@/lib/takeoff/tileCache";
 import {
   PLACEHOLDER_BUCKET,
-  ZOOM_BUCKETS,
   pickZoomBucket,
   tileKey,
   visibleTileCoords,
@@ -141,25 +140,6 @@ export function usePdfTileRenderer(
   // immediately because prevScaleRef stays equal.
   const prevStageScaleRef = useRef<number | null>(null);
   const zoomSettleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Track the last settled zoom bucket so doTileUpdates can distinguish
-  // a zoom-bucket transition (stageScale changed enough to cross a bucket
-  // boundary) from a plain pan (same bucket, different viewport x/y).
-  //
-  // We use this for TWO optimisations:
-  //   1. Proactive pyramid prefetch — only fires on a bucket transition
-  //      so workers aren't hijacked by low-priority full-page renders
-  //      during every pan tick.
-  //   2. cancelOutsideViewport dispatch phase — on a bucket transition
-  //      we pass the wider `keepKeys` (lets dispatched pyramid renders
-  //      finish and populate the cache); on a plain pan we pass the
-  //      tight `visibleKeys` (cancels any in-flight pyramid renders so
-  //      workers stay free for the tiles the user actually needs right now).
-  //
-  // Reset to null on sheet switch so the FIRST doTileUpdates after
-  // loading a new sheet is always treated as a bucket transition — the
-  // cache is cold for the new sheet and we want to immediately seed the
-  // pyramid regardless of which bucket we land on.
-  const prevBucketRef = useRef<ZoomBucket | null>(null);
   // RAF-coalesced re-render: many tiles can resolve in the same frame
   // (especially after a fast pan); per-tile setTick caused a setState
   // storm that re-ran the visibleTiles useMemo dozens of times per
@@ -204,11 +184,6 @@ export function usePdfTileRenderer(
     }
     const prevSheet = lastSheetRef.current;
     if (prevSheet && prevSheet !== args.sheetId) {
-      // Reset the settled-bucket tracker so the first doTileUpdates on
-      // the new sheet is treated as a bucket transition — the tile cache
-      // is cold for the new sheet and we want to seed the pyramid
-      // regardless of which bucket the viewport happens to be at.
-      prevBucketRef.current = null;
       scheduler.cancelAllForSheet(prevSheet);
       // Clear the prior sheet's placeholder + pageDims so the consumer's
       // mirror effect cannot keep showing sheet A's bitmap (and treat
@@ -345,7 +320,6 @@ export function usePdfTileRenderer(
     // thrash once per zoom gesture rather than once per wheel tick.
     const doTileUpdates = () => {
       const bucket: ZoomBucket = pickZoomBucket(stageScale);
-      const bucketIdx = (ZOOM_BUCKETS as ReadonlyArray<ZoomBucket>).indexOf(bucket);
       const coords = visibleTileCoords({
         page: pageDims,
         viewport,
@@ -354,51 +328,15 @@ export function usePdfTileRenderer(
         pageIndex,
       });
 
-      // Detect a zoom-bucket transition.  null means "first call for
-      // this sheet" and is treated as a transition so we immediately
-      // seed the pyramid on a cold cache.
-      const bucketChanged =
-        prevBucketRef.current === null || prevBucketRef.current !== bucket;
-      prevBucketRef.current = bucket;
-
-      // Current-bucket tile keys — the tight set used for the QUEUE
-      // phase of cancelOutsideViewport so unstarted tiles outside the
-      // viewport are rejected immediately (workers stay free).
+      // Only track the current-bucket keys.  Workers are never asked to
+      // render anything outside this set, so cancellation is immediate
+      // and precise: no pyramid renders to abort, no delayed pan lag.
       const visibleKeys = new Set<string>();
       coords.forEach((c) => visibleKeys.add(tileKey(c)));
+      lastVisibleKeysRef.current = visibleKeys;
 
-      // Pyramid keep-set spanning ALL bucket levels visible in the
-      // current viewport.  Used for:
-      //   1. DISPATCH phase of cancelOutsideViewport on a bucket
-      //      transition — tiles already rendering inside a worker are
-      //      not aborted so they finish and populate the pyramid cache.
-      //      On a plain pan (bucketChanged=false) we use visibleKeys
-      //      instead, so any stray pyramid renders are cancelled and
-      //      workers stay free for the pan-destination tiles.
-      //   2. lastVisibleKeysRef — the .then() handler caches an
-      //      arriving tile only when its key is in this set; the wider
-      //      pyramid set means a completing lower-bucket tile is stored
-      //      rather than close()'d, no matter when it resolves.
-      const keepKeys = new Set<string>(visibleKeys);
-      for (let bi = 0; bi < bucketIdx; bi++) {
-        const fb = ZOOM_BUCKETS[bi];
-        visibleTileCoords({ page: pageDims, viewport, zoomBucket: fb, sheetId, pageIndex })
-          .forEach((c) => keepKeys.add(tileKey(c)));
-      }
-      lastVisibleKeysRef.current = keepKeys;
+      scheduler.cancelOutsideViewport(visibleKeys, visibleKeys);
 
-      // Two-phase cancel:
-      //   queue    → visibleKeys always  (tight: reject unstarted tiles)
-      //   dispatch → keepKeys on zoom-bucket transition
-      //              visibleKeys on plain pan (cancel stray pyramid
-      //              renders so workers aren't hijacked)
-      const dispatchKeepKeys = bucketChanged ? keepKeys : visibleKeys;
-      scheduler.cancelOutsideViewport(visibleKeys, dispatchKeepKeys);
-
-      // Helper that attaches cache/flush/batchDecrement callbacks to a
-      // fresh tile promise.  Only call for tiles that are NOT already
-      // inflight (scheduler.isInflight guard below) to avoid attaching
-      // a second .finally(batchDecrement) to the same de-duped promise.
       const attachHandlers = (p: Promise<{ coord: TileCoord; bitmap: ImageBitmap; empty: boolean }>) => {
         p.then((res) => {
           if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
@@ -413,43 +351,10 @@ export function usePdfTileRenderer(
       };
 
       let issued = 0;
-
-      // Current-bucket tiles — highest priority (priority=0).
       for (const c of coords) {
         if (cache.has(c)) continue;
         issued++;
         attachHandlers(scheduler.requestTile({ coord: c, sheetUrl, priority: 0 }));
-      }
-
-      // Pyramid prefetch — only on a bucket transition (zoom-settle or
-      // first load).  Firing on every pan tick would dispatch
-      // full-page low-res renders on every scroll event, tying up
-      // workers and causing the "frozen canvas" symptom the user saw.
-      // After a bucket transition the prefetch is worth it: the tiles
-      // render quickly (low-res = small canvas), get cached, and act
-      // as a crisp backdrop if the user keeps zooming before the
-      // high-res tiles stream in.
-      //
-      // isInflight guard: scheduler.requestTile de-dupes by returning
-      // the existing promise for an already-inflight coord; attaching
-      // another .finally(batchDecrement) without the guard would
-      // decrement the loading counter twice for a single completion.
-      if (bucketChanged) {
-        for (let bi = bucketIdx - 1; bi >= 0; bi--) {
-          const fb = ZOOM_BUCKETS[bi];
-          const fbCoords = visibleTileCoords({
-            page: pageDims,
-            viewport,
-            zoomBucket: fb,
-            sheetId,
-            pageIndex,
-          });
-          for (const c of fbCoords) {
-            if (cache.has(c) || scheduler.isInflight(c)) continue;
-            issued++;
-            attachHandlers(scheduler.requestTile({ coord: c, sheetUrl, priority: bucketIdx - bi }));
-          }
-        }
       }
 
       if (issued > 0) {
