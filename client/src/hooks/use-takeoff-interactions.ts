@@ -1314,6 +1314,19 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     };
     let newScale = e.evt.deltaY > 0 ? oldScale / scaleBy : oldScale * scaleBy;
     newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, newScale));
+
+    // Scale was clamped (already at MIN or MAX) — no visual change will
+    // occur.  When clamped, newPos is mathematically identical to the
+    // current stage position:
+    //   newPos.x = pointer.x - ((pointer.x - stage.x()) / oldScale) * oldScale
+    //            = pointer.x - (pointer.x - stage.x()) = stage.x()
+    // Skipping the setters prevents a new stagePosition object from being
+    // dispatched on every wheel tick at the zoom boundary.  Without this
+    // guard, 120-Hz wheels produce ~120 spurious TakeoffWorkspace +
+    // CanvasStage re-renders per second while stuck at MAX_SCALE, jamming
+    // the main thread and making zoom-out feel unresponsive.
+    if (newScale === oldScale) return;
+
     const newPos = {
       x: pointer.x - mousePointTo.x * newScale,
       y: pointer.y - mousePointTo.y * newScale,
