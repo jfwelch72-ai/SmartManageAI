@@ -330,8 +330,14 @@ export class TileScheduler {
       });
     });
     this.inflightTiles.set(k, p);
+    // Guard: only remove our own entry. cancelOutsideViewport may
+    // delete this key and a newer requestTile for the same coord may
+    // have stored a different promise under the same key before we
+    // settle — we must not evict that newer entry.
     p.finally(() => {
-      this.inflightTiles.delete(k);
+      if (this.inflightTiles.get(k) === p) {
+        this.inflightTiles.delete(k);
+      }
     }).catch(() => undefined);
     // Mark dirty and defer — all tiles inserted in the same synchronous
     // loop will accumulate before the single microtask sort+dispatch.
@@ -399,11 +405,20 @@ export class TileScheduler {
     this.queue = next;
     // Tell the worker to abort dispatched tiles that are outside the
     // (potentially wider) dispatch keep-set.
+    //
+    // Also remove from inflightTiles so the next requestTile for the
+    // same coord can issue a fresh promise immediately rather than
+    // returning the old cancelled one.  Without this, doTileUpdates
+    // would re-attach handlers to a dying promise and the tile would
+    // not render until the worker's async cancel acknowledgement
+    // arrived and the old promise's .finally finally cleared the entry
+    // — introducing 100–300 ms of dead time per pan gesture.
     this.inflightTileDispatch.forEach((entry, k) => {
       if (!dispatchKeepKeys.has(k)) {
         this.cancelledTiles.add(k);
         this.postCancelTile(entry.worker, entry.requestId);
         this.inflightTileDispatch.delete(k);
+        this.inflightTiles.delete(k);
       }
     });
   }

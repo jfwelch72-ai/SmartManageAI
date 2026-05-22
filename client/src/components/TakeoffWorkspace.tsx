@@ -46,7 +46,6 @@ import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/t
 import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
 import { useStylusLongPress } from "@/hooks/use-stylus-long-press";
 import { recordLongPress } from "@/lib/takeoffStylusTelemetry";
-import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
   sampleArcPoints,
