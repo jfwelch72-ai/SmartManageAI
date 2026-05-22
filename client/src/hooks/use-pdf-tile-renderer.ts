@@ -359,8 +359,6 @@ export function usePdfTileRenderer(
       scheduler.cancelOutsideViewport(keepKeys);
 
       let issued = 0;
-
-      // Current-bucket tiles — highest priority (0).
       for (const c of coords) {
         if (cache.has(c)) continue;
         issued++;
@@ -381,39 +379,6 @@ export function usePdfTileRenderer(
           .catch(() => undefined)
           .finally(batchDecrement);
       }
-
-      // Lower-bucket pyramid tiles — requested with progressively lower
-      // priority so current-bucket work always goes to the head of the
-      // queue.  The scheduler de-dupes inflight requests so re-issuing
-      // a coord that is already being rendered is a cheap no-op.
-      // These fill the pyramid backdrop while bucket=N tiles load,
-      // eliminating the dark-canvas gap after a rapid zoom-in.
-      for (let bi = bucketIdx - 1; bi >= 0; bi--) {
-        const fb = ZOOM_BUCKETS[bi];
-        const fbCoords = visibleTileCoords({ page: pageDims, viewport, zoomBucket: fb, sheetId, pageIndex });
-        const pyramidPriority = bucketIdx - bi; // 1 (coarsest current-1) … up to bucketIdx
-        for (const c of fbCoords) {
-          if (cache.has(c)) continue;
-          issued++;
-          scheduler
-            .requestTile({ coord: c, sheetUrl, priority: pyramidPriority })
-            .then((res) => {
-              if (lastVisibleKeysRef.current.has(tileKey(res.coord))) {
-                cache.set(res.coord, res.bitmap);
-                scheduleFlush();
-              } else {
-                try {
-                  res.bitmap.close();
-                } catch {
-                  /* noop */
-                }
-              }
-            })
-            .catch(() => undefined)
-            .finally(batchDecrement);
-        }
-      }
-
       if (issued > 0) {
         setLoadingTileCount((n) => n + issued);
       } else {
