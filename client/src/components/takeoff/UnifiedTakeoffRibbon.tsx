@@ -656,7 +656,13 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                             if (!next) onLayersPopoverOpenChange?.(false);
                           }}
                         >
-                          <PopoverAnchor asChild>{buttonNode}</PopoverAnchor>
+                          {/* asChild removed: Tooltip is a context-provider function
+                              component without forwardRef, so Radix Slot.Clone cannot
+                              forward the anchor ref through it → "Function components
+                              cannot be given refs" warning. Without asChild,
+                              PopoverAnchor renders a transparent span wrapper that
+                              owns the anchor position; the visual result is identical. */}
+                          <PopoverAnchor>{buttonNode}</PopoverAnchor>
                           <PopoverContent
                             side="bottom"
                             align="start"

@@ -350,6 +350,12 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
+  // Only handle http/https. Chrome extensions, data URIs, and other
+  // non-http schemes cannot be stored in the Cache API and will throw
+  // "Request scheme '…' is unsupported" — crashing the SW's fetch
+  // handler and blocking all subsequent network requests from the page.
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return;
+
   if (url.pathname.startsWith('/ws') || url.pathname.startsWith('/socket')) return;
 
   const OFFLINE_QUEUE_ALLOWED = [
