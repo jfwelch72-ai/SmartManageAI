@@ -8,6 +8,7 @@ import {
   projects,
   estimates,
   estimateLineItems,
+  estimateBenchmarkRefreshes,
   aiEstimatorRateSamples,
   aiEstimatorKnowledgeIndex,
   aiEstimatorLearnedRates,
@@ -850,7 +851,7 @@ router.post(
       return res.status(500).json({ error: svc.reason ?? "Benchmark refresh returned no result" });
     }
 
-    // Persist to the estimate row
+    // Persist to the estimate row (for backward-compat) and append a history row
     await db
       .update(estimates)
       .set({
@@ -860,10 +861,58 @@ router.post(
       })
       .where(eq(estimates.id, estimateRow.id));
 
+    // Task #3046 — append to refresh history
+    await db.insert(estimateBenchmarkRefreshes).values({
+      estimateId: estimateRow.id,
+      benchmarkSummary: svc.result.benchmarkSummary,
+      overallConfidence: svc.result.overallConfidence ?? null,
+      createdById: userId,
+    });
+
     return res.json({
       estimateId: estimateRow.id,
       benchmarkSummary: svc.result.benchmarkSummary,
       overallConfidence: svc.result.overallConfidence,
+    });
+  },
+);
+
+// Task #3046 — GET refresh history for an estimate (ordered newest-first).
+// Uses verifyEstimateOrgAccess so both bid-linked and project-linked estimates
+// are checked, and orphan estimates (no bid and no project) are denied.
+router.get(
+  `${estimatorBase}/estimate/:estimateId/benchmark-history`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const { estimateId } = req.params;
+
+    const estimateRow = await verifyEstimateOrgAccess(estimateId, req.user);
+    if (!estimateRow) return res.status(404).json({ error: "Estimate not found" });
+
+    const rows = await db
+      .select({
+        id: estimateBenchmarkRefreshes.id,
+        benchmarkSummary: estimateBenchmarkRefreshes.benchmarkSummary,
+        overallConfidence: estimateBenchmarkRefreshes.overallConfidence,
+        createdAt: estimateBenchmarkRefreshes.createdAt,
+        createdById: estimateBenchmarkRefreshes.createdById,
+        createdByFirstName: users.firstName,
+        createdByLastName: users.lastName,
+      })
+      .from(estimateBenchmarkRefreshes)
+      .leftJoin(users, eq(users.id, estimateBenchmarkRefreshes.createdById))
+      .where(eq(estimateBenchmarkRefreshes.estimateId, estimateId))
+      .orderBy(desc(estimateBenchmarkRefreshes.createdAt))
+      .limit(50);
+
+    return res.json({
+      history: rows.map((r) => ({
+        ...r,
+        createdByName: r.createdByFirstName && r.createdByLastName
+          ? `${r.createdByFirstName} ${r.createdByLastName}`
+          : null,
+      })),
     });
   },
 );

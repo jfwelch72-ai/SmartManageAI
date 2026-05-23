@@ -4126,3 +4126,38 @@ export type InsertTakeoffStylusTelemetryEvent = z.infer<
 >;
 export type TakeoffStylusTelemetryEvent =
   typeof takeoffStylusTelemetryEvents.$inferSelect;
+
+// Task #3046 — Benchmark refresh history.
+// Each call to "Refresh Benchmarks" appends a row here instead of
+// overwriting the estimate columns. The most-recent row is the
+// current benchmark; older rows form the comparison history.
+export const estimateBenchmarkRefreshes = pgTable(
+  "estimate_benchmark_refreshes",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    estimateId: varchar("estimate_id")
+      .notNull()
+      .references(() => estimates.id, { onDelete: "cascade" }),
+    benchmarkSummary: text("benchmark_summary").notNull(),
+    overallConfidence: text("overall_confidence"),
+    createdById: varchar("created_by_id")
+      .notNull()
+      .references(() => users.id),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    estimateCreatedIdx: index("estimate_benchmark_refreshes_estimate_created_idx").on(
+      table.estimateId,
+      table.createdAt,
+    ),
+  }),
+);
+
+export const insertEstimateBenchmarkRefreshSchema = createInsertSchema(
+  estimateBenchmarkRefreshes,
+).omit({ id: true, createdAt: true });
+export type InsertEstimateBenchmarkRefresh = z.infer<
+  typeof insertEstimateBenchmarkRefreshSchema
+>;
+export type EstimateBenchmarkRefresh =
+  typeof estimateBenchmarkRefreshes.$inferSelect;

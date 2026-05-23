@@ -172,6 +172,7 @@ import { ensureAuditActionEnumSlaValues } from "./ensureAuditActionEnumSlaValues
 import { ensureAuditLogUserIdNullable } from "./ensureAuditLogUserIdNullable";
 import { seedSupportHolidaysOnStartup } from "./seedSupportHolidaysOnStartup";
 import { ensureEstimateBenchmarkColumns } from "./ensureEstimateBenchmarkColumns";
+import { ensureEstimateBenchmarkRefreshesTable } from "./ensureEstimateBenchmarkRefreshesTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -631,6 +632,10 @@ const migrations: MigrationStep[] = [
   // estimators can re-run benchmark verification without regenerating the full
   // estimate.
   { name: "estimate_benchmark_columns", category: "ADD_COLUMN", fn: ensureEstimateBenchmarkColumns },
+  // Task #3046 — Benchmark refresh history: creates the append-only
+  // `estimate_benchmark_refreshes` table so every "Refresh Benchmarks" action
+  // is stored as an immutable row for later comparison.
+  { name: "estimate_benchmark_refreshes_table", category: "CREATE_TABLE", fn: ensureEstimateBenchmarkRefreshesTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

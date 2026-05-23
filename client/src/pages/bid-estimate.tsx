@@ -4,7 +4,15 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle, AlertTriangle, Layers, RefreshCw, TrendingUp } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Layers, RefreshCw, TrendingUp, History } from "lucide-react";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -143,6 +151,8 @@ export default function BidEstimate() {
   // (supersedes whatever is on the estimate row for the current session).
   const [localBenchmarkSummary, setLocalBenchmarkSummary] = useState<string | null>(null);
   const [localOverallConfidence, setLocalOverallConfidence] = useState<string | null>(null);
+  // Task #3046 — benchmark history drawer
+  const [benchmarkHistoryOpen, setBenchmarkHistoryOpen] = useState(false);
 
   const benchmarkSummary = localBenchmarkSummary ?? (estimate as any)?.aiDraftBenchmarkSummary ?? null;
   const overallConfidence = localOverallConfidence ?? (estimate as any)?.aiDraftOverallConfidence ?? null;
@@ -157,11 +167,29 @@ export default function BidEstimate() {
       setLocalBenchmarkSummary(data.benchmarkSummary);
       setLocalOverallConfidence(data.overallConfidence);
       queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      // Task #3046 — invalidate benchmark history so the drawer reflects the new entry
+      if (estimate?.id) {
+        queryClient.invalidateQueries({ queryKey: ["/api/ai-estimator/estimate", estimate.id, "benchmark-history"] });
+      }
       toast({ title: "Benchmarks refreshed", description: "Cost benchmark summary updated with current market data." });
     },
     onError: (err: Error) => {
       toast({ title: "Benchmark refresh failed", description: err.message, variant: "destructive" });
     },
+  });
+
+  // Task #3046 — fetch benchmark refresh history (lazy: only when the drawer is open)
+  type BenchmarkHistoryRow = {
+    id: string;
+    benchmarkSummary: string;
+    overallConfidence: string | null;
+    createdAt: string;
+    createdById: string;
+    createdByName: string | null;
+  };
+  const { data: benchmarkHistoryData, isLoading: benchmarkHistoryLoading } = useQuery<{ history: BenchmarkHistoryRow[] }>({
+    queryKey: ["/api/ai-estimator/estimate", estimate?.id, "benchmark-history"],
+    enabled: benchmarkHistoryOpen && !!estimate?.id,
   });
 
   const { data: aiEstimatorStatus } = useQuery<{ enabled: boolean; canTrain: boolean; canManage: boolean; featureFlagOn: boolean; reason: string }>({
@@ -961,24 +989,105 @@ export default function BidEstimate() {
                   </Badge>
                 )}
               </div>
-              {hasEstimateAccess && aiEstimatorStatus?.enabled && (
+              <div className="flex items-center gap-2">
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
-                  onClick={() => refreshBenchmarksMutation.mutate()}
-                  disabled={refreshBenchmarksMutation.isPending || estimate.lineItems.length === 0}
-                  data-testid="button-refresh-benchmarks"
+                  onClick={() => setBenchmarkHistoryOpen(true)}
+                  data-testid="button-view-benchmark-history"
                 >
-                  <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${refreshBenchmarksMutation.isPending ? "animate-spin" : ""}`} />
-                  {refreshBenchmarksMutation.isPending ? "Refreshing…" : "Refresh Benchmarks"}
+                  <History className="h-3.5 w-3.5 mr-1.5" />
+                  View history
                 </Button>
-              )}
+                {hasEstimateAccess && aiEstimatorStatus?.enabled && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => refreshBenchmarksMutation.mutate()}
+                    disabled={refreshBenchmarksMutation.isPending || estimate.lineItems.length === 0}
+                    data-testid="button-refresh-benchmarks"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${refreshBenchmarksMutation.isPending ? "animate-spin" : ""}`} />
+                    {refreshBenchmarksMutation.isPending ? "Refreshing…" : "Refresh Benchmarks"}
+                  </Button>
+                )}
+              </div>
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-benchmark-summary">
               {benchmarkSummary}
             </p>
           </div>
         )}
+
+        {/* Task #3046 — Benchmark refresh history drawer */}
+        <Sheet open={benchmarkHistoryOpen} onOpenChange={setBenchmarkHistoryOpen}>
+          <SheetContent side="right" className="w-full sm:max-w-lg" data-testid="drawer-benchmark-history">
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2">
+                <History className="h-4 w-4" />
+                Benchmark Refresh History
+              </SheetTitle>
+            </SheetHeader>
+            <ScrollArea className="mt-4 h-[calc(100vh-8rem)] pr-2">
+              {benchmarkHistoryLoading && (
+                <p className="text-sm text-muted-foreground py-6 text-center" data-testid="text-benchmark-history-loading">
+                  Loading history…
+                </p>
+              )}
+              {!benchmarkHistoryLoading && (!benchmarkHistoryData?.history || benchmarkHistoryData.history.length === 0) && (
+                <p className="text-sm text-muted-foreground py-6 text-center" data-testid="text-benchmark-history-empty">
+                  No refresh history yet. Use "Refresh Benchmarks" to record the first snapshot.
+                </p>
+              )}
+              {benchmarkHistoryData?.history && benchmarkHistoryData.history.length > 0 && (
+                <div className="space-y-4">
+                  {benchmarkHistoryData.history.map((row, idx) => (
+                    <div key={row.id} data-testid={`card-benchmark-history-${row.id}`}>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {new Date(row.createdAt).toLocaleString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })}
+                            </span>
+                            {idx === 0 && (
+                              <Badge variant="outline" className="text-xs" data-testid={`badge-benchmark-current-${row.id}`}>
+                                Current
+                              </Badge>
+                            )}
+                          </div>
+                          {row.overallConfidence && (
+                            <Badge
+                              variant={row.overallConfidence === "HIGH" ? "default" : row.overallConfidence === "LOW" ? "destructive" : "secondary"}
+                              className="text-xs"
+                              data-testid={`badge-benchmark-confidence-${row.id}`}
+                            >
+                              {row.overallConfidence}
+                            </Badge>
+                          )}
+                        </div>
+                        {row.createdByName && (
+                          <p className="text-xs text-muted-foreground" data-testid={`text-benchmark-author-${row.id}`}>
+                            by {row.createdByName}
+                          </p>
+                        )}
+                        <p className="text-sm leading-relaxed" data-testid={`text-benchmark-summary-${row.id}`}>
+                          {row.benchmarkSummary}
+                        </p>
+                      </div>
+                      {idx < benchmarkHistoryData.history.length - 1 && <Separator className="mt-4" />}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </ScrollArea>
+          </SheetContent>
+        </Sheet>
 
         <div className="space-y-2">
           <AiEstimatorIntroCallout surface="bid-estimate" />

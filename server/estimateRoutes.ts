@@ -8,6 +8,7 @@ import {
   estimateLineItems, 
   estimateLineItemSubcontractors,
   estimateVersions,
+  estimateBenchmarkRefreshes,
   projects,
   bids,
   quantityCategories,
@@ -615,7 +616,36 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         appliedFactors,
       );
 
-      res.json({ estimate: { ...estimate, lineItems, totals, appliedTotals } });
+      // Task #3046 — Use the most-recent benchmark refresh row as the canonical
+      // source for aiDraftBenchmarkSummary / aiDraftOverallConfidence, falling
+      // back to the estimate columns only when no history row exists yet.
+      const [latestRefresh] = await db
+        .select({
+          benchmarkSummary: estimateBenchmarkRefreshes.benchmarkSummary,
+          overallConfidence: estimateBenchmarkRefreshes.overallConfidence,
+        })
+        .from(estimateBenchmarkRefreshes)
+        .where(eq(estimateBenchmarkRefreshes.estimateId, estimate.id))
+        .orderBy(desc(estimateBenchmarkRefreshes.createdAt))
+        .limit(1);
+
+      const aiDraftBenchmarkSummary = latestRefresh?.benchmarkSummary
+        ?? (estimate as { aiDraftBenchmarkSummary?: string | null }).aiDraftBenchmarkSummary
+        ?? null;
+      const aiDraftOverallConfidence = latestRefresh?.overallConfidence
+        ?? (estimate as { aiDraftOverallConfidence?: string | null }).aiDraftOverallConfidence
+        ?? null;
+
+      res.json({
+        estimate: {
+          ...estimate,
+          aiDraftBenchmarkSummary,
+          aiDraftOverallConfidence,
+          lineItems,
+          totals,
+          appliedTotals,
+        },
+      });
     } catch (error) {
       next(error);
     }
