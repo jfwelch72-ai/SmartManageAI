@@ -94,6 +94,7 @@ import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
 import { computeSheetCalibrationConfidence } from "./takeoff/sheetCalibrationConfidence";
 import { ScaleHistoryPanel } from "./takeoff/ScaleHistoryPanel";
+import { DivisionFilterPanel } from "./takeoff/DivisionFilterPanel";
 import { SheetSetsPanel } from "./takeoff/SheetSetsPanel";
 import { ProjectFilesPanel } from "./takeoff/ProjectFilesPanel";
 import { ToastAction } from "@/components/ui/toast";
@@ -491,6 +492,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   useEffect(() => { try { localStorage.setItem("takeoff-show-ai-overlays", String(showAiOverlays)); } catch {} }, [showAiOverlays]);
   const [highlightedAiItem, setHighlightedAiItem] = useState<DetectedItem | null>(null);
   const [preImportDetectedItems, setPreImportDetectedItems] = useState<DetectedItem[]>([]);
+  // Task #3045 — Division overlay filter panel state. `divisionFilterOpen`
+  // controls the DivisionFilterPanel drawer; `hiddenDivisions` is the set of
+  // CSI division codes whose AI geometry overlays are NOT rendered.
+  // Both reset per session (no localStorage needed per spec).
+  const [divisionFilterOpen, setDivisionFilterOpen] = useState(false);
+  const [hiddenDivisions, setHiddenDivisions] = useState<Set<string>>(new Set());
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   // Task #2140 — Inline calibration drawer (Section 5 of the
   // interaction map). `T` opens this side-anchored Sheet so the
@@ -4264,6 +4271,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     toolChestOpen,
     onToggleToolChest: handleToggleToolChest,
     onPinToolToChest: handlePinToolToChest,
+    hasDivisionOverlays: measurements.some((m) => m.aiGeometry != null),
+    divisionFilterOpen,
+    onToggleDivisionFilter: () => setDivisionFilterOpen((v) => !v),
   }), [
     activeTool, handleToolSelect, stageScale, selectedMeasurementId, measurements,
     deleteMeasurementMutation, takeoffHistory, snapEnabled, orthoLock,
@@ -4273,6 +4283,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     sheetRotation, handleRotate, gridEnabled, handleToggleGrid, isCalibrated,
     showMeasurementLabels, showStructuralGridlines, labeled,
     toolChestOpen, handleToggleToolChest, handlePinToolToChest,
+    divisionFilterOpen,
   ]);
   const handleAcceptDetectedScale = useCallback(async () => {
     if (!selectedSheet || !detectedScale) return;
@@ -4730,6 +4741,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     pendingDimLengthFt,
     dimInputRepeat,
     showAiOverlays,
+    hiddenDivisions,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -6378,6 +6390,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             </svg>
           </div>
         )}
+        {/* Task #3045 — Division overlay filter panel. Positioned
+            absolutely in the canvas area so it doesn't obscure the
+            main canvas and appears as a right-side drawer. */}
+        <DivisionFilterPanel
+          open={divisionFilterOpen}
+          onClose={() => setDivisionFilterOpen(false)}
+          measurements={measurements}
+          hiddenDivisions={hiddenDivisions}
+          onToggleDivision={(code) => {
+            setHiddenDivisions((prev) => {
+              const next = new Set(prev);
+              if (next.has(code)) { next.delete(code); } else { next.add(code); }
+              return next;
+            });
+          }}
+          onShowAll={() => setHiddenDivisions(new Set())}
+          onHideAll={(codes) => setHiddenDivisions(new Set(codes))}
+        />
         <WorkspaceBottomBar {...panelSlice.bottomBar} />
         {/* Tool Chest mounts inside canvas-area so its `top-0 left-0`
             absolute positioning sits *below* the unified ribbon. The

@@ -79,6 +79,11 @@ export interface RibbonContextSlice {
    *  group so the chest can mount alongside the other panel hosts. */
   toolChestOpen: boolean;
   onToggleToolChest: () => void;
+  /** Task #3045 — Division overlay filter panel.
+   *  `hasDivisionOverlays` hides the button when no aiGeometry is present. */
+  hasDivisionOverlays: boolean;
+  divisionFilterOpen: boolean;
+  onToggleDivisionFilter: () => void;
   /** Right-click → "Pin to Tool Chest" affordance for tool buttons in
    *  the Measure / Annotate ribbon groups. */
   onPinToolToChest: (input: { toolId: string; label: string }) => void;

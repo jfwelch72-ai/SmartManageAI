@@ -7,7 +7,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import {
   ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
   RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler, Tag, LayoutGrid,
-  Printer, WifiOff, BarChart3, FileSpreadsheet
+  Printer, WifiOff, BarChart3, FileSpreadsheet, PanelRight
 } from "lucide-react";
 import { DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
@@ -88,6 +88,13 @@ export interface TakeoffToolbarProps {
    *  icon+label rows instead of icon-only chips, matching the
    *  bid Plans tab "Labeled toolbar" preference. */
   labeled?: boolean;
+  /** Task #3045 — Division Overlays filter panel.
+   *  `hasDivisionOverlays` gates the button visibility (hidden for
+   *  takeoffs with no aiGeometry data). `divisionFilterOpen` controls
+   *  the active/inactive button state. */
+  hasDivisionOverlays?: boolean;
+  divisionFilterOpen?: boolean;
+  onToggleDivisionFilter?: () => void;
 }
 
 export function TakeoffToolbar({
@@ -109,6 +116,9 @@ export function TakeoffToolbar({
   showMeasurementLabels, onToggleMeasurementLabels,
   showStructuralGridlines, onToggleStructuralGridlines,
   labeled = false,
+  hasDivisionOverlays,
+  divisionFilterOpen,
+  onToggleDivisionFilter,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
@@ -359,6 +369,16 @@ export function TakeoffToolbar({
           testId="button-ai-takeoff"
           className={cn(aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}
         />
+        {hasDivisionOverlays && (
+          <TinyBtn
+            icon={PanelRight}
+            label={divisionFilterOpen ? "Division Overlays (open)" : "Division Overlays"}
+            active={!!divisionFilterOpen}
+            onClick={() => onToggleDivisionFilter?.()}
+            testId="button-division-overlays"
+            className={cn(divisionFilterOpen && "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300")}
+          />
+        )}
 
         <Separator className="my-px w-8" />
 

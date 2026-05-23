@@ -12,6 +12,7 @@ import {
 } from "@shared/utils/geometry";
 import { commitMarkupBodyDrag, commitMarkupResize } from "../../markups/markup-drag-commit";
 import { TileLayer } from "../TileLayer";
+import { AiOverlayLayer } from "../AiOverlayLayer";
 import { DimInputCursorBadge } from "./DimInputCursorBadge";
 import { CaptureQualityHUD } from "../CaptureQualityHUD";
 import {
@@ -109,6 +110,9 @@ export interface CanvasStageProps {
   dimInputRepeat?: boolean;
 
   showAiOverlays: boolean;
+  /** Task #3045 — set of CSI division codes that should NOT render their
+   *  AI geometry overlays. When undefined all divisions are visible. */
+  hiddenDivisions?: Set<string>;
   hideAiMeasurements: boolean;
   hideResolvedIssues: boolean;
   showOverlaySlider: boolean;
@@ -348,6 +352,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     pendingDimLengthFt,
     dimInputRepeat,
     showAiOverlays,
+    hiddenDivisions,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -754,6 +759,24 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     />
                   );
                 })}
+
+                {/* Task #3045 — CSI-division-colored AI geometry overlays.
+                    Rendered after addenda images (so they sit on top of the
+                    underlying sheet) but before legacy pre-import detected
+                    items and user-drawn measurements, per layer-order spec.
+                    The layer is hidden entirely when no measurement on this
+                    sheet carries an aiGeometry value. */}
+                {pageDims && pageDims.sheetId === currentSheet?.id && (
+                  <AiOverlayLayer
+                    measurements={measurements}
+                    hiddenDivisions={hiddenDivisions ?? new Set<string>()}
+                    pageWidth={pageDims.width}
+                    pageHeight={pageDims.height}
+                    stageScale={stageScale}
+                    selectedMeasurementId={selectedMeasurementId}
+                    setSelectedMeasurementId={setSelectedMeasurementId}
+                  />
+                )}
 
                 {showAiOverlays && pdfImage && preImportDetectedItems.filter(item => item.boundingBox).map((item) => {
                   const imgW = (pageDims?.width || 0);

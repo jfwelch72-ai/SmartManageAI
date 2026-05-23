@@ -56,6 +56,9 @@ function RibbonHostInner() {
       showStructuralGridlines={ctx.showStructuralGridlines}
       onToggleStructuralGridlines={ctx.setShowStructuralGridlines}
       labeled={ctx.labeled}
+      hasDivisionOverlays={ctx.hasDivisionOverlays}
+      divisionFilterOpen={ctx.divisionFilterOpen}
+      onToggleDivisionFilter={ctx.onToggleDivisionFilter}
     />
   );
 }
