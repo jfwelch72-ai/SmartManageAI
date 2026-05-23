@@ -1,10 +1,14 @@
 /**
  * Task #3045 — Division Filter Panel for AI overlay visibility control.
+ * Task #3050 — Confidence threshold filter added.
  *
  * Right-side drawer listing all CSI divisions present in the current sheet's
  * AI-geometry measurements.  Each row shows a color swatch, the CSI code +
  * full name, item count, and a toggle checkbox.  A "Show all / Hide all"
  * master row is included at the top.
+ *
+ * A confidence threshold segmented control (ALL / LOW / MEDIUM / HIGH) is
+ * rendered below the panel header so estimators can hide low-confidence items.
  *
  * Toggle state is kept in caller-managed `hiddenDivisions` (a Set of division
  * codes that should NOT be rendered).  Resets per session — no backend needed.
@@ -27,6 +31,15 @@ import {
 } from "@shared/csiDivisionColors";
 import type { TakeoffMeasurement } from "@shared/schema";
 
+export type ConfidenceThreshold = "ALL" | "LOW" | "MEDIUM" | "HIGH";
+
+const CONFIDENCE_OPTIONS: { value: ConfidenceThreshold; label: string }[] = [
+  { value: "ALL", label: "All" },
+  { value: "LOW", label: "Low" },
+  { value: "MEDIUM", label: "Med" },
+  { value: "HIGH", label: "High" },
+];
+
 export interface DivisionFilterPanelProps {
   open: boolean;
   onClose: () => void;
@@ -44,6 +57,10 @@ export interface DivisionFilterPanelProps {
   onSaveEdit?: () => void;
   /** Task #3048 — discard the current vertex-drag draft. */
   onCancelEdit?: () => void;
+
+  /** Task #3050 — active confidence threshold for filtering overlays. */
+  confidenceThreshold: ConfidenceThreshold;
+  onConfidenceThresholdChange: (threshold: ConfidenceThreshold) => void;
 }
 
 interface DivisionRow {
@@ -65,6 +82,8 @@ export function DivisionFilterPanel({
   isSavingEdit,
   onSaveEdit,
   onCancelEdit,
+  confidenceThreshold,
+  onConfidenceThresholdChange,
 }: DivisionFilterPanelProps) {
   const rows: DivisionRow[] = useMemo(() => {
     const counts = new Map<string, number>();
@@ -173,6 +192,41 @@ export function DivisionFilterPanel({
             >
               <X className="w-4 h-4" />
             </Button>
+          </div>
+
+          {/* Task #3050 — Confidence threshold segmented control. */}
+          <div className="px-3 py-2 border-b shrink-0">
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
+              Min confidence
+            </p>
+            <div
+              className="flex rounded-md border overflow-hidden text-xs"
+              role="group"
+              aria-label="Confidence threshold"
+              data-testid="confidence-threshold-group"
+            >
+              {CONFIDENCE_OPTIONS.map((opt) => {
+                const active = confidenceThreshold === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onConfidenceThresholdChange(opt.value)}
+                    className={cn(
+                      "flex-1 py-1 font-medium transition-colors select-none",
+                      "border-r last:border-r-0",
+                      active
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-background text-muted-foreground hover:bg-muted"
+                    )}
+                    aria-pressed={active}
+                    data-testid={`confidence-threshold-${opt.value.toLowerCase()}`}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {rows.length === 0 ? (

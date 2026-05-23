@@ -506,6 +506,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [editingAiPoints, setEditingAiPoints] = useState<Array<{ x: number; y: number }> | null>(null);
   const [editingAiIsPolygon, setEditingAiIsPolygon] = useState(false);
   const [isSavingAiGeometry, setIsSavingAiGeometry] = useState(false);
+  // Task #3050 — Confidence threshold for AI overlay rendering. Resets per
+  // session (no backend needed per spec). "ALL" means all confidence levels
+  // are shown; "HIGH" shows only high-confidence items.
+  const [confidenceThreshold, setConfidenceThreshold] = useState<import("./takeoff/DivisionFilterPanel").ConfidenceThreshold>("ALL");
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   // Task #2140 — Inline calibration drawer (Section 5 of the
   // interaction map). `T` opens this side-anchored Sheet so the
@@ -4403,6 +4407,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     hasDivisionOverlays: measurements.some((m) => m.aiGeometry != null),
     divisionFilterOpen,
     onToggleDivisionFilter: () => setDivisionFilterOpen((v) => !v),
+    confidenceThreshold,
+    onConfidenceThresholdChange: setConfidenceThreshold,
   }), [
     activeTool, handleToolSelect, stageScale, selectedMeasurementId, measurements,
     deleteMeasurementMutation, takeoffHistory, snapEnabled, orthoLock,
@@ -4412,7 +4418,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     sheetRotation, handleRotate, gridEnabled, handleToggleGrid, isCalibrated,
     showMeasurementLabels, showStructuralGridlines, labeled,
     toolChestOpen, handleToggleToolChest, handlePinToolToChest,
-    divisionFilterOpen,
+    divisionFilterOpen, confidenceThreshold,
   ]);
   const handleAcceptDetectedScale = useCallback(async () => {
     if (!selectedSheet || !detectedScale) return;
@@ -4875,6 +4881,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     editingAiPoints,
     onAiVertexDrag: handleAiVertexDrag,
     onEnterAiEditMode: handleEnterAiEditMode,
+    confidenceThreshold,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -6544,6 +6551,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           isSavingEdit={isSavingAiGeometry}
           onSaveEdit={handleSaveAiGeometry}
           onCancelEdit={handleCancelAiGeometry}
+          confidenceThreshold={confidenceThreshold}
+          onConfidenceThresholdChange={setConfidenceThreshold}
         />
         <WorkspaceBottomBar {...panelSlice.bottomBar} />
         {/* Tool Chest mounts inside canvas-area so its `top-0 left-0`

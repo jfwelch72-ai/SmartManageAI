@@ -1,5 +1,6 @@
 /**
  * Task #3045 — AI Overlay Layer for the Konva takeoff canvas.
+ * Task #3050 — Confidence threshold filtering added.
  *
  * Renders semi-transparent color-coded polygons (or bounding-box rects as
  * fallback) for every `takeoff_measurements` row that carries an `aiGeometry`
@@ -27,6 +28,7 @@ import { Fragment, useState } from "react";
 import { Line, Rect, Text, Group, Circle } from "react-konva";
 import { getCsiDivisionColor } from "@shared/csiDivisionColors";
 import type { TakeoffMeasurement } from "@shared/schema";
+import type { ConfidenceThreshold } from "./DivisionFilterPanel";
 
 interface AiGeometry {
   boundingBox: { x: number; y: number; w: number; h: number };
@@ -45,6 +47,7 @@ interface TooltipState {
 export interface AiOverlayLayerProps {
   measurements: TakeoffMeasurement[];
   hiddenDivisions: Set<string>;
+  confidenceThreshold?: ConfidenceThreshold;
   pageWidth: number;
   pageHeight: number;
   stageScale: number;
@@ -77,6 +80,20 @@ export interface AiOverlayLayerProps {
     initialPoints: Array<{ x: number; y: number }>,
     isPolygon: boolean,
   ) => void;
+}
+
+const CONFIDENCE_RANK: Record<string, number> = { LOW: 1, MEDIUM: 2, HIGH: 3 };
+const THRESHOLD_RANK: Record<ConfidenceThreshold, number> = {
+  ALL: 0,
+  LOW: 1,
+  MEDIUM: 2,
+  HIGH: 3,
+};
+
+function meetsThreshold(confidence: string, threshold: ConfidenceThreshold): boolean {
+  if (threshold === "ALL") return true;
+  if (!confidence) return false;
+  return (CONFIDENCE_RANK[confidence] ?? 0) >= THRESHOLD_RANK[threshold];
 }
 
 function parseAiGeometry(raw: unknown): AiGeometry | null {
@@ -134,6 +151,7 @@ function bboxToCorners(
 export function AiOverlayLayer({
   measurements,
   hiddenDivisions,
+  confidenceThreshold = "ALL",
   pageWidth,
   pageHeight,
   stageScale,
@@ -149,9 +167,11 @@ export function AiOverlayLayer({
 
   if (pageWidth === 0 || pageHeight === 0) return null;
 
-  const aiMeasurements = measurements.filter(
-    (m) => m.aiGeometry != null
-  );
+  const aiMeasurements = measurements.filter((m) => {
+    if (m.aiGeometry == null) return false;
+    const conf = parseMetaConfidence(m);
+    return meetsThreshold(conf, confidenceThreshold);
+  });
   if (aiMeasurements.length === 0) return null;
 
   const STROKE_W = 1.5 / stageScale;

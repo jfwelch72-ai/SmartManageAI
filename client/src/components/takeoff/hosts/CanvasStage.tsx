@@ -129,6 +129,8 @@ export interface CanvasStageProps {
     initialPoints: Array<{ x: number; y: number }>,
     isPolygon: boolean,
   ) => void;
+  /** Task #3050 — minimum confidence level for AI overlay rendering. */
+  confidenceThreshold?: import("../DivisionFilterPanel").ConfidenceThreshold;
   hideAiMeasurements: boolean;
   hideResolvedIssues: boolean;
   showOverlaySlider: boolean;
@@ -373,6 +375,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     editingAiPoints,
     onAiVertexDrag,
     onEnterAiEditMode,
+    confidenceThreshold,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -790,6 +793,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   <AiOverlayLayer
                     measurements={measurements}
                     hiddenDivisions={hiddenDivisions ?? new Set<string>()}
+                    confidenceThreshold={confidenceThreshold}
                     pageWidth={pageDims.width}
                     pageHeight={pageDims.height}
                     stageScale={stageScale}

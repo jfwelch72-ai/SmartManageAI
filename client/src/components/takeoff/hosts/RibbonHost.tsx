@@ -59,6 +59,7 @@ function RibbonHostInner() {
       hasDivisionOverlays={ctx.hasDivisionOverlays}
       divisionFilterOpen={ctx.divisionFilterOpen}
       onToggleDivisionFilter={ctx.onToggleDivisionFilter}
+      confidenceThreshold={ctx.confidenceThreshold}
     />
   );
 }

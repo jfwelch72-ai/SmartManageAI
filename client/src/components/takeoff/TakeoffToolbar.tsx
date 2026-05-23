@@ -95,6 +95,8 @@ export interface TakeoffToolbarProps {
   hasDivisionOverlays?: boolean;
   divisionFilterOpen?: boolean;
   onToggleDivisionFilter?: () => void;
+  /** Task #3050 — active confidence threshold; drives the badge label. */
+  confidenceThreshold?: import("./DivisionFilterPanel").ConfidenceThreshold;
 }
 
 export function TakeoffToolbar({
@@ -119,6 +121,7 @@ export function TakeoffToolbar({
   hasDivisionOverlays,
   divisionFilterOpen,
   onToggleDivisionFilter,
+  confidenceThreshold,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
@@ -369,16 +372,37 @@ export function TakeoffToolbar({
           testId="button-ai-takeoff"
           className={cn(aiPanelOpen && "bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300")}
         />
-        {hasDivisionOverlays && (
-          <TinyBtn
-            icon={PanelRight}
-            label={divisionFilterOpen ? "Division Overlays (open)" : "Division Overlays"}
-            active={!!divisionFilterOpen}
-            onClick={() => onToggleDivisionFilter?.()}
-            testId="button-division-overlays"
-            className={cn(divisionFilterOpen && "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300")}
-          />
-        )}
+        {hasDivisionOverlays && (() => {
+          const thresholdBadge =
+            confidenceThreshold === "HIGH" ? "HIGH only"
+            : confidenceThreshold === "MEDIUM" ? "MED+"
+            : confidenceThreshold === "LOW" ? "LOW+"
+            : null;
+          return (
+            <div className="relative" data-testid="division-overlays-wrapper">
+              <TinyBtn
+                icon={PanelRight}
+                label={
+                  thresholdBadge
+                    ? `Division Overlays — ${thresholdBadge}`
+                    : divisionFilterOpen ? "Division Overlays (open)" : "Division Overlays"
+                }
+                active={!!divisionFilterOpen}
+                onClick={() => onToggleDivisionFilter?.()}
+                testId="button-division-overlays"
+                className={cn(divisionFilterOpen && "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300")}
+              />
+              {thresholdBadge && (
+                <span
+                  className="pointer-events-none absolute -bottom-0.5 left-1/2 -translate-x-1/2 rounded-sm bg-blue-600 px-0.5 text-[7px] font-bold leading-tight text-white"
+                  data-testid="confidence-threshold-badge"
+                >
+                  {thresholdBadge}
+                </span>
+              )}
+            </div>
+          );
+        })()}
 
         <Separator className="my-px w-8" />
 

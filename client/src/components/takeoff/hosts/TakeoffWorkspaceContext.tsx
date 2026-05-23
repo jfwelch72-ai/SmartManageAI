@@ -84,6 +84,9 @@ export interface RibbonContextSlice {
   hasDivisionOverlays: boolean;
   divisionFilterOpen: boolean;
   onToggleDivisionFilter: () => void;
+  /** Task #3050 — Confidence threshold for AI overlay filtering. */
+  confidenceThreshold: import("../DivisionFilterPanel").ConfidenceThreshold;
+  onConfidenceThresholdChange: (t: import("../DivisionFilterPanel").ConfidenceThreshold) => void;
   /** Right-click → "Pin to Tool Chest" affordance for tool buttons in
    *  the Measure / Annotate ribbon groups. */
   onPinToolToChest: (input: { toolId: string; label: string }) => void;
