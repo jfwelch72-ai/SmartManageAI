@@ -90,18 +90,22 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
     }
 
     // Task #3044 — AI geometry + CSI division columns on takeoff_measurements.
-    const aiGeometryCheck = await db.execute(sql`
-      SELECT EXISTS (
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name = 'takeoff_measurements' AND column_name = 'ai_geometry'
-      )::boolean AS e
-    `);
-    if (aiGeometryCheck.rows[0]?.e !== true) {
-      await db.execute(sql`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "ai_geometry" jsonb`);
-      await db.execute(sql`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "csi_division" text`);
-      logInfo("[migration] takeoff_measurements ai_geometry + csi_division — applied");
-    } else {
-      logInfo("[migration] takeoff_measurements ai_geometry + csi_division — already present, skipped");
+    // Each column is checked and added independently so a partial rollout
+    // (ai_geometry present but csi_division missing) is always repaired.
+    const aiGeometryCols = [
+      { col: "ai_geometry", ddl: "jsonb" },
+      { col: "csi_division", ddl: "text" },
+    ];
+    for (const c of aiGeometryCols) {
+      const chk = await db.execute(sql.raw(
+        `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='takeoff_measurements' AND column_name='${c.col}')::boolean AS e`
+      ));
+      if (chk.rows[0]?.e !== true) {
+        await db.execute(sql.raw(`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "${c.col}" ${c.ddl}`));
+        logInfo(`[migration] takeoff_measurements.${c.col} — applied`);
+      } else {
+        logInfo(`[migration] takeoff_measurements.${c.col} — already present, skipped`);
+      }
     }
 
     // Task #2701 — standalone takeoff categories

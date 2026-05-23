@@ -3069,14 +3069,18 @@ const mapReduceMeasurementApplySchema = z.object({
   sheetCitations: z.array(z.string()).optional().default([]),
   contributingDisciplines: z.array(z.string()).optional().default([]),
   // Task #3044 — AI geometry for visual overlay rendering.
+  // Coordinates are page-normalized [0, 1]; w and h must be positive.
   csiDivision: z.string().optional(),
   boundingBox: z.object({
-    x: z.number(),
-    y: z.number(),
-    w: z.number(),
-    h: z.number(),
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    w: z.number().min(0).max(1),
+    h: z.number().min(0).max(1),
   }).optional(),
-  polygonPoints: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
+  polygonPoints: z.array(z.object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+  })).optional(),
 });
 const mapReduceApplySchema = z.object({
   bidId: z.string().min(1),
