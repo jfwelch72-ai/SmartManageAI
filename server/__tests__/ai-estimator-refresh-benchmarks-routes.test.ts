@@ -1,5 +1,5 @@
-// Task #3038 — Integration coverage for the two new HTTP routes that let
-// estimators re-run only the Phase-4 benchmark verification step:
+// Task #3038 / Task #3047 — Integration coverage for the two HTTP routes that
+// let estimators re-run only the Phase-4 benchmark verification step:
 //
 //   POST /api/ai-estimator/estimate/:bidId/refresh-benchmarks
 //   PATCH /api/ai-estimator/estimate/:estimateId/benchmark-summary
@@ -11,7 +11,9 @@
 //   • 422 when the estimate has no line items
 //   • 200 happy path (AI call mocked) — verifies DB persistence and JSON shape
 //   • AI failure → non-200 response
+//   • 429 when the bid belongs to a different org (POST route — blocked path)
 //   • PATCH 401 when unauthenticated
+//   • PATCH 403 when the estimate belongs to a different org
 //   • PATCH 404 when the estimateId doesn't exist in the org
 //   • PATCH 200 happy path — verifies DB update
 //
@@ -60,6 +62,7 @@ import {
 import { generateToken, authMiddleware } from "../auth";
 import { setUserAccess } from "../services/aiEstimator/access";
 import { setFeatureFlag } from "../services/featureFlagService";
+import { installAsyncErrorShim } from "../utils/expressAsyncShim";
 
 const PREFIX = "__ai_est_refresh_bm__";
 
@@ -77,10 +80,17 @@ let bidWithEmptyEstimateId: string;
 let bidNoEstimateId: string;
 let estimateWithLineItemsId: string;
 
+// Cross-org fixtures — org B data accessed by org A's estimator
+let orgBEstimator: ActorCtx;
+let orgBBidId: string;
+let orgBEstimateId: string;
+
 async function cleanup(): Promise<void> {
   await db.execute(sql`DELETE FROM estimate_line_items WHERE estimate_id IN (SELECT id FROM estimates WHERE bid_id IN (SELECT id FROM bids WHERE code LIKE ${PREFIX + "%"}))`).catch(() => {});
   await db.execute(sql`DELETE FROM estimates WHERE bid_id IN (SELECT id FROM bids WHERE code LIKE ${PREFIX + "%"})`).catch(() => {});
   await db.execute(sql`DELETE FROM bids WHERE code LIKE ${PREFIX + "%"}`).catch(() => {});
+  await db.execute(sql`DELETE FROM feature_flag_manual_changes WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
+  await db.execute(sql`DELETE FROM feature_flag_preset_applications WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
   await db.execute(sql`DELETE FROM ai_estimator_user_access WHERE organization_id IN (SELECT id FROM organizations WHERE slug LIKE ${PREFIX + "%"})`).catch(() => {});
   await db.execute(sql`DELETE FROM users WHERE email LIKE ${PREFIX + "%"}`).catch(() => {});
   await db.execute(sql`DELETE FROM organizations WHERE slug LIKE ${PREFIX + "%"}`).catch(() => {});
@@ -163,12 +173,48 @@ beforeAll(async () => {
     .returning();
   bidNoEstimateId = bidNone.id;
 
+  // ── Org B: separate tenant — used for cross-org isolation tests ──────────
+  const [orgB] = await db
+    .insert(organizations)
+    .values([
+      { name: "BM Refresh Org B", slug: `${PREFIX}b-${stamp}`, tradeType: "GENERAL_CONTRACTOR", onboardingStatus: "COMPLETED", isActive: true },
+    ])
+    .returning();
+
+  await setFeatureFlag(orgB.id, "AI_ESTIMATOR", true, null);
+
+  orgBEstimator = await seedActor({ orgId: orgB.id, role: "ESTIMATOR", label: "est-b", enableEstimator: true });
+
+  const [orgBBid] = await db
+    .insert(bids)
+    .values({ name: "Org B Bid", code: `${PREFIX}BB-${stamp}`, clientName: "C", gcOrganizationId: orgB.id })
+    .returning();
+  orgBBidId = orgBBid.id;
+
+  const [orgBEst] = await db
+    .insert(estimates)
+    .values({ bidId: orgBBid.id, baseBidAmount: "10000", createdById: orgBEstimator.userId })
+    .returning();
+  orgBEstimateId = orgBEst.id;
+
+  await db.insert(estimateLineItems).values([
+    { estimateId: orgBEst.id, category: "CONCRETE", description: "Foundation pour", quantity: "50", unit: "CY", totalCost: "8000", laborHours: "6" },
+  ]);
+
+  // Install async error shim so rejected async route handlers propagate to
+  // Express error middleware instead of hanging the request (Express 4 only).
+  installAsyncErrorShim();
+
   const aiEstimatorRoutes = (await import("../aiEstimatorRoutes")).default;
   app = express();
   app.use(express.json());
   app.use(cookieParser());
   app.use(authMiddleware);
   app.use("/api", aiEstimatorRoutes);
+  // Error handler so async route failures return a 500 instead of hanging.
+  app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Internal server error" });
+  });
 }, 60_000);
 
 afterAll(async () => {
@@ -208,6 +254,18 @@ describe("POST /api/ai-estimator/estimate/:bidId/refresh-benchmarks", () => {
       .post(`/api/ai-estimator/estimate/${bidWithEstimateId}/refresh-benchmarks`)
       .set("Cookie", authCookie(noAccessUser.token));
     expect(res.status).toBe(403);
+  });
+
+  it("returns 404 when the bid doesn't exist in the org (random UUID)", async () => {
+    // A bid ID that has never been created in any org — the estimate lookup
+    // finds nothing and the route returns 404 immediately without ever
+    // reaching the AI layer.
+    const ghostBidId = "00000000-0000-0000-0000-000000000000";
+    const res = await request(app)
+      .post(`/api/ai-estimator/estimate/${ghostBidId}/refresh-benchmarks`)
+      .set("Cookie", authCookie(estimator.token));
+    expect(res.status).toBe(404);
+    expect(res.body).toHaveProperty("error");
   });
 
   it("returns 404 when the bid has no estimate", async () => {
@@ -260,6 +318,18 @@ describe("POST /api/ai-estimator/estimate/:bidId/refresh-benchmarks", () => {
 
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
+
+  it("returns 429 (blocked) when the bid belongs to a different org", async () => {
+    // Org A's estimator attempts to refresh benchmarks on Org B's bid.
+    // The service layer catches the ResourceOwnershipError from assertBidInOrg
+    // and returns { blocked: true }, which the route converts to a 429.
+    const res = await request(app)
+      .post(`/api/ai-estimator/estimate/${orgBBidId}/refresh-benchmarks`)
+      .set("Cookie", authCookie(estimator.token));
+
+    expect(res.status).toBe(429);
+    expect(res.body).toHaveProperty("error");
+  });
 });
 
 // ============================================================================
@@ -280,6 +350,19 @@ describe("PATCH /api/ai-estimator/estimate/:estimateId/benchmark-summary", () =>
       .set("Cookie", authCookie(estimator.token))
       .send({ benchmarkSummary: "x", overallConfidence: "LOW" });
     expect(res.status).toBe(404);
+  });
+
+  it("returns 403 when the estimate belongs to a different org", async () => {
+    // Org A's estimator attempts to overwrite the benchmark summary on an
+    // estimate owned by Org B.  The route resolves the estimate, calls
+    // assertBidInOrg, catches the ResourceOwnershipError, and returns 403.
+    const res = await request(app)
+      .patch(`/api/ai-estimator/estimate/${orgBEstimateId}/benchmark-summary`)
+      .set("Cookie", authCookie(estimator.token))
+      .send({ benchmarkSummary: "injected summary from wrong org", overallConfidence: "LOW" });
+
+    expect(res.status).toBe(403);
+    expect(res.body).toHaveProperty("error");
   });
 
   it("returns 200 with { ok: true } and persists the summary", async () => {
