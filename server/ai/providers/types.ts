@@ -28,6 +28,17 @@ export interface AiMessage {
   content: string | AiContentPart[];
 }
 
+/**
+ * Task #3036 — Built-in Anthropic tool definition.
+ * web_search_20250305 runs server-side via the Anthropic beta API — no
+ * client-side tool-execution loop is required. The OpenAI provider silently
+ * ignores this field.
+ */
+export interface AnthropicBuiltinTool {
+  type: "web_search_20250305";
+  name?: string;
+}
+
 export interface AiChatRequest {
   messages: AiMessage[];
   /** Provider-agnostic upper bound on completion tokens. */
@@ -41,6 +52,13 @@ export interface AiChatRequest {
   model?: string;
   /** Sampling temperature; defaults to provider's standard. */
   temperature?: number;
+  /**
+   * Task #3036 — Optional Anthropic built-in tools (e.g. web_search_20250305).
+   * When present the Anthropic provider routes through the beta messages API
+   * and disables the JSON-prefill trick (the JSON instruction in the system
+   * prompt is sufficient). The OpenAI provider ignores this field entirely.
+   */
+  tools?: AnthropicBuiltinTool[];
 }
 
 export interface AiChatChoice {

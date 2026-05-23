@@ -6,6 +6,7 @@ import { governedAiCall } from "../aiGovernance";
 // Task #2413 — Routed through provider abstraction so this draft path runs on
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
 import { routedChatCompletion } from "../../ai/providers";
+import { ESTIMATOR_SYSTEM_PROMPT_V2 } from "./systemPromptV2";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
 import { resolveRegionForBid } from "./regionFactors";
 import {
@@ -43,6 +44,8 @@ export interface DraftLineItem {
   totalCost: number;
   rationale: string;
   citationIds: string[];
+  /** Task #3036 — V2.0 per-line confidence rating from the Phase 5 CSI output. */
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
 }
 
 export interface SkillApplied {
@@ -58,6 +61,20 @@ export interface EstimateReadFileRef {
   source: "bid_document" | "plan_document" | "quote_document";
 }
 
+/** Task #3036 — Internal shape of the JSON the AI emits under the V2.0 protocol. */
+interface DraftEstimateAiOutput {
+  lines: DraftLineItem[];
+  notes?: string;
+  confidence?: number;
+  conflictLog?: string;
+  scopeGapLog?: string;
+  clarificationList?: string;
+  exclusionsList?: string;
+  assumptionLog?: string;
+  benchmarkSummary?: string;
+  overallConfidence?: string;
+}
+
 export interface DraftEstimateResult {
   lines: DraftLineItem[];
   notes: string;
@@ -66,6 +83,14 @@ export interface DraftEstimateResult {
   skillsApplied: SkillApplied[];
   /** Task #2957 — files the AI actually read when drafting this estimate. */
   filesRead: EstimateReadFileRef[];
+  /** Task #3036 — V2.0 Phase 6 summary blocks (present when AI emits them). */
+  conflictLog?: string;
+  scopeGapLog?: string;
+  clarificationList?: string;
+  exclusionsList?: string;
+  assumptionLog?: string;
+  benchmarkSummary?: string;
+  overallConfidence?: string;
 }
 
 function safeJson<T>(text: string | null | undefined): T | null {
@@ -324,13 +349,38 @@ export async function generateDraftEstimate(opts: {
   }
 
   await reportProgress(75, "Calling AI estimator");
-  const sysPrompt = `You are a senior construction estimator drafting a working estimate for a contractor in their own workspace.
+  // Task #3036 — V2.0 base prompt with an extended JSON output override that
+  // captures the Phase 6 summary blocks alongside the existing line items.
+  // The V2.0 framework drives the Phase 1-7 reasoning protocol; the appended
+  // JSON instruction supersedes the prose output-format rules so downstream
+  // parsing continues to work while gaining the new structured audit fields.
+  const sysPrompt = `${ESTIMATOR_SYSTEM_PROMPT_V2}
+
+═══════════════════════════════════════════════════════════════════
+TASK-SPECIFIC OUTPUT OVERRIDE (supersedes Phase 6 prose format)
+═══════════════════════════════════════════════════════════════════
+
+You are drafting a working estimate for a contractor in their own workspace.
 You ONLY use the data provided: the takeoff measurements, the org's learned cost rates, and prior bids/estimates from this org.
 Never invent unit costs that are not anchored in the provided rates or context. If a rate is missing, set unitCost to 0 and note it in rationale.
-Return strict JSON: {
+Organize all line items by CSI MasterFormat division. Separate material and labor into distinct line items per the V2.0 protocol.
+Assign confidence ratings (HIGH/MEDIUM/LOW) to every line item.
+
+Return ONLY a single valid JSON object — no prose, no markdown fences, no explanation before or after:
+{
   "lines": [{ "description": string, "costCode": string|null, "quantity": number, "unit": "EA|LF|SF|SY|CY|TON|HR|LS|PCT",
-              "unitCost": number, "laborHours": number|null, "totalCost": number, "rationale": string, "citationIds": string[] }],
-  "notes": string, "confidence": number }`;
+              "unitCost": number, "laborHours": number|null, "totalCost": number, "rationale": string, "citationIds": string[],
+              "confidence": "HIGH"|"MEDIUM"|"LOW" }],
+  "notes": string,
+  "confidence": number,
+  "conflictLog": string,
+  "scopeGapLog": string,
+  "clarificationList": string,
+  "exclusionsList": string,
+  "assumptionLog": string,
+  "benchmarkSummary": string,
+  "overallConfidence": string
+}`;
   const userPrompt = JSON.stringify({
     bidId: opts.bidId,
     scopeNotes: opts.scopeNotes ?? null,
@@ -355,6 +405,9 @@ Return strict JSON: {
     actionType: "ai_estimator.estimate_generate",
     inputRefs: { bidId: opts.bidId, sheetCount: sheetIds.length, measurementCount: measurementSummaries.length },
     fn: async () => {
+      // Task #3036 — temperature:0 for deterministic output; web_search tool
+      // enables Phase 4 benchmark verification against live cost data (RS Means,
+      // ENR, etc.). The tool fires only when the model needs to verify a benchmark.
       const completion = await routedChatCompletion({
         orgId: opts.organizationId,
         featureKey: "ai_estimator.estimate_generate",
@@ -376,6 +429,8 @@ Return strict JSON: {
           ],
           max_completion_tokens: 4000,
           response_format: { type: "json_object" },
+          temperature: 0,
+          tools: [{ type: "web_search_20250305" as const }],
         },
       });
       return { result: completion.choices[0]?.message?.content ?? null, completion };
@@ -384,7 +439,7 @@ Return strict JSON: {
   if (gov.blocked) return { result: null, blocked: true, reason: gov.reason };
 
   await reportProgress(92, "Validating draft");
-  const parsed = safeJson<DraftEstimateResult>(gov.result);
+  const parsed = safeJson<DraftEstimateAiOutput>(gov.result);
   if (!parsed) {
     logError("Draft estimate AI returned non-JSON", { bidId: opts.bidId });
     return { result: null, reason: "AI did not return parseable JSON" };
@@ -473,6 +528,14 @@ Return strict JSON: {
       citations: citationsFromRows(contextRows),
       skillsApplied,
       filesRead,
+      // Task #3036 — V2.0 Phase 6 summary blocks (present when AI emits them).
+      ...(parsed.conflictLog ? { conflictLog: parsed.conflictLog } : {}),
+      ...(parsed.scopeGapLog ? { scopeGapLog: parsed.scopeGapLog } : {}),
+      ...(parsed.clarificationList ? { clarificationList: parsed.clarificationList } : {}),
+      ...(parsed.exclusionsList ? { exclusionsList: parsed.exclusionsList } : {}),
+      ...(parsed.assumptionLog ? { assumptionLog: parsed.assumptionLog } : {}),
+      ...(parsed.benchmarkSummary ? { benchmarkSummary: parsed.benchmarkSummary } : {}),
+      ...(parsed.overallConfidence ? { overallConfidence: parsed.overallConfidence } : {}),
     },
   };
 }

@@ -20,6 +20,7 @@ import type {
   AiChatRequest,
   AiChatResponse,
   AiMessage,
+  AnthropicBuiltinTool,
 } from "./types";
 
 // The newest Anthropic model is "claude-sonnet-4-5", released September 29, 2025.
@@ -175,8 +176,12 @@ export class AnthropicProvider implements AiProvider {
 
     // JSON-mode prefill: nudge the model to emit a JSON object by pre-seeding
     // the assistant turn with `{`. We strip the prefill back off in post.
+    // Task #3036 — skip prefill when tools are enabled: tool-use responses
+    // include non-text blocks before the final text, breaking the prefix trick.
+    // The system-prompt JSON instruction is the sole JSON gate when tools fire.
+    const requestHasTools = !!(req.tools && req.tools.length > 0);
     let prefilled = false;
-    if (wantsJson) {
+    if (wantsJson && !requestHasTools) {
       conversation.push({ role: "assistant", content: [{ type: "text", text: "{" }] });
       prefilled = true;
     }
@@ -189,17 +194,38 @@ export class AnthropicProvider implements AiProvider {
       ...(req.temperature !== undefined ? { temperature: req.temperature } : {}),
     };
 
+    // Task #3036 — when built-in tools are requested (e.g. web_search_20250305)
+    // route through the beta messages API with the appropriate beta flag. The
+    // JSON-prefill trick is incompatible with tool-use responses, so it was
+    // skipped above; the system-prompt JSON instruction is the only mode gate.
+    const hasTools = !!(req.tools && req.tools.length > 0);
+
     let response: Anthropic.Message;
     try {
-      response = await client.messages.create(params);
+      if (hasTools) {
+        const betaTools = (req.tools as AnthropicBuiltinTool[]).map((t) => ({
+          type: t.type,
+          ...(t.name ? { name: t.name } : {}),
+        }));
+        const betaResponse = await client.beta.messages.create({
+          ...params,
+          tools: betaTools as Parameters<typeof client.beta.messages.create>[0]["tools"],
+          betas: ["web-search-2025-03-05"],
+        });
+        response = betaResponse as unknown as Anthropic.Message;
+      } else {
+        response = await client.messages.create(params);
+      }
     } catch (err) {
       logError("Anthropic chatCompletion failed", { model: params.model }, err instanceof Error ? err : new Error(String(err)));
       throw err;
     }
 
-    const text = response.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
+    // Extract only text blocks — web-search responses may include tool_use,
+    // tool_result, and web_search_result blocks before the final text answer.
+    const text = (response.content as Array<{ type: string; text?: string }>)
+      .filter((b) => b.type === "text")
+      .map((b) => b.text ?? "")
       .join("");
 
     const finalText = prefilled ? `{${text}` : text;

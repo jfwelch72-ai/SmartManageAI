@@ -29,6 +29,7 @@ import { bids, projectPlans, takeoffSheets } from "@shared/schema";
 import { extractPageTextsFromUrl } from "../../ai/documentExtractor";
 import { routedChatCompletion } from "../../ai/providers";
 import type { AiContentPart } from "../../ai/providers/types";
+import { ESTIMATOR_SYSTEM_PROMPT_V2 } from "./systemPromptV2";
 import { governedAiCall } from "../aiGovernance";
 import { assertBidInOrg, ResourceOwnershipError } from "./access";
 import { getOrgFactors } from "./orgFactors";
@@ -380,8 +381,24 @@ async function reduceDisciplineBatch(opts: {
     : [];
   const allMessageBlocks = [...supplementalBlocks, ...blocks];
 
-  const sysPrompt = `You are a senior estimator drafting takeoff measurements for the ${opts.discipline} discipline only. The user message contains the text contents of multiple plan sheets, separated by lines like "<<<SHEET A-101>>>". For every quantifiable item visible in those sheets, emit one measurement and include the sheet identifier(s) it came from in "sheetCitations". Be conservative — never invent measurements not visible. Do not emit items that belong to other disciplines.
-Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[] }], "notes": string, "confidence": number }`;
+  // Task #3036 — V2.0 base prompt with a discipline-specific JSON output override.
+  // The V2.0 framework drives the Phase 1-7 reasoning protocol; the appended
+  // JSON instruction supersedes the prose output-format rules in Phase 6 so the
+  // pipeline continues to receive the structured measurements array it expects.
+  const sysPrompt = `${ESTIMATOR_SYSTEM_PROMPT_V2}
+
+═══════════════════════════════════════════════════════════════════
+TASK-SPECIFIC OUTPUT OVERRIDE (supersedes Phase 6 prose format)
+═══════════════════════════════════════════════════════════════════
+
+You are drafting takeoff measurements for the ${opts.discipline} discipline ONLY.
+The user message contains the text contents of multiple plan sheets, separated by lines like "<<<SHEET A-101>>>".
+For every quantifiable item visible in those sheets, emit one measurement and include the sheet identifier(s) it came from in "sheetCitations".
+Be conservative — never invent measurements not visible. Do not emit items that belong to other disciplines.
+Apply waste factors per industry standard (cite in rationale). Assign a confidence rating per line (HIGH/MEDIUM/LOW).
+
+Return ONLY a single valid JSON object — no prose, no markdown fences, no explanation before or after:
+{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[], "confidence": "HIGH"|"MEDIUM"|"LOW" }], "notes": string, "confidence": number }`;
 
   let observedModelId: string | null = null;
   let observedProvider: string | null = null;
@@ -420,6 +437,8 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
       projectId: opts.projectId,
     },
     fn: async () => {
+      // Task #3036 — temperature:0 for deterministic output; web_search
+      // tool enables Phase 4 benchmark verification against live cost data.
       const completion = await routedChatCompletion({
         orgId: opts.organizationId,
         featureKey: "ai_estimator.takeoff_draft",
@@ -436,6 +455,8 @@ Return strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|C
           ],
           max_completion_tokens: 4000,
           response_format: { type: "json_object" },
+          temperature: 0,
+          tools: [{ type: "web_search_20250305" as const }],
         },
       });
       // Task #2625 — surface the actual provider model id used so it can

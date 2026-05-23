@@ -17,6 +17,7 @@ import { governedAiCall } from "../aiGovernance";
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org.
 import { routedChatCompletion } from "../../ai/providers";
 import type { AiContentPart } from "../../ai/providers/types";
+import { ESTIMATOR_SYSTEM_PROMPT_V2 } from "./systemPromptV2";
 import { formatLessonsForPrompt, retrieveLessons } from "./retrieval";
 import { logError, logWarn } from "../../utils/logger";
 // Task #2494 — Run untrusted plan-set content through the prompt-injection
@@ -404,10 +405,26 @@ export async function draftTakeoffFromPlans(opts: {
   // quarantined) + extra file blocks (quarantined above per-file).
   const allBlocks = extraBlocks.length > 0 ? [...blocks, ...extraBlocks] : blocks;
 
+  // Task #3036 — V2.0 base prompt with a trade-specific JSON output override.
+  // The V2.0 framework drives the Phase 1-7 reasoning protocol; the appended
+  // JSON instruction supersedes the prose output-format rules so the pipeline
+  // continues to receive the structured measurements array it expects.
   const tradeHint = opts.tradeFilter
-    ? ` Restrict measurements to the ${opts.tradeFilter} trade scope only; ignore items that belong to other trades.`
+    ? `\nRestrict measurements to the ${opts.tradeFilter} trade scope only; ignore items that belong to other trades.`
     : "";
-  const sysPrompt = `You are a senior estimator drafting an initial takeoff from construction drawings. Identify quantifiable items (areas in SF/SY, lengths in LF, volumes in CY, counts in EA). Be conservative — never invent measurements that are not visible.${tradeHint} ${opts.scopeNotes ? `Scope notes: ${opts.scopeNotes}.` : ""} Respond with strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string }], "notes": string, "confidence": number }.`;
+  const scopeHint = opts.scopeNotes ? `\nScope notes: ${opts.scopeNotes}.` : "";
+  const sysPrompt = `${ESTIMATOR_SYSTEM_PROMPT_V2}
+
+═══════════════════════════════════════════════════════════════════
+TASK-SPECIFIC OUTPUT OVERRIDE (supersedes Phase 6 prose format)
+═══════════════════════════════════════════════════════════════════
+
+You are drafting an initial takeoff from construction drawings. Identify all quantifiable items (areas in SF/SY, lengths in LF, volumes in CY, counts in EA).
+Be conservative — never invent measurements not visible in the drawings.${tradeHint}${scopeHint}
+Apply waste factors per industry standard (cite in rationale). Assign a confidence rating per line (HIGH/MEDIUM/LOW).
+
+Return ONLY a single valid JSON object — no prose, no markdown fences, no explanation before or after:
+{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "confidence": "HIGH"|"MEDIUM"|"LOW" }], "notes": string, "confidence": number }`;
 
   // Task #2415 — qualitative lessons (org-wide + takeoff-surface scoped).
   // Best-effort: any retrieval failure simply means no lesson block is added.
@@ -477,6 +494,8 @@ export async function draftTakeoffFromPlans(opts: {
       projectId: resolvedProjectId,
     },
     fn: async () => {
+      // Task #3036 — temperature:0 for deterministic output; web_search
+      // tool enables Phase 4 benchmark verification against live cost data.
       const completion = await routedChatCompletion({
         orgId: opts.organizationId,
         featureKey: "ai_estimator.takeoff_draft",
@@ -503,6 +522,8 @@ export async function draftTakeoffFromPlans(opts: {
           ],
           max_completion_tokens: 4000,
           response_format: { type: "json_object" },
+          temperature: 0,
+          tools: [{ type: "web_search_20250305" as const }],
         },
       });
       return { result: completion.choices[0]?.message?.content ?? null, completion };
