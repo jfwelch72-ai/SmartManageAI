@@ -45,6 +45,19 @@ const TAKEOFF_DRAFT_OUTPUT_SCHEMA = z.object({
     unit: z.string(),
     costCode: z.string().nullable().optional(),
     rationale: z.string(),
+    confidence: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
+    // Task #3044 — AI bounding geometry for visual overlay rendering.
+    csiDivision: z.string().optional(),
+    boundingBox: z.object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0).max(1),
+      h: z.number().min(0).max(1),
+    }).optional(),
+    polygonPoints: z.array(z.object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+    })).optional(),
   })).optional(),
   notes: z.string().optional(),
   confidence: z.number().optional(),
@@ -66,6 +79,12 @@ export interface DraftTakeoffMeasurement {
   unit: string;
   costCode: string | null;
   rationale: string;
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
+  // Task #3044 — AI-extracted bounding geometry for visual overlay rendering.
+  // All coordinates are page-normalized (0.0–1.0, top-left origin).
+  csiDivision?: string;
+  boundingBox?: { x: number; y: number; w: number; h: number };
+  polygonPoints?: { x: number; y: number }[];
   // Task #2624 — Optional assembly explosion. Present when the
   // measurement matched an active org assembly via fuzzy
   // (trade + keyword + unit) lookup. The review UI renders parent +
@@ -424,7 +443,9 @@ Be conservative — never invent measurements not visible in the drawings.${trad
 Apply waste factors per industry standard (cite in rationale). Assign a confidence rating per line (HIGH/MEDIUM/LOW).
 
 Return ONLY a single valid JSON object — no prose, no markdown fences, no explanation before or after:
-{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "confidence": "HIGH"|"MEDIUM"|"LOW" }], "notes": string, "confidence": number }`;
+{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "confidence": "HIGH"|"MEDIUM"|"LOW", "csiDivision": string, "boundingBox": { "x": number, "y": number, "w": number, "h": number }, "polygonPoints": [{"x": number, "y": number}] }], "notes": string, "confidence": number }
+
+COORDINATE RULES: All boundingBox/polygonPoints values are page-normalized (0.0–1.0, top-left origin). Omit polygonPoints for rectangular shapes. csiDivision format: "DIV 03". Cross-check each boundingBox against the sheet scale bar before finalizing. Every quantity must be verified against two independent drawing sources per the ACCURACY — NON-NEGOTIABLE protocol.`;
 
   // Task #2415 — qualitative lessons (org-wide + takeoff-surface scoped).
   // Best-effort: any retrieval failure simply means no lesson block is added.

@@ -75,6 +75,19 @@ const MAP_REDUCE_OUTPUT_SCHEMA = z.object({
     costCode: z.string().nullable().optional(),
     rationale: z.string(),
     sheetCitations: z.array(z.string()).optional(),
+    confidence: z.enum(["HIGH", "MEDIUM", "LOW"]).optional(),
+    // Task #3044 — AI bounding geometry for visual overlay rendering.
+    csiDivision: z.string().optional(),
+    boundingBox: z.object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+      w: z.number().min(0).max(1),
+      h: z.number().min(0).max(1),
+    }).optional(),
+    polygonPoints: z.array(z.object({
+      x: z.number().min(0).max(1),
+      y: z.number().min(0).max(1),
+    })).optional(),
   })).optional(),
   notes: z.string().optional(),
   confidence: z.number().optional(),
@@ -89,6 +102,14 @@ export interface MapReduceMeasurement {
   rationale: string;
   sheetCitations: string[];
   contributingDisciplines: string[];
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
+  // Task #3044 — AI-extracted bounding geometry for visual overlay rendering.
+  // All coordinates are page-normalized (0.0–1.0, top-left origin).
+  // Carried from the first batch emission for a given (type, unit, label) key;
+  // subsequent aggregated emissions for the same key do not overwrite geometry.
+  csiDivision?: string;
+  boundingBox?: { x: number; y: number; w: number; h: number };
+  polygonPoints?: { x: number; y: number }[];
   // Task #2624 — Optional assembly explosion (see takeoffDraft.ts).
   assembly?: AssemblyExpansion | null;
 }
@@ -398,7 +419,9 @@ Be conservative — never invent measurements not visible. Do not emit items tha
 Apply waste factors per industry standard (cite in rationale). Assign a confidence rating per line (HIGH/MEDIUM/LOW).
 
 Return ONLY a single valid JSON object — no prose, no markdown fences, no explanation before or after:
-{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[], "confidence": "HIGH"|"MEDIUM"|"LOW" }], "notes": string, "confidence": number }`;
+{ "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string, "sheetCitations": string[], "confidence": "HIGH"|"MEDIUM"|"LOW", "csiDivision": string, "boundingBox": { "x": number, "y": number, "w": number, "h": number }, "polygonPoints": [{"x": number, "y": number}] }], "notes": string, "confidence": number }
+
+COORDINATE RULES: All boundingBox/polygonPoints values are page-normalized (0.0–1.0, top-left origin). Omit polygonPoints for rectangular shapes. csiDivision format: "DIV 03". Cross-check each boundingBox against the sheet scale bar. Every quantity must be verified against two independent drawing sources per the ACCURACY — NON-NEGOTIABLE protocol.`;
 
   let observedModelId: string | null = null;
   let observedProvider: string | null = null;
@@ -495,6 +518,11 @@ Return ONLY a single valid JSON object — no prose, no markdown fences, no expl
     rationale: m.rationale,
     sheetCitations: Array.isArray(m.sheetCitations) ? m.sheetCitations : [],
     contributingDisciplines: [opts.discipline],
+    confidence: m.confidence,
+    // Task #3044 — forward geometry fields from the AI output.
+    csiDivision: typeof m.csiDivision === "string" ? m.csiDivision : undefined,
+    boundingBox: m.boundingBox,
+    polygonPoints: m.polygonPoints,
   }));
   return {
     measurements: out,

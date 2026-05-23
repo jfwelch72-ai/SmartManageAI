@@ -89,6 +89,21 @@ export async function ensureTakeoffEnhancements(): Promise<void> {
       }
     }
 
+    // Task #3044 — AI geometry + CSI division columns on takeoff_measurements.
+    const aiGeometryCheck = await db.execute(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'takeoff_measurements' AND column_name = 'ai_geometry'
+      )::boolean AS e
+    `);
+    if (aiGeometryCheck.rows[0]?.e !== true) {
+      await db.execute(sql`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "ai_geometry" jsonb`);
+      await db.execute(sql`ALTER TABLE "takeoff_measurements" ADD COLUMN IF NOT EXISTS "csi_division" text`);
+      logInfo("[migration] takeoff_measurements ai_geometry + csi_division — applied");
+    } else {
+      logInfo("[migration] takeoff_measurements ai_geometry + csi_division — already present, skipped");
+    }
+
     // Task #2701 — standalone takeoff categories
     const standaloneCatCol = await db.execute(sql`
       SELECT EXISTS (

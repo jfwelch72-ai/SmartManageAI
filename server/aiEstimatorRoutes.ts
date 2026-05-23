@@ -3008,6 +3008,11 @@ router.post(
             metadata,
             needsReview: true,
             calibrationSource: "AI_DETECTED",
+            // Task #3044 — geometry and CSI division are not available from
+            // the revision-diff path (the diff entry is already committed);
+            // leave both null here; they are populated by the map-reduce apply path.
+            aiGeometry: null,
+            csiDivision: null,
           })
           .returning({ id: takeoffMeasurements.id });
         if (inserted) {
@@ -3063,6 +3068,15 @@ const mapReduceMeasurementApplySchema = z.object({
   rationale: z.string().optional().default(""),
   sheetCitations: z.array(z.string()).optional().default([]),
   contributingDisciplines: z.array(z.string()).optional().default([]),
+  // Task #3044 — AI geometry for visual overlay rendering.
+  csiDivision: z.string().optional(),
+  boundingBox: z.object({
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+  }).optional(),
+  polygonPoints: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
 });
 const mapReduceApplySchema = z.object({
   bidId: z.string().min(1),
@@ -3254,6 +3268,13 @@ router.post(
             metadata,
             needsReview: true,
             calibrationSource: "AI_DETECTED",
+            // Task #3044 — persist AI-extracted bounding geometry and CSI division.
+            // aiGeometry encodes { boundingBox, polygonPoints? } in JSONB for the
+            // Division Overlay Renderer (Task #3045).
+            aiGeometry: m.boundingBox
+              ? { boundingBox: m.boundingBox, polygonPoints: m.polygonPoints ?? null }
+              : null,
+            csiDivision: m.csiDivision ?? null,
           })
           .returning({ id: takeoffMeasurements.id });
         if (inserted) {

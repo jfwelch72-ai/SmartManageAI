@@ -254,6 +254,14 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   lockedScalePxPerFoot: doublePrecision("locked_scale_px_per_foot"),
   deductions: text("deductions"),
   metadata: text("metadata"),
+  // Task #3044 — AI-extracted bounding geometry for visual overlay rendering.
+  // Shape: { boundingBox: { x, y, w, h }, polygonPoints?: { x, y }[] }
+  // All coordinates are page-normalized (0.0–1.0, top-left origin).
+  // Null for user-drawn measurements and measurements predating this feature.
+  aiGeometry: jsonb("ai_geometry"),
+  // Task #3044 — CSI MasterFormat division for this measurement (e.g. "DIV 03").
+  // Null for user-drawn measurements.
+  csiDivision: text("csi_division"),
   // Task #2577 Phase B Step 4 — Idempotency anchor for AI-derived COUNT
   // measurements that originate from accepted schedule symbols
   // (`ai_estimator_legend_symbols.id`). A partial unique index on this
