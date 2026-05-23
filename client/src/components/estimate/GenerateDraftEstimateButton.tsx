@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, FileQuestion } from "lucide-react";
+import { Loader2, Sparkles, Check, ChevronDown, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, FileQuestion, ClipboardList } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { pollJobUntilDone } from "@/lib/jobs";
 import { useToast } from "@/hooks/use-toast";
@@ -20,6 +20,8 @@ interface DraftLine {
   totalCost: number;
   rationale: string;
   citationIds: string[];
+  /** Task #3036 — V2.0 per-line confidence rating from Phase 5 CSI output. */
+  confidence?: "HIGH" | "MEDIUM" | "LOW";
 }
 
 interface SkillApplied {
@@ -42,11 +44,66 @@ interface DraftResult {
   citations?: Array<{ id: string; sourceType: string; title: string }>;
   skillsApplied?: SkillApplied[];
   filesRead?: ReadFileRef[];
+  /** Task #3037 — V2.0 Phase 6 audit summary blocks. */
+  conflictLog?: string;
+  scopeGapLog?: string;
+  clarificationList?: string;
+  exclusionsList?: string;
+  assumptionLog?: string;
+  benchmarkSummary?: string;
+  overallConfidence?: string;
 }
 
 interface Props {
   bidId: string;
   estimateId?: string;
+}
+
+/** Returns the badge label and Tailwind classes for a per-line confidence rating. */
+function ConfidenceBadge({ level }: { level: "HIGH" | "MEDIUM" | "LOW" | undefined }) {
+  if (!level) return null;
+  const map = {
+    HIGH: { label: "✅ HIGH", className: "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-800" },
+    MEDIUM: { label: "⚠️ MED", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800" },
+    LOW: { label: "🔴 LOW", className: "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300 border-red-200 dark:border-red-800" },
+  } as const;
+  const { label, className } = map[level];
+  return (
+    <Badge
+      variant="outline"
+      className={`text-[10px] px-1 py-0 shrink-0 ${className}`}
+      data-testid={`badge-confidence-${level.toLowerCase()}`}
+    >
+      {label}
+    </Badge>
+  );
+}
+
+/** A single collapsible block inside the AI Audit panel. */
+function AuditBlock({ title, content, testId }: { title: string; content: string; testId: string }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="border-t first:border-t-0" data-testid={testId}>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium hover:bg-muted/50 transition-colors text-left"
+        data-testid={`${testId}-toggle`}
+      >
+        <span>{title}</span>
+        {expanded ? (
+          <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+        ) : (
+          <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+        )}
+      </button>
+      {expanded && (
+        <div className="px-3 pb-3 text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed" data-testid={`${testId}-content`}>
+          {content}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
@@ -56,6 +113,7 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
   const [draft, setDraft] = useState<DraftResult | null>(null);
   const [skillsExpanded, setSkillsExpanded] = useState(false);
   const [filesExpanded, setFilesExpanded] = useState(false);
+  const [auditExpanded, setAuditExpanded] = useState(false);
 
   // Task #2517 — POST enqueues an `ai_estimator_draft` job and returns
   // `{ jobId }`. Poll `/api/jobs/:id` until terminal then unwrap the
@@ -99,6 +157,13 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
         comment: scopeNotes || undefined,
       }),
   });
+
+  /** True when at least one Phase 6 audit block has content. */
+  const hasAuditData = (d: DraftResult) =>
+    !!(d.conflictLog || d.scopeGapLog || d.clarificationList || d.exclusionsList || d.assumptionLog || d.benchmarkSummary || d.overallConfidence);
+
+  /** Whether any line has a confidence rating (so we show the column at all). */
+  const hasConfidenceRatings = (d: DraftResult) => d.lines.some((l) => l.confidence);
 
   return (
     <>
@@ -154,6 +219,9 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                         <th className="text-left p-2">Unit</th>
                         <th className="text-right p-2">Unit cost</th>
                         <th className="text-right p-2">Total</th>
+                        {hasConfidenceRatings(draft) && (
+                          <th className="text-center p-2">Confidence</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -165,6 +233,11 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                           <td className="p-2">{l.unit}</td>
                           <td className="p-2 text-right">${l.unitCost.toFixed(2)}</td>
                           <td className="p-2 text-right">${l.totalCost.toFixed(2)}</td>
+                          {hasConfidenceRatings(draft) && (
+                            <td className="p-2 text-center">
+                              <ConfidenceBadge level={l.confidence} />
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -285,6 +358,81 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
                         {c.sourceType}: {c.title}
                       </Badge>
                     ))}
+                  </div>
+                )}
+
+                {/* Task #3037 — AI Audit panel: Phase 6 summary blocks. Hidden for legacy estimates. */}
+                {hasAuditData(draft) && (
+                  <div className="border rounded-md overflow-hidden" data-testid="section-ai-audit">
+                    <button
+                      type="button"
+                      onClick={() => setAuditExpanded((v) => !v)}
+                      className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium bg-muted/50 hover:bg-muted transition-colors"
+                      data-testid="button-toggle-ai-audit"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <ClipboardList className="h-3 w-3 text-primary" />
+                        AI Audit
+                      </span>
+                      {auditExpanded ? (
+                        <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                      )}
+                    </button>
+                    {auditExpanded && (
+                      <div className="divide-y text-xs" data-testid="panel-ai-audit">
+                        {draft.conflictLog && (
+                          <AuditBlock
+                            title="Conflict Log"
+                            content={draft.conflictLog}
+                            testId="audit-block-conflict-log"
+                          />
+                        )}
+                        {draft.scopeGapLog && (
+                          <AuditBlock
+                            title="Scope Gap Log"
+                            content={draft.scopeGapLog}
+                            testId="audit-block-scope-gap-log"
+                          />
+                        )}
+                        {draft.clarificationList && (
+                          <AuditBlock
+                            title="Clarification List"
+                            content={draft.clarificationList}
+                            testId="audit-block-clarification-list"
+                          />
+                        )}
+                        {draft.exclusionsList && (
+                          <AuditBlock
+                            title="Exclusions"
+                            content={draft.exclusionsList}
+                            testId="audit-block-exclusions-list"
+                          />
+                        )}
+                        {draft.assumptionLog && (
+                          <AuditBlock
+                            title="Assumption Log"
+                            content={draft.assumptionLog}
+                            testId="audit-block-assumption-log"
+                          />
+                        )}
+                        {draft.benchmarkSummary && (
+                          <AuditBlock
+                            title="Benchmark Verification"
+                            content={draft.benchmarkSummary}
+                            testId="audit-block-benchmark-summary"
+                          />
+                        )}
+                        {draft.overallConfidence && (
+                          <AuditBlock
+                            title="Overall Confidence Reasoning"
+                            content={draft.overallConfidence}
+                            testId="audit-block-overall-confidence"
+                          />
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
