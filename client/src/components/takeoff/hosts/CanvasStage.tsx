@@ -113,6 +113,22 @@ export interface CanvasStageProps {
   /** Task #3045 — set of CSI division codes that should NOT render their
    *  AI geometry overlays. When undefined all divisions are visible. */
   hiddenDivisions?: Set<string>;
+  /** Task #3048 — id of the AI measurement currently in vertex-drag reshape mode. */
+  editingAiMeasurementId?: string | null;
+  /**
+   * Task #3048 — live draft vertex positions (page-normalised) for the
+   * measurement being reshaped.  For polygon overlays each element is a
+   * polygon vertex; for bounding-box overlays the four corners TL→TR→BR→BL.
+   */
+  editingAiPoints?: Array<{ x: number; y: number }> | null;
+  /** Task #3048 — called when the user drags an AI overlay vertex handle. */
+  onAiVertexDrag?: (idx: number, pt: { x: number; y: number }) => void;
+  /** Task #3048 — called when the user clicks an AI polygon in select mode. */
+  onEnterAiEditMode?: (
+    measurementId: string,
+    initialPoints: Array<{ x: number; y: number }>,
+    isPolygon: boolean,
+  ) => void;
   hideAiMeasurements: boolean;
   hideResolvedIssues: boolean;
   showOverlaySlider: boolean;
@@ -353,6 +369,10 @@ function CanvasStageImpl(props: CanvasStageProps) {
     dimInputRepeat,
     showAiOverlays,
     hiddenDivisions,
+    editingAiMeasurementId,
+    editingAiPoints,
+    onAiVertexDrag,
+    onEnterAiEditMode,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -775,6 +795,11 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     stageScale={stageScale}
                     selectedMeasurementId={selectedMeasurementId}
                     setSelectedMeasurementId={setSelectedMeasurementId}
+                    activeTool={activeTool}
+                    editingMeasurementId={editingAiMeasurementId}
+                    editingPoints={editingAiPoints}
+                    onAiVertexDrag={onAiVertexDrag}
+                    onEnterAiEditMode={onEnterAiEditMode}
                   />
                 )}
 

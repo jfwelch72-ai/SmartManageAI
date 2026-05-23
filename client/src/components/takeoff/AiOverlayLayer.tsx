@@ -13,10 +13,18 @@
  *
  * Coordinate system: `aiGeometry` stores page-normalised values (0–1).
  * Multiply by `pageWidth` / `pageHeight` to get Konva world coordinates.
+ *
+ * Task #3048 — Vertex-drag reshape mode.
+ * When `editingMeasurementId` matches a measurement's id and `activeTool`
+ * is "select", the overlay renders draggable vertex handles (Circles) so the
+ * estimator can correct AI geometry errors.  For polygon shapes the handles sit
+ * on each polygon vertex; for bounding-box shapes the four corners are used.
+ * Drag positions are reported back in page-normalised coordinates via the
+ * `onAiVertexDrag` callback so the caller can update its draft state.
  */
 
 import { Fragment, useState } from "react";
-import { Line, Rect, Text, Group } from "react-konva";
+import { Line, Rect, Text, Group, Circle } from "react-konva";
 import { getCsiDivisionColor } from "@shared/csiDivisionColors";
 import type { TakeoffMeasurement } from "@shared/schema";
 
@@ -42,6 +50,33 @@ export interface AiOverlayLayerProps {
   stageScale: number;
   selectedMeasurementId: string | null;
   setSelectedMeasurementId: (id: string | null) => void;
+
+  /** Task #3048 — active canvas tool; vertex handles only appear when "select". */
+  activeTool?: string;
+  /** Task #3048 — id of the measurement currently in vertex-drag reshape mode. */
+  editingMeasurementId?: string | null;
+  /**
+   * Task #3048 — live draft vertex positions for the measurement being reshaped,
+   * in page-normalised coordinates (0–1).  For polygon overlays each element
+   * is a polygon vertex; for bounding-box overlays the array holds the four
+   * corners in TL → TR → BR → BL order.
+   */
+  editingPoints?: Array<{ x: number; y: number }> | null;
+  /**
+   * Task #3048 — called when the user drags a vertex handle.
+   * `idx` is the vertex index within `editingPoints`.
+   * `pt` is the new position in page-normalised coordinates.
+   */
+  onAiVertexDrag?: (idx: number, pt: { x: number; y: number }) => void;
+  /**
+   * Task #3048 — called when the user clicks an AI polygon while activeTool
+   * is "select".  The caller should enter reshape mode for this measurement.
+   */
+  onEnterAiEditMode?: (
+    measurementId: string,
+    initialPoints: Array<{ x: number; y: number }>,
+    isPolygon: boolean,
+  ) => void;
 }
 
 function parseAiGeometry(raw: unknown): AiGeometry | null {
@@ -84,6 +119,18 @@ function parseMetaConfidence(m: TakeoffMeasurement): string {
   }
 }
 
+/** Convert bounding box (normalised) to the four corners in TL→TR→BR→BL order. */
+function bboxToCorners(
+  bb: { x: number; y: number; w: number; h: number },
+): Array<{ x: number; y: number }> {
+  return [
+    { x: bb.x, y: bb.y },
+    { x: bb.x + bb.w, y: bb.y },
+    { x: bb.x + bb.w, y: bb.y + bb.h },
+    { x: bb.x, y: bb.y + bb.h },
+  ];
+}
+
 export function AiOverlayLayer({
   measurements,
   hiddenDivisions,
@@ -92,6 +139,11 @@ export function AiOverlayLayer({
   stageScale,
   selectedMeasurementId,
   setSelectedMeasurementId,
+  activeTool,
+  editingMeasurementId,
+  editingPoints,
+  onAiVertexDrag,
+  onEnterAiEditMode,
 }: AiOverlayLayerProps) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
 
@@ -104,6 +156,7 @@ export function AiOverlayLayer({
 
   const STROKE_W = 1.5 / stageScale;
   const FILL_OPACITY = 0.3;
+  const inSelectMode = activeTool === "select" || activeTool === undefined;
 
   function hexToRgba(hex: string, alpha: number): string {
     const h = hex.replace("#", "");
@@ -125,8 +178,9 @@ export function AiOverlayLayer({
         const color = getCsiDivisionColor(div || null);
         const fillColor = hexToRgba(color, FILL_OPACITY);
         const isSelected = selectedMeasurementId === m.id;
-        const strokeColor = isSelected ? color : color;
-        const strokeWidth = isSelected ? STROKE_W * 2 : STROKE_W;
+        const isEditing = editingMeasurementId === m.id;
+        const strokeColor = isEditing ? "rgba(245,158,11,1)" : color;
+        const strokeWidth = (isSelected || isEditing) ? STROKE_W * 2 : STROKE_W;
 
         const { boundingBox, polygonPoints } = geom;
         const bx = boundingBox.x * pageWidth;
@@ -135,6 +189,7 @@ export function AiOverlayLayer({
         const bh = boundingBox.h * pageHeight;
 
         const confidence = parseMetaConfidence(m);
+        const hasPolygon = polygonPoints != null && polygonPoints.length >= 3;
 
         function buildTooltip(worldX: number, worldY: number) {
           const qty =
@@ -156,8 +211,9 @@ export function AiOverlayLayer({
         }
 
         function handleMouseEnter(e: any, wx: number, wy: number) {
+          if (isEditing) return;
           const container = e.target.getStage()?.container();
-          if (container) container.style.cursor = "pointer";
+          if (container) container.style.cursor = inSelectMode ? "pointer" : "default";
           buildTooltip(wx, wy);
         }
 
@@ -167,52 +223,140 @@ export function AiOverlayLayer({
           setTooltip(null);
         }
 
+        function handleClick() {
+          setSelectedMeasurementId(m.id);
+          if (inSelectMode && onEnterAiEditMode) {
+            if (hasPolygon) {
+              onEnterAiEditMode(m.id, polygonPoints!, true);
+            } else {
+              onEnterAiEditMode(m.id, bboxToCorners(boundingBox), false);
+            }
+          }
+        }
+
         const shapeKey = `ai-div-overlay-${m.id}`;
 
-        if (polygonPoints && polygonPoints.length >= 3) {
-          const flatPoints = polygonPoints.flatMap((p) => [
+        // Determine the live vertex positions to render (draft or persisted).
+        const livePoints: Array<{ x: number; y: number }> | null =
+          isEditing && editingPoints && editingPoints.length >= 3
+            ? editingPoints
+            : null;
+
+        if (hasPolygon) {
+          const pts = livePoints ?? polygonPoints!;
+          const flatPoints = pts.flatMap((p) => [
             p.x * pageWidth,
             p.y * pageHeight,
           ]);
-          const cx = polygonPoints.reduce((s, p) => s + p.x, 0) / polygonPoints.length * pageWidth;
-          const cy = polygonPoints.reduce((s, p) => s + p.y, 0) / polygonPoints.length * pageHeight;
+          const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length * pageWidth;
+          const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length * pageHeight;
 
           return (
             <Fragment key={shapeKey}>
               <Line
                 points={flatPoints}
                 closed
-                fill={fillColor}
+                fill={isEditing ? "rgba(245,158,11,0.15)" : fillColor}
                 stroke={strokeColor}
                 strokeWidth={strokeWidth}
-                listening={true}
+                listening={!isEditing}
                 perfectDrawEnabled={false}
                 onMouseEnter={(e) => handleMouseEnter(e, cx, cy)}
                 onMouseLeave={handleMouseLeave}
-                onClick={() => setSelectedMeasurementId(m.id)}
-                onTap={() => setSelectedMeasurementId(m.id)}
+                onClick={handleClick}
+                onTap={handleClick}
+                data-testid={`ai-overlay-polygon-${m.id}`}
               />
+              {/* Task #3048 — Draggable vertex handles shown when in reshape mode. */}
+              {isEditing && pts.map((pt, i) => (
+                <Circle
+                  key={`ai-edit-vtx-${m.id}-${i}`}
+                  x={pt.x * pageWidth}
+                  y={pt.y * pageHeight}
+                  radius={6 / stageScale}
+                  fill="rgba(245,158,11,0.90)"
+                  stroke="white"
+                  strokeWidth={1.5 / stageScale}
+                  draggable={true}
+                  onDragMove={(e) => {
+                    const node = e.target;
+                    onAiVertexDrag?.(i, {
+                      x: Math.max(0, Math.min(1, node.x() / pageWidth)),
+                      y: Math.max(0, Math.min(1, node.y() / pageHeight)),
+                    });
+                  }}
+                  onMouseEnter={(e) => {
+                    const container = e.target.getStage()?.container();
+                    if (container) container.style.cursor = "crosshair";
+                  }}
+                  onMouseLeave={(e) => {
+                    const container = e.target.getStage()?.container();
+                    if (container) container.style.cursor = "default";
+                  }}
+                  perfectDrawEnabled={false}
+                  data-testid={`ai-overlay-vertex-${m.id}-${i}`}
+                />
+              ))}
             </Fragment>
           );
         }
 
+        // Bounding-box fallback.
+        const corners = livePoints ?? bboxToCorners(boundingBox);
+        // Build a flat rect from the live corners (axis-aligned from min/max).
+        const minX = Math.min(...corners.map((c) => c.x)) * pageWidth;
+        const minY = Math.min(...corners.map((c) => c.y)) * pageHeight;
+        const maxX = Math.max(...corners.map((c) => c.x)) * pageWidth;
+        const maxY = Math.max(...corners.map((c) => c.y)) * pageHeight;
+
         return (
           <Fragment key={shapeKey}>
             <Rect
-              x={bx}
-              y={by}
-              width={bw}
-              height={bh}
-              fill={fillColor}
+              x={isEditing ? minX : bx}
+              y={isEditing ? minY : by}
+              width={isEditing ? maxX - minX : bw}
+              height={isEditing ? maxY - minY : bh}
+              fill={isEditing ? "rgba(245,158,11,0.15)" : fillColor}
               stroke={strokeColor}
               strokeWidth={strokeWidth}
-              listening={true}
+              listening={!isEditing}
               perfectDrawEnabled={false}
               onMouseEnter={(e) => handleMouseEnter(e, bx + bw / 2, by + bh / 2)}
               onMouseLeave={handleMouseLeave}
-              onClick={() => setSelectedMeasurementId(m.id)}
-              onTap={() => setSelectedMeasurementId(m.id)}
+              onClick={handleClick}
+              onTap={handleClick}
+              data-testid={`ai-overlay-rect-${m.id}`}
             />
+            {/* Task #3048 — Draggable corner handles for bounding-box overlays. */}
+            {isEditing && corners.map((corner, i) => (
+              <Circle
+                key={`ai-edit-corner-${m.id}-${i}`}
+                x={corner.x * pageWidth}
+                y={corner.y * pageHeight}
+                radius={6 / stageScale}
+                fill="rgba(245,158,11,0.90)"
+                stroke="white"
+                strokeWidth={1.5 / stageScale}
+                draggable={true}
+                onDragMove={(e) => {
+                  const node = e.target;
+                  onAiVertexDrag?.(i, {
+                    x: Math.max(0, Math.min(1, node.x() / pageWidth)),
+                    y: Math.max(0, Math.min(1, node.y() / pageHeight)),
+                  });
+                }}
+                onMouseEnter={(e) => {
+                  const container = e.target.getStage()?.container();
+                  if (container) container.style.cursor = "crosshair";
+                }}
+                onMouseLeave={(e) => {
+                  const container = e.target.getStage()?.container();
+                  if (container) container.style.cursor = "default";
+                }}
+                perfectDrawEnabled={false}
+                data-testid={`ai-overlay-corner-${m.id}-${i}`}
+              />
+            ))}
           </Fragment>
         );
       })}

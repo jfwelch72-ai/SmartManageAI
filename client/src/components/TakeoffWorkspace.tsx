@@ -498,6 +498,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // Both reset per session (no localStorage needed per spec).
   const [divisionFilterOpen, setDivisionFilterOpen] = useState(false);
   const [hiddenDivisions, setHiddenDivisions] = useState<Set<string>>(new Set());
+  // Task #3048 — AI geometry vertex-drag reshape state.
+  // editingAiMeasurementId: the measurement being reshaped.
+  // editingAiPoints: mutable draft vertex positions (page-normalised, 0–1).
+  // editingAiIsPolygon: true = polygon vertices; false = bbox 4 corners (TL→TR→BR→BL).
+  const [editingAiMeasurementId, setEditingAiMeasurementId] = useState<string | null>(null);
+  const [editingAiPoints, setEditingAiPoints] = useState<Array<{ x: number; y: number }> | null>(null);
+  const [editingAiIsPolygon, setEditingAiIsPolygon] = useState(false);
+  const [isSavingAiGeometry, setIsSavingAiGeometry] = useState(false);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
   // Task #2140 — Inline calibration drawer (Section 5 of the
   // interaction map). `T` opens this side-anchored Sheet so the
@@ -2846,6 +2854,127 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setEditingZonePoints(null);
   }, []);
 
+  // Task #3048 — AI geometry vertex-drag reshape handlers.
+
+  // handleEnterAiEditMode: enter reshape mode for an AI overlay.
+  // Also opens the DivisionFilterPanel so the Save / Cancel banner is visible.
+  const handleEnterAiEditMode = useCallback(
+    (
+      measurementId: string,
+      initialPoints: Array<{ x: number; y: number }>,
+      isPolygon: boolean,
+    ) => {
+      setEditingAiMeasurementId(measurementId);
+      setEditingAiPoints([...initialPoints]);
+      setEditingAiIsPolygon(isPolygon);
+      setDivisionFilterOpen(true);
+    },
+    [],
+  );
+
+  // handleAiVertexDrag: called on every drag move from AiOverlayLayer vertex circles.
+  const handleAiVertexDrag = useCallback(
+    (idx: number, pt: { x: number; y: number }) => {
+      setEditingAiPoints((prev) => {
+        if (!prev) return prev;
+        const next = [...prev];
+        next[idx] = pt;
+        return next;
+      });
+    },
+    [],
+  );
+
+  // handleCancelAiGeometry: exit reshape mode and discard draft.
+  const handleCancelAiGeometry = useCallback(() => {
+    setEditingAiMeasurementId(null);
+    setEditingAiPoints(null);
+    setEditingAiIsPolygon(false);
+  }, []);
+
+  // Task #3048 — Clear AI edit state when the user switches sheets or the
+  // measurement being edited is removed (e.g. deleted by a teammate).
+  // Without this guard the save banner stays active with no matching overlay
+  // and Save becomes a silent no-op.
+  useEffect(() => {
+    if (!editingAiMeasurementId) return;
+    const stillExists = measurements.some((m) => m.id === editingAiMeasurementId);
+    if (!stillExists) {
+      setEditingAiMeasurementId(null);
+      setEditingAiPoints(null);
+      setEditingAiIsPolygon(false);
+    }
+  }, [measurements, editingAiMeasurementId]);
+
+  useEffect(() => {
+    if (editingAiMeasurementId) {
+      setEditingAiMeasurementId(null);
+      setEditingAiPoints(null);
+      setEditingAiIsPolygon(false);
+    }
+    // intentional: only runs on sheet switch — not on editingAiMeasurementId change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedSheet]);
+
+  // handleSaveAiGeometry: PATCHes the updated aiGeometry to the server.
+  const handleSaveAiGeometry = useCallback(async () => {
+    if (!editingAiMeasurementId || !editingAiPoints || editingAiPoints.length < 3) return;
+
+    // Rebuild the aiGeometry payload from the draft points.
+    const existing = measurements.find((m) => m.id === editingAiMeasurementId);
+    if (!existing) return;
+
+    let newAiGeometry: Record<string, unknown>;
+    if (editingAiIsPolygon) {
+      // Keep existing boundingBox, update polygonPoints.
+      const existingGeom = existing.aiGeometry
+        ? typeof existing.aiGeometry === "string"
+          ? JSON.parse(existing.aiGeometry as string)
+          : existing.aiGeometry
+        : {};
+      newAiGeometry = { ...existingGeom, polygonPoints: editingAiPoints };
+    } else {
+      // Reconstruct axis-aligned boundingBox from the 4 dragged corners.
+      const xs = editingAiPoints.map((p) => p.x);
+      const ys = editingAiPoints.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const minY = Math.min(...ys);
+      const maxX = Math.max(...xs);
+      const maxY = Math.max(...ys);
+      const existingGeom = existing.aiGeometry
+        ? typeof existing.aiGeometry === "string"
+          ? JSON.parse(existing.aiGeometry as string)
+          : existing.aiGeometry
+        : {};
+      newAiGeometry = {
+        ...existingGeom,
+        boundingBox: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
+      };
+    }
+
+    setIsSavingAiGeometry(true);
+    try {
+      await apiRequest("PATCH", `/api/takeoff/measurements/${editingAiMeasurementId}`, {
+        aiGeometry: newAiGeometry,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"],
+      });
+      setEditingAiMeasurementId(null);
+      setEditingAiPoints(null);
+      setEditingAiIsPolygon(false);
+      toast({ title: "AI geometry updated" });
+    } catch {
+      toast({
+        title: "Failed to save AI geometry",
+        description: "Check your connection and try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSavingAiGeometry(false);
+    }
+  }, [editingAiMeasurementId, editingAiPoints, editingAiIsPolygon, measurements, selectedSheet, toast]);
+
   // handleSaveZoneEdit: PATCHes the updated polygon_points to the server.
   const handleSaveZoneEdit = useCallback(async () => {
     if (!editingZoneId || !editingZonePoints || editingZonePoints.length < 3) return;
@@ -4742,6 +4871,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     dimInputRepeat,
     showAiOverlays,
     hiddenDivisions,
+    editingAiMeasurementId,
+    editingAiPoints,
+    onAiVertexDrag: handleAiVertexDrag,
+    onEnterAiEditMode: handleEnterAiEditMode,
     hideAiMeasurements,
     hideResolvedIssues,
     showOverlaySlider,
@@ -6407,6 +6540,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           }}
           onShowAll={() => setHiddenDivisions(new Set())}
           onHideAll={(codes) => setHiddenDivisions(new Set(codes))}
+          editingMeasurementId={editingAiMeasurementId}
+          isSavingEdit={isSavingAiGeometry}
+          onSaveEdit={handleSaveAiGeometry}
+          onCancelEdit={handleCancelAiGeometry}
         />
         <WorkspaceBottomBar {...panelSlice.bottomBar} />
         {/* Tool Chest mounts inside canvas-area so its `top-0 left-0`
