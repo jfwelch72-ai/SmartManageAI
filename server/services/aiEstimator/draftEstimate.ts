@@ -102,6 +102,114 @@ function safeJson<T>(text: string | null | undefined): T | null {
   }
 }
 
+/** Task #3038 — Minimal line item summary forwarded to the benchmark refresh call. */
+export interface BenchmarkRefreshLine {
+  description: string;
+  costCode: string | null;
+  unit: string;
+  unitCost: number;
+  totalCost: number;
+}
+
+export interface BenchmarkRefreshResult {
+  benchmarkSummary: string;
+  overallConfidence: string;
+}
+
+/**
+ * Task #3038 — Re-run only Phase 4 benchmark verification against existing
+ * line items, returning updated `benchmarkSummary` and `overallConfidence`
+ * without touching any other estimate data.
+ *
+ * Uses the same web_search + temperature:0 settings as the full draft so the
+ * market-price lookups reflect live RS Means / ENR data.
+ */
+export async function refreshBenchmarksForEstimate(opts: {
+  organizationId: string;
+  userId: string;
+  bidId: string;
+  lines: BenchmarkRefreshLine[];
+}): Promise<{ result: BenchmarkRefreshResult | null; blocked?: boolean; reason?: string }> {
+  try {
+    await assertBidInOrg(opts.bidId, opts.organizationId);
+  } catch (err) {
+    if (err instanceof ResourceOwnershipError) {
+      return { result: null, blocked: true, reason: "Bid not found in this organization" };
+    }
+    throw err;
+  }
+
+  if (!opts.lines.length) {
+    return { result: null, reason: "No line items to verify" };
+  }
+
+  const sysPrompt = `You are an expert construction cost estimator performing Phase 4 Benchmark Verification.
+
+You will receive a list of estimate line items. Your ONLY task is to:
+1. Use web_search to look up current market rates from RS Means, ENR Cost Indexes, regional supplier pricing, or similar authoritative sources for the key line items.
+2. Compare the provided unit costs against current market benchmarks.
+3. Flag any line items that appear significantly above or below market with a VOLATILE COMMODITY tag.
+4. Produce a concise benchmarkSummary (3-8 sentences) and an overallConfidence rating.
+
+Return ONLY a single valid JSON object — no prose, no markdown fences:
+{
+  "benchmarkSummary": string,
+  "overallConfidence": string
+}
+
+overallConfidence must be one of: "HIGH", "MEDIUM", "LOW"`;
+
+  const userPrompt = JSON.stringify({
+    bidId: opts.bidId,
+    lineItems: opts.lines.slice(0, 80).map((l) => ({
+      description: quarantineUserText("line-desc", l.description),
+      costCode: l.costCode,
+      unit: l.unit,
+      unitCost: l.unitCost,
+      totalCost: l.totalCost,
+    })),
+  });
+
+  const gov = await governedAiCall<string | null>({
+    orgId: opts.organizationId,
+    userId: opts.userId,
+    actionType: "ai_estimator.benchmark_refresh",
+    inputRefs: { bidId: opts.bidId, lineCount: opts.lines.length },
+    fn: async () => {
+      const completion = await routedChatCompletion({
+        orgId: opts.organizationId,
+        featureKey: "ai_estimator.estimate_generate",
+        request: {
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_completion_tokens: 800,
+          response_format: { type: "json_object" },
+          temperature: 0,
+          tools: [{ type: "web_search_20250305" as const }],
+        },
+      });
+      return { result: completion.choices[0]?.message?.content ?? null, completion };
+    },
+  });
+
+  if (gov.blocked) return { result: null, blocked: true, reason: gov.reason };
+
+  const parsed = safeJson<{ benchmarkSummary?: string; overallConfidence?: string }>(gov.result);
+  if (!parsed?.benchmarkSummary) {
+    logError("Benchmark refresh AI returned non-JSON or missing benchmarkSummary", { bidId: opts.bidId });
+    return { result: null, reason: "AI did not return a parseable benchmark summary" };
+  }
+
+  return {
+    result: {
+      benchmarkSummary: parsed.benchmarkSummary,
+      overallConfidence: parsed.overallConfidence ?? "MEDIUM",
+    },
+  };
+}
+
 export async function generateDraftEstimate(opts: {
   organizationId: string;
   userId: string;

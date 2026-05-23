@@ -203,9 +203,11 @@ export class AnthropicProvider implements AiProvider {
     let response: Anthropic.Message;
     try {
       if (hasTools) {
+        // Anthropic beta API requires `name` for every built-in tool.
+        // web_search_20250305's canonical name is "web_search".
         const betaTools = (req.tools as AnthropicBuiltinTool[]).map((t) => ({
           type: t.type,
-          ...(t.name ? { name: t.name } : {}),
+          name: t.name ?? "web_search",
         }));
         const betaResponse = await client.beta.messages.create({
           ...params,

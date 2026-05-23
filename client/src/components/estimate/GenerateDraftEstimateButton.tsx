@@ -142,6 +142,14 @@ export function GenerateDraftEstimateButton({ bidId, estimateId }: Props) {
         return;
       }
       setDraft(data);
+      // Task #3038 — Persist benchmark summary to the estimate so the
+      // "Refresh Benchmarks" button can appear without re-generating.
+      if (estimateId && data.benchmarkSummary) {
+        apiRequest("PATCH", `/api/ai-estimator/estimate/${estimateId}/benchmark-summary`, {
+          benchmarkSummary: data.benchmarkSummary,
+          overallConfidence: data.overallConfidence,
+        }).catch(() => { /* best-effort */ });
+      }
     },
     onError: (err: Error) => toast({ title: "Draft failed", description: err.message, variant: "destructive" }),
   });

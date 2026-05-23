@@ -77,6 +77,11 @@ export const estimates = pgTable("estimates", {
   // for roll-up totals. Audit-logged on every write.
   estimatingFactorsOverride: jsonb("estimating_factors_override"),
   notes: text("notes"),
+  // Task #3038 — Persisted Phase 4 benchmark verification output from the AI
+  // estimator. Written when a draft is generated or refreshed. The "Refresh
+  // Benchmarks" action updates only these two columns without touching lines.
+  aiDraftBenchmarkSummary: text("ai_draft_benchmark_summary"),
+  aiDraftOverallConfidence: text("ai_draft_overall_confidence"),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -787,6 +787,134 @@ router.post(
   },
 );
 // =====================================================================
+// Task #3038 — Refresh-benchmarks: re-run Phase 4 only against the
+// existing estimate line items.  Returns updated benchmarkSummary +
+// overallConfidence and persists them to the estimate row.
+// =====================================================================
+router.post(
+  `${estimatorBase}/estimate/:bidId/refresh-benchmarks`,
+  requireAuth,
+  requireEstimatorAccess,
+  sensitiveLimiter,
+  async (req: AuthRequest, res: Response) => {
+    const { bidId } = req.params;
+    const organizationId = req.user!.organizationId!;
+    const userId = req.user!.id;
+
+    // Resolve estimate for this bid
+    const [estimateRow] = await db
+      .select({ id: estimates.id })
+      .from(estimates)
+      .where(eq(estimates.bidId, bidId))
+      .orderBy(desc(estimates.versionNumber))
+      .limit(1);
+    if (!estimateRow) {
+      return res.status(404).json({ error: "Estimate not found for this bid" });
+    }
+
+    // Pull existing line items (non-deleted only)
+    const lines = await db
+      .select({
+        description: estimateLineItems.description,
+        unit: estimateLineItems.unit,
+        quantity: estimateLineItems.quantity,
+        materialCost: estimateLineItems.materialCost,
+        totalCost: estimateLineItems.totalCost,
+      })
+      .from(estimateLineItems)
+      .where(and(
+        eq(estimateLineItems.estimateId, estimateRow.id),
+        isNull(estimateLineItems.deletedAt),
+      ));
+
+    if (!lines.length) {
+      return res.status(422).json({ error: "No line items on this estimate to benchmark" });
+    }
+
+    const { refreshBenchmarksForEstimate } = await import("./services/aiEstimator/draftEstimate");
+    const svc = await refreshBenchmarksForEstimate({
+      organizationId,
+      userId,
+      bidId,
+      lines: lines.map((l) => ({
+        description: l.description,
+        costCode: null,
+        unit: l.unit,
+        unitCost: Number(l.totalCost ?? 0) / Math.max(Number(l.quantity ?? 1), 1),
+        totalCost: Number(l.totalCost ?? 0),
+      })),
+    });
+
+    if (svc.blocked) return blockedResponse(res, svc.reason);
+    if (!svc.result) {
+      return res.status(500).json({ error: svc.reason ?? "Benchmark refresh returned no result" });
+    }
+
+    // Persist to the estimate row
+    await db
+      .update(estimates)
+      .set({
+        aiDraftBenchmarkSummary: svc.result.benchmarkSummary,
+        aiDraftOverallConfidence: svc.result.overallConfidence,
+        updatedAt: new Date(),
+      })
+      .where(eq(estimates.id, estimateRow.id));
+
+    return res.json({
+      estimateId: estimateRow.id,
+      benchmarkSummary: svc.result.benchmarkSummary,
+      overallConfidence: svc.result.overallConfidence,
+    });
+  },
+);
+
+// Task #3038 — Lightweight PATCH to save the benchmark summary written
+// by the full draft job to the estimate row, so the Refresh Benchmarks
+// button can appear without requiring a separate round-trip.
+const saveBenchmarkSummarySchema = z.object({
+  benchmarkSummary: z.string().min(1).max(4000),
+  overallConfidence: z.string().max(20).optional(),
+});
+router.patch(
+  `${estimatorBase}/estimate/:estimateId/benchmark-summary`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const { estimateId } = req.params;
+    const organizationId = req.user!.organizationId!;
+    const data = validateBody(saveBenchmarkSummarySchema, req.body, res);
+    if (!data) return;
+
+    // Verify the estimate belongs to the caller's org via bid
+    const [estimateRow] = await db
+      .select({ id: estimates.id, bidId: estimates.bidId })
+      .from(estimates)
+      .where(eq(estimates.id, estimateId))
+      .limit(1);
+    if (!estimateRow) return res.status(404).json({ error: "Estimate not found" });
+
+    if (estimateRow.bidId) {
+      try {
+        await assertBidInOrg(estimateRow.bidId, organizationId);
+      } catch {
+        return res.status(403).json({ error: "Access denied" });
+      }
+    }
+
+    await db
+      .update(estimates)
+      .set({
+        aiDraftBenchmarkSummary: data.benchmarkSummary,
+        aiDraftOverallConfidence: data.overallConfidence ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(estimates.id, estimateId));
+
+    return res.json({ ok: true });
+  },
+);
+
+// =====================================================================
 // Draft a takeoff from one or more plan documents.
 // =====================================================================
 const draftTakeoffSchema = z

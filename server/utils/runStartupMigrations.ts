@@ -171,6 +171,7 @@ import { ensureSupportSettings, ensureSupportHolidays } from "./ensureSupportSet
 import { ensureAuditActionEnumSlaValues } from "./ensureAuditActionEnumSlaValues";
 import { ensureAuditLogUserIdNullable } from "./ensureAuditLogUserIdNullable";
 import { seedSupportHolidaysOnStartup } from "./seedSupportHolidaysOnStartup";
+import { ensureEstimateBenchmarkColumns } from "./ensureEstimateBenchmarkColumns";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -625,6 +626,11 @@ const migrations: MigrationStep[] = [
   // Seeds US federal holidays for current year + 3 years ahead. Idempotent
   // via ON CONFLICT DO NOTHING; auto-extends on each new year's first deploy.
   { name: "support_holidays_seed", category: "ALTER_TABLE", fn: seedSupportHolidaysOnStartup },
+  // Task #3038 — Refresh-benchmarks: two text columns on `estimates` that
+  // store the Phase-4-only benchmark summary and overall confidence so
+  // estimators can re-run benchmark verification without regenerating the full
+  // estimate.
+  { name: "estimate_benchmark_columns", category: "ADD_COLUMN", fn: ensureEstimateBenchmarkColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

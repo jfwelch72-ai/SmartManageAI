@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle, AlertTriangle, Layers } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Layers, RefreshCw, TrendingUp } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -138,6 +138,31 @@ export default function BidEstimate() {
   });
 
   const estimate = estimateData?.estimate || null;
+
+  // Task #3038 — local state to hold benchmark data from a refresh call
+  // (supersedes whatever is on the estimate row for the current session).
+  const [localBenchmarkSummary, setLocalBenchmarkSummary] = useState<string | null>(null);
+  const [localOverallConfidence, setLocalOverallConfidence] = useState<string | null>(null);
+
+  const benchmarkSummary = localBenchmarkSummary ?? (estimate as any)?.aiDraftBenchmarkSummary ?? null;
+  const overallConfidence = localOverallConfidence ?? (estimate as any)?.aiDraftOverallConfidence ?? null;
+
+  const refreshBenchmarksMutation = useMutation({
+    mutationFn: async () => {
+      if (!bid?.id) throw new Error("No bid");
+      const r = await apiRequest("POST", `/api/ai-estimator/estimate/${bid.id}/refresh-benchmarks`, {});
+      return r.json() as Promise<{ benchmarkSummary: string; overallConfidence: string }>;
+    },
+    onSuccess: (data) => {
+      setLocalBenchmarkSummary(data.benchmarkSummary);
+      setLocalOverallConfidence(data.overallConfidence);
+      queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      toast({ title: "Benchmarks refreshed", description: "Cost benchmark summary updated with current market data." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Benchmark refresh failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: aiEstimatorStatus } = useQuery<{ enabled: boolean; canTrain: boolean; canManage: boolean; featureFlagOn: boolean; reason: string }>({
     queryKey: ["/api/ai-estimator/status"],
@@ -919,6 +944,41 @@ export default function BidEstimate() {
           onDelete={handleDeleteLineItem}
           isDeleting={deleteLineItemMutation.isPending}
         />
+
+        {benchmarkSummary && (
+          <div className="rounded-lg border bg-card p-4 space-y-3" data-testid="panel-benchmark-summary">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-primary" />
+                <span className="font-medium text-sm">Cost Benchmark Verification</span>
+                {overallConfidence && (
+                  <Badge
+                    variant={overallConfidence === "HIGH" ? "default" : overallConfidence === "LOW" ? "destructive" : "secondary"}
+                    className="text-xs"
+                    data-testid="badge-overall-confidence"
+                  >
+                    {overallConfidence} confidence
+                  </Badge>
+                )}
+              </div>
+              {hasEstimateAccess && aiEstimatorStatus?.enabled && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refreshBenchmarksMutation.mutate()}
+                  disabled={refreshBenchmarksMutation.isPending || estimate.lineItems.length === 0}
+                  data-testid="button-refresh-benchmarks"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${refreshBenchmarksMutation.isPending ? "animate-spin" : ""}`} />
+                  {refreshBenchmarksMutation.isPending ? "Refreshing…" : "Refresh Benchmarks"}
+                </Button>
+              )}
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed" data-testid="text-benchmark-summary">
+              {benchmarkSummary}
+            </p>
+          </div>
+        )}
 
         <div className="space-y-2">
           <AiEstimatorIntroCallout surface="bid-estimate" />
