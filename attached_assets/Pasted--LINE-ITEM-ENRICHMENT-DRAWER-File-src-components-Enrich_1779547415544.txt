@@ -1,0 +1,1010 @@
+/**
+ * LINE ITEM ENRICHMENT DRAWER
+ * File: src/components/EnrichmentDrawer.jsx
+ *
+ * Usage:
+ *   <EnrichmentDrawer
+ *     lineItem={lineItem}
+ *     projectContext={projectContext}
+ *     isOpen={drawerOpen}
+ *     onClose={() => setDrawerOpen(false)}
+ *     onApply={(field, value) => updateLineItem(field, value)}
+ *   />
+ *
+ * Dependencies: React, Tailwind CSS (core only)
+ */
+
+import { useState, useEffect, useRef } from "react";
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const CONFIDENCE_CONFIG = {
+  HIGH:   { label: "HIGH",   color: "#22c55e", bg: "rgba(34,197,94,0.12)",   icon: "✓" },
+  MEDIUM: { label: "MED",    color: "#f59e0b", bg: "rgba(245,158,11,0.12)",  icon: "~" },
+  LOW:    { label: "LOW",    color: "#ef4444", bg: "rgba(239,68,68,0.12)",   icon: "!" },
+};
+
+const VOLATILITY_CONFIG = {
+  "STABLE":                    { color: "#22c55e", label: "Stable pricing" },
+  "MONITOR":                   { color: "#f59e0b", label: "Monitor price" },
+  "VOLATILE — GET CURRENT QUOTE": { color: "#ef4444", label: "Get live quote" },
+};
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function ConfidenceBadge({ level }) {
+  const cfg = CONFIDENCE_CONFIG[level] || CONFIDENCE_CONFIG.MEDIUM;
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: "4px",
+      padding: "2px 8px", borderRadius: "4px",
+      background: cfg.bg, color: cfg.color,
+      fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em",
+      fontFamily: "'DM Mono', monospace",
+    }}>
+      {cfg.icon} {cfg.label}
+    </span>
+  );
+}
+
+function SectionHeader({ title, count }) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "10px",
+      padding: "14px 0 10px",
+      borderBottom: "1px solid rgba(255,255,255,0.06)",
+      marginBottom: "12px",
+    }}>
+      <span style={{
+        fontSize: "10px", fontWeight: 700, letterSpacing: "0.12em",
+        color: "#94a3b8", textTransform: "uppercase",
+        fontFamily: "'DM Mono', monospace",
+      }}>
+        {title}
+      </span>
+      {count != null && (
+        <span style={{
+          background: "rgba(148,163,184,0.15)", color: "#94a3b8",
+          borderRadius: "10px", padding: "1px 7px",
+          fontSize: "10px", fontWeight: 600,
+        }}>
+          {count}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function SuggestionRow({ label, suggested, manual, unit, confidence, source,
+                          field, enrichmentId, onAccept, onReject, projectMeta }) {
+  const [status, setStatus] = useState("idle"); // idle | editing | accepted | rejected
+  const [editVal, setEditVal] = useState(suggested || "");
+  const inputRef = useRef(null);
+
+  const hasManual = manual != null && manual !== "";
+  const variance = (() => {
+    if (!hasManual || !suggested) return null;
+    const s = parseFloat(String(suggested).replace(/[^0-9.-]/g, ""));
+    const m = parseFloat(String(manual).replace(/[^0-9.-]/g, ""));
+    if (isNaN(s) || isNaN(m) || m === 0) return null;
+    const pct = ((s - m) / m) * 100;
+    return { pct: pct.toFixed(1), sign: pct >= 0 ? "+" : "" };
+  })();
+
+  async function postFeedback(outcome, acceptedValue) {
+    try {
+      await fetch("/api/line-items/enrich/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enrichmentId,
+          field,
+          suggestedValue: suggested,
+          acceptedValue: acceptedValue ?? null,
+          outcome,
+          ...projectMeta,
+        }),
+      });
+    } catch (e) {
+      console.warn("Feedback post failed:", e);
+    }
+  }
+
+  function handleAccept() {
+    setStatus("accepted");
+    onAccept?.(field, suggested);
+    postFeedback("ACCEPTED_AS_IS", suggested);
+  }
+
+  function handleModify() {
+    setStatus("editing");
+    setTimeout(() => inputRef.current?.focus(), 50);
+  }
+
+  function handleModifyConfirm() {
+    setStatus("accepted");
+    onAccept?.(field, editVal);
+    postFeedback("MODIFIED", editVal);
+  }
+
+  function handleReject() {
+    setStatus("rejected");
+    onReject?.(field);
+    postFeedback("REJECTED", null);
+  }
+
+  if (status === "accepted") {
+    return (
+      <div style={rowStyle}>
+        <div style={{ flex: 1 }}>
+          <span style={labelStyle}>{label}</span>
+          <span style={{ color: "#22c55e", fontSize: "13px", fontWeight: 600, marginLeft: 8 }}>
+            ✓ Applied
+          </span>
+        </div>
+      </div>
+    );
+  }
+
+  if (status === "rejected") {
+    return (
+      <div style={{ ...rowStyle, opacity: 0.4 }}>
+        <div style={{ flex: 1 }}>
+          <span style={labelStyle}>{label}</span>
+          <span style={{ color: "#ef4444", fontSize: "12px", marginLeft: 8 }}>dismissed</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={rowStyle}>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+          <span style={labelStyle}>{label}</span>
+          {confidence && <ConfidenceBadge level={confidence} />}
+        </div>
+
+        {hasManual && (
+          <div style={{ marginTop: 4 }}>
+            <span style={{ fontSize: "11px", color: "#64748b" }}>Manual: </span>
+            <span style={{ fontSize: "12px", color: "#e2e8f0", fontWeight: 600,
+              fontFamily: "'DM Mono', monospace" }}>
+              {manual} {unit}
+            </span>
+            {variance && (
+              <span style={{
+                marginLeft: 8, fontSize: "11px",
+                color: Math.abs(parseFloat(variance.pct)) > 15 ? "#ef4444" : "#94a3b8"
+              }}>
+                ({variance.sign}{variance.pct}% vs AI)
+              </span>
+            )}
+          </div>
+        )}
+
+        {status === "editing" ? (
+          <div style={{ display: "flex", gap: "6px", marginTop: "8px", alignItems: "center" }}>
+            <input
+              ref={inputRef}
+              value={editVal}
+              onChange={(e) => setEditVal(e.target.value)}
+              style={editInputStyle}
+            />
+            <span style={{ color: "#64748b", fontSize: "12px" }}>{unit}</span>
+            <button onClick={handleModifyConfirm} style={btnSmallPrimary}>Apply</button>
+            <button onClick={() => setStatus("idle")} style={btnSmallGhost}>Cancel</button>
+          </div>
+        ) : (
+          <div style={{ marginTop: "6px" }}>
+            <span style={aiTagStyle}>[AI] </span>
+            <span style={{ fontSize: "13px", color: "#e2e8f0", fontWeight: 600,
+              fontFamily: "'DM Mono', monospace" }}>
+              {suggested ?? "—"} {unit}
+            </span>
+          </div>
+        )}
+
+        {source && status !== "editing" && (
+          <div style={{ marginTop: "4px", fontSize: "10px", color: "#475569",
+            fontFamily: "'DM Mono', monospace" }}>
+            Source: {source}
+          </div>
+        )}
+      </div>
+
+      {status === "idle" && suggested && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", flexShrink: 0 }}>
+          <button onClick={handleAccept} style={btnAccept}>Accept</button>
+          <button onClick={handleModify} style={btnModify}>Modify</button>
+          <button onClick={handleReject} style={btnReject}>Dismiss</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ModifierCard({ modifier, enrichmentId, projectMeta }) {
+  const [applied, setApplied] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+
+  async function postFeedback(outcome) {
+    try {
+      await fetch("/api/line-items/enrich/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enrichmentId,
+          field: `modifier_${modifier.modifierType}`,
+          suggestedValue: modifier.suggestedFactor,
+          acceptedValue: outcome === "ACCEPTED_AS_IS" ? modifier.suggestedFactor : null,
+          outcome,
+          ...projectMeta,
+        }),
+      });
+    } catch (e) {
+      console.warn("Feedback post failed:", e);
+    }
+  }
+
+  if (dismissed) return null;
+
+  return (
+    <div style={{
+      background: applied ? "rgba(34,197,94,0.08)" : "rgba(255,255,255,0.03)",
+      border: `1px solid ${applied ? "rgba(34,197,94,0.25)" : "rgba(255,255,255,0.07)"}`,
+      borderRadius: "8px", padding: "12px 14px", marginBottom: "8px",
+      transition: "all 0.2s ease",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+            <span style={{ fontSize: "12px", fontWeight: 700, color: "#e2e8f0" }}>
+              {modifier.modifierType}
+            </span>
+            <ConfidenceBadge level={modifier._confidence} />
+            <span style={{
+              fontFamily: "'DM Mono', monospace", fontSize: "12px",
+              color: "#f59e0b", fontWeight: 700,
+            }}>
+              ×{modifier.suggestedFactor}
+            </span>
+          </div>
+          <p style={{ fontSize: "11px", color: "#94a3b8", margin: 0, lineHeight: 1.5 }}>
+            {modifier.reasoning}
+          </p>
+          {modifier.drawingOrSpecBasis && (
+            <div style={{ marginTop: "4px", fontSize: "10px", color: "#475569",
+              fontFamily: "'DM Mono', monospace" }}>
+              Ref: {modifier.drawingOrSpecBasis}
+            </div>
+          )}
+        </div>
+        {!applied && (
+          <div style={{ display: "flex", gap: "4px", marginLeft: "12px", flexShrink: 0 }}>
+            <button onClick={() => { setApplied(true); postFeedback("ACCEPTED_AS_IS"); }}
+              style={btnAccept}>Apply</button>
+            <button onClick={() => { setDismissed(true); postFeedback("REJECTED"); }}
+              style={btnReject}>✕</button>
+          </div>
+        )}
+        {applied && (
+          <span style={{ color: "#22c55e", fontSize: "12px", marginLeft: "12px" }}>✓ Applied</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FlagCard({ flag, type }) {
+  const isConflict = type === "conflict";
+  const colors = isConflict
+    ? { bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.25)", accent: "#ef4444" }
+    : { bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)", accent: "#f59e0b" };
+
+  return (
+    <div style={{
+      background: colors.bg, border: `1px solid ${colors.border}`,
+      borderRadius: "8px", padding: "12px 14px", marginBottom: "8px",
+    }}>
+      <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+        <span style={{ color: colors.accent, fontSize: "14px", flexShrink: 0 }}>
+          {isConflict ? "⚡" : "◎"}
+        </span>
+        <div>
+          <div style={{ fontSize: "10px", fontWeight: 700, color: colors.accent,
+            letterSpacing: "0.08em", marginBottom: "4px",
+            fontFamily: "'DM Mono', monospace" }}>
+            {flag.id}
+            {!isConflict && flag.urgency && (
+              <span style={{ marginLeft: "8px", color: "#94a3b8" }}>{flag.urgency}</span>
+            )}
+          </div>
+          <p style={{ fontSize: "12px", color: "#cbd5e1", margin: "0 0 4px", lineHeight: 1.5 }}>
+            {isConflict ? flag.description : flag.description}
+          </p>
+          {isConflict && flag.basis && (
+            <p style={{ fontSize: "11px", color: "#64748b", margin: 0 }}>
+              Using: {flag.basis}
+            </p>
+          )}
+          {!isConflict && flag.resolutionNeeded && (
+            <p style={{ fontSize: "11px", color: "#64748b", margin: 0 }}>
+              Need: {flag.resolutionNeeded}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SOWSection({ sow }) {
+  if (!sow) return null;
+  return (
+    <div>
+      {sow.inclusions?.length > 0 && (
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "10px", color: "#22c55e", fontWeight: 700,
+            letterSpacing: "0.08em", marginBottom: "6px",
+            fontFamily: "'DM Mono', monospace" }}>
+            INCLUDES
+          </div>
+          {sow.inclusions.map((inc, i) => (
+            <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ color: "#22c55e", flexShrink: 0, fontSize: "12px" }}>+</span>
+              <span style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.5 }}>{inc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {sow.exclusions?.length > 0 && (
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "10px", color: "#ef4444", fontWeight: 700,
+            letterSpacing: "0.08em", marginBottom: "6px",
+            fontFamily: "'DM Mono', monospace" }}>
+            EXCLUDES
+          </div>
+          {sow.exclusions.map((exc, i) => (
+            <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ color: "#ef4444", flexShrink: 0, fontSize: "12px" }}>−</span>
+              <span style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.5 }}>{exc}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {sow.interfaceNotes?.length > 0 && (
+        <div>
+          <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 700,
+            letterSpacing: "0.08em", marginBottom: "6px",
+            fontFamily: "'DM Mono', monospace" }}>
+            INTERFACE NOTES
+          </div>
+          {sow.interfaceNotes.map((n, i) => (
+            <div key={i} style={{ display: "flex", gap: "8px", marginBottom: "4px" }}>
+              <span style={{ color: "#94a3b8", flexShrink: 0, fontSize: "12px" }}>→</span>
+              <span style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>{n}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {sow._source && (
+        <div style={{ marginTop: "8px", fontSize: "10px", color: "#475569",
+          fontFamily: "'DM Mono', monospace" }}>
+          Source: {sow._source}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OrgHistoryPanel({ history }) {
+  if (!history || !history.projectCount) return (
+    <p style={{ fontSize: "12px", color: "#475569", margin: 0 }}>
+      No org history for this cost code yet. Estimates here will build your baseline.
+    </p>
+  );
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+      {[
+        { label: "Material Range", val: history.historicalRangeMaterial },
+        { label: "Labor Range",    val: history.historicalRangeLabor },
+        { label: "Prod. Rate",     val: history.historicalProductionRate },
+        { label: "Win Rate",       val: history.winRateNote },
+      ].map(({ label, val }) => val && (
+        <div key={label} style={{
+          background: "rgba(255,255,255,0.04)", borderRadius: "6px", padding: "10px 12px",
+        }}>
+          <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "3px",
+            fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em" }}>
+            {label}
+          </div>
+          <div style={{ fontSize: "13px", color: "#e2e8f0", fontWeight: 600,
+            fontFamily: "'DM Mono', monospace" }}>
+            {val}
+          </div>
+        </div>
+      ))}
+      <div style={{ gridColumn: "1/-1", fontSize: "11px", color: "#64748b",
+        fontFamily: "'DM Mono', monospace" }}>
+        Based on {history.projectCount} project{history.projectCount !== 1 ? "s" : ""} in org history
+        {history.pastProjectNotes ? ` · ${history.pastProjectNotes}` : ""}
+      </div>
+    </div>
+  );
+}
+
+// ─── Shared Styles ────────────────────────────────────────────────────────────
+
+const rowStyle = {
+  display: "flex", alignItems: "flex-start", gap: "12px",
+  padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.05)",
+};
+const labelStyle = { fontSize: "12px", color: "#94a3b8", fontWeight: 600 };
+const aiTagStyle = {
+  fontSize: "10px", color: "#6366f1", fontWeight: 700,
+  fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em",
+};
+const editInputStyle = {
+  background: "rgba(255,255,255,0.07)", border: "1px solid rgba(99,102,241,0.5)",
+  borderRadius: "5px", color: "#e2e8f0", fontSize: "13px", padding: "4px 8px",
+  fontFamily: "'DM Mono', monospace", outline: "none", width: "110px",
+};
+const btnBase = {
+  border: "none", borderRadius: "5px", cursor: "pointer",
+  fontSize: "11px", fontWeight: 700, padding: "5px 10px",
+  fontFamily: "'DM Mono', monospace", letterSpacing: "0.04em",
+  transition: "opacity 0.15s",
+};
+const btnAccept    = { ...btnBase, background: "rgba(34,197,94,0.18)", color: "#22c55e" };
+const btnModify    = { ...btnBase, background: "rgba(99,102,241,0.18)", color: "#818cf8" };
+const btnReject    = { ...btnBase, background: "rgba(239,68,68,0.12)", color: "#f87171" };
+const btnSmallPrimary = { ...btnBase, background: "#6366f1", color: "#fff", padding: "4px 10px" };
+const btnSmallGhost   = { ...btnBase, background: "transparent", color: "#94a3b8",
+  border: "1px solid rgba(148,163,184,0.2)", padding: "4px 10px" };
+
+// ─── TAB SYSTEM ──────────────────────────────────────────────────────────────
+
+const TABS = ["Costs", "Scope", "Modifiers", "Spec", "History", "Flags"];
+
+function TabBar({ active, setActive, flagCount, clarifyCount }) {
+  return (
+    <div style={{
+      display: "flex", gap: "2px", padding: "0 20px",
+      borderBottom: "1px solid rgba(255,255,255,0.07)",
+      background: "rgba(0,0,0,0.2)",
+      overflowX: "auto",
+    }}>
+      {TABS.map((tab) => {
+        const badge =
+          tab === "Flags" && (flagCount + clarifyCount) > 0
+            ? flagCount + clarifyCount
+            : null;
+        return (
+          <button
+            key={tab}
+            onClick={() => setActive(tab)}
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              padding: "12px 14px 11px",
+              fontSize: "12px", fontWeight: active === tab ? 700 : 500,
+              color: active === tab ? "#e2e8f0" : "#64748b",
+              borderBottom: active === tab ? "2px solid #6366f1" : "2px solid transparent",
+              letterSpacing: "0.03em", whiteSpace: "nowrap",
+              transition: "color 0.15s",
+              position: "relative",
+            }}
+          >
+            {tab}
+            {badge && (
+              <span style={{
+                marginLeft: "5px", background: "#ef4444", color: "#fff",
+                borderRadius: "8px", padding: "1px 5px",
+                fontSize: "9px", fontWeight: 700,
+              }}>
+                {badge}
+              </span>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── MAIN COMPONENT ───────────────────────────────────────────────────────────
+
+export default function EnrichmentDrawer({
+  lineItem,
+  projectContext,
+  isOpen,
+  onClose,
+  onApply,
+}) {
+  const [loading, setLoading]       = useState(false);
+  const [enrichment, setEnrichment] = useState(null);
+  const [error, setError]           = useState(null);
+  const [activeTab, setActiveTab]   = useState("Costs");
+  const drawerRef                   = useRef(null);
+
+  // Fetch enrichment when drawer opens
+  useEffect(() => {
+    if (!isOpen || !lineItem) return;
+    setActiveTab("Costs");
+    setError(null);
+    runEnrichment();
+  }, [isOpen, lineItem?.description, lineItem?.costCode]);
+
+  // Close on Escape
+  useEffect(() => {
+    const handler = (e) => { if (e.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  async function runEnrichment() {
+    setLoading(true);
+    setEnrichment(null);
+    try {
+      const res = await fetch("/api/line-items/enrich", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lineItem, projectContext }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setEnrichment(data);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const projectMeta = {
+    projectId:   projectContext?.projectId,
+    costCode:    lineItem?.costCode,
+    projectType: projectContext?.projectType,
+    projectSize: projectContext?.projectSize,
+    location:    projectContext?.location,
+    laborType:   projectContext?.laborType,
+  };
+
+  const flagCount    = enrichment?.conflictFlags?.length      || 0;
+  const clarifyCount = enrichment?.clarificationEntries?.length || 0;
+  const overallConf  = enrichment?.enrichmentConfidence;
+  const confCfg      = overallConf ? CONFIDENCE_CONFIG[overallConf] : null;
+
+  // Overlay + drawer container
+  if (!isOpen) return null;
+
+  return (
+    <>
+      {/* Font import */}
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&display=swap');
+        .enrich-drawer * { box-sizing: border-box; }
+        .enrich-drawer ::-webkit-scrollbar { width: 4px; }
+        .enrich-drawer ::-webkit-scrollbar-track { background: transparent; }
+        .enrich-drawer ::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.2); border-radius: 2px; }
+      `}</style>
+
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          backdropFilter: "blur(4px)", zIndex: 900,
+          animation: "fadeIn 0.2s ease",
+        }}
+      />
+
+      {/* Drawer */}
+      <div
+        ref={drawerRef}
+        className="enrich-drawer"
+        style={{
+          position: "fixed", top: 0, right: 0, bottom: 0,
+          width: "min(480px, 100vw)",
+          background: "linear-gradient(180deg, #0f1520 0%, #0a0f1a 100%)",
+          borderLeft: "1px solid rgba(255,255,255,0.08)",
+          zIndex: 901, display: "flex", flexDirection: "column",
+          animation: "slideIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+          fontFamily: "'Syne', sans-serif",
+        }}
+      >
+        <style>{`
+          @keyframes fadeIn  { from { opacity: 0; } to { opacity: 1; } }
+          @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+          @keyframes spin    { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+          @keyframes pulse   { 0%,100% { opacity:1; } 50% { opacity:0.4; } }
+        `}</style>
+
+        {/* Header */}
+        <div style={{
+          padding: "18px 20px 14px",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+          background: "rgba(0,0,0,0.3)",
+          flexShrink: 0,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                <span style={{
+                  fontSize: "10px", fontWeight: 700, color: "#6366f1",
+                  letterSpacing: "0.12em", fontFamily: "'DM Mono', monospace",
+                }}>
+                  [AI SUGGESTION]
+                </span>
+                {confCfg && !loading && (
+                  <span style={{
+                    display: "flex", alignItems: "center", gap: "4px",
+                    padding: "2px 8px", borderRadius: "4px",
+                    background: confCfg.bg, color: confCfg.color,
+                    fontSize: "10px", fontWeight: 700,
+                    fontFamily: "'DM Mono', monospace",
+                  }}>
+                    {confCfg.icon} {confCfg.label} CONFIDENCE
+                  </span>
+                )}
+              </div>
+              <h2 style={{
+                margin: 0, fontSize: "16px", fontWeight: 800,
+                color: "#f1f5f9", lineHeight: 1.3,
+                maxWidth: "360px",
+              }}>
+                {lineItem?.description || "Line Item Enrichment"}
+              </h2>
+              {lineItem?.costCode && (
+                <div style={{
+                  marginTop: "4px", fontSize: "11px", color: "#475569",
+                  fontFamily: "'DM Mono', monospace",
+                }}>
+                  {lineItem.costCode}
+                </div>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              style={{
+                background: "rgba(255,255,255,0.06)", border: "none",
+                color: "#94a3b8", borderRadius: "6px", cursor: "pointer",
+                width: "30px", height: "30px", fontSize: "16px",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                flexShrink: 0,
+              }}
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Enrichment summary */}
+          {enrichment?.enrichmentSummary && (
+            <p style={{
+              margin: "10px 0 0", fontSize: "12px", color: "#94a3b8",
+              lineHeight: 1.6, background: "rgba(255,255,255,0.03)",
+              border: "1px solid rgba(255,255,255,0.06)", borderRadius: "6px",
+              padding: "8px 10px",
+            }}>
+              {enrichment.enrichmentSummary}
+            </p>
+          )}
+        </div>
+
+        {/* Tab bar */}
+        {enrichment && !loading && (
+          <TabBar
+            active={activeTab}
+            setActive={setActiveTab}
+            flagCount={flagCount}
+            clarifyCount={clarifyCount}
+          />
+        )}
+
+        {/* Scrollable content */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 30px" }}>
+
+          {/* Loading state */}
+          {loading && (
+            <div style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", height: "300px", gap: "20px",
+            }}>
+              <div style={{
+                width: "36px", height: "36px", border: "3px solid rgba(99,102,241,0.15)",
+                borderTop: "3px solid #6366f1", borderRadius: "50%",
+                animation: "spin 0.8s linear infinite",
+              }} />
+              <div style={{ textAlign: "center" }}>
+                <div style={{ color: "#e2e8f0", fontSize: "14px", fontWeight: 600, marginBottom: "6px" }}>
+                  Enriching line item…
+                </div>
+                <div style={{ color: "#475569", fontSize: "12px", animation: "pulse 2s infinite",
+                  fontFamily: "'DM Mono', monospace" }}>
+                  Reading specs · Checking history · Verifying benchmarks
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error state */}
+          {error && !loading && (
+            <div style={{
+              margin: "20px 0", padding: "16px", borderRadius: "8px",
+              background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)",
+            }}>
+              <div style={{ color: "#ef4444", fontWeight: 700, marginBottom: "6px" }}>
+                Enrichment failed
+              </div>
+              <div style={{ color: "#94a3b8", fontSize: "12px", marginBottom: "12px" }}>{error}</div>
+              <button onClick={runEnrichment} style={{ ...btnSmallPrimary, background: "#6366f1" }}>
+                Retry
+              </button>
+            </div>
+          )}
+
+          {/* ── TAB: Costs ── */}
+          {enrichment && !loading && activeTab === "Costs" && (
+            <div style={{ paddingTop: "4px" }}>
+              <SectionHeader title="Material" />
+              <SuggestionRow
+                label="Unit Cost — Material"
+                suggested={enrichment.materialSuggestion?.suggestedUnitCostMaterial}
+                manual={lineItem?.manualUnitCostMaterial}
+                unit={enrichment.materialSuggestion?.suggestedUnit || lineItem?.unit}
+                confidence={enrichment.materialSuggestion?._confidence}
+                source={enrichment.materialSuggestion?._source}
+                field="unitCostMaterial"
+                enrichmentId={enrichment.enrichmentId}
+                onAccept={onApply}
+                projectMeta={projectMeta}
+              />
+              {enrichment.materialSuggestion?.volatilityFlag && (
+                <div style={{
+                  margin: "8px 0", padding: "6px 10px", borderRadius: "6px",
+                  background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", gap: "8px",
+                }}>
+                  <span style={{
+                    fontSize: "10px", fontWeight: 700,
+                    fontFamily: "'DM Mono', monospace",
+                    color: VOLATILITY_CONFIG[enrichment.materialSuggestion.volatilityFlag]?.color || "#94a3b8",
+                  }}>
+                    {VOLATILITY_CONFIG[enrichment.materialSuggestion.volatilityFlag]?.label || enrichment.materialSuggestion.volatilityFlag}
+                  </span>
+                  {enrichment.materialSuggestion.priceDate && (
+                    <span style={{ fontSize: "10px", color: "#475569",
+                      fontFamily: "'DM Mono', monospace" }}>
+                      Priced: {enrichment.materialSuggestion.priceDate}
+                    </span>
+                  )}
+                  {enrichment.materialSuggestion.leadTimeFlag && (
+                    <span style={{ fontSize: "10px", color: "#f59e0b",
+                      fontFamily: "'DM Mono', monospace" }}>
+                      Lead: {enrichment.materialSuggestion.leadTimeFlag}
+                    </span>
+                  )}
+                </div>
+              )}
+
+              <SectionHeader title="Labor" />
+              <SuggestionRow
+                label="Unit Cost — Labor"
+                suggested={enrichment.laborSuggestion?.suggestedUnitCostLabor}
+                manual={lineItem?.manualUnitCostLabor}
+                unit={lineItem?.unit}
+                confidence={enrichment.laborSuggestion?._confidence}
+                source={enrichment.laborSuggestion?._source}
+                field="unitCostLabor"
+                enrichmentId={enrichment.enrichmentId}
+                onAccept={onApply}
+                projectMeta={projectMeta}
+              />
+              <SuggestionRow
+                label="Production Rate"
+                suggested={enrichment.laborSuggestion?.suggestedProductionRate}
+                manual={lineItem?.manualProductionRate}
+                unit=""
+                confidence={enrichment.laborSuggestion?._confidence}
+                source={enrichment.laborSuggestion?._source}
+                field="productionRate"
+                enrichmentId={enrichment.enrichmentId}
+                onAccept={onApply}
+                projectMeta={projectMeta}
+              />
+              {enrichment.laborSuggestion?.crewComposition && (
+                <div style={{ padding: "8px 0 0" }}>
+                  <span style={labelStyle}>Crew: </span>
+                  <span style={{ fontSize: "12px", color: "#cbd5e1",
+                    fontFamily: "'DM Mono', monospace" }}>
+                    {enrichment.laborSuggestion.crewComposition}
+                  </span>
+                </div>
+              )}
+
+              {enrichment.benchmarkComparison?.benchmarkSource && (
+                <>
+                  <SectionHeader title="Benchmark" />
+                  <div style={{
+                    background: "rgba(255,255,255,0.03)", borderRadius: "8px",
+                    padding: "12px 14px",
+                    border: `1px solid ${
+                      enrichment.benchmarkComparison.estimateVsBenchmark === "WITHIN RANGE"
+                        ? "rgba(34,197,94,0.2)"
+                        : "rgba(245,158,11,0.2)"
+                    }`,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between",
+                      alignItems: "center", marginBottom: "8px" }}>
+                      <span style={{ fontSize: "11px", color: "#64748b",
+                        fontFamily: "'DM Mono', monospace" }}>
+                        {enrichment.benchmarkComparison.benchmarkSource}
+                      </span>
+                      <span style={{
+                        fontSize: "10px", fontWeight: 700,
+                        fontFamily: "'DM Mono', monospace",
+                        color: enrichment.benchmarkComparison.estimateVsBenchmark === "WITHIN RANGE"
+                          ? "#22c55e" : "#f59e0b",
+                      }}>
+                        {enrichment.benchmarkComparison.estimateVsBenchmark}
+                      </span>
+                    </div>
+                    {enrichment.benchmarkComparison.benchmarkRangeMaterial && (
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "3px" }}>
+                        Mat range: <span style={{ color: "#e2e8f0",
+                          fontFamily: "'DM Mono', monospace" }}>
+                          {enrichment.benchmarkComparison.benchmarkRangeMaterial}
+                        </span>
+                      </div>
+                    )}
+                    {enrichment.benchmarkComparison.benchmarkRangeLabor && (
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "3px" }}>
+                        Lab range: <span style={{ color: "#e2e8f0",
+                          fontFamily: "'DM Mono', monospace" }}>
+                          {enrichment.benchmarkComparison.benchmarkRangeLabor}
+                        </span>
+                      </div>
+                    )}
+                    {enrichment.benchmarkComparison.varianceNote && (
+                      <div style={{ marginTop: "6px", fontSize: "11px", color: "#f59e0b" }}>
+                        {enrichment.benchmarkComparison.varianceNote}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB: Scope ── */}
+          {enrichment && !loading && activeTab === "Scope" && (
+            <div style={{ paddingTop: "4px" }}>
+              <SectionHeader title="Scope of Work Language" />
+              <SOWSection sow={enrichment.sowLanguage} />
+            </div>
+          )}
+
+          {/* ── TAB: Modifiers ── */}
+          {enrichment && !loading && activeTab === "Modifiers" && (
+            <div style={{ paddingTop: "4px" }}>
+              <SectionHeader
+                title="Contextual Modifiers"
+                count={enrichment.contextualModifiers?.length}
+              />
+              {enrichment.contextualModifiers?.length > 0 ? (
+                enrichment.contextualModifiers.map((mod, i) => (
+                  <ModifierCard
+                    key={i}
+                    modifier={mod}
+                    enrichmentId={enrichment.enrichmentId}
+                    projectMeta={projectMeta}
+                  />
+                ))
+              ) : (
+                <p style={{ fontSize: "12px", color: "#475569", margin: 0 }}>
+                  No project-specific modifiers identified for this line item.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB: Spec ── */}
+          {enrichment && !loading && activeTab === "Spec" && (
+            <div style={{ paddingTop: "4px" }}>
+              <SectionHeader title="Spec Grounding" />
+              {enrichment.specGrounding && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {[
+                    { label: "Spec Sections",       val: enrichment.specGrounding.applicableSpecSections?.join(", ") },
+                    { label: "Material Standard",    val: enrichment.specGrounding.specifiedMaterialStandard },
+                    { label: "Product Grade",        val: enrichment.specGrounding.specifiedProductGrade },
+                    { label: "Manufacturers",        val: enrichment.specGrounding.specifiedManufacturerOptions?.join(", ") },
+                    { label: "Drawing References",   val: enrichment.specGrounding.drawingReferences?.join(", ") },
+                    { label: "Submittals Required",  val: enrichment.specGrounding.specifiedSubmittalRequirements?.join("; ") },
+                    { label: "Testing Required",     val: enrichment.specGrounding.specifiedTestingRequirements?.join("; ") },
+                    { label: "Warranty",             val: enrichment.specGrounding.specifiedWarrantyRequirements?.join("; ") },
+                  ].filter((row) => row.val).map(({ label, val }) => (
+                    <div key={label} style={{
+                      background: "rgba(255,255,255,0.03)", borderRadius: "7px",
+                      padding: "10px 12px", border: "1px solid rgba(255,255,255,0.06)",
+                    }}>
+                      <div style={{ fontSize: "10px", color: "#64748b", marginBottom: "4px",
+                        fontFamily: "'DM Mono', monospace", letterSpacing: "0.06em" }}>
+                        {label}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#e2e8f0", lineHeight: 1.5 }}>{val}</div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize: "10px", color: "#475569",
+                    fontFamily: "'DM Mono', monospace" }}>
+                    Source: {enrichment.specGrounding._source}
+                    &nbsp;·&nbsp;
+                    <ConfidenceBadge level={enrichment.specGrounding._confidence} />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB: History ── */}
+          {enrichment && !loading && activeTab === "History" && (
+            <div style={{ paddingTop: "4px" }}>
+              <SectionHeader title="Org Historical Data" />
+              <OrgHistoryPanel history={enrichment.orgHistoryInsights} />
+            </div>
+          )}
+
+          {/* ── TAB: Flags ── */}
+          {enrichment && !loading && activeTab === "Flags" && (
+            <div style={{ paddingTop: "4px" }}>
+              {enrichment.conflictFlags?.length > 0 && (
+                <>
+                  <SectionHeader title="Conflicts" count={flagCount} />
+                  {enrichment.conflictFlags.map((f, i) => (
+                    <FlagCard key={i} flag={f} type="conflict" />
+                  ))}
+                </>
+              )}
+              {enrichment.clarificationEntries?.length > 0 && (
+                <>
+                  <SectionHeader title="Clarifications Required" count={clarifyCount} />
+                  {enrichment.clarificationEntries.map((f, i) => (
+                    <FlagCard key={i} flag={f} type="clarification" />
+                  ))}
+                </>
+              )}
+              {flagCount === 0 && clarifyCount === 0 && (
+                <p style={{ fontSize: "12px", color: "#475569", margin: "16px 0" }}>
+                  ✓ No conflicts or clarifications identified for this line item.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{
+          padding: "12px 20px", borderTop: "1px solid rgba(255,255,255,0.07)",
+          background: "rgba(0,0,0,0.3)", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
+          <span style={{ fontSize: "10px", color: "#334155",
+            fontFamily: "'DM Mono', monospace" }}>
+            ADVISORY ONLY · Estimator input is authoritative
+          </span>
+          {enrichment && !loading && (
+            <button onClick={runEnrichment} style={{
+              ...btnSmallGhost, fontSize: "10px",
+            }}>
+              ↺ Re-run
+            </button>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}

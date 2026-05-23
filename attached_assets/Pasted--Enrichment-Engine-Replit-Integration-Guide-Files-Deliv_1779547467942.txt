@@ -1,0 +1,208 @@
+# Enrichment Engine — Replit Integration Guide
+
+## Files Delivered
+
+- `enrichment-route.js` → Express backend (3 endpoints)
+- `EnrichmentDrawer.jsx` → React drawer component
+
+-----
+
+## 1. Backend Setup
+
+### Install dependencies
+
+```bash
+npm install @anthropic-ai/sdk pg uuid
+```
+
+### Mount the router in your main Express file
+
+```js
+// server/index.js (or app.js)
+const enrichmentRouter = require('./routes/enrichment');
+app.use('/api/line-items', enrichmentRouter);
+```
+
+### Set environment variables in Replit Secrets
+
+```
+ANTHROPIC_API_KEY   = sk-ant-...
+DATABASE_URL        = postgresql://...
+```
+
+The route will auto-create its three Postgres tables on first boot:
+
+- `enrichment_log` — full request/response audit trail
+- `enrichment_feedback` — accept/modify/reject signals per field
+- `bid_outcomes` — post-award outcome data for learning loop
+
+-----
+
+## 2. Frontend Wiring
+
+### Add the drawer to your line item form
+
+```jsx
+// src/components/LineItemForm.jsx
+import { useState } from "react";
+import EnrichmentDrawer from "./EnrichmentDrawer";
+
+export default function LineItemForm({ lineItem, projectContext, onSave }) {
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [formData, setFormData] = useState(lineItem);
+
+  function handleApply(field, value) {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  }
+
+  return (
+    <div>
+      {/* Your existing form fields here */}
+      <input
+        value={formData.description}
+        onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+        placeholder="Line item description"
+      />
+      <input
+        value={formData.manualUnitCostMaterial || ""}
+        onChange={(e) => setFormData({ ...formData, manualUnitCostMaterial: e.target.value })}
+        placeholder="Unit cost — material"
+      />
+      <input
+        value={formData.manualUnitCostLabor || ""}
+        onChange={(e) => setFormData({ ...formData, manualUnitCostLabor: e.target.value })}
+        placeholder="Unit cost — labor"
+      />
+
+      {/* Enrich with AI button */}
+      <button onClick={() => setDrawerOpen(true)}>
+        ✦ Enrich with AI
+      </button>
+
+      {/* Drawer */}
+      <EnrichmentDrawer
+        lineItem={formData}
+        projectContext={projectContext}
+        isOpen={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onApply={handleApply}
+      />
+    </div>
+  );
+}
+```
+
+### Auto-enrich on line item creation (AUTO mode)
+
+```js
+// In your line item creation handler
+async function createLineItem(lineItem, projectContext) {
+  const saved = await saveLineItem(lineItem); // your existing save logic
+
+  // Fire enrichment in background — don't block the save
+  fetch("/api/line-items/enrich", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lineItem: { ...lineItem, mode: "AUTO" },
+      projectContext,
+    }),
+  })
+  .then((r) => r.json())
+  .then((enrichment) => {
+    // Store enrichment on the line item record for later display
+    updateLineItemEnrichment(saved.id, enrichment);
+  })
+  .catch(console.error);
+
+  return saved;
+}
+```
+
+-----
+
+## 3. Bid Outcome Feedback (Learning Loop)
+
+Call this when bid award status is known. This is what makes the system get smarter over time.
+
+```js
+async function recordBidOutcome(projectId, outcome, finalCosts) {
+  await fetch("/api/line-items/enrich/bid-outcome", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      bidOutcome: outcome,          // "AWARDED" | "NOT_AWARDED" | "NO_BID"
+      finalBidUnitCostMat: finalCosts.material,
+      finalBidUnitCostLab: finalCosts.labor,
+      competitorLowBid: finalCosts.competitorLow || null,
+    }),
+  });
+}
+```
+
+-----
+
+## 4. Auth / Org Identification
+
+The route reads `req.user?.orgId` first (if you have JWT middleware), then falls back to the `x-org-id` header. Pass whichever is available:
+
+```js
+// If using JWT middleware — orgId is set automatically from req.user
+
+// If not using JWT yet, pass the header:
+fetch("/api/line-items/enrich", {
+  headers: {
+    "Content-Type": "application/json",
+    "x-org-id": currentUser.orgId,
+  },
+  ...
+});
+```
+
+-----
+
+## 5. projectContext Shape
+
+Pass this from your existing project state:
+
+```js
+const projectContext = {
+  projectId:         project.id,
+  projectType:       project.type,        // "tilt-up warehouse", "medical office", etc.
+  projectSize:       project.size,        // "42,000 SF"
+  location:          project.location,    // "Phoenix, AZ"
+  laborType:         project.laborType,   // "UNION" | "OPEN SHOP" | "PREVAILING WAGE"
+  bidDate:           project.bidDate,
+  seismicZone:       project.seismicZone  || null,
+  soilClass:         project.soilClass    || null,
+  specialConditions: project.notes        || null,
+  // From your existing document analysis flow:
+  relevantSpecSections: project.extractedSpecs  || "",
+  relevantDrawingData:  project.extractedDrawings || "",
+};
+```
+
+The `relevantSpecSections` and `relevantDrawingData` fields are the most important — these are what ground the AI suggestions in your actual project docs. Pass the extracted text from your existing document analysis pipeline here.
+
+-----
+
+## 6. Endpoints Summary
+
+|Method|Path                                |Purpose                                          |
+|------|------------------------------------|-------------------------------------------------|
+|POST  |`/api/line-items/enrich`            |Enrich a line item — returns full enrichment JSON|
+|POST  |`/api/line-items/enrich/feedback`   |Log accept/modify/reject action from drawer      |
+|POST  |`/api/line-items/enrich/bid-outcome`|Record bid award outcome for learning loop       |
+
+-----
+
+## 7. What the System Learns Over Time
+
+Every Accept/Modify/Dismiss click writes a row to `enrichment_feedback`. Every bid outcome writes to `bid_outcomes`. The `fetchOrgHistory()` function queries these on every enrichment call, weighted toward:
+
+- **Recent entries** — older data de-prioritized automatically (ORDER BY created_at DESC LIMIT 50)
+- **Awarded projects** — win rate surfaced in the History tab
+- **Same cost code** — history is always cost-code-scoped, never cross-contaminated
+
+After ~10–15 projects, the org history panel becomes a genuine competitive intelligence tool, showing you the unit cost ranges and production rates that your company has actually won work at.

@@ -1,0 +1,483 @@
+/**
+ * LINE ITEM ENRICHMENT ENGINE — Backend Route
+ * File: server/routes/enrichment.js
+ *
+ * Mount in your Express app:
+ *   const enrichmentRouter = require('./routes/enrichment');
+ *   app.use('/api/line-items', enrichmentRouter);
+ *
+ * Requires env vars:
+ *   ANTHROPIC_API_KEY
+ *   DATABASE_URL (Postgres)
+ */
+
+const express = require('express');
+const router = express.Router();
+const { v4: uuidv4 } = require('uuid');
+const { Pool } = require('pg');
+const Anthropic = require('@anthropic-ai/sdk');
+
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DB BOOTSTRAP — run once on startup to create tables if they don't exist
+// ─────────────────────────────────────────────────────────────────────────────
+async function bootstrapTables() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS enrichment_log (
+      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      enrichment_id UUID NOT NULL,
+      org_id        TEXT NOT NULL,
+      project_id    TEXT,
+      cost_code     TEXT,
+      request       JSONB NOT NULL,
+      response      JSONB NOT NULL,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS enrichment_feedback (
+      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      enrichment_id     UUID NOT NULL,
+      org_id            TEXT NOT NULL,
+      project_id        TEXT,
+      cost_code         TEXT,
+      field             TEXT NOT NULL,
+      suggested_value   TEXT,
+      accepted_value    TEXT,
+      outcome           TEXT NOT NULL CHECK (outcome IN ('ACCEPTED_AS_IS','MODIFIED','REJECTED')),
+      project_type      TEXT,
+      project_size      TEXT,
+      location          TEXT,
+      labor_type        TEXT,
+      created_at        TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS bid_outcomes (
+      id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      org_id                    TEXT NOT NULL,
+      project_id                TEXT NOT NULL,
+      cost_code                 TEXT,
+      final_bid_unit_cost_mat   NUMERIC,
+      final_bid_unit_cost_lab   NUMERIC,
+      bid_outcome               TEXT CHECK (bid_outcome IN ('AWARDED','NOT_AWARDED','NO_BID')),
+      competitor_low_bid        NUMERIC,
+      created_at                TIMESTAMPTZ DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS enrichment_feedback_org_code
+      ON enrichment_feedback (org_id, cost_code);
+    CREATE INDEX IF NOT EXISTS bid_outcomes_org_code
+      ON bid_outcomes (org_id, cost_code);
+  `);
+}
+bootstrapTables().catch(console.error);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Fetch org historical data for a cost code from enrichment_feedback
+ * and bid_outcomes, weighted toward recent + awarded projects.
+ */
+async function fetchOrgHistory(orgId, costCode) {
+  const { rows } = await pool.query(
+    `
+    SELECT
+      f.field,
+      f.suggested_value,
+      f.accepted_value,
+      f.outcome,
+      f.project_type,
+      f.project_size,
+      f.location,
+      f.labor_type,
+      f.created_at,
+      bo.bid_outcome,
+      bo.final_bid_unit_cost_mat,
+      bo.final_bid_unit_cost_lab
+    FROM enrichment_feedback f
+    LEFT JOIN bid_outcomes bo
+      ON bo.org_id = f.org_id
+      AND bo.project_id = f.project_id
+      AND bo.cost_code   = f.cost_code
+    WHERE f.org_id    = $1
+      AND f.cost_code = $2
+    ORDER BY f.created_at DESC
+    LIMIT 50
+    `,
+    [orgId, costCode]
+  );
+
+  if (!rows.length) return null;
+
+  // Aggregate material costs from accepted feedback entries
+  const matEntries = rows
+    .filter((r) => r.field === 'unitCostMaterial' && r.accepted_value)
+    .map((r) => parseFloat(r.accepted_value))
+    .filter(Boolean);
+
+  const labEntries = rows
+    .filter((r) => r.field === 'unitCostLabor' && r.accepted_value)
+    .map((r) => parseFloat(r.accepted_value))
+    .filter(Boolean);
+
+  const prodEntries = rows
+    .filter((r) => r.field === 'productionRate' && r.accepted_value)
+    .map((r) => parseFloat(r.accepted_value))
+    .filter(Boolean);
+
+  const awarded = rows.filter((r) => r.bid_outcome === 'AWARDED');
+  const winRate =
+    rows.length > 0
+      ? Math.round((awarded.length / rows.length) * 100)
+      : null;
+
+  const pastNotes = [
+    ...new Set(rows.map((r) => r.project_type).filter(Boolean)),
+  ];
+
+  return {
+    costCode,
+    historicalUnitCostMaterial:
+      matEntries.length
+        ? `$${Math.min(...matEntries).toFixed(2)}–$${Math.max(...matEntries).toFixed(2)}`
+        : null,
+    historicalUnitCostLabor:
+      labEntries.length
+        ? `$${Math.min(...labEntries).toFixed(2)}–$${Math.max(...labEntries).toFixed(2)}`
+        : null,
+    historicalProductionRate:
+      prodEntries.length
+        ? (prodEntries.reduce((a, b) => a + b, 0) / prodEntries.length).toFixed(2)
+        : null,
+    projectCount: rows.length,
+    winRate: winRate !== null ? `${winRate}%` : null,
+    modifiersHistoricallyApplied: [],
+    projectNotes: pastNotes.join(', ') || null,
+  };
+}
+
+/**
+ * Build the enrichment system prompt (from your System Prompt v1.0 above).
+ */
+function buildSystemPrompt() {
+  return `
+SYSTEM PROMPT — LINE ITEM ENRICHMENT ENGINE
+Version 1.0 | Contextual, Spec-Grounded, Learning-Aware
+
+You are a senior construction estimator embedded inside a live estimating platform. Your job is to enrich individual line items with spec-grounded, project-specific intelligence — without ever overriding or replacing what the estimator has manually entered.
+
+CORE RULES:
+1. NEVER suggest changing a manual entry. Show benchmarks alongside it with variance notes only.
+2. Source hierarchy: Project specs > Industry standards > Org history > Published benchmarks > Web search.
+3. Always cite which tier you are drawing from for every suggestion.
+4. Separate material and labor on every cost suggestion — never blend.
+5. Flag every ambiguity as a clarification entry instead of assuming.
+6. Custom line items with no cost code still receive full enrichment if spec/drawing context exists.
+7. Every suggestion is labeled [AI SUGGESTION] and is advisory only.
+
+OUTPUT: Respond ONLY with a valid JSON object matching this exact schema — no preamble, no markdown fences, no commentary outside the JSON:
+
+{
+  "enrichmentId": "string (uuid)",
+  "costCode": "string",
+  "specGrounding": {
+    "applicableSpecSections": ["string"],
+    "specifiedMaterialStandard": "string or null",
+    "specifiedProductGrade": "string or null",
+    "specifiedManufacturerOptions": ["string"],
+    "specifiedSubmittalRequirements": ["string"],
+    "specifiedTestingRequirements": ["string"],
+    "specifiedWarrantyRequirements": ["string"],
+    "drawingReferences": ["string"],
+    "specConflicts": ["string"],
+    "_source": "string",
+    "_confidence": "HIGH | MEDIUM | LOW"
+  },
+  "materialSuggestion": {
+    "suggestedUnitCostMaterial": "string or null",
+    "suggestedUnit": "string or null",
+    "priceDate": "string or null",
+    "volatilityFlag": "STABLE | MONITOR | VOLATILE — GET CURRENT QUOTE",
+    "leadTimeFlag": "string or null",
+    "_source": "string",
+    "_confidence": "HIGH | MEDIUM | LOW",
+    "manualOverridePresent": true or false,
+    "manualVsBenchmarkVariance": "string or null"
+  },
+  "laborSuggestion": {
+    "suggestedUnitCostLabor": "string or null",
+    "suggestedProductionRate": "string or null",
+    "crewComposition": "string or null",
+    "laborBasis": "string or null",
+    "regionalWageAdjustment": "string or null",
+    "_source": "string",
+    "_confidence": "HIGH | MEDIUM | LOW",
+    "manualOverridePresent": true or false,
+    "manualVsBenchmarkVariance": "string or null"
+  },
+  "contextualModifiers": [
+    {
+      "modifierType": "string",
+      "drawingOrSpecBasis": "string",
+      "suggestedFactor": "string",
+      "reasoning": "string",
+      "applied": false,
+      "_confidence": "HIGH | MEDIUM | LOW"
+    }
+  ],
+  "sowLanguage": {
+    "inclusions": ["string"],
+    "exclusions": ["string"],
+    "interfaceNotes": ["string"],
+    "_source": "string"
+  },
+  "orgHistoryInsights": {
+    "historicalRangeMaterial": "string or null",
+    "historicalRangeLabor": "string or null",
+    "historicalProductionRate": "string or null",
+    "projectCount": "number or null",
+    "winRateNote": "string or null",
+    "historicalModifiersNote": "string or null",
+    "pastProjectNotes": "string or null"
+  },
+  "benchmarkComparison": {
+    "benchmarkSource": "string or null",
+    "benchmarkRangeMaterial": "string or null",
+    "benchmarkRangeLabor": "string or null",
+    "estimateVsBenchmark": "WITHIN RANGE | LOW — VERIFY | HIGH — VERIFY | INSUFFICIENT DATA",
+    "varianceNote": "string or null"
+  },
+  "clarificationEntries": [
+    {
+      "id": "string",
+      "description": "string",
+      "specOrDrawingRef": "string",
+      "resolutionNeeded": "string",
+      "urgency": "PRE-BID | PRE-CONSTRUCTION | PRE-PURCHASE"
+    }
+  ],
+  "conflictFlags": [
+    {
+      "id": "string",
+      "description": "string",
+      "basis": "string",
+      "_confidence": "LOW"
+    }
+  ],
+  "enrichmentSummary": "string",
+  "enrichmentConfidence": "HIGH | MEDIUM | LOW",
+  "enrichmentConfidenceReason": "string"
+}
+`.trim();
+}
+
+/**
+ * Build the user message with full project context injected.
+ */
+function buildUserMessage(body) {
+  const { lineItem, projectContext, orgHistory } = body;
+  return `
+Enrich this construction estimate line item. Return ONLY the JSON schema — no other text.
+
+LINE ITEM:
+${JSON.stringify(lineItem, null, 2)}
+
+PROJECT CONTEXT:
+${JSON.stringify(projectContext, null, 2)}
+
+ORG HISTORICAL DATA:
+${JSON.stringify(orgHistory || {}, null, 2)}
+
+Use web search if:
+- Org history has fewer than 3 entries for this cost code
+- The material is a volatile commodity (copper, steel, lumber, refrigerant)
+- Lead time information is relevant
+- Prevailing wage rates need verification for ${projectContext?.location || 'the project location'}
+- A manufacturer is specified and availability should be confirmed
+
+Return the complete JSON enrichment object now.
+`.trim();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/line-items/enrich
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/enrich', async (req, res) => {
+  const orgId = req.user?.orgId || req.headers['x-org-id'] || 'default';
+  const projectId = req.body?.projectContext?.projectId || null;
+  const costCode = req.body?.lineItem?.costCode || null;
+
+  try {
+    // Fetch org history from DB (merge with any passed in request)
+    const dbHistory = costCode
+      ? await fetchOrgHistory(orgId, costCode)
+      : null;
+
+    const body = {
+      ...req.body,
+      orgHistory: dbHistory || req.body.orgHistory || {},
+    };
+
+    // Call Claude with web search enabled
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2000,
+      temperature: 0,
+      system: buildSystemPrompt(),
+      tools: [
+        {
+          type: 'web_search_20250305',
+          name: 'web_search',
+        },
+      ],
+      messages: [{ role: 'user', content: buildUserMessage(body) }],
+    });
+
+    // Extract text from potentially multi-block response
+    const rawText = response.content
+      .map((block) => (block.type === 'text' ? block.text : ''))
+      .filter(Boolean)
+      .join('\n');
+
+    // Strip any accidental markdown fences
+    const cleaned = rawText.replace(/```json|```/g, '').trim();
+
+    let enrichment;
+    try {
+      enrichment = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error('JSON parse error from Claude:', parseErr.message);
+      console.error('Raw response:', rawText.slice(0, 500));
+      return res.status(502).json({
+        error: 'Enrichment response could not be parsed. Please retry.',
+        raw: rawText.slice(0, 300),
+      });
+    }
+
+    // Stamp enrichment ID
+    enrichment.enrichmentId = enrichment.enrichmentId || uuidv4();
+
+    // Persist to enrichment_log
+    await pool.query(
+      `INSERT INTO enrichment_log (enrichment_id, org_id, project_id, cost_code, request, response)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        enrichment.enrichmentId,
+        orgId,
+        projectId,
+        costCode,
+        JSON.stringify(body),
+        JSON.stringify(enrichment),
+      ]
+    );
+
+    return res.json(enrichment);
+  } catch (err) {
+    console.error('Enrichment route error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/line-items/enrich/feedback
+// Captures accept / modify / reject actions from the UI drawer
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/enrich/feedback', async (req, res) => {
+  const orgId = req.user?.orgId || req.headers['x-org-id'] || 'default';
+
+  const {
+    enrichmentId,
+    projectId,
+    costCode,
+    field,
+    suggestedValue,
+    acceptedValue,
+    outcome,
+    projectType,
+    projectSize,
+    location,
+    laborType,
+  } = req.body;
+
+  if (!enrichmentId || !field || !outcome) {
+    return res.status(400).json({ error: 'enrichmentId, field, and outcome are required.' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO enrichment_feedback
+         (enrichment_id, org_id, project_id, cost_code, field,
+          suggested_value, accepted_value, outcome,
+          project_type, project_size, location, labor_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+      [
+        enrichmentId,
+        orgId,
+        projectId || null,
+        costCode || null,
+        field,
+        suggestedValue != null ? String(suggestedValue) : null,
+        acceptedValue != null ? String(acceptedValue) : null,
+        outcome,
+        projectType || null,
+        projectSize || null,
+        location || null,
+        laborType || null,
+      ]
+    );
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Feedback route error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/line-items/enrich/bid-outcome
+// Update a project's bid outcome after award decision is known
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/enrich/bid-outcome', async (req, res) => {
+  const orgId = req.user?.orgId || req.headers['x-org-id'] || 'default';
+
+  const {
+    projectId,
+    costCode,
+    finalBidUnitCostMat,
+    finalBidUnitCostLab,
+    bidOutcome,
+    competitorLowBid,
+  } = req.body;
+
+  if (!projectId || !bidOutcome) {
+    return res.status(400).json({ error: 'projectId and bidOutcome are required.' });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO bid_outcomes
+         (org_id, project_id, cost_code, final_bid_unit_cost_mat,
+          final_bid_unit_cost_lab, bid_outcome, competitor_low_bid)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        orgId,
+        projectId,
+        costCode || null,
+        finalBidUnitCostMat || null,
+        finalBidUnitCostLab || null,
+        bidOutcome,
+        competitorLowBid || null,
+      ]
+    );
+
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Bid outcome route error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
