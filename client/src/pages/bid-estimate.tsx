@@ -936,6 +936,7 @@ export default function BidEstimate() {
               projectContext={{
                 location: [bid.city, bid.state].filter(Boolean).join(", ") || bid.locationAddress || null,
                 laborType: bid.wageDecision ? "prevailing-wage" : null,
+                relevantSpecSections: bid.description ?? null,
               }}
             />
 
@@ -966,6 +967,7 @@ export default function BidEstimate() {
               projectContext={{
                 location: [bid.city, bid.state].filter(Boolean).join(", ") || bid.locationAddress || null,
                 laborType: bid.wageDecision ? "prevailing-wage" : null,
+                relevantSpecSections: bid.description ?? null,
               }}
             />
           </div>

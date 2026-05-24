@@ -27,77 +27,107 @@ import { ENRICHMENT_SYSTEM_PROMPT } from "./enrichmentSystemPrompt";
 const confidenceEnum = z.enum(["HIGH", "MEDIUM", "LOW"]).nullable().optional();
 
 /** Zod validation schema for the Claude enrichment JSON response. */
-export const EnrichmentResponseSchema = z
-  .object({
-    specSuggestion: z
-      .object({
-        specifiedMaterialStandard: z.string().nullable().optional(),
-        specifiedProductGrade: z.string().nullable().optional(),
-        _source: z.string().nullable().optional(),
+export const EnrichmentResponseSchema = z.object({
+  enrichmentId: z.string().optional(),
+  costCode: z.string().optional(),
+  enrichmentSummary: z.string().nullable().optional(),
+  enrichmentConfidence: z.enum(["HIGH", "MEDIUM", "LOW"]).nullable().optional(),
+  enrichmentConfidenceReason: z.string().nullable().optional(),
+  specGrounding: z
+    .object({
+      applicableSpecSections: z.array(z.string()).optional(),
+      specifiedMaterialStandard: z.string().nullable().optional(),
+      specifiedProductGrade: z.string().nullable().optional(),
+      specifiedManufacturerOptions: z.array(z.string()).optional(),
+      specifiedSubmittalRequirements: z.string().nullable().optional(),
+      specifiedTestingRequirements: z.string().nullable().optional(),
+      specifiedWarrantyRequirements: z.string().nullable().optional(),
+      drawingReferences: z.array(z.string()).optional(),
+      specConflicts: z.array(z.string()).optional(),
+      _source: z.string().nullable().optional(),
+      _confidence: confidenceEnum,
+    })
+    .optional(),
+  materialSuggestion: z
+    .object({
+      suggestedUnitCostMaterial: z.string(),
+      suggestedUnit: z.string().nullable().optional(),
+      priceDate: z.string().nullable().optional(),
+      volatilityFlag: z.string().nullable().optional(),
+      leadTimeFlag: z.string().nullable().optional(),
+      manualOverridePresent: z.boolean().optional(),
+      manualVsBenchmarkVariance: z.string().nullable().optional(),
+      _source: z.string().nullable().optional(),
+      _confidence: confidenceEnum,
+    }),
+  laborSuggestion: z
+    .object({
+      suggestedUnitCostLabor: z.string(),
+      suggestedProductionRate: z.string(),
+      crewComposition: z.string().nullable().optional(),
+      laborBasis: z.string().nullable().optional(),
+      manualVsBenchmarkVariance: z.string().nullable().optional(),
+      _source: z.string().nullable().optional(),
+      _confidence: confidenceEnum,
+    }),
+  contextualModifiers: z
+    .array(
+      z.object({
+        modifierType: z.string().nullable().optional(),
+        suggestedFactor: z.string().nullable().optional(),
+        reasoning: z.string().nullable().optional(),
+        drawingOrSpecBasis: z.string().nullable().optional(),
         _confidence: confidenceEnum,
-        applicableSpecSections: z.array(z.string()).optional(),
-        drawingReferences: z.array(z.string()).optional(),
       }),
-    materialSuggestion: z
-      .object({
-        suggestedUnitCostMaterial: z.string(),
-        _source: z.string().nullable().optional(),
-        _confidence: confidenceEnum,
-        priceDate: z.string().nullable().optional(),
-        volatilityFlag: z.string().nullable().optional(),
-        leadTimeFlag: z.string().nullable().optional(),
-        manualVsBenchmarkVariance: z.string().nullable().optional(),
+    )
+    .optional(),
+  sowLanguage: z
+    .object({
+      inclusions: z.array(z.string()).optional(),
+      exclusions: z.array(z.string()).optional(),
+      interfaceNotes: z.array(z.string()).optional(),
+    })
+    .optional(),
+  orgHistoryInsights: z
+    .object({
+      historicalRangeMaterial: z.string().nullable().optional(),
+      historicalRangeLabor: z.string().nullable().optional(),
+      projectCount: z.union([z.string(), z.number()]).nullable().optional(),
+      winRateNote: z.string().nullable().optional(),
+      historicalModifiersNote: z.string().nullable().optional(),
+    })
+    .optional(),
+  benchmarkComparison: z
+    .object({
+      benchmarkRangeMaterial: z.string().nullable().optional(),
+      benchmarkRangeLabor: z.string().nullable().optional(),
+      benchmarkSource: z.string().nullable().optional(),
+      estimateVsBenchmark: z.string().nullable().optional(),
+      varianceNote: z.string().nullable().optional(),
+    })
+    .optional(),
+  clarificationEntries: z
+    .array(
+      z.object({
+        id: z.string().nullable().optional(),
+        urgency: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        specOrDrawingRef: z.string().nullable().optional(),
+        resolutionNeeded: z.string().nullable().optional(),
       }),
-    laborSuggestion: z
-      .object({
-        suggestedUnitCostLabor: z.string(),
-        suggestedProductionRate: z.string(),
-        crewComposition: z.string().nullable().optional(),
-        _source: z.string().nullable().optional(),
+    )
+    .optional(),
+  conflictFlags: z
+    .array(
+      z.object({
+        id: z.string().nullable().optional(),
+        description: z.string().nullable().optional(),
+        basis: z.string().nullable().optional(),
         _confidence: confidenceEnum,
       }),
-    modifierSuggestion: z
-      .object({
-        requiredModifiers: z.array(z.string()).optional(),
-        optionalModifiers: z.array(z.string()).optional(),
-        _source: z.string().nullable().optional(),
-        _confidence: confidenceEnum,
-      })
-      .optional(),
-    sowSuggestion: z
-      .object({
-        scopeStatement: z.string().nullable().optional(),
-        inclusions: z.array(z.string()).optional(),
-        exclusions: z.array(z.string()).optional(),
-        _source: z.string().nullable().optional(),
-        _confidence: confidenceEnum,
-      })
-      .optional(),
-    orgRiskFactor: z
-      .object({
-        riskFactorNote: z.string().nullable().optional(),
-        suggestedContingencyPct: z.string().nullable().optional(),
-        _source: z.string().nullable().optional(),
-        _confidence: confidenceEnum,
-      })
-      .optional(),
-    benchmarkRating: z
-      .object({
-        ratingVsBenchmark: z.string().nullable().optional(),
-        benchmarkSource: z.string().nullable().optional(),
-        _source: z.string().nullable().optional(),
-        _confidence: confidenceEnum,
-      })
-      .optional(),
-    clarifications: z
-      .array(z.object({ field: z.string(), question: z.string() }))
-      .optional(),
-    conflictAlerts: z
-      .array(
-        z.object({ type: z.string(), message: z.string(), severity: z.string().optional() }),
-      )
-      .optional(),
-  });
+    )
+    .optional(),
+});
 
 export type EnrichmentResponseData = z.infer<typeof EnrichmentResponseSchema>;
 
