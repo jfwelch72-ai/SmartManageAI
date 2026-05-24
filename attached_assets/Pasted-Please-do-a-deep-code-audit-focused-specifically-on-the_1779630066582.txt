@@ -1,0 +1,173 @@
+Please do a deep code audit focused specifically on these systems. I need to 
+verify whether they are fully wired end-to-end or only partially built. 
+Write everything to smartmanage-deep-audit.txt
+
+Do not summarize — extract the actual code, actual queries, actual conditions,
+and actual wiring for each section below.
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 1 — JOB COST VARIANCE ALERT SYSTEM
+════════════════════════════════════════════════════════════════
+
+Find and dump the complete contents of every file related to:
+
+1. Cost variance detection — any service, function, or query that 
+   compares estimate/budget amounts against actual cost postings 
+   or cost transactions. Look in:
+   - server/costLedgerService.ts
+   - server/costEngineService.ts
+   - server/costEngineRoutes.ts
+   - server/costLedgerRoutes.ts
+   - server/ai/profitabilityEngine.ts
+   - server/services/ (any file with "cost", "variance", "budget", 
+     "overrun", "threshold", or "alert" in the name)
+   - shared/calculations/ (all files)
+
+2. Alert trigger logic — any code that fires a notification, email, 
+   SMS, or in-app alert when a cost threshold is exceeded. Show:
+   - The exact condition that triggers the alert
+   - What threshold or percentage is used
+   - Who gets notified
+   - What notification method is used (email/SMS/in-app/push)
+
+3. Job metric alert system — dump the complete contents of:
+   - Any file named jobMetric, job-metric, or job_metric
+   - client/src/components/notifications/JobMetricAlertItem.tsx
+   - client/src/components/notifications/JobMetricAlertBellItem.tsx
+   - Any scheduler or cron job that runs cost comparisons
+   - server/aiCfoAnalyticsRoutes.ts (full file)
+
+4. The ai_insights table population — find every place in the codebase
+   that does an INSERT or upsert into the ai_insights table. Show the 
+   full function, the module field value, severity field value, and 
+   what triggers the insert.
+
+5. KPI snapshot scheduler — find the code that populates 
+   project_kpi_snapshots. Show the full query and what schedule it runs on.
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 2 — OWNER DASHBOARD
+════════════════════════════════════════════════════════════════
+
+1. Dump the complete contents of every file that contains 
+   "executive", "digest", "dashboard", "portfolio", or "overview" 
+   in the filename. Including:
+   - server/executiveDigest/ (all files)
+   - server/aiCfoAnalyticsRoutes.ts
+   - Any client page named Dashboard, Portfolio, Overview, or Executive
+
+2. For the executive digest / CFO analytics:
+   - What data does it pull (exact queries or service calls)
+   - What jobs/projects does it aggregate across
+   - What financial metrics does it surface
+   - How is it delivered (screen / email / scheduled)
+   - What triggers it (manual / scheduled / event-driven)
+
+3. Show the complete navigation structure — dump the full contents of:
+   - client/src/App.tsx or the main router file
+   - Any sidebar navigation component
+   - Show every route and what page/component it renders
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 3 — QUICKBOOKS SYNC
+════════════════════════════════════════════════════════════════
+
+1. Dump the complete contents of:
+   - planning/QBO_SYNC_SPEC.md
+   - audit/tests/integrations/qboSync.spec.ts
+   - server/integrations/ (list all files, then dump any QBO-related ones)
+   - Any file with "quickbooks", "qbo", or "intuit" in the name
+
+2. Show the current sync state:
+   - What entities sync (invoices, cost postings, vendors, employees, etc.)
+   - What direction (one-way push, one-way pull, or bidirectional)
+   - What the sync trigger is (webhook, scheduled job, manual)
+   - Whether there is error handling and retry logic
+   - What happens when QBO is disconnected
+
+3. Run this database query and include the output:
+   SELECT table_name, column_name, data_type 
+   FROM information_schema.columns 
+   WHERE table_schema = 'public' 
+     AND (table_name LIKE '%qbo%' 
+       OR table_name LIKE '%quickbooks%'
+       OR table_name LIKE '%integration%'
+       OR table_name LIKE '%sync%')
+   ORDER BY table_name, ordinal_position;
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 4 — NOTIFICATION AND ALERT DELIVERY SYSTEM
+════════════════════════════════════════════════════════════════
+
+1. Dump the complete notification/alert pipeline:
+   - server/bidNetworkNotifications.ts (full file)
+   - Any file named notificationService, alertService, or similar
+   - The complete list of notification types defined in the schema
+     (run: SELECT DISTINCT notification_type FROM notifications LIMIT 50)
+   - How push notifications are delivered (VAPID keys are set — 
+     show the push registration and delivery code)
+   - How email alerts are sent (SendGrid is configured — show the 
+     email alert templates and triggers)
+   - Whether Twilio SMS is wired (show the SMS sending code if it exists)
+
+2. For the job metric alert specifically:
+   - Show the complete database schema for any table named 
+     job_metric_alerts or similar
+   - Show the scheduler that checks metrics
+   - Show the exact thresholds that trigger alerts
+   - Show what the alert looks like to the end user
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 5 — SCHEDULE-TO-ACTUAL CONNECTION
+════════════════════════════════════════════════════════════════
+
+1. Dump server/cpmEngine.ts in full
+
+2. Show how the schedule connects to:
+   - Labor hour actuals (is it pulling from timesheets?)
+   - Cost actuals (is it pulling from cost ledger?)
+   - Change orders (does a CO extend the schedule automatically?)
+   - Notifications (does a late predecessor fire an alert?)
+
+3. Show the AI Gantt recommendations pipeline:
+   - What triggers ai_gantt_recommendations to be populated
+   - What data it analyzes
+   - How recommendations are surfaced to the user
+
+════════════════════════════════════════════════════════════════
+AUDIT TARGET 6 — WIRING VERIFICATION CHECKLIST
+════════════════════════════════════════════════════════════════
+
+For each item below, search the codebase and answer 
+YES (wired end-to-end), PARTIAL (built but not connected), 
+or NO (not present). Show the evidence for each answer:
+
+[ ] Cost overrun alert fires automatically when actuals exceed estimate
+[ ] Owner receives notification (email/push/SMS) when job goes over budget
+[ ] Executive digest or CFO summary runs on a schedule
+[ ] QuickBooks sync is active and has been tested end-to-end
+[ ] Schedule delay triggers a cost impact warning
+[ ] Subcontractor insurance expiry fires an alert before it expires
+[ ] Retainage balance triggers a collection reminder
+[ ] Unbilled change orders trigger a billing reminder
+[ ] Daily report submission triggers a summary to PM or owner
+[ ] Time clock entries feed into job cost actuals automatically
+[ ] Lien waiver collection is automated or has reminder triggers
+
+════════════════════════════════════════════════════════════════
+OUTPUT FORMAT
+════════════════════════════════════════════════════════════════
+
+Write all findings to smartmanage-deep-audit.txt
+
+For each audit target, use this structure:
+  STATUS: FULLY WIRED | PARTIALLY WIRED | NOT CONNECTED | NOT FOUND
+  EVIDENCE: [paste the actual code or query results]
+  GAPS: [what's missing or broken in the wiring]
+  FILES: [list every file involved]
+
+Do not paraphrase the code. Paste the actual implementation.
+Where a file is too large to dump completely, paste the most 
+relevant functions in full and list the rest by function name.
+
+Confirm when smartmanage-deep-audit.txt is complete.

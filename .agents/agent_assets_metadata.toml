@@ -42,3 +42,9 @@ id = "wsNqvdCyiuFhaKXM-QnaV"
 uri = "file://smartmanage-program-review.txt"
 type = "text"
 title = "SmartManageAI Full Codebase Audit"
+
+[[outputs]]
+id = "YPWlPTWRVSpSh-E38x9NK"
+uri = "file://smartmanage-deep-audit.txt"
+type = "text"
+title = "SmartManageAI Deep Wiring Audit (6 targets)"
