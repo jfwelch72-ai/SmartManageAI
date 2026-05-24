@@ -36,3 +36,9 @@ id = "ud-UWi-w8lhK4wOvobnCA"
 uri = "file://.local/tasks/smartmanageai-test-flows.md"
 type = "text"
 title = "SmartManageAI — Full App Test Flow List"
+
+[[outputs]]
+id = "wsNqvdCyiuFhaKXM-QnaV"
+uri = "file://smartmanage-program-review.txt"
+type = "text"
+title = "SmartManageAI Full Codebase Audit"
