@@ -320,6 +320,12 @@ interface LineItemFormDialogProps {
   onHierarchicalUnitChange?: (u: string) => void;
   aiEstimatorEnabled?: boolean;
   aiEstimatorBidId?: string;
+  projectContext?: {
+    projectType?: string | null;
+    location?: string | null;
+    laborType?: string | null;
+    relevantSpecSections?: string | null;
+  };
 }
 
 interface HistoricalCostRecord {
@@ -996,6 +1002,7 @@ export function LineItemFormDialog({
   onHierarchicalUnitChange,
   aiEstimatorEnabled = false,
   aiEstimatorBidId,
+  projectContext,
 }: LineItemFormDialogProps) {
   const isAdd = mode === "add";
   const isEdit = mode === "edit";
@@ -1795,6 +1802,7 @@ export function LineItemFormDialog({
           open={enrichmentDrawerOpen}
           onOpenChange={setEnrichmentDrawerOpen}
           lineItem={enrichmentLineItem}
+          projectContext={projectContext}
           estimateLineItemId={lineItemId ?? null}
         />
       </>
@@ -1810,6 +1818,7 @@ export function LineItemFormDialog({
         open={enrichmentDrawerOpen}
         onOpenChange={setEnrichmentDrawerOpen}
         lineItem={enrichmentLineItem}
+        projectContext={projectContext}
         estimateLineItemId={lineItemId ?? null}
       />
     </>

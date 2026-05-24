@@ -9,6 +9,7 @@ export const enrichmentLog = pgTable(
     orgId: text("org_id").notNull(),
     userId: text("user_id"),
     estimateLineItemId: text("estimate_line_item_id"),
+    measurementId: text("measurement_id"),
     costCode: text("cost_code"),
     mode: text("mode").notNull().default("ON_DEMAND"),
     request: jsonb("request").notNull(),

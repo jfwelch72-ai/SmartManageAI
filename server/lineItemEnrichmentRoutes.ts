@@ -11,6 +11,7 @@ import { routedChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { quarantineUserText } from "./ai/promptInjectionGuard";
 import { ENRICHMENT_SYSTEM_PROMPT } from "./services/aiEstimator/enrichmentSystemPrompt";
+import { EnrichmentResponseSchema } from "./services/aiEstimator/enrichmentTrigger";
 
 const router = Router();
 
@@ -206,6 +207,7 @@ router.post(
               ],
               temperature: 0,
               max_completion_tokens: 2000,
+              tools: [{ type: "web_search_20250305" as const }],
             },
           });
 
@@ -219,7 +221,16 @@ router.post(
             throw new Error(`Claude returned non-JSON: ${raw.slice(0, 200)}`);
           }
 
-          return { result: parsed, completion };
+          const validated = EnrichmentResponseSchema.safeParse(parsed);
+          if (!validated.success) {
+            throw new Error(
+              `Enrichment response failed Zod validation: ${JSON.stringify(
+                validated.error.flatten().fieldErrors,
+              ).slice(0, 300)}`,
+            );
+          }
+
+          return { result: validated.data, completion };
         },
       });
 

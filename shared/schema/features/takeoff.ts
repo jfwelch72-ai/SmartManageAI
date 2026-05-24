@@ -335,6 +335,10 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   assemblyId: varchar("assembly_id"),
   assemblyComponentId: varchar("assembly_component_id"),
   lineItemRef: text("line_item_ref"),
+  // Task #3064 — back-reference to the enrichment_log row produced by the
+  // map-reduce auto-enrich trigger. Null for user-drawn measurements and
+  // measurements not yet enriched.
+  enrichmentId: text("enrichment_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

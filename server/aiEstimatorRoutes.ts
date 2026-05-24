@@ -37,6 +37,7 @@ import {
   assertBidInOrg,
   ResourceOwnershipError,
 } from "./services/aiEstimator/access";
+import { triggerMeasurementAutoEnrichment } from "./services/aiEstimator/enrichmentTrigger";
 import {
   listLearnedRatesForOrg,
   getLearnedRate,
@@ -3460,6 +3461,18 @@ router.post(
           .returning({ id: takeoffMeasurements.id });
         if (inserted) {
           insertedIds.push(inserted.id);
+          // Task #3064 — fire non-blocking AI enrichment for each applied
+          // measurement. The trigger back-patches takeoff_measurements.enrichment_id
+          // once the Claude call completes. Never awaited — response is already sent.
+          void triggerMeasurementAutoEnrichment({
+            orgId: organizationId,
+            userId,
+            measurementId: inserted.id,
+            label: m.label,
+            costCode: m.costCode ?? null,
+            unit: m.unit,
+            value: m.value,
+          }).catch(() => undefined);
           const sheetInfo = sheetById.get(sheetId) ?? { sheetNumber: null, sheetName: null };
           attachments.push({
             label: m.label,

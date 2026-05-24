@@ -105,5 +105,17 @@ export async function ensureEnrichmentTables(): Promise<void> {
       ON bid_outcomes (created_at)
   `);
 
+  // Task #3064 — backfill new columns added to existing tables.
+  // These are idempotent ADD COLUMN IF NOT EXISTS statements so they
+  // can run safely on an already-migrated database.
+  await db.execute(sql`
+    ALTER TABLE enrichment_log
+      ADD COLUMN IF NOT EXISTS measurement_id TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE takeoff_measurements
+      ADD COLUMN IF NOT EXISTS enrichment_id TEXT
+  `);
+
   logInfo("[migration] enrichment_log / enrichment_feedback / bid_outcomes — tables ready");
 }
