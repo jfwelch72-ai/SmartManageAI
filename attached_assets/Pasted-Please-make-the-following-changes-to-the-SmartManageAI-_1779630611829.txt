@@ -1,0 +1,452 @@
+Please make the following changes to the SmartManageAI codebase. These are 
+all wiring fixes — connecting existing, already-built functions to schedulers 
+and defaults. No new features need to be invented. Work through each item in 
+order and confirm each one before moving to the next.
+
+════════════════════════════════════════════════════════════════
+FIX 1 — ENABLE_SCHEDULERS ENVIRONMENT VARIABLE
+════════════════════════════════════════════════════════════════
+
+Check whether ENABLE_SCHEDULERS is set in the environment.
+
+1. Open server/jobs/jobRunner.ts and find the guard that checks 
+   ENABLE_SCHEDULERS. Show me the exact condition.
+
+2. If ENABLE_SCHEDULERS is not currently set to true in the Replit 
+   Secrets / environment, add it now. Set ENABLE_SCHEDULERS=true.
+
+3. Confirm the job runner starts and log output shows scheduled 
+   tasks registering on startup. Show me the confirmation log lines.
+
+4. Also check for any other env var guards that block the scheduler 
+   from starting (DISABLE_AUTO_DB_SYNC, JOB_WORKER_INPROCESS, etc.) 
+   and confirm they are set correctly for production operation.
+
+════════════════════════════════════════════════════════════════
+FIX 2 — WIRE captureWeeklyKpiSnapshots TO A CRON SCHEDULE
+════════════════════════════════════════════════════════════════
+
+The function captureWeeklyKpiSnapshots exists in 
+server/services/portfolioKpiSnapshotService.ts and is imported 
+in server/jobs/jobRunner.ts but is never called by any 
+cron.schedule() entry.
+
+1. Open server/jobs/jobRunner.ts
+
+2. Find where other scheduled jobs are registered using the 
+   scheduleCron() helper in that file.
+
+3. Add a new scheduled job using the existing scheduleCron() 
+   pattern that:
+   - Runs daily at 6:00 AM (cron: "0 6 * * *")
+   - Calls captureWeeklyKpiSnapshots()
+   - Logs success/failure with logInfo / logError
+   - Uses job name "portfolio_kpi_snapshot"
+   - Follows the exact same pattern as the other jobs already 
+     registered in that file
+
+4. Show me the added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 3 — DAILY PROJECT COST VARIANCE ALERT JOB
+════════════════════════════════════════════════════════════════
+
+The function calculateProjectProfitability() exists in 
+server/ai/profitabilityEngine.ts. It already computes variance, 
+burn rate, forecast-at-completion, and generates a warning_message. 
+It is never called automatically. Wire it to a daily scheduled job.
+
+1. Open server/jobs/jobRunner.ts
+
+2. Add a new scheduled job using the existing scheduleCron() pattern:
+   - Job name: "daily_cost_variance_alert"
+   - Schedule: "0 7 * * *" (7 AM daily)
+   - The job should:
+     a. Query all projects with status IN ('ACTIVE', 'PLANNING') 
+        — limit 200
+     b. For each project call calculateProjectProfitability() 
+        using the project code
+     c. If the result has status === 'MAJOR_RISK' OR 
+        cost_prediction.early_warning === true:
+        - Call insertNotification() (or insertNotifications() if 
+          that is the correct function name in 
+          server/services/notificationService.ts) for every user 
+          in the project's organization with role IN 
+          ('ADMIN', 'MANAGER', 'SUPER_ADMIN')
+        - Notification type: "COST_OVERRUN_WARNING"
+        - Title: "Budget Alert — [project.name]"
+        - Message: use cost_prediction.warning_message if it exists, 
+          otherwise build: "Project [project.code] has exceeded 
+          budget. Variance: [variance_percent]%. Immediate review 
+          required."
+        - relatedEntityType: "PROJECT"
+        - relatedEntityId: project.id
+     d. Log how many projects were evaluated and how many alerts 
+        were fired at the end of each run
+     e. Wrap each project evaluation in try/catch so one bad 
+        project does not abort the whole run
+
+3. Import calculateProjectProfitability from 
+   server/ai/profitabilityEngine.ts at the top of the file if 
+   not already imported.
+
+4. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 4 — DAILY EXECUTIVE DIGEST SCHEDULER + EMAIL DELIVERY
+════════════════════════════════════════════════════════════════
+
+The executive digest builder exists in server/executiveDigestRoutes.ts 
+and server/executiveDigest/storage.ts. It is on-demand only. 
+Wire it to run automatically each morning and deliver via email.
+
+1. Open server/jobs/jobRunner.ts
+
+2. Add a new scheduled job:
+   - Job name: "daily_executive_digest"
+   - Schedule: "0 6 * * *" (6 AM daily, same run as KPI snapshots)
+   - The job should:
+     a. Query all organizations that have the EXECUTIVE_DIGEST 
+        feature flag enabled — use the existing 
+        isFeatureEnabled(orgId, "EXECUTIVE_DIGEST") function from 
+        server/services/featureFlagService.ts
+     b. For each enabled org:
+        - Call createExecutiveDigest (from 
+          server/executiveDigest/storage.ts) with period "daily" 
+          and the org's aggregated data — follow the same pattern 
+          used in the POST /api/executive/digest/generate route 
+          in server/executiveDigestRoutes.ts
+        - After saving, query all users in the org with role IN 
+          ('ADMIN', 'MANAGER', 'SUPER_ADMIN')
+        - Send each of them an email using the existing sendEmail() 
+          function from server/services/emailService.ts with:
+          Subject: "Daily Digest — [org.name] — [today's date]"
+          Body: plain text summary using executiveSummary + 
+          keyHighlights from the digest output
+        - Also insert an in-app notification for each admin user 
+          with type "EXECUTIVE_DIGEST_READY"
+     c. Log orgs processed and any failures
+
+3. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 5 — SUBCONTRACTOR INSURANCE EXPIRY ALERT SCHEDULER
+════════════════════════════════════════════════════════════════
+
+The insurance_certificates table exists with an expiry_date column. 
+server/coiRoutes.ts already calls sendEmail() on status changes but 
+there is no proactive expiry warning scheduler. Add one.
+
+1. Open server/jobs/jobRunner.ts
+
+2. Add a new scheduled job:
+   - Job name: "insurance_expiry_alerts"
+   - Schedule: "0 8 * * *" (8 AM daily)
+   - The job should:
+     a. Query insurance_certificates where:
+        - status NOT IN ('CANCELLED', 'SUPERSEDED')
+        - expiry_date is within the next 30 days from today
+        - expiry_date has not already passed
+     b. Group results by organization_id
+     c. For each certificate expiring in exactly 30, 7, or 1 day(s):
+        - Insert a notification for all ADMIN and MANAGER users 
+          in that organization with:
+          type: "COI_EXPIRING_SOON"
+          title: "Insurance Expiring — [party_name]"
+          message: "[party_name]'s [coverage_type] insurance 
+          expires in [N] days (on [expiry_date]). Upload a 
+          renewed certificate to avoid compliance issues."
+          relatedEntityType: "INSURANCE_CERTIFICATE"
+          relatedEntityId: certificate.id
+     d. Deduplicate — do not send the same 
+        certificate+days_remaining combination more than once. 
+        Check the notifications table for a recent duplicate 
+        before inserting.
+     e. Log total certificates scanned and alerts fired.
+
+3. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 6 — RETAINAGE COLLECTION REMINDER SCHEDULER
+════════════════════════════════════════════════════════════════
+
+The retention_releases and sub_retention_releases tables exist. 
+RetentionDashboardTab.tsx renders balances. There is no automated 
+reminder. Add one.
+
+1. First check the exact schema of retention_releases and 
+   sub_retention_releases tables — show me the columns.
+
+2. Open server/jobs/jobRunner.ts
+
+3. Add a new scheduled job:
+   - Job name: "retainage_collection_reminder"
+   - Schedule: "0 9 * * 1" (9 AM every Monday)
+   - The job should:
+     a. Query projects with status = 'COMPLETE' or 
+        completion_date older than 30 days where retainage 
+        balance > 0. Use the retention_releases table — find 
+        records where release_status is NOT 'RELEASED' and 
+        scheduled_release_date has passed or is within 14 days.
+     b. For each unreleased retainage record:
+        - Insert a notification for ADMIN and MANAGER users 
+          in that org:
+          type: "RETAINAGE_COLLECTION_DUE"
+          title: "Retainage Ready to Collect — [project.name]"
+          message: "$[amount] retainage on [project.name] 
+          ([project.code]) is due for release. 
+          Scheduled release date: [scheduled_release_date]. 
+          Submit your release request."
+          relatedEntityType: "PROJECT"
+          relatedEntityId: project.id
+     c. Log records found and notifications sent.
+
+4. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 7 — UNBILLED CHANGE ORDER BILLING REMINDER
+════════════════════════════════════════════════════════════════
+
+CHANGE_ORDER_APPROVED notifications fire on workflow changes but 
+there is no reminder for approved COs that have not been included 
+in a billing draw. Add one.
+
+1. Check the change_orders table schema — specifically what columns 
+   track billing status (billed, included_in_sov, pay_application_id, 
+   or similar). Show me the relevant columns.
+
+2. Open server/jobs/jobRunner.ts
+
+3. Add a new scheduled job:
+   - Job name: "unbilled_change_order_reminder"
+   - Schedule: "0 9 * * 3" (9 AM every Wednesday)
+   - The job should:
+     a. Query change_orders where:
+        - status = 'APPROVED'
+        - The CO has not been included in any pay application 
+          (billed = false, or pay_application_id IS NULL — 
+          use whatever column tracks this)
+        - approved_at is more than 7 days ago
+     b. Group by project_id
+     c. For each project with unbilled approved COs:
+        - Insert one notification for ADMIN and MANAGER users:
+          type: "UNBILLED_CHANGE_ORDER_REMINDER"
+          title: "Unbilled Change Orders — [project.name]"
+          message: "[N] approved change order(s) totaling 
+          $[total_amount] on [project.name] have not been 
+          billed. Include them in your next draw to avoid 
+          leaving money on the table."
+          relatedEntityType: "PROJECT"
+          relatedEntityId: project.id
+     d. Deduplicate — only one reminder per project per week.
+     e. Log projects flagged and notifications sent.
+
+4. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 8 — LIEN WAIVER COLLECTION REMINDER
+════════════════════════════════════════════════════════════════
+
+The lien_waivers table exists. There is no automated reminder 
+for outstanding waivers. Add one.
+
+1. Check the lien_waivers table schema — show me the columns 
+   (especially status, due_date, project_id, subcontractor_id, 
+   waiver_type).
+
+2. Open server/jobs/jobRunner.ts
+
+3. Add a new scheduled job:
+   - Job name: "lien_waiver_reminder"
+   - Schedule: "0 9 * * 4" (9 AM every Thursday)
+   - The job should:
+     a. Query lien_waivers where:
+        - status NOT IN ('RECEIVED', 'WAIVED', 'CANCELLED')
+        - due_date is within the next 7 days OR has already 
+          passed (overdue)
+     b. For each outstanding waiver:
+        - Insert a notification for ADMIN and MANAGER users 
+          in the org:
+          type: "LIEN_WAIVER_OUTSTANDING"
+          title: "Lien Waiver Outstanding — [project.name]"
+          message: "[waiver_type] lien waiver from 
+          [subcontractor_name] on [project.name] is 
+          [overdue / due in N days]. Collect before releasing 
+          next payment."
+          relatedEntityType: "PROJECT"
+          relatedEntityId: project.id
+     c. Deduplicate per waiver per week.
+     d. Log waivers found and notifications sent.
+
+4. Show me the complete added code block.
+
+════════════════════════════════════════════════════════════════
+FIX 9 — DEFAULT NOTIFICATION PREFERENCES FOR ADMIN/OWNER ROLES
+════════════════════════════════════════════════════════════════
+
+Alert delivery currently depends on per-user channel preferences 
+being configured. Admins and owners who have never set preferences 
+will not receive alerts. Fix this.
+
+1. Find where user notification preferences are stored — check 
+   for a user_notification_preferences or notification_preferences 
+   table or a preferences column on the users table. Show me 
+   the schema.
+
+2. Find where new users are created or where the organization 
+   onboarding flow runs — check server/auth.ts, any registration 
+   route, and the org onboarding flow.
+
+3. Add logic so that when a user with role ADMIN, MANAGER, or 
+   SUPER_ADMIN is created OR when their role is set to one of 
+   those values, their notification preferences are defaulted to:
+   - In-app notifications: ON for all types
+   - Email notifications: ON for these types:
+     COST_OVERRUN_WARNING, COI_EXPIRING_SOON, 
+     RETAINAGE_COLLECTION_DUE, UNBILLED_CHANGE_ORDER_REMINDER,
+     LIEN_WAIVER_OUTSTANDING, EXECUTIVE_DIGEST_READY,
+     MATERIAL_OVERAGE, SCHEDULE_BASELINE_SLIP
+   - Do not overwrite preferences for users who have already 
+     explicitly configured them.
+
+4. Also add a one-time backfill: write a function 
+   backfillAdminNotificationPreferences() that runs once on 
+   server startup (check a flag in the DB so it only runs once) 
+   and sets the above defaults for all existing ADMIN, MANAGER, 
+   and SUPER_ADMIN users who have no preferences record yet.
+
+5. Show me all added code.
+
+════════════════════════════════════════════════════════════════
+FIX 10 — TIME CLOCK ENTRIES TO JOB COST ACTUALS
+════════════════════════════════════════════════════════════════
+
+Time entries live in their own tables but do not automatically 
+write to cost_ledger_postings. This means job cost actuals are 
+missing labor costs from the time clock. Fix this.
+
+1. Check the time_entries (or time_clock_entries) table schema — 
+   show me the columns including: user_id, project_id, 
+   cost_code, hours_regular, hours_overtime, cost_rate, date.
+
+2. Check the cost_ledger_postings table schema — show me all 
+   columns.
+
+3. Find server/jobQueue/handlers/accountingSync.ts — show me 
+   how it currently posts costs to the ledger so the new writer 
+   follows the same pattern.
+
+4. Add a new scheduled job in server/jobs/jobRunner.ts:
+   - Job name: "time_entries_to_cost_ledger"
+   - Schedule: "0 1 * * *" (1 AM daily — after the day closes)
+   - The job should:
+     a. Query time_entries where:
+        - The entry date is yesterday (previous calendar day)
+        - The entry has not already been posted to cost_ledger 
+          (add a posted_to_ledger boolean column to time_entries 
+          if one does not exist, or use a ledger_posting_id FK)
+        - status = 'APPROVED' or equivalent approved status
+     b. For each unposted approved time entry:
+        - Create a cost_ledger_postings record with:
+          organization_id from the project
+          project_id from the entry
+          cost_code from the entry (if present) or default 
+          to the org's default labor cost code
+          amount = (hours_regular * cost_rate_regular) + 
+                   (hours_overtime * cost_rate_overtime)
+          cost_type = 'LABOR'
+          source_type = 'TIME_ENTRY'
+          source_id = time_entry.id
+          description = "Labor: [user name] — [date]"
+          posted_at = now()
+        - Mark the time entry as posted 
+          (posted_to_ledger = true or set ledger_posting_id)
+     c. Wrap in a transaction so partial failures roll back 
+        cleanly
+     d. Log entries processed, total labor cost posted, and 
+        any failures
+
+5. If a posted_to_ledger column does not exist on time_entries, 
+   create a migration file at migrations/[next number]_time_entry_ledger_posting.sql 
+   that adds the column:
+   ALTER TABLE time_entries 
+   ADD COLUMN IF NOT EXISTS posted_to_ledger BOOLEAN NOT NULL DEFAULT FALSE;
+   ADD COLUMN IF NOT EXISTS ledger_posting_id VARCHAR REFERENCES cost_ledger_postings(id);
+
+6. Show me all added code and the migration file.
+
+════════════════════════════════════════════════════════════════
+FIX 11 — MAKE PORTFOLIO PAGE THE DEFAULT LANDING SCREEN
+════════════════════════════════════════════════════════════════
+
+The portfolio.tsx page (1136 lines) aggregates all active jobs 
+but is not the default landing screen for admin/owner users. 
+Change this.
+
+1. Find the main router file — check client/src/App.tsx or 
+   wherever the root route "/" is defined.
+
+2. Find the current default route for authenticated users — 
+   show me what it renders today.
+
+3. Change the default authenticated route so that:
+   - Users with role ADMIN, MANAGER, or SUPER_ADMIN land on 
+     the portfolio/dashboard page by default
+   - Users with role FIELD, WORKER, FOREMAN, or similar 
+     field roles land on whatever their current default is 
+     (do not change field worker experience)
+   - The redirect logic should check req.user.role and route 
+     accordingly
+
+4. Show me the changed routing code.
+
+════════════════════════════════════════════════════════════════
+VERIFICATION — RUN AFTER ALL FIXES ARE APPLIED
+════════════════════════════════════════════════════════════════
+
+After completing all 11 fixes, please do the following:
+
+1. Start the server and show me the startup log output — 
+   confirm all scheduled jobs are registering and the job 
+   runner is active.
+
+2. Run this query against the database and show me the output:
+   SELECT job_name, last_run_at, last_status, next_run_at 
+   FROM scheduled_job_state 
+   ORDER BY job_name;
+   (If that table doesn't exist, show me whatever table 
+   tracks cron job state in this codebase.)
+
+3. Manually trigger the daily_cost_variance_alert job once 
+   and show me the log output — confirm it evaluates projects 
+   and the notification path works.
+
+4. Manually trigger the insurance_expiry_alerts job once 
+   and show me the log output.
+
+5. Confirm ENABLE_SCHEDULERS is set to true and show me 
+   the current value of all scheduler-related env vars.
+
+6. Show me a summary of every change made — file name, 
+   what was added/changed, and line count.
+
+════════════════════════════════════════════════════════════════
+IMPORTANT CONSTRAINTS
+════════════════════════════════════════════════════════════════
+
+- Do not remove or modify any existing functionality
+- Follow the exact code patterns already used in 
+  server/jobs/jobRunner.ts for all new scheduled jobs
+- Use the existing insertNotification() or insertNotifications() 
+  function — do not create a new notification pathway
+- Use the existing sendEmail() function — do not add new 
+  email libraries
+- Use the existing logInfo() and logError() functions for all 
+  logging
+- If any schema change is needed, create a properly numbered 
+  migration file following the existing pattern in the 
+  migrations/ directory
+- If any import is needed, add it at the top of the file 
+  following the existing import style
+- After each fix, confirm it compiles without TypeScript errors 
+  before moving to the next fix
