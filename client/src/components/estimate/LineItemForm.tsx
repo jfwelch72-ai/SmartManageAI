@@ -22,7 +22,7 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash, GripVertical } from "lucide-react";
+import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash, GripVertical, Sparkles } from "lucide-react";
 import { PayItemPicker, type SelectedPayItem } from "@/components/dot/PayItemPicker";
 import { CostBookPickerButton, CrewTemplatePickerButton } from "@/components/estimate/CostBookCrewPickers";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
@@ -37,6 +37,7 @@ import ModifierSelector from "@/components/ModifierSelector";
 import { UomSelect } from "@/components/UomSelect";
 import MaterialCalculator, { type MaterialCalculatorData } from "@/components/MaterialCalculator";
 import { ManualMaterialPricing } from "@/components/ManualMaterialPricing";
+import { EnrichmentDrawer } from "@/components/estimate/EnrichmentDrawer";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
 import { EquipmentRateSelector } from "@/components/EquipmentRateSelector";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1001,6 +1002,7 @@ export function LineItemFormDialog({
   const testPrefix = isEdit ? "edit-" : "";
   const [manualCalcToggle, setManualCalcToggle] = useState(false);
   const [numericDisplayValues, setNumericDisplayValues] = useState<Record<string, string>>({});
+  const [enrichmentDrawerOpen, setEnrichmentDrawerOpen] = useState(false);
   const { toast } = useToast();
   
   useEffect(() => {
@@ -1107,7 +1109,17 @@ export function LineItemFormDialog({
             <FileText className="h-4 w-4 mr-2" />
             Manual Entry
           </Button>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setEnrichmentDrawerOpen(true)}
+              data-testid="button-enrich-with-ai"
+            >
+              <Sparkles className="h-4 w-4 mr-2 text-primary" />
+              Enrich with AI
+            </Button>
             <HistoricalCostImportButton form={form} />
           </div>
         </div>
@@ -1756,24 +1768,51 @@ export function LineItemFormDialog({
     </DialogContent>
   );
 
+  const enrichmentLineItem = {
+    description: form.watch("description") ?? "",
+    costCode: form.watch("workTypeCode") ?? null,
+    quantity: String(form.watch("quantity") ?? ""),
+    unit: form.watch("unit") ?? null,
+    manualUnitCostMaterial: String(form.watch("materialCost") ?? ""),
+    manualUnitCostLabor: String(form.watch("laborCost") ?? ""),
+    notes: form.watch("notes") ?? null,
+    mode: "ON_DEMAND" as const,
+  };
+
   if (isAdd) {
     return (
-      <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-        <DialogTrigger asChild>
-          <Button data-testid="button-open-add-line-item">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Line Item
-          </Button>
-        </DialogTrigger>
-        {dialogContent}
-      </Dialog>
+      <>
+        <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-open-add-line-item">
+              <Plus className="h-4 w-4 mr-2" />
+              Add Line Item
+            </Button>
+          </DialogTrigger>
+          {dialogContent}
+        </Dialog>
+        <EnrichmentDrawer
+          open={enrichmentDrawerOpen}
+          onOpenChange={setEnrichmentDrawerOpen}
+          lineItem={enrichmentLineItem}
+          estimateLineItemId={lineItemId ?? null}
+        />
+      </>
     );
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
-      {dialogContent}
-    </Dialog>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange} modal={false}>
+        {dialogContent}
+      </Dialog>
+      <EnrichmentDrawer
+        open={enrichmentDrawerOpen}
+        onOpenChange={setEnrichmentDrawerOpen}
+        lineItem={enrichmentLineItem}
+        estimateLineItemId={lineItemId ?? null}
+      />
+    </>
   );
 }
 

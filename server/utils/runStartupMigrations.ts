@@ -173,6 +173,7 @@ import { ensureAuditLogUserIdNullable } from "./ensureAuditLogUserIdNullable";
 import { seedSupportHolidaysOnStartup } from "./seedSupportHolidaysOnStartup";
 import { ensureEstimateBenchmarkColumns } from "./ensureEstimateBenchmarkColumns";
 import { ensureEstimateBenchmarkRefreshesTable } from "./ensureEstimateBenchmarkRefreshesTable";
+import { ensureEnrichmentTables } from "./ensureEnrichmentTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -636,6 +637,11 @@ const migrations: MigrationStep[] = [
   // `estimate_benchmark_refreshes` table so every "Refresh Benchmarks" action
   // is stored as an immutable row for later comparison.
   { name: "estimate_benchmark_refreshes_table", category: "CREATE_TABLE", fn: ensureEstimateBenchmarkRefreshesTable },
+  // Task #3064 — AI Line Item Enrichment Engine: three jsonb learning-loop
+  // tables (enrichment_log, enrichment_feedback, bid_outcomes) that store
+  // Claude enrichment calls and estimator Accept/Modify/Dismiss signals so
+  // future calls for the same org + cost code improve over time.
+  { name: "enrichment_tables", category: "CREATE_TABLE", fn: ensureEnrichmentTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

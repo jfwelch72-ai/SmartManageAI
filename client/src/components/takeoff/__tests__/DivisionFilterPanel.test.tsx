@@ -122,6 +122,8 @@ const defaultProps = {
   onToggleDivision: vi.fn(),
   onShowAll: vi.fn(),
   onHideAll: vi.fn(),
+  confidenceThreshold: "ALL" as const,
+  onConfidenceThresholdChange: vi.fn(),
 };
 
 afterEach(() => {

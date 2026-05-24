@@ -268,6 +268,7 @@ import devEmailRoutes from "./devEmailRoutes";
 import statusPageRoutes from "./statusPageRoutes";
 import supportRoutes from "./supportRoutes";
 import supportAttachmentRoutes from "./supportAttachmentRoutes";
+import lineItemEnrichmentRoutes from "./lineItemEnrichmentRoutes";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Task #2780 — Demo request form (unauthenticated).
@@ -393,6 +394,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(costBookRoutes);
   app.use(crewTemplateRoutes);
   app.use(estimatePricingRoutes);
+
+  // Task #3064 — AI Line Item Enrichment Engine
+  app.use(lineItemEnrichmentRoutes);
 
   // Register T&M ticket routes
   registerTMTicketRoutes(app);

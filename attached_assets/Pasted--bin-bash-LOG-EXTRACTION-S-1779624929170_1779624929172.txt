@@ -1,0 +1,259 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────
+# LOG EXTRACTION SCRIPT — AI Takeoff Enrichment Feature
+# Run from your Replit Shell: bash extract-logs.sh
+# Output: enrichment-debug-report.txt
+# ─────────────────────────────────────────────────────────────────
+
+OUTPUT="enrichment-debug-report.txt"
+echo "Extracting logs for AI Enrichment feature..." > $OUTPUT
+echo "Generated: $(date)" >> $OUTPUT
+echo "========================================" >> $OUTPUT
+
+# ── 1. RECENT SERVER LOGS (last 500 lines) ──
+echo "" >> $OUTPUT
+echo "### SECTION 1: RECENT SERVER LOGS (last 500 lines)" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+if [ -f "server/logs/app.log" ]; then
+  tail -500 server/logs/app.log >> $OUTPUT
+elif [ -f "logs/app.log" ]; then
+  tail -500 logs/app.log >> $OUTPUT
+else
+  echo "[No app.log found — checking npm/node process output]" >> $OUTPUT
+fi
+
+# ── 2. FILTER ENRICHMENT-SPECIFIC ERRORS ──
+echo "" >> $OUTPUT
+echo "### SECTION 2: ENRICHMENT ROUTE ERRORS (filtered)" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+# Search all log files for enrichment-related errors
+find . -name "*.log" -not -path "*/node_modules/*" | while read f; do
+  echo "--- From $f ---" >> $OUTPUT
+  grep -i "enrich\|/api/line-items\|takeoff\|claude\|anthropic\|enrichment" "$f" 2>/dev/null >> $OUTPUT
+done
+# Also check for any stderr captures
+if [ -f ".replit.log" ]; then
+  grep -i "enrich\|error\|fail\|500\|502\|timeout" ".replit.log" >> $OUTPUT
+fi
+
+# ── 3. POSTGRES TABLE HEALTH ──
+echo "" >> $OUTPUT
+echo "### SECTION 3: DATABASE TABLE STATUS" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+const { Pool } = require('pg');
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+async function check() {
+  try {
+    // Check tables exist
+    const tables = await pool.query(\`
+      SELECT table_name, pg_size_pretty(pg_total_relation_size(quote_ident(table_name))) AS size
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name IN ('enrichment_log','enrichment_feedback','bid_outcomes')
+      ORDER BY table_name
+    \`);
+    console.log('TABLES FOUND:', JSON.stringify(tables.rows, null, 2));
+
+    // Row counts
+    for (const t of ['enrichment_log','enrichment_feedback','bid_outcomes']) {
+      try {
+        const r = await pool.query('SELECT COUNT(*) FROM ' + t);
+        console.log(t + ' row count:', r.rows[0].count);
+      } catch(e) {
+        console.log(t + ' ERROR:', e.message);
+      }
+    }
+
+    // Last 10 enrichment log entries with error detail
+    try {
+      const recent = await pool.query(\`
+        SELECT
+          enrichment_id,
+          org_id,
+          cost_code,
+          created_at,
+          response->>'enrichmentConfidence' AS confidence,
+          response->>'enrichmentConfidenceReason' AS reason,
+          LEFT(response::text, 300) AS response_preview
+        FROM enrichment_log
+        ORDER BY created_at DESC
+        LIMIT 10
+      \`);
+      console.log('LAST 10 ENRICHMENT CALLS:', JSON.stringify(recent.rows, null, 2));
+    } catch(e) {
+      console.log('enrichment_log query error:', e.message);
+    }
+
+    // Check for failed/partial responses
+    try {
+      const failed = await pool.query(\`
+        SELECT enrichment_id, created_at,
+               LEFT(response::text, 500) AS response_snippet
+        FROM enrichment_log
+        WHERE response->>'enrichmentConfidence' IS NULL
+           OR response::text LIKE '%error%'
+           OR response::text LIKE '%failed%'
+        ORDER BY created_at DESC
+        LIMIT 5
+      \`);
+      console.log('POTENTIALLY FAILED RESPONSES:', JSON.stringify(failed.rows, null, 2));
+    } catch(e) {
+      console.log('Failed response query error:', e.message);
+    }
+
+  } catch(e) {
+    console.error('DB CONNECTION FAILED:', e.message);
+    console.error('DATABASE_URL set:', !!process.env.DATABASE_URL);
+  } finally {
+    await pool.end();
+  }
+}
+check();
+" >> $OUTPUT 2>&1
+
+# ── 4. ENVIRONMENT VARIABLE CHECK ──
+echo "" >> $OUTPUT
+echo "### SECTION 4: ENVIRONMENT VARIABLES (values masked)" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+const vars = {
+  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? 'SET (' + process.env.ANTHROPIC_API_KEY.slice(0,8) + '...)' : 'MISSING',
+  DATABASE_URL:      process.env.DATABASE_URL      ? 'SET'    : 'MISSING',
+  NODE_ENV:          process.env.NODE_ENV          || 'not set',
+  PORT:              process.env.PORT              || 'not set',
+};
+console.log(JSON.stringify(vars, null, 2));
+" >> $OUTPUT 2>&1
+
+# ── 5. DEPENDENCY VERSION CHECK ──
+echo "" >> $OUTPUT
+echo "### SECTION 5: DEPENDENCY VERSIONS" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+const deps = ['@anthropic-ai/sdk','pg','uuid','express'];
+deps.forEach(d => {
+  try {
+    const pkg = require(d + '/package.json');
+    console.log(d + ': ' + pkg.version);
+  } catch(e) {
+    console.log(d + ': NOT INSTALLED — ' + e.message);
+  }
+});
+" >> $OUTPUT 2>&1
+
+# ── 6. LIVE ENDPOINT SMOKE TEST ──
+echo "" >> $OUTPUT
+echo "### SECTION 6: ENDPOINT SMOKE TEST" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+async function smokeTest() {
+  const baseUrl = process.env.REPLIT_URL || 'http://localhost:' + (process.env.PORT || 3000);
+  console.log('Testing against:', baseUrl);
+
+  const testPayload = {
+    lineItem: {
+      description: 'SMOKE TEST — 4000 PSI Concrete Slab on Grade',
+      costCode: '03 30 00',
+      quantity: '500',
+      unit: 'CY',
+      manualUnitCostMaterial: null,
+      manualUnitCostLabor: null,
+      mode: 'ON_DEMAND'
+    },
+    projectContext: {
+      projectId: 'smoke-test-001',
+      projectType: 'tilt-up warehouse',
+      projectSize: '40000 SF',
+      location: 'Phoenix, AZ',
+      laborType: 'OPEN SHOP',
+      relevantSpecSections: 'SMOKE TEST — spec section placeholder',
+      relevantDrawingData: 'SMOKE TEST — drawing data placeholder'
+    }
+  };
+
+  try {
+    const res = await fetch(baseUrl + '/api/line-items/enrich', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-org-id': 'smoke-test' },
+      body: JSON.stringify(testPayload),
+      signal: AbortSignal.timeout(35000)
+    });
+    const status = res.status;
+    const body = await res.text();
+    console.log('HTTP STATUS:', status);
+    console.log('RESPONSE (first 800 chars):', body.slice(0, 800));
+
+    if (status === 200) {
+      try {
+        const parsed = JSON.parse(body);
+        console.log('JSON PARSE: OK');
+        console.log('enrichmentId present:', !!parsed.enrichmentId);
+        console.log('specGrounding present:', !!parsed.specGrounding);
+        console.log('materialSuggestion present:', !!parsed.materialSuggestion);
+        console.log('laborSuggestion present:', !!parsed.laborSuggestion);
+        console.log('enrichmentConfidence:', parsed.enrichmentConfidence);
+      } catch(e) {
+        console.log('JSON PARSE FAILED:', e.message);
+        console.log('Raw response:', body.slice(0, 400));
+      }
+    }
+  } catch(e) {
+    console.log('FETCH ERROR:', e.message);
+    console.log('Is the server running? Check PORT and REPLIT_URL env vars.');
+  }
+}
+smokeTest();
+" >> $OUTPUT 2>&1
+
+# ── 7. ROUTE REGISTRATION CHECK ──
+echo "" >> $OUTPUT
+echo "### SECTION 7: ROUTE REGISTRATION" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+// Check that the enrichment route file exists and can be required
+try {
+  const r = require('./server/routes/enrichment');
+  console.log('enrichment.js: LOADED OK, type:', typeof r);
+} catch(e) {
+  console.log('enrichment.js LOAD FAILED:', e.message);
+  console.log('Stack:', e.stack?.split('\n').slice(0,5).join('\n'));
+}
+// Check main app file mounts it
+const fs = require('fs');
+const appFiles = ['server/index.js','server/app.js','index.js','app.js'];
+for (const f of appFiles) {
+  if (fs.existsSync(f)) {
+    const content = fs.readFileSync(f, 'utf8');
+    const mounted = content.includes('/api/line-items') || content.includes('enrichment');
+    console.log(f + ' found. Enrichment route mounted:', mounted);
+    if (!mounted) console.log('  >>> ISSUE: Route may not be registered in', f);
+  }
+}
+" >> $OUTPUT 2>&1
+
+# ── 8. RECENT NODE_MODULES ISSUES ──
+echo "" >> $OUTPUT
+echo "### SECTION 8: PACKAGE.JSON AUDIT" >> $OUTPUT
+echo "----------------------------------------------------" >> $OUTPUT
+node -e "
+const fs = require('fs');
+try {
+  const pkg = JSON.parse(fs.readFileSync('package.json','utf8'));
+  const required = ['@anthropic-ai/sdk','pg','uuid','express'];
+  const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+  required.forEach(r => {
+    console.log(r + ':', deps[r] ? 'in package.json (' + deps[r] + ')' : 'MISSING FROM PACKAGE.JSON');
+  });
+} catch(e) {
+  console.log('package.json read error:', e.message);
+}
+" >> $OUTPUT 2>&1
+
+echo "" >> $OUTPUT
+echo "========================================" >> $OUTPUT
+echo "EXTRACTION COMPLETE. File: $OUTPUT" >> $OUTPUT
+echo "Share the contents of $OUTPUT for diagnosis." >> $OUTPUT
+
+echo ""
+echo "✓ Done. Open enrichment-debug-report.txt and share its contents."

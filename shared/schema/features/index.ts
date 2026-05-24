@@ -46,6 +46,7 @@
 
 export * from "./ai";
 export * from "./ai_estimator";
+export * from "./enrichment";
 export * from "./closeout";
 export * from "./cost_book";
 export * from "./estimating_crew";
