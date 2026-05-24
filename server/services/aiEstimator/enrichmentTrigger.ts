@@ -37,31 +37,25 @@ export const EnrichmentResponseSchema = z
         _confidence: confidenceEnum,
         applicableSpecSections: z.array(z.string()).optional(),
         drawingReferences: z.array(z.string()).optional(),
-      })
-      .passthrough()
-      .optional(),
+      }),
     materialSuggestion: z
       .object({
-        suggestedUnitCostMaterial: z.string().nullable().optional(),
+        suggestedUnitCostMaterial: z.string(),
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
         priceDate: z.string().nullable().optional(),
         volatilityFlag: z.string().nullable().optional(),
         leadTimeFlag: z.string().nullable().optional(),
         manualVsBenchmarkVariance: z.string().nullable().optional(),
-      })
-      .passthrough()
-      .optional(),
+      }),
     laborSuggestion: z
       .object({
-        suggestedUnitCostLabor: z.string().nullable().optional(),
-        suggestedProductionRate: z.string().nullable().optional(),
+        suggestedUnitCostLabor: z.string(),
+        suggestedProductionRate: z.string(),
         crewComposition: z.string().nullable().optional(),
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
-      })
-      .passthrough()
-      .optional(),
+      }),
     modifierSuggestion: z
       .object({
         requiredModifiers: z.array(z.string()).optional(),
@@ -69,7 +63,6 @@ export const EnrichmentResponseSchema = z
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
       })
-      .passthrough()
       .optional(),
     sowSuggestion: z
       .object({
@@ -79,7 +72,6 @@ export const EnrichmentResponseSchema = z
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
       })
-      .passthrough()
       .optional(),
     orgRiskFactor: z
       .object({
@@ -88,7 +80,6 @@ export const EnrichmentResponseSchema = z
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
       })
-      .passthrough()
       .optional(),
     benchmarkRating: z
       .object({
@@ -97,20 +88,16 @@ export const EnrichmentResponseSchema = z
         _source: z.string().nullable().optional(),
         _confidence: confidenceEnum,
       })
-      .passthrough()
       .optional(),
     clarifications: z
-      .array(z.object({ field: z.string(), question: z.string() }).passthrough())
+      .array(z.object({ field: z.string(), question: z.string() }))
       .optional(),
     conflictAlerts: z
       .array(
-        z
-          .object({ type: z.string(), message: z.string(), severity: z.string().optional() })
-          .passthrough(),
+        z.object({ type: z.string(), message: z.string(), severity: z.string().optional() }),
       )
       .optional(),
-  })
-  .passthrough();
+  });
 
 export type EnrichmentResponseData = z.infer<typeof EnrichmentResponseSchema>;
 
@@ -122,6 +109,11 @@ export interface AutoEnrichParams {
   costCode: string | null;
   unit: string;
   value: number;
+  projectContext?: {
+    projectType?: string | null;
+    location?: string | null;
+    laborType?: string | null;
+  };
 }
 
 async function fetchOrgHistoryCompact(
@@ -155,7 +147,7 @@ async function fetchOrgHistoryCompact(
 export async function triggerMeasurementAutoEnrichment(
   params: AutoEnrichParams,
 ): Promise<void> {
-  const { orgId, userId, measurementId, label, costCode, unit, value } = params;
+  const { orgId, userId, measurementId, label, costCode, unit, value, projectContext } = params;
   const started = Date.now();
   let responseData: Record<string, unknown> | null = null;
   let errorMessage: string | null = null;
@@ -171,7 +163,7 @@ export async function triggerMeasurementAutoEnrichment(
       mode: "AUTO" as const,
     };
     const userMessage = JSON.stringify(
-      { lineItem, projectContext: {}, orgHistory: orgHistory ?? undefined },
+      { lineItem, projectContext: projectContext ?? {}, orgHistory: orgHistory ?? undefined },
       null,
       2,
     );

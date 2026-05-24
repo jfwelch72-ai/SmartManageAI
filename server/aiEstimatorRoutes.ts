@@ -3284,6 +3284,27 @@ router.post(
       throw err;
     }
 
+    const [bidRecord] = await db
+      .select({
+        city: bids.city,
+        state: bids.state,
+        locationAddress: bids.locationAddress,
+        wageDecision: bids.wageDecision,
+      })
+      .from(bids)
+      .where(eq(bids.id, data.bidId))
+      .limit(1);
+    const autoEnrichProjectContext = bidRecord
+      ? {
+          location:
+            [bidRecord.city, bidRecord.state].filter(Boolean).join(", ") ||
+            bidRecord.locationAddress ||
+            null,
+          laborType: bidRecord.wageDecision ? "prevailing-wage" : null,
+          projectType: null as string | null,
+        }
+      : {};
+
     const sheets = await db
       .select({
         id: takeoffSheets.id,
@@ -3472,6 +3493,7 @@ router.post(
             costCode: m.costCode ?? null,
             unit: m.unit,
             value: m.value,
+            projectContext: autoEnrichProjectContext,
           }).catch(() => undefined);
           const sheetInfo = sheetById.get(sheetId) ?? { sheetNumber: null, sheetName: null };
           attachments.push({

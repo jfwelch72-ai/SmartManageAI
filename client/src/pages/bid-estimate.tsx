@@ -933,6 +933,10 @@ export default function BidEstimate() {
               onHierarchicalUnitChange={setHierarchicalUnit}
               aiEstimatorEnabled={aiEstimatorStatus?.enabled === true}
               aiEstimatorBidId={bid.id}
+              projectContext={{
+                location: [bid.city, bid.state].filter(Boolean).join(", ") || bid.locationAddress || null,
+                laborType: bid.wageDecision ? "prevailing-wage" : null,
+              }}
             />
 
             <LineItemFormDialog
@@ -959,6 +963,10 @@ export default function BidEstimate() {
               lineItemSource={editingLineItem?.source}
               aiEstimatorEnabled={aiEstimatorStatus?.enabled === true}
               aiEstimatorBidId={bid.id}
+              projectContext={{
+                location: [bid.city, bid.state].filter(Boolean).join(", ") || bid.locationAddress || null,
+                laborType: bid.wageDecision ? "prevailing-wage" : null,
+              }}
             />
           </div>
         )}

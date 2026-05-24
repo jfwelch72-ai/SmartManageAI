@@ -101,12 +101,22 @@ async function fetchOrgHistory(orgId: string, costCode: string | null | undefine
 
   for (const row of feedbackRows) {
     if (row.outcome === "ACCEPTED_AS_IS" || row.outcome === "MODIFIED") {
-      const v = row.acceptedValue as Record<string, unknown> | null;
-      if (v) {
-        if (typeof v.materialCost === "number") acceptedMaterialCosts.push(v.materialCost);
-        if (typeof v.laborCost === "number") acceptedLaborCosts.push(v.laborCost);
-        if (Array.isArray(v.modifiersAccepted)) modifierAccepts.push(...(v.modifiersAccepted as string[]));
-        if (Array.isArray(v.modifiersRejected)) modifierRejects.push(...(v.modifiersRejected as string[]));
+      const v = row.acceptedValue;
+      const fn = row.fieldName ?? "";
+      if (typeof v === "object" && v !== null) {
+        // Legacy object format
+        const obj = v as Record<string, unknown>;
+        if (typeof obj.materialCost === "number") acceptedMaterialCosts.push(obj.materialCost);
+        if (typeof obj.laborCost === "number") acceptedLaborCosts.push(obj.laborCost);
+        if (Array.isArray(obj.modifiersAccepted)) modifierAccepts.push(...(obj.modifiersAccepted as string[]));
+        if (Array.isArray(obj.modifiersRejected)) modifierRejects.push(...(obj.modifiersRejected as string[]));
+      } else if (typeof v === "string") {
+        // Current UI posts string values (e.g. "$5.50/SF"); route by fieldName
+        const num = parseFloat(v.replace(/[^0-9.]/g, ""));
+        if (!isNaN(num) && num > 0) {
+          if (fn === "suggestedUnitCostMaterial") acceptedMaterialCosts.push(num);
+          else if (fn === "suggestedUnitCostLabor") acceptedLaborCosts.push(num);
+        }
       }
     }
   }
