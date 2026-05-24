@@ -396,7 +396,13 @@ function Router() {
             </div>
           );
         }
-        return user ? <Redirect to="/dashboard" /> : <LandingPage />;
+        if (!user) return <LandingPage />;
+        // Fix-list #11: portfolio is the natural landing for leadership
+        // roles; field/estimator/vendor users still land on the legacy
+        // dashboard which is tuned for day-of-week work.
+        const portfolioRoles = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+        const dest = portfolioRoles.includes(user.role) ? "/portfolio" : "/dashboard";
+        return <Redirect to={dest} />;
       }} />
       <Route path="/login" component={LoginPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />

@@ -120,6 +120,7 @@ MICROSOFT_CLIENT_SECRET = "frX8Q~F2x6BtmI8KimrnEX~-zeghMdllAfj~Na.4"
 MICROSOFT_TENANT_ID = "1f872408-e900-462d-9de4-69938cc13826"
 LIVEKIT_URL = "wss://traffic-llhwfwqo.livekit.cloud"
 LIVEKIT_API_KEY = "APIf6ndSUbgdyfi"
+ENABLE_SCHEDULERS = "true"
 
 [userenv.production]
 STATUS_ENABLE_REMOTE_PROBES = "true"

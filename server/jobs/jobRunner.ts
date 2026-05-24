@@ -41,6 +41,9 @@ import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
 import { processSagePeriodicSync } from "../integrations/providers/sage/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail, sendEmailWithResult } from "../services/emailService";
+import { isFeatureEnabled } from "../services/featureFlagService";
+import { generateExecutiveDigest } from "../executiveDigest/generator";
+import { lienWaivers, retentionReleases } from "@shared/schema";
 import { buildProjectLogPdfBuffer } from "../services/projectLogService";
 import { processDueExecutions } from "../services/sequenceService";
 import { geocodePendingProjects } from "../utils/geocodingService";
@@ -176,6 +179,16 @@ let changeOrderOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 let workflowSlaBreachTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #2892 — nightly sweep to mark expired portal access records as inactive
 let portalAccessExpiryTask: ReturnType<typeof cron.schedule> | null = null;
+// Fix-list #4 — daily executive digest fan-out (06:30)
+let dailyExecutiveDigestTask: ReturnType<typeof cron.schedule> | null = null;
+// Fix-list #6 — weekly retainage collection reminder (Mon 08:00)
+let retainageReminderTask: ReturnType<typeof cron.schedule> | null = null;
+// Fix-list #7 — weekly unbilled approved-CO reminder (Tue 08:00)
+let unbilledChangeOrderReminderTask: ReturnType<typeof cron.schedule> | null = null;
+// Fix-list #8 — weekly lien-waiver outstanding reminder (Wed 08:00)
+let lienWaiverReminderTask: ReturnType<typeof cron.schedule> | null = null;
+// Fix-list #9 — daily default-notification-prefs backfill for admin/manager (03:30)
+let adminNotificationPrefsBackfillTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -1619,6 +1632,85 @@ export function startJobRunner() {
     }
   });
 
+  // Fix-list #4 — daily executive-digest fan-out (06:30 local)
+  dailyExecutiveDigestTask = scheduleCron("daily_executive_digest", "0 30 6 * * *", async () => {
+    try {
+      await withSchedulerLock("job:dailyExecutiveDigest", async () => {
+        await processDailyExecutiveDigest();
+        recordJobOutcome("daily_executive_digest", true);
+      });
+    } catch (err) {
+      recordJobOutcome("daily_executive_digest", false);
+      logJobErrorWithKind("daily_executive_digest", "Daily executive digest fan-out failed", err);
+    }
+  });
+
+  // Fix-list #6 — weekly retainage collection reminder (Mon 08:00 local)
+  retainageReminderTask = scheduleCron("retainage_collection_reminder", "0 0 8 * * 1", async () => {
+    try {
+      await withSchedulerLock("job:retainageReminder", async () => {
+        await processRetainageCollectionReminders();
+        recordJobOutcome("retainage_collection_reminder", true);
+      });
+    } catch (err) {
+      recordJobOutcome("retainage_collection_reminder", false);
+      logJobErrorWithKind("retainage_collection_reminder", "Retainage collection reminder failed", err);
+    }
+  });
+
+  // Fix-list #7 — weekly unbilled approved-CO reminder (Tue 08:00 local)
+  unbilledChangeOrderReminderTask = scheduleCron("unbilled_change_order_reminder", "0 0 8 * * 2", async () => {
+    try {
+      await withSchedulerLock("job:unbilledChangeOrderReminder", async () => {
+        await processUnbilledChangeOrderReminders();
+        recordJobOutcome("unbilled_change_order_reminder", true);
+      });
+    } catch (err) {
+      recordJobOutcome("unbilled_change_order_reminder", false);
+      logJobErrorWithKind("unbilled_change_order_reminder", "Unbilled CO reminder failed", err);
+    }
+  });
+
+  // Fix-list #8 — weekly lien-waiver outstanding reminder (Wed 08:00 local)
+  lienWaiverReminderTask = scheduleCron("lien_waiver_reminder", "0 0 8 * * 3", async () => {
+    try {
+      await withSchedulerLock("job:lienWaiverReminder", async () => {
+        await processLienWaiverReminders();
+        recordJobOutcome("lien_waiver_reminder", true);
+      });
+    } catch (err) {
+      recordJobOutcome("lien_waiver_reminder", false);
+      logJobErrorWithKind("lien_waiver_reminder", "Lien waiver reminder failed", err);
+    }
+  });
+
+  // Fix-list #9 — daily backfill of default notification channel prefs for
+  // admin/manager/super-admin users that don't yet have a row. Runs at
+  // 03:30 to also pick up users created/role-changed during the day.
+  adminNotificationPrefsBackfillTask = scheduleCron("admin_notification_prefs_backfill", "0 30 3 * * *", async () => {
+    try {
+      await withSchedulerLock("job:adminNotificationPrefsBackfill", async () => {
+        const n = await processAdminNotificationPrefsBackfill();
+        recordJobOutcome("admin_notification_prefs_backfill", true);
+        if (n > 0) logInfo("Default notification prefs backfilled", { inserted: n });
+      });
+    } catch (err) {
+      recordJobOutcome("admin_notification_prefs_backfill", false);
+      logJobErrorWithKind("admin_notification_prefs_backfill", "Default notification prefs backfill failed", err);
+    }
+  });
+
+  // Run the backfill once on boot so newly-promoted admins on a long-
+  // lived process get prefs without waiting for the 03:30 tick.
+  (async () => {
+    try {
+      const n = await processAdminNotificationPrefsBackfill();
+      if (n > 0) logInfo("Default notification prefs backfilled at boot", { inserted: n });
+    } catch (err) {
+      logError("Default notification prefs boot backfill failed", { error: String(err) });
+    }
+  })();
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, daily CRM birthday email, equipment PM generation, AI takeoff stall watchdog, stuck job watchdog, change order overdue notifications, and workflow SLA breach sweep schedulers)");
 }
 
@@ -2325,6 +2417,26 @@ export function stopJobRunner() {
     workflowSlaBreachTask.stop();
     workflowSlaBreachTask = null;
   }
+  if (dailyExecutiveDigestTask) {
+    dailyExecutiveDigestTask.stop();
+    dailyExecutiveDigestTask = null;
+  }
+  if (retainageReminderTask) {
+    retainageReminderTask.stop();
+    retainageReminderTask = null;
+  }
+  if (unbilledChangeOrderReminderTask) {
+    unbilledChangeOrderReminderTask.stop();
+    unbilledChangeOrderReminderTask = null;
+  }
+  if (lienWaiverReminderTask) {
+    lienWaiverReminderTask.stop();
+    lienWaiverReminderTask = null;
+  }
+  if (adminNotificationPrefsBackfillTask) {
+    adminNotificationPrefsBackfillTask.stop();
+    adminNotificationPrefsBackfillTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -2436,7 +2548,400 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   change_order_overdue_notifications: { fn: async () => { await processChangeOrderOverdueNotifications(); }, description: "Notify project managers when a change order's required response date has passed, with daily reminder cap", schedule: "30 7 * * *" },
   // Task #2833: workflow SLA breach sweep
   workflow_sla_breach_sweep: { fn: async () => { const { processWorkflowSlaBreach } = await import("../services/workflowEngine"); await processWorkflowSlaBreach(); }, description: "Fire stage notification rules for IN_PROGRESS workflow instances whose current stage has exceeded its slaDurationHours SLA", schedule: "0 7 * * *" },
+  // Fix-list #4 — daily executive digest fan-out
+  daily_executive_digest: { fn: async () => { await processDailyExecutiveDigest(); }, description: "For every org with EXECUTIVE_DIGEST flag enabled, generate a daily AI executive digest and notify/email ADMIN+MANAGER users", schedule: "30 6 * * *" },
+  // Fix-list #6 — weekly retainage collection reminder (Mon 08:00)
+  retainage_collection_reminder: { fn: async () => { await processRetainageCollectionReminders(); }, description: "Weekly reminder to finance/PM roles about unreleased retention (retention_releases with status REQUESTED or APPROVED but not yet RELEASED)", schedule: "0 8 * * 1" },
+  // Fix-list #7 — weekly unbilled approved-CO reminder (Tue 08:00)
+  unbilled_change_order_reminder: { fn: async () => { await processUnbilledChangeOrderReminders(); }, description: "Weekly reminder to ADMIN/MANAGER/SUPERINTENDENT about approved change orders >7 days old that have not been added to a pay application", schedule: "0 8 * * 2" },
+  // Fix-list #8 — weekly lien-waiver outstanding reminder (Wed 08:00)
+  lien_waiver_reminder: { fn: async () => { await processLienWaiverReminders(); }, description: "Weekly reminder to finance/PM roles about lien waivers in SENT or PENDING status older than 7 days", schedule: "0 8 * * 3" },
+  // Fix-list #9 — daily default notification prefs backfill
+  admin_notification_prefs_backfill: { fn: async () => { await processAdminNotificationPrefsBackfill(); }, description: "Insert default notification_channel_prefs rows (email + push enabled) for SUPER_ADMIN/ADMIN/MANAGER users that don't yet have one; backfills users created or promoted since the last tick", schedule: "30 3 * * *" },
 };
+
+// ---------------------------------------------------------------------------
+// Fix-list processor functions (#4, #6, #7, #8, #9)
+// ---------------------------------------------------------------------------
+
+const LEADERSHIP_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "MANAGER"];
+const FINANCE_PM_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"];
+
+/**
+ * Fix-list #4 — generate one executive digest per org that has the
+ * EXECUTIVE_DIGEST feature flag enabled, persist it, in-app notify
+ * ADMIN/MANAGER users, and email them a deep link.
+ */
+export async function processDailyExecutiveDigest(): Promise<{ orgsProcessed: number; digestsCreated: number }> {
+  const orgRows = await db.select({ id: organizations.id, name: organizations.name })
+    .from(organizations);
+
+  let digestsCreated = 0;
+  let orgsProcessed = 0;
+
+  for (const org of orgRows) {
+    try {
+      const enabled = await isFeatureEnabled(org.id, "EXECUTIVE_DIGEST");
+      if (!enabled) continue;
+      orgsProcessed += 1;
+
+      // Pick a "system" generator user — the first active SUPER_ADMIN or
+      // ADMIN in the org. Required because generated_by + audit/governance
+      // expect a real user id.
+      const [systemUser] = await db.select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, org.id),
+          inArray(users.role, ["SUPER_ADMIN", "ADMIN"] as UserRole[]),
+          eq(users.isActive, true),
+        ))
+        .orderBy(users.createdAt)
+        .limit(1);
+
+      if (!systemUser) {
+        logWarn("Skipping executive digest: no admin user in org", { orgId: org.id });
+        continue;
+      }
+
+      const result = await generateExecutiveDigest({
+        orgId: org.id,
+        period: "daily",
+        userId: systemUser.id,
+      });
+
+      if (!result.ok) {
+        logWarn("Executive digest generation skipped", { orgId: org.id, reason: result.reason });
+        continue;
+      }
+      digestsCreated += 1;
+
+      // Fan-out to ADMIN/MANAGER users in the org.
+      const recipients = await db.select({ id: users.id, email: users.email, firstName: users.firstName })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, org.id),
+          inArray(users.role, LEADERSHIP_ROLES),
+          eq(users.isActive, true),
+        ));
+
+      if (recipients.length === 0) continue;
+
+      const title = `Daily executive digest is ready`;
+      const message = `Your daily executive digest for ${result.orgName} has been generated. Open the Executive view to review the highlights, KPIs, and action items.`;
+
+      const notifValues: InsertNotification[] = recipients.map((u) => ({
+        userId: u.id,
+        organizationId: org.id,
+        type: "GENERAL",
+        title,
+        message,
+        relatedEntityId: result.digestId,
+        relatedEntityType: "EXECUTIVE_DIGEST",
+      }) as InsertNotification);
+
+      await insertNotifications(notifValues);
+
+      // Best-effort email fan-out. Errors are logged inside sendEmail.
+      for (const u of recipients) {
+        if (!u.email) continue;
+        try {
+          await sendEmail({
+            to: u.email,
+            subject: `${result.orgName}: Daily executive digest is ready`,
+            html: `<p>Hi ${u.firstName || "there"},</p>
+              <p>Your daily executive digest for <strong>${result.orgName}</strong> has been generated.</p>
+              <p>Open the Executive view in SmartManageAI to review the highlights, KPIs, and action items.</p>`,
+            text: `Hi ${u.firstName || "there"},\n\nYour daily executive digest for ${result.orgName} has been generated. Open the Executive view to review the highlights, KPIs, and action items.`,
+          });
+        } catch (err) {
+          logError("Executive digest email send failed", { orgId: org.id, userId: u.id, error: String(err) });
+        }
+      }
+    } catch (err) {
+      logError("Executive digest per-org failure", { orgId: org.id, error: String(err) });
+    }
+  }
+
+  return { orgsProcessed, digestsCreated };
+}
+
+/**
+ * Fix-list #6 — weekly reminder to finance/PM roles about retention
+ * releases that are still REQUESTED or APPROVED (i.e. not yet RELEASED
+ * or REJECTED). Deduped via the notifications table: skip projects
+ * that already have an open RETAINAGE_COLLECTION_DUE notification this
+ * week.
+ */
+export async function processRetainageCollectionReminders(): Promise<{ notified: number }> {
+  const openRetention = await db.select({
+    id: retentionReleases.id,
+    organizationId: retentionReleases.organizationId,
+    projectId: retentionReleases.projectId,
+    amount: retentionReleases.amount,
+    status: retentionReleases.status,
+    createdAt: retentionReleases.createdAt,
+  })
+    .from(retentionReleases)
+    .where(and(
+      inArray(retentionReleases.status, ["REQUESTED", "APPROVED"]),
+      isNull(retentionReleases.releasedAt),
+      lt(retentionReleases.createdAt, sql`now() - interval '14 days'`),
+    ));
+
+  if (openRetention.length === 0) return { notified: 0 };
+
+  // Group by (orgId, projectId) so one project doesn't produce N pings.
+  const byProject = new Map<string, { orgId: string; projectId: string; total: number; count: number }>();
+  for (const r of openRetention) {
+    const key = `${r.organizationId}:${r.projectId}`;
+    const cur = byProject.get(key) ?? { orgId: r.organizationId, projectId: r.projectId, total: 0, count: 0 };
+    cur.total += Number(r.amount || 0);
+    cur.count += 1;
+    byProject.set(key, cur);
+  }
+
+  let notified = 0;
+  for (const grp of byProject.values()) {
+    // Dedup: already notified this week?
+    const [recent] = await db.select({ id: notifications.id })
+      .from(notifications)
+      .where(and(
+        eq(notifications.organizationId, grp.orgId),
+        eq(notifications.relatedEntityType, "RETAINAGE_COLLECTION_DUE"),
+        eq(notifications.relatedEntityId, grp.projectId),
+        gte(notifications.createdAt, sql`now() - interval '7 days'`),
+      ))
+      .limit(1);
+    if (recent) continue;
+
+    const [proj] = await db.select({ id: projects.id, name: projects.name })
+      .from(projects)
+      .where(and(
+        eq(projects.id, grp.projectId),
+        eq(projects.gcOrganizationId, grp.orgId),
+      ))
+      .limit(1);
+    if (!proj) continue;
+
+    const recipients = await db.select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, grp.orgId),
+        inArray(users.role, FINANCE_PM_ROLES),
+        eq(users.isActive, true),
+      ));
+    if (recipients.length === 0) continue;
+
+    const title = `Retainage collection due: ${proj.name}`;
+    const message = `${grp.count} retention release${grp.count === 1 ? "" : "s"} totaling $${grp.total.toLocaleString()} on ${proj.name} have been outstanding for >14 days. Follow up with the owner to collect.`;
+
+    const rows: InsertNotification[] = recipients.map((u) => ({
+      userId: u.id,
+      organizationId: grp.orgId,
+      type: "GENERAL",
+      title,
+      message,
+      relatedEntityId: grp.projectId,
+      relatedEntityType: "RETAINAGE_COLLECTION_DUE",
+    }) as InsertNotification);
+
+    await insertNotifications(rows);
+    notified += rows.length;
+  }
+
+  logInfo("Retainage collection reminders sent", { projects: byProject.size, notified });
+  return { notified };
+}
+
+/**
+ * Fix-list #7 — weekly reminder for change orders that are APPROVED
+ * but have been sitting unbilled for >7 days (proxy: approved_at
+ * older than 7 days, weekly dedup via notifications).
+ */
+export async function processUnbilledChangeOrderReminders(): Promise<{ notified: number }> {
+  const stale = await db.select({
+    id: changeOrders.id,
+    projectId: changeOrders.projectId,
+    coNumber: changeOrders.changeOrderNumber,
+    title: changeOrders.description,
+    amount: changeOrders.amount,
+    approvedAt: changeOrders.approvedAt,
+  })
+    .from(changeOrders)
+    .where(and(
+      eq(changeOrders.status, "APPROVED"),
+      isNotNull(changeOrders.approvedAt),
+      lt(changeOrders.approvedAt, sql`now() - interval '7 days'`),
+    ));
+
+  if (stale.length === 0) return { notified: 0 };
+
+  // Group by project so leadership doesn't get one ping per CO.
+  const byProject = new Map<string, { projectId: string; count: number; total: number }>();
+  for (const co of stale) {
+    const cur = byProject.get(co.projectId) ?? { projectId: co.projectId, count: 0, total: 0 };
+    cur.count += 1;
+    cur.total += Number(co.amount || 0);
+    byProject.set(co.projectId, cur);
+  }
+
+  let notified = 0;
+  for (const grp of byProject.values()) {
+    const [proj] = await db.select({ id: projects.id, name: projects.name, gcOrganizationId: projects.gcOrganizationId })
+      .from(projects)
+      .where(eq(projects.id, grp.projectId))
+      .limit(1);
+    if (!proj || !proj.gcOrganizationId) continue;
+
+    const [recent] = await db.select({ id: notifications.id })
+      .from(notifications)
+      .where(and(
+        eq(notifications.organizationId, proj.gcOrganizationId),
+        eq(notifications.relatedEntityType, "UNBILLED_CHANGE_ORDER"),
+        eq(notifications.relatedEntityId, grp.projectId),
+        gte(notifications.createdAt, sql`now() - interval '7 days'`),
+      ))
+      .limit(1);
+    if (recent) continue;
+
+    const recipients = await db.select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, proj.gcOrganizationId),
+        inArray(users.role, FINANCE_PM_ROLES),
+        eq(users.isActive, true),
+      ));
+    if (recipients.length === 0) continue;
+
+    const title = `Unbilled change orders on ${proj.name}`;
+    const message = `${grp.count} approved change order${grp.count === 1 ? "" : "s"} totaling $${grp.total.toLocaleString()} on ${proj.name} have been approved for >7 days. Confirm they are reflected on the next pay application.`;
+
+    const rows: InsertNotification[] = recipients.map((u) => ({
+      userId: u.id,
+      organizationId: proj.gcOrganizationId!,
+      type: "GENERAL",
+      title,
+      message,
+      relatedEntityId: grp.projectId,
+      relatedEntityType: "UNBILLED_CHANGE_ORDER",
+    }) as InsertNotification);
+
+    await insertNotifications(rows);
+    notified += rows.length;
+  }
+
+  logInfo("Unbilled CO reminders sent", { projects: byProject.size, notified });
+  return { notified };
+}
+
+/**
+ * Fix-list #8 — weekly reminder for lien waivers stuck in SENT or
+ * PENDING for >7 days. Grouped by (project, recipient_company).
+ */
+export async function processLienWaiverReminders(): Promise<{ notified: number }> {
+  const stale = await db.select({
+    id: lienWaivers.id,
+    organizationId: lienWaivers.organizationId,
+    projectId: lienWaivers.projectId,
+    recipientName: lienWaivers.recipientName,
+    recipientCompany: lienWaivers.recipientCompany,
+    amount: lienWaivers.amount,
+    status: lienWaivers.status,
+    createdAt: lienWaivers.createdAt,
+  })
+    .from(lienWaivers)
+    .where(and(
+      inArray(lienWaivers.status, ["SENT", "PENDING"]),
+      lt(lienWaivers.createdAt, sql`now() - interval '7 days'`),
+    ));
+
+  if (stale.length === 0) return { notified: 0 };
+
+  const byProject = new Map<string, { orgId: string; projectId: string; count: number; total: number; names: string[] }>();
+  for (const w of stale) {
+    const cur = byProject.get(w.projectId) ?? { orgId: w.organizationId, projectId: w.projectId, count: 0, total: 0, names: [] };
+    cur.count += 1;
+    cur.total += Number(w.amount || 0);
+    if (w.recipientCompany && cur.names.length < 5) cur.names.push(w.recipientCompany);
+    byProject.set(w.projectId, cur);
+  }
+
+  let notified = 0;
+  for (const grp of byProject.values()) {
+    const [recent] = await db.select({ id: notifications.id })
+      .from(notifications)
+      .where(and(
+        eq(notifications.organizationId, grp.orgId),
+        eq(notifications.relatedEntityType, "LIEN_WAIVER_OUTSTANDING"),
+        eq(notifications.relatedEntityId, grp.projectId),
+        gte(notifications.createdAt, sql`now() - interval '7 days'`),
+      ))
+      .limit(1);
+    if (recent) continue;
+
+    const [proj] = await db.select({ id: projects.id, name: projects.name })
+      .from(projects)
+      .where(and(
+        eq(projects.id, grp.projectId),
+        eq(projects.gcOrganizationId, grp.orgId),
+      ))
+      .limit(1);
+    if (!proj) continue;
+
+    const recipients = await db.select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, grp.orgId),
+        inArray(users.role, FINANCE_PM_ROLES),
+        eq(users.isActive, true),
+      ));
+    if (recipients.length === 0) continue;
+
+    const title = `Outstanding lien waivers on ${proj.name}`;
+    const message = `${grp.count} lien waiver${grp.count === 1 ? "" : "s"} totaling $${grp.total.toLocaleString()} on ${proj.name} have been outstanding for >7 days${grp.names.length ? ` (${grp.names.join(", ")}${grp.count > grp.names.length ? ", …" : ""})` : ""}. Follow up to collect.`;
+
+    const rows: InsertNotification[] = recipients.map((u) => ({
+      userId: u.id,
+      organizationId: grp.orgId,
+      type: "GENERAL",
+      title,
+      message,
+      relatedEntityId: grp.projectId,
+      relatedEntityType: "LIEN_WAIVER_OUTSTANDING",
+    }) as InsertNotification);
+
+    await insertNotifications(rows);
+    notified += rows.length;
+  }
+
+  logInfo("Lien waiver reminders sent", { projects: byProject.size, notified });
+  return { notified };
+}
+
+/**
+ * Fix-list #9 — backfill notification_channel_prefs rows for any
+ * SUPER_ADMIN/ADMIN/MANAGER user that doesn't yet have one. Defaults
+ * are email_enabled=true, push_enabled=true (sms/teams/slack require
+ * per-user channel setup and stay off).
+ */
+export async function processAdminNotificationPrefsBackfill(): Promise<number> {
+  const result = await db.execute(sql`
+    INSERT INTO notification_channel_prefs (user_id, email_enabled, sms_enabled, push_enabled, teams_enabled, slack_enabled)
+    SELECT u.id, true, false, true, false, false
+    FROM users u
+    LEFT JOIN notification_channel_prefs p ON p.user_id = u.id
+    WHERE u.is_active = true
+      AND u.role IN ('SUPER_ADMIN', 'ADMIN', 'MANAGER')
+      AND p.user_id IS NULL
+    ON CONFLICT (user_id) DO NOTHING
+  `);
+  // Drizzle/postgres-js returns { rowCount } for INSERT. Fallback to 0.
+  // (Schema unused at type-time: rowCount is typed as number on QueryResult.)
+  const rc = (result as unknown as { rowCount?: number }).rowCount;
+  return typeof rc === "number" ? rc : 0;
+}
+
+// ---------------------------------------------------------------------------
 
 async function processOutbox() {
   const events = await outboxService.getQueuedEvents(25);
