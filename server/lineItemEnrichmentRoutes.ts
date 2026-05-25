@@ -359,4 +359,82 @@ router.post(
   },
 );
 
+router.get(
+  "/api/line-items/enrich/history",
+  apiLimiter,
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    const orgId = req.user!.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const costCodeFilter = typeof req.query.costCode === "string" ? req.query.costCode : undefined;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+
+    const feedbackWhere = costCodeFilter
+      ? and(eq(enrichmentFeedback.orgId, orgId), eq(enrichmentFeedback.costCode, costCodeFilter))
+      : eq(enrichmentFeedback.orgId, orgId);
+
+    const outcomesWhere = costCodeFilter
+      ? and(eq(bidOutcomes.orgId, orgId), eq(bidOutcomes.costCode, costCodeFilter))
+      : eq(bidOutcomes.orgId, orgId);
+
+    const [feedbackRows, feedbackTotal, outcomeRows, outcomeTotal] = await Promise.all([
+      db.select().from(enrichmentFeedback).where(feedbackWhere)
+        .orderBy(desc(enrichmentFeedback.createdAt)).limit(limit).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(enrichmentFeedback).where(feedbackWhere),
+      db.select().from(bidOutcomes).where(outcomesWhere)
+        .orderBy(desc(bidOutcomes.createdAt)).limit(limit).offset(offset),
+      db.select({ count: sql<number>`count(*)::int` }).from(bidOutcomes).where(outcomesWhere),
+    ]);
+
+    return res.json({
+      feedback: feedbackRows,
+      feedbackTotal: feedbackTotal[0]?.count ?? 0,
+      bidOutcomes: outcomeRows,
+      bidOutcomesTotal: outcomeTotal[0]?.count ?? 0,
+      limit,
+      offset,
+    });
+  },
+);
+
+router.delete(
+  "/api/line-items/enrich/history/feedback/:id",
+  apiLimiter,
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    const orgId = req.user!.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const [deleted] = await db
+      .delete(enrichmentFeedback)
+      .where(and(eq(enrichmentFeedback.id, id), eq(enrichmentFeedback.orgId, orgId)))
+      .returning({ id: enrichmentFeedback.id });
+
+    if (!deleted) return res.status(404).json({ error: "Not found" });
+    return res.json({ ok: true });
+  },
+);
+
+router.delete(
+  "/api/line-items/enrich/history/bid-outcome/:id",
+  apiLimiter,
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    const orgId = req.user!.organizationId;
+    if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+    const { id } = req.params;
+    const [deleted] = await db
+      .delete(bidOutcomes)
+      .where(and(eq(bidOutcomes.id, id), eq(bidOutcomes.orgId, orgId)))
+      .returning({ id: bidOutcomes.id });
+
+    if (!deleted) return res.status(404).json({ error: "Not found" });
+    return res.json({ ok: true });
+  },
+);
+
 export default router;

@@ -2646,6 +2646,356 @@ function SkillsTab() {
   );
 }
 
+// ─── Enrichment History tab ─────────────────────────────────────────────────
+
+interface EnrichmentFeedbackRow {
+  id: string;
+  costCode: string | null;
+  fieldName: string;
+  outcome: string;
+  projectType: string | null;
+  location: string | null;
+  suggestedValue: unknown;
+  acceptedValue: unknown;
+  createdAt: string;
+}
+
+interface BidOutcomeRow {
+  id: string;
+  costCode: string;
+  bidOutcome: string;
+  projectType: string | null;
+  location: string | null;
+  finalBidUnitCostMaterial: string | null;
+  finalBidUnitCostLabor: string | null;
+  competitorLowBid: string | null;
+  createdAt: string;
+}
+
+interface EnrichmentHistoryResponse {
+  feedback: EnrichmentFeedbackRow[];
+  feedbackTotal: number;
+  bidOutcomes: BidOutcomeRow[];
+  bidOutcomesTotal: number;
+  limit: number;
+  offset: number;
+}
+
+function EnrichmentHistoryTab() {
+  const { toast } = useToast();
+  const [costCodeFilter, setCostCodeFilter] = useState("");
+  const [feedbackPage, setFeedbackPage] = useState(0);
+  const [outcomesPage, setOutcomesPage] = useState(0);
+  const limit = 50;
+
+  const appliedFilter = costCodeFilter.trim() || undefined;
+
+  const historyQuery = useQuery<EnrichmentHistoryResponse>({
+    queryKey: ["/api/line-items/enrich/history", appliedFilter, feedbackPage, outcomesPage],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (appliedFilter) params.set("costCode", appliedFilter);
+      params.set("limit", String(limit));
+      params.set("offset", String(feedbackPage * limit));
+      const r = await apiRequest("GET", `/api/line-items/enrich/history?${params}`);
+      return (await r.json()) as EnrichmentHistoryResponse;
+    },
+  });
+
+  const deleteFeedback = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/line-items/enrich/history/feedback/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/line-items/enrich/history"] });
+      toast({ title: "Feedback entry deleted" });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+
+  const deleteOutcome = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("DELETE", `/api/line-items/enrich/history/bid-outcome/${id}`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/line-items/enrich/history"] });
+      toast({ title: "Bid outcome deleted" });
+    },
+    onError: () => toast({ title: "Delete failed", variant: "destructive" }),
+  });
+
+  const feedbackRows = historyQuery.data?.feedback ?? [];
+  const feedbackTotal = historyQuery.data?.feedbackTotal ?? 0;
+  const outcomeRows = historyQuery.data?.bidOutcomes ?? [];
+  const outcomesTotal = historyQuery.data?.bidOutcomesTotal ?? 0;
+
+  const outcomeColor = (o: string) => {
+    if (o === "AWARDED") return "text-green-700 dark:text-green-400";
+    if (o === "NOT_AWARDED") return "text-red-600 dark:text-red-400";
+    return "text-muted-foreground";
+  };
+
+  const feedbackColor = (o: string) => {
+    if (o === "ACCEPTED_AS_IS") return "text-green-700 dark:text-green-400";
+    if (o === "REJECTED") return "text-red-600 dark:text-red-400";
+    return "text-amber-600 dark:text-amber-400";
+  };
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" /> Enrichment learning history
+          </CardTitle>
+          <CardDescription>
+            Every time an estimator accepts, modifies, or rejects an AI suggestion, or records a
+            bid outcome, a training entry is stored here. These entries feed back into the
+            enrichment engine so suggestions improve over time. You can filter by cost code or
+            delete individual entries that are no longer representative.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 mb-6">
+            <Input
+              placeholder="Filter by cost code (e.g. 03 30 00)"
+              value={costCodeFilter}
+              onChange={(e) => {
+                setCostCodeFilter(e.target.value);
+                setFeedbackPage(0);
+                setOutcomesPage(0);
+              }}
+              className="max-w-xs"
+              data-testid="input-enrich-history-cost-code"
+            />
+            {costCodeFilter && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setCostCodeFilter("")}
+                data-testid="button-enrich-history-clear-filter"
+              >
+                <X className="h-4 w-4 mr-1" /> Clear
+              </Button>
+            )}
+          </div>
+
+          {historyQuery.isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Tabs defaultValue="feedback">
+              <TabsList>
+                <TabsTrigger value="feedback" data-testid="tab-enrich-feedback">
+                  Suggestion feedback ({feedbackTotal})
+                </TabsTrigger>
+                <TabsTrigger value="outcomes" data-testid="tab-enrich-outcomes">
+                  Bid outcomes ({outcomesTotal})
+                </TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="feedback" className="mt-4">
+                {feedbackRows.length === 0 ? (
+                  <p
+                    className="text-sm text-muted-foreground text-center py-10"
+                    data-testid="text-enrich-feedback-empty"
+                  >
+                    No suggestion feedback recorded yet. Feedback is captured when estimators
+                    accept, modify, or dismiss enrichment suggestions.
+                  </p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Cost code</TableHead>
+                          <TableHead>Field</TableHead>
+                          <TableHead>Outcome</TableHead>
+                          <TableHead>Suggested</TableHead>
+                          <TableHead>Accepted</TableHead>
+                          <TableHead>Context</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {feedbackRows.map((row) => (
+                          <TableRow key={row.id} data-testid={`row-enrich-feedback-${row.id}`}>
+                            <TableCell className="font-mono text-xs">
+                              {row.costCode ?? "—"}
+                            </TableCell>
+                            <TableCell className="text-xs">{row.fieldName}</TableCell>
+                            <TableCell>
+                              <span className={`text-xs font-medium ${feedbackColor(row.outcome)}`}>
+                                {row.outcome.replace(/_/g, " ")}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-xs max-w-[120px] truncate">
+                              {row.suggestedValue != null
+                                ? String(row.suggestedValue)
+                                : <span className="text-muted-foreground italic">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs max-w-[120px] truncate">
+                              {row.acceptedValue != null
+                                ? String(row.acceptedValue)
+                                : <span className="text-muted-foreground italic">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {[row.projectType, row.location].filter(Boolean).join(" · ") || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {new Date(row.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                disabled={deleteFeedback.isPending}
+                                onClick={() => deleteFeedback.mutate(row.id)}
+                                data-testid={`button-delete-feedback-${row.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {feedbackTotal > limit && (
+                      <div className="flex gap-2 mt-4 justify-center items-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={feedbackPage === 0}
+                          onClick={() => setFeedbackPage((p) => p - 1)}
+                          data-testid="button-enrich-feedback-prev"
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {feedbackPage * limit + 1}–{Math.min((feedbackPage + 1) * limit, feedbackTotal)} of {feedbackTotal}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(feedbackPage + 1) * limit >= feedbackTotal}
+                          onClick={() => setFeedbackPage((p) => p + 1)}
+                          data-testid="button-enrich-feedback-next"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+
+              <TabsContent value="outcomes" className="mt-4">
+                {outcomeRows.length === 0 ? (
+                  <p
+                    className="text-sm text-muted-foreground text-center py-10"
+                    data-testid="text-enrich-outcomes-empty"
+                  >
+                    No bid outcomes recorded yet. Outcomes are posted when a bid is awarded or
+                    not awarded so the engine can learn which pricing ranges win work.
+                  </p>
+                ) : (
+                  <>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Cost code</TableHead>
+                          <TableHead>Outcome</TableHead>
+                          <TableHead>Mat. unit cost</TableHead>
+                          <TableHead>Lab. unit cost</TableHead>
+                          <TableHead>Competitor low</TableHead>
+                          <TableHead>Context</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {outcomeRows.map((row) => (
+                          <TableRow key={row.id} data-testid={`row-enrich-outcome-${row.id}`}>
+                            <TableCell className="font-mono text-xs">{row.costCode}</TableCell>
+                            <TableCell>
+                              <span className={`text-xs font-medium ${outcomeColor(row.bidOutcome)}`}>
+                                {row.bidOutcome.replace(/_/g, " ")}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums">
+                              {row.finalBidUnitCostMaterial
+                                ? `$${row.finalBidUnitCostMaterial}`
+                                : <span className="text-muted-foreground italic">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums">
+                              {row.finalBidUnitCostLabor
+                                ? `$${row.finalBidUnitCostLabor}`
+                                : <span className="text-muted-foreground italic">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs tabular-nums">
+                              {row.competitorLowBid
+                                ? `$${row.competitorLowBid}`
+                                : <span className="text-muted-foreground italic">—</span>}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">
+                              {[row.projectType, row.location].filter(Boolean).join(" · ") || "—"}
+                            </TableCell>
+                            <TableCell className="text-xs whitespace-nowrap">
+                              {new Date(row.createdAt).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 px-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                disabled={deleteOutcome.isPending}
+                                onClick={() => deleteOutcome.mutate(row.id)}
+                                data-testid={`button-delete-outcome-${row.id}`}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                    {outcomesTotal > limit && (
+                      <div className="flex gap-2 mt-4 justify-center items-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={outcomesPage === 0}
+                          onClick={() => setOutcomesPage((p) => p - 1)}
+                          data-testid="button-enrich-outcomes-prev"
+                        >
+                          Previous
+                        </Button>
+                        <span className="text-xs text-muted-foreground">
+                          {outcomesPage * limit + 1}–{Math.min((outcomesPage + 1) * limit, outcomesTotal)} of {outcomesTotal}
+                        </span>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={(outcomesPage + 1) * limit >= outcomesTotal}
+                          onClick={() => setOutcomesPage((p) => p + 1)}
+                          data-testid="button-enrich-outcomes-next"
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Page ───────────────────────────────────────────────────────────────────
 
 export default function AiEstimatorAdminPage() {
@@ -2663,6 +3013,7 @@ export default function AiEstimatorAdminPage() {
       "skills",
       "settings",
       "spend",
+      "enrich-history",
     ];
     return t && valid.includes(t) ? t : "access";
   });
@@ -2923,6 +3274,9 @@ export default function AiEstimatorAdminPage() {
           </TabsTrigger>
           <TabsTrigger value="spend" data-testid="tab-spend">
             AI spend
+          </TabsTrigger>
+          <TabsTrigger value="enrich-history" data-testid="tab-enrich-history">
+            Enrichment history
           </TabsTrigger>
         </TabsList>
 
@@ -3809,6 +4163,10 @@ export default function AiEstimatorAdminPage() {
 
         <TabsContent value="spend" className="space-y-4">
           <AiSpendCard />
+        </TabsContent>
+
+        <TabsContent value="enrich-history" className="space-y-4">
+          <EnrichmentHistoryTab />
         </TabsContent>
       </Tabs>
 
