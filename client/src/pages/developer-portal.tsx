@@ -11,8 +11,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Copy, Trash2, Key, Loader2, Plus, ExternalLink, Webhook } from "lucide-react";
+import { Copy, Trash2, Key, Loader2, Plus, ExternalLink, Webhook, BookOpen } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Link } from "wouter";
 
 interface ApiKey {
   id: string;
@@ -528,6 +529,12 @@ export default function DeveloperPortalPage() {
                 <a href="/api-docs" target="_blank" rel="noopener noreferrer" className="inline-flex items-center px-3 py-1.5 rounded border bg-primary text-primary-foreground hover:opacity-90 text-xs font-medium" data-testid="link-openapi-spec">
                   Open Interactive OpenAPI Spec ↗
                 </a>
+                <Link href="/developer-docs" data-testid="link-developer-docs">
+                  <a className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded border bg-muted hover:bg-muted/80 text-xs font-medium">
+                    <BookOpen className="h-3.5 w-3.5" />
+                    Feature Module Docs
+                  </a>
+                </Link>
                 <span className="text-xs text-muted-foreground self-center">Always in sync with the deployed server.</span>
               </div>
               <div>

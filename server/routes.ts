@@ -142,6 +142,7 @@ import portalNotificationRoutes from "./portalNotificationRoutes";
 import integrationRoutes from "./integrationRoutes";
 import publicApiRoutes from "./publicApi/routes";
 import devPortalRoutes from "./publicApi/devPortalRoutes";
+import devDocsRoutes from "./devDocsRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
 import accessRequestRoutes from "./accessRequestRoutes";
@@ -479,6 +480,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api/integrations", integrationRoutes);
   app.use("/api/v1/public", publicApiRoutes);
   app.use("/api/integrations/dev-portal", devPortalRoutes);
+  app.use(devDocsRoutes);
 
   app.use("/api/weather", weatherRoutes);
 
