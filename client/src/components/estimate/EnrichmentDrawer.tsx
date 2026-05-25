@@ -42,6 +42,7 @@ interface EnrichmentDrawerProps {
   lineItem: LineItemPayload;
   projectContext?: ProjectContextPayload;
   estimateLineItemId?: string | null;
+  onFieldAccepted?: (fieldName: string, value: string) => void;
 }
 
 type Confidence = "HIGH" | "MEDIUM" | "LOW";
@@ -336,6 +337,7 @@ export function EnrichmentDrawer({
   lineItem,
   projectContext,
   estimateLineItemId,
+  onFieldAccepted,
 }: EnrichmentDrawerProps) {
   const [enrichmentData, setEnrichmentData] = useState<EnrichmentData | null>(null);
   const [enrichmentLogId, setEnrichmentLogId] = useState<string | null>(null);
@@ -496,6 +498,7 @@ export function EnrichmentDrawer({
                         source={`${mat._source ?? ""} · Price date: ${mat.priceDate ?? "unknown"}`}
                         confidence={mat._confidence}
                         fieldName="suggestedUnitCostMaterial"
+                        onAccept={onFieldAccepted ? (v) => onFieldAccepted("suggestedUnitCostMaterial", v) : undefined}
                         {...sharedRowProps}
                       />
                       {mat.volatilityFlag && (
@@ -527,6 +530,7 @@ export function EnrichmentDrawer({
                         source={lab._source}
                         confidence={lab._confidence}
                         fieldName="suggestedUnitCostLabor"
+                        onAccept={onFieldAccepted ? (v) => onFieldAccepted("suggestedUnitCostLabor", v) : undefined}
                         {...sharedRowProps}
                       />
                       <SuggestionRow
@@ -535,6 +539,7 @@ export function EnrichmentDrawer({
                         source={lab._source}
                         confidence={lab._confidence}
                         fieldName="suggestedProductionRate"
+                        onAccept={onFieldAccepted ? (v) => onFieldAccepted("suggestedProductionRate", v) : undefined}
                         {...sharedRowProps}
                       />
                       {lab.crewComposition && (

@@ -1131,6 +1131,21 @@ export function LineItemFormDialog({
           </div>
         </div>
       )}
+
+      {isEdit && (
+        <div className="flex items-center justify-end gap-2 border-b pb-3 mb-4">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => setEnrichmentDrawerOpen(true)}
+            data-testid="button-edit-enrich-with-ai"
+          >
+            <Sparkles className="h-4 w-4 mr-2 text-primary" />
+            Enrich with AI
+          </Button>
+        </div>
+      )}
       
       <Form {...form}>
         <form
@@ -1786,6 +1801,29 @@ export function LineItemFormDialog({
     mode: "ON_DEMAND" as const,
   };
 
+  const handleEnrichmentFieldAccepted = (fieldName: string, value: string) => {
+    const num = parseFloat(value.replace(/[^0-9.]/g, ""));
+    if (fieldName === "suggestedUnitCostMaterial") {
+      if (!isNaN(num) && num >= 0) {
+        form.setValue("materialCost", num, { shouldDirty: true });
+        toast({ title: "Material cost updated from AI suggestion" });
+      }
+    } else if (fieldName === "suggestedUnitCostLabor") {
+      if (!isNaN(num) && num >= 0) {
+        form.setValue("laborCost", num, { shouldDirty: true });
+        toast({ title: "Labor cost updated from AI suggestion" });
+      }
+    } else if (fieldName === "suggestedProductionRate") {
+      const existingNotes = form.getValues("notes") ?? "";
+      const rateNote = `Production rate: ${value}`;
+      const nextNotes = existingNotes
+        ? `${existingNotes}\n${rateNote}`
+        : rateNote;
+      form.setValue("notes", nextNotes, { shouldDirty: true });
+      toast({ title: "Production rate appended to notes" });
+    }
+  };
+
   if (isAdd) {
     return (
       <>
@@ -1804,6 +1842,7 @@ export function LineItemFormDialog({
           lineItem={enrichmentLineItem}
           projectContext={projectContext}
           estimateLineItemId={lineItemId ?? null}
+          onFieldAccepted={handleEnrichmentFieldAccepted}
         />
       </>
     );
@@ -1820,6 +1859,7 @@ export function LineItemFormDialog({
         lineItem={enrichmentLineItem}
         projectContext={projectContext}
         estimateLineItemId={lineItemId ?? null}
+        onFieldAccepted={handleEnrichmentFieldAccepted}
       />
     </>
   );
