@@ -475,7 +475,7 @@ function Router() {
       <Route path="/company-settings" component={() => <ProtectedRoute component={CompanySettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} featurePerm={["canAccessCompanySettings", "canAccessScopeSettings", "canAccessProductionRates", "canLockDailyReports", "canManageWebsite"]} />} />
       <Route path="/integrations" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=integrations" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/developer-portal" component={() => <ProtectedRoute component={DeveloperPortalPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
-      <Route path="/developer-docs" component={() => <ProtectedRoute component={DeveloperDocsPage} permission={(role) => role === "SUPER_ADMIN" || role === "ADMIN"} />} />
+      <Route path="/developer-docs" component={() => <ProtectedRoute component={DeveloperDocsPage} permission={(role) => role === "SUPER_ADMIN" || role === "ADMIN"} skipOnboardingCheck />} />
       <Route path="/approvals" component={() => <ProtectedRoute component={ApprovalsPage} />} />
       <Route path="/ai-governance" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=ai-governance" />} permission={RoutePermissions.AI_SETTINGS} />} />
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
