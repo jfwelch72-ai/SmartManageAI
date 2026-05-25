@@ -23,6 +23,7 @@ interface SearchResult {
   module: string;
   title: string;
   snippets: string[];
+  totalMatches?: number;
 }
 
 interface SearchResponse {
@@ -337,7 +338,95 @@ export default function DeveloperDocsPage() {
       </aside>
 
       <main className="flex-1 overflow-hidden flex flex-col">
-        {!selectedModule ? (
+        {isSearching && !selectedModule ? (
+          <div className="flex flex-col h-full">
+            <div className="px-6 py-3 border-b flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Search className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Search results</span>
+                {!searchLoading && searchData && (
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-search-count">
+                    {searchData.results.length} module{searchData.results.length !== 1 ? "s" : ""}
+                  </Badge>
+                )}
+              </div>
+              <span className="text-xs text-muted-foreground font-mono">
+                "{debouncedSearch}"
+              </span>
+            </div>
+            <ScrollArea className="flex-1">
+              <div className="px-8 py-6 max-w-4xl space-y-4">
+                {searchLoading ? (
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="border rounded-lg p-4 space-y-2">
+                      <Skeleton className="h-5 w-40" />
+                      <Skeleton className="h-3 w-full" />
+                      <Skeleton className="h-3 w-5/6" />
+                      <Skeleton className="h-3 w-4/5" />
+                    </div>
+                  ))
+                ) : !searchData?.results.length ? (
+                  <div className="flex flex-col items-center justify-center py-20 text-center">
+                    <Search className="h-10 w-10 text-muted-foreground/30 mb-3" />
+                    <p className="text-sm font-medium text-muted-foreground">No matches found</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Try a different search term — table names, route names, or feature keywords work well.
+                    </p>
+                  </div>
+                ) : (
+                  searchData.results.map((r) => (
+                    <div
+                      key={r.module}
+                      data-testid={`card-search-result-${r.module}`}
+                      className="border rounded-lg p-4 hover:border-primary/40 hover:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <FileText className="h-4 w-4 text-primary/70 flex-shrink-0" />
+                          <button
+                            data-testid={`link-search-result-${r.module}`}
+                            onClick={() => handleSelectModule(r.module)}
+                            className="text-sm font-semibold text-primary hover:underline underline-offset-2"
+                          >
+                            {r.title}
+                          </button>
+                          <Badge variant="outline" className="font-mono text-xs">
+                            {r.module}.md
+                          </Badge>
+                        </div>
+                        {r.totalMatches !== undefined && r.totalMatches > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            {r.totalMatches} {r.totalMatches === 1 ? "match" : "matches"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
+                        {r.snippets.map((snip, si) => (
+                          <p
+                            key={si}
+                            data-testid={`text-snippet-${r.module}-${si}`}
+                            className="text-xs text-muted-foreground leading-relaxed bg-muted/40 rounded px-2 py-1 font-mono"
+                            dangerouslySetInnerHTML={{
+                              __html: highlightSnippet(snip, debouncedSearch),
+                            }}
+                          />
+                        ))}
+                      </div>
+                      <button
+                        data-testid={`button-open-module-${r.module}`}
+                        onClick={() => handleSelectModule(r.module)}
+                        className="mt-2 text-xs text-primary/80 hover:text-primary flex items-center gap-1 transition-colors"
+                      >
+                        <ChevronRight className="h-3 w-3" />
+                        Open module docs
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </ScrollArea>
+          </div>
+        ) : !selectedModule ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-8">
             <BookOpen className="h-12 w-12 text-muted-foreground/40 mb-4" />
             <h2 className="text-lg font-semibold mb-2">Select a Module</h2>
