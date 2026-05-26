@@ -123,6 +123,10 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // total for TS exhaustiveness while signalling that push() should skip
   // it.
   MATERIAL_REQUEST: "",
+  // Task #3097: drained by pushEquipmentHours() to a per-equipment REST
+  // endpoint; not part of the unified mobile sync envelope. Empty
+  // string keeps SyncEntityType ↔ field map total for TS exhaustiveness.
+  EQUIPMENT_HOUR_LOG: "",
 };
 
 export async function pull(): Promise<number> {
@@ -661,8 +665,62 @@ function readErrorMessage(err: ApiError): string | null {
     const e = (body as Record<string, unknown>).error;
     if (typeof e === "string") return e;
   }
-  if (typeof body === "string") return body;
   return null;
+}
+// are terminal because the server has already validated the payload
+// (cross-tenant, duplicate week per equipment_hour_logs_unique_week,
+// etc.) and a retry will keep failing. Network/5xx errors stay
+// retryable via markFailed.
+export async function pushEquipmentHours(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "EQUIPMENT_HOUR_LOG");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const payload = rec.payload as { equipmentId?: string; notes?: string | null } & Record<string, unknown>;
+    const equipmentId = typeof payload.equipmentId === "string" ? payload.equipmentId : null;
+    if (!equipmentId) {
+      // Malformed record (no equipmentId) — drop it out of the retry
+      // window so it stops blocking the queue.
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Missing equipmentId");
+      failed++;
+      continue;
+    }
+    // Upload the meter photo (if any) first so we can stash the
+    // resulting object key in `notes` for the office to find.
+    let photoNote = "";
+    if (rec.attachments && rec.attachments.length > 0) {
+      const att = rec.attachments[0];
+      const objectKey = await uploadAttachment(att);
+      if (objectKey) photoNote = `\n[Meter photo: ${objectKey}]`;
+    }
+    const { equipmentId: _ignored, ...body } = payload;
+    const mergedNotes = `${typeof body.notes === "string" ? body.notes : ""}${photoNote}`.trim();
+    const finalBody = { ...body, notes: mergedNotes.length > 0 ? mergedNotes : null };
+    try {
+      await api(`/api/equipment/${encodeURIComponent(equipmentId)}/hour-logs`, {
+        method: "POST",
+        body: JSON.stringify(finalBody),
+      });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
 }
 
 // Task #3099: drain MATERIAL_REQUEST outbox rows by calling the procurement
@@ -790,11 +848,12 @@ export async function syncNow(): Promise<SyncStats> {
   const inv = await pushInventory();
   const maint = await pushMaintenance();
   const tasks = await pushTaskUpdates();
+  const eq = await pushEquipmentHours();
   const tm = await pushTmTickets();
   const mr = await pushMaterialRequests();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + tm.pushed + mr.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

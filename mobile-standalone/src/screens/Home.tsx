@@ -26,6 +26,7 @@ type HomeNavParamList = {
   NotificationSettings: undefined;
   TMTickets: undefined;
   RequestMaterial: undefined;
+  EquipmentHours: undefined;
 };
 
 export function HomeScreen() {
@@ -67,6 +68,7 @@ export function HomeScreen() {
             { label: "Report Equipment Issue", to: "ReportEquipmentIssue" },
             { label: "T&M Tickets", to: "TMTickets" },
             { label: "Request Material", to: "RequestMaterial" },
+            { label: "Equipment Hours", to: "EquipmentHours" },
             { label: "RFIs", to: "RFI" },
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },

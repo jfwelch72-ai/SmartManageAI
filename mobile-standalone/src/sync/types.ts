@@ -63,7 +63,20 @@ export type SyncEntityType =
   // has no procurement section). The coordinator follows up with
   // /requests/:id/submit so the office sees the row as
   // PENDING_APPROVAL instead of stuck in DRAFT.
-  | "MATERIAL_REQUEST";
+  | "MATERIAL_REQUEST"
+  // Task #3097: per-equipment meter-hour entries logged from the
+  // jobsite. Pushed by pushEquipmentHours() to
+  // POST /api/equipment/{equipmentId}/hour-logs (NOT through the
+  // unified mobile sync envelope, same pattern as INVENTORY_*).
+  // The payload carries equipmentId in addition to the body fields
+  // the REST endpoint expects (projectId, weekStartDate,
+  // weekEndDate, startingHours, endingHours, notes, fuelUsed).
+  // Attachments (meter photo) are uploaded first via the signed-
+  // URL helper and the resulting objectKey is appended to `notes`
+  // as `[Meter photo: <key>]` so the office can pull it from
+  // object storage — the server endpoint has no first-class photo
+  // field today.
+  | "EQUIPMENT_HOUR_LOG";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
