@@ -149,6 +149,11 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // TS exhaustiveness while the `if (!serverField) continue;` guard in
   // push() skips it.
   LEAVE_REQUEST: "",
+  // Task #3108: pushed by pushChangeOrders() to POST /api/change-orders.
+  // Not part of the unified mobile sync envelope — the change-orders POST
+  // already exists for the web app and we reuse it. Empty string keeps the
+  // entity↔field map total for TS exhaustiveness.
+  CHANGE_ORDER_INIT: "",
 };
 
 export async function pull(): Promise<number> {
@@ -1268,6 +1273,103 @@ export async function pushVoiceLogs(): Promise<{ pushed: number; failed: number 
   return { pushed, failed };
 }
 
+// Task #3108: drain CHANGE_ORDER_INIT outbox rows by uploading any photos and
+// POSTing to /api/change-orders. The endpoint creates the row in `PCO`
+// (Potential Change Order) status server-side — i.e. a draft that has NOT
+// entered the approval workflow yet. Same terminal-4xx semantics as the
+// other dedicated push helpers: permanent validation errors (other than
+// auth / 408 / 429) are recorded and pulled out of the retry queue.
+export async function pushChangeOrders(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "CHANGE_ORDER_INIT");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const p = rec.payload as {
+      projectId?: string;
+      title?: string;
+      category?: string;
+      description?: string;
+      amount?: string | number | null;
+      scheduleImpactDays?: string | number | null;
+      sourceOfDirectionName?: string | null;
+      sourceOfDirectionRole?: string | null;
+    };
+    if (!p?.projectId || !p?.title || !p?.description) {
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Invalid CHANGE_ORDER_INIT payload");
+      failed++;
+      continue;
+    }
+    try {
+      const photoObjectKeys: string[] = [];
+      if (rec.attachments) {
+        for (const a of rec.attachments) {
+          const key = await uploadAttachment(a);
+          if (key) photoObjectKeys.push(key);
+        }
+      }
+      // Compose a single description block that carries the extra field
+      // context the change_orders table doesn't model first-class: change
+      // category, schedule impact, source of direction. Office staff will
+      // see this in the change-order detail view and can split it out into
+      // structured fields during pricing.
+      const lines: string[] = [];
+      if (p.category) lines.push(`Category: ${p.category}`);
+      if (p.scheduleImpactDays !== null && p.scheduleImpactDays !== undefined && p.scheduleImpactDays !== "") {
+        lines.push(`Schedule impact: ${p.scheduleImpactDays} day(s)`);
+      }
+      if (p.sourceOfDirectionName || p.sourceOfDirectionRole) {
+        const who = [p.sourceOfDirectionName, p.sourceOfDirectionRole].filter(Boolean).join(" — ");
+        if (who) lines.push(`Direction from: ${who}`);
+      }
+      lines.push("");
+      lines.push(p.description);
+      const description = lines.join("\n");
+      const amountStr =
+        p.amount === null || p.amount === undefined || p.amount === ""
+          ? "0"
+          : String(p.amount);
+      const body: Record<string, unknown> = {
+        projectId: p.projectId,
+        description,
+        amount: amountStr,
+      };
+      if (photoObjectKeys.length > 0) {
+        body.attachmentsJson = JSON.stringify(
+          photoObjectKeys.map((key) => ({ objectKey: key, source: "mobile-co-init" }))
+        );
+      }
+      const created = await api<{ id: string; changeOrderNumber?: string }>(
+        "/api/change-orders",
+        { method: "POST", body: JSON.stringify(body) }
+      );
+      await markSynced(rec.localId, created.id);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof ApiError &&
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 401 &&
+        err.status !== 403 &&
+        err.status !== 408 &&
+        err.status !== 429
+      ) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
@@ -1280,12 +1382,13 @@ export async function syncNow(): Promise<SyncStats> {
   const msgs = await pushMessages();
   const deliveries = await pushDeliveryReceipts();
   const iss = await pushIssueCaptures();
+  const co = await pushChangeOrders();
   const leave = await pushLeave();
   const voice = await pushVoiceLogs();
   return {
     pulled,
     pushed:
-      pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed + leave.pushed + voice.pushed,
+      pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed + leave.pushed + voice.pushed + co.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

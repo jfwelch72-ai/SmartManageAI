@@ -39,6 +39,7 @@ type HomeNavParamList = {
   VoiceLogs: undefined;
   WeatherDetail: undefined;
   CrewSchedule: undefined;
+  InitiateChangeEvent: undefined;
 };
 
 export function HomeScreen() {
@@ -101,6 +102,7 @@ export function HomeScreen() {
             { label: "T&M Tickets", to: "TMTickets" },
             { label: "Request Material", to: "RequestMaterial" },
             { label: "Equipment Hours", to: "EquipmentHours" },
+            { label: "Initiate Change Event", to: "InitiateChangeEvent" },
             { label: "RFIs", to: "RFI" },
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },

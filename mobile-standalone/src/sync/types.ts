@@ -116,7 +116,17 @@ export type SyncEntityType =
   // The mobile screen resolves `leaveType` (PTO/SICK/UNPAID/OTHER) to a
   // server-side leaveTypeId at submit time (or, when offline, on push) by
   // consulting the cached /api/leave/types list.
-  | "LEAVE_REQUEST";
+  | "LEAVE_REQUEST"
+  // Task #3108: field-initiated change event. Pushed by pushChangeOrders() to
+  // POST /api/change-orders. The endpoint creates the row in `PCO`
+  // (Potential Change Order) status — i.e. a draft that has NOT entered the
+  // approval workflow yet. Pricing breakdowns / SOV impact are intentionally
+  // web-only; the mobile payload carries: { projectId, title, category,
+  // description, amount?, scheduleImpactDays?, sourceOfDirectionName?,
+  // sourceOfDirectionRole? }. Photos are uploaded via the signed-PUT path
+  // first; the returned object keys are then attached to the create call as
+  // `attachmentsJson` so the office can pull them from object storage.
+  | "CHANGE_ORDER_INIT";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

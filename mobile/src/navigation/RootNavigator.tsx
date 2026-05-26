@@ -39,6 +39,7 @@ import { LeaveRequestsScreen } from "@/screens/LeaveRequests";
 import { VoiceLogsScreen } from "@/screens/VoiceLogs";
 import { WeatherDetailScreen } from "@/screens/WeatherDetail";
 import { CrewScheduleScreen } from "@/screens/CrewSchedule";
+import { InitiateChangeEventScreen } from "@/screens/InitiateChangeEvent";
 import { colors } from "@/theme";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -175,6 +176,11 @@ export function RootNavigator({
       <Stack.Screen name="VoiceLogs" component={VoiceLogsScreen} options={{ title: "Voice Logs" }} />
       <Stack.Screen name="WeatherDetail" component={WeatherDetailScreen} options={{ title: "Weather" }} />
       <Stack.Screen name="CrewSchedule" component={CrewScheduleScreen} options={{ title: "Crew Schedule" }} />
+      <Stack.Screen
+        name="InitiateChangeEvent"
+        component={InitiateChangeEventScreen}
+        options={{ title: "Initiate Change Event" }}
+      />
     </Stack.Navigator>
   );
 }

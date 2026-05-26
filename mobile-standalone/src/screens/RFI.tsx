@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useNavigation, type NavigationProp } from "@react-navigation/native";
 
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useSync } from "@/sync/SyncContext";
 import { enqueue, listOutbox } from "@/sync/outbox";
 import { cacheList } from "@/sync/db";
 import { colors, spacing } from "@/theme";
+
+type RfiNavParamList = { InitiateChangeEvent: undefined };
 
 type ServerRfi = {
   id: string;
@@ -25,6 +28,7 @@ type DraftRfi = {
 
 export function RFIScreen() {
   const { syncNow, lastResult } = useSync();
+  const nav = useNavigation<NavigationProp<RfiNavParamList>>();
   const [drafts, setDrafts] = useState<DraftRfi[]>([]);
   const [server, setServer] = useState<ServerRfi[]>([]);
   const [subject, setSubject] = useState("");
@@ -75,6 +79,13 @@ export function RFIScreen() {
         <TextInput placeholder="Question" placeholderTextColor={colors.textMuted}
           multiline value={question} onChangeText={setQuestion} style={[styles.input, { minHeight: 80 }]} testID="input-rfi-question" />
         <Pressable onPress={send} style={styles.btn} testID="button-submit-rfi"><Text style={styles.btnText}>Submit RFI</Text></Pressable>
+        <Pressable
+          onPress={() => nav.navigate("InitiateChangeEvent")}
+          style={[styles.btn, { backgroundColor: colors.surface }]}
+          testID="button-initiate-change-event"
+        >
+          <Text style={styles.btnText}>Is this a change? Initiate change event →</Text>
+        </Pressable>
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(1) }}>
         {drafts.length > 0 ? (
