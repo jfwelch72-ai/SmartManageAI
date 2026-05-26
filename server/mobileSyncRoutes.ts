@@ -463,7 +463,10 @@ const deviceRegisterSchema = z.object({
   platform: z.enum(["IOS", "ANDROID", "WEB"]),
   appVersion: z.string().optional(),
   deviceModel: z.string().optional(),
-  pushToken: z.string().optional(),
+  // Nullable so the mobile app can explicitly clear a stored Expo push
+  // token on logout / permission revoke. Optional still means "leave
+  // current value alone" (re-register on app boot without a token).
+  pushToken: z.string().nullable().optional(),
 });
 
 router.post("/api/ai-features/mobile/register", requireAuth, async (req: AuthRequest, res, next) => {

@@ -36,15 +36,20 @@ async function getOrCreateDeviceId(): Promise<string> {
   return id;
 }
 
-export async function registerDevice(pushToken?: string): Promise<string> {
+export async function registerDevice(pushToken?: string | null): Promise<string> {
   const deviceId = await getOrCreateDeviceId();
-  const body = {
+  // IMPORTANT: keep `pushToken` in the payload even when it's null so the
+  // server actually clears the stored token on logout. JSON.stringify drops
+  // `undefined` fields, which the server then treats as "leave alone".
+  const body: Record<string, unknown> = {
     deviceId,
     platform: Platform.OS === "ios" ? "IOS" : "ANDROID",
     appVersion: Application.nativeApplicationVersion ?? "0.0.0",
     deviceModel: Device.modelName ?? Device.deviceName ?? "unknown",
-    pushToken,
   };
+  if (pushToken !== undefined) {
+    body.pushToken = pushToken;
+  }
   const result = await api<{ success: boolean; registrationId: string; syncToken: string }>(
     "/api/ai-features/mobile/register",
     { method: "POST", body: JSON.stringify(body) }

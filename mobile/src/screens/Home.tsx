@@ -23,6 +23,7 @@ type HomeNavParamList = {
   ReportEquipmentIssue: undefined;
   HaulTickets: undefined;
   ReportIncident: undefined;
+  NotificationSettings: undefined;
 };
 
 export function HomeScreen() {
@@ -68,6 +69,7 @@ export function HomeScreen() {
             { label: "Drawings", to: "Drawings" },
             { label: "Haul Tickets", to: "HaulTickets" },
             { label: "Conflicts", to: "Conflicts" },
+            { label: "Notifications", to: "NotificationSettings" },
           ] as Array<{ label: string; to: keyof HomeNavParamList }>).map((tile) => (
             <Pressable key={tile.to} style={styles.tile} onPress={() => nav.navigate(tile.to)}>
               <Text style={styles.tileText}>{tile.label}</Text>

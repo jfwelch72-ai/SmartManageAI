@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import type { NavigationContainerRef } from "@react-navigation/native";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { HomeScreen } from "@/screens/Home";
 import { DailyReportsScreen } from "@/screens/DailyReports";
@@ -19,6 +21,8 @@ import { InventoryActionScreen } from "@/screens/InventoryAction";
 import { ReportEquipmentIssueScreen } from "@/screens/ReportEquipmentIssue";
 import { HaulTicketsScreen } from "@/screens/HaulTickets";
 import { ReportIncidentScreen } from "@/screens/ReportIncident";
+import { NotificationSettingsScreen } from "@/screens/NotificationSettings";
+import { installNotificationHandlers } from "@/push/pushManager";
 import { colors } from "@/theme";
 
 const Tabs = createBottomTabNavigator();
@@ -46,7 +50,18 @@ function FieldTabs() {
   );
 }
 
-export function RootNavigator() {
+export function RootNavigator({
+  navRef,
+}: {
+  navRef: NavigationContainerRef<Record<string, object | undefined>>;
+}) {
+  const qc = useQueryClient();
+
+  useEffect(() => {
+    const dispose = installNotificationHandlers(navRef, qc);
+    return dispose;
+  }, [navRef, qc]);
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -66,6 +81,11 @@ export function RootNavigator() {
       <Stack.Screen name="ReportEquipmentIssue" component={ReportEquipmentIssueScreen} options={{ title: "Report Equipment Issue" }} />
       <Stack.Screen name="HaulTickets" component={HaulTicketsScreen} options={{ title: "Haul Tickets" }} />
       <Stack.Screen name="ReportIncident" component={ReportIncidentScreen} options={{ title: "Report Incident" }} />
+      <Stack.Screen
+        name="NotificationSettings"
+        component={NotificationSettingsScreen}
+        options={{ title: "Notifications" }}
+      />
     </Stack.Navigator>
   );
 }

@@ -30,6 +30,7 @@ declare module "react-native" {
   export const SafeAreaView: FC<BaseProps>;
   export const TouchableOpacity: FC<BaseProps>;
   export const FlatList: FC<BaseProps>;
+  export const Switch: FC<BaseProps & { value?: boolean; onValueChange?: (value: boolean) => void; disabled?: boolean }>;
   export const Alert: {
     alert(title: string, message?: string, buttons?: any[]): void;
   };
@@ -232,8 +233,15 @@ declare module "expo-notifications" {
   export function getExpoPushTokenAsync(options?: { projectId?: string }): Promise<{ data: string }>;
   export function getPermissionsAsync(): Promise<{ status: string; granted: boolean }>;
   export function requestPermissionsAsync(): Promise<{ status: string; granted: boolean }>;
-  export function addNotificationReceivedListener(listener: (notification: Notification) => void): { remove(): void };
-  export function addNotificationResponseReceivedListener(listener: (response: any) => void): { remove(): void };
+  export interface NotificationResponse {
+    notification: Notification;
+    actionIdentifier?: string;
+  }
+  export interface Subscription { remove(): void }
+  export function addNotificationReceivedListener(listener: (notification: Notification) => void): Subscription;
+  export function addNotificationResponseReceivedListener(listener: (response: NotificationResponse) => void): Subscription;
+  export function addPushTokenListener(listener: (ev: { data: string; type?: string }) => void): Subscription;
+  export function getLastNotificationResponseAsync(): Promise<NotificationResponse | null>;
   export const AndroidImportance: Record<string, number>;
   export function setNotificationChannelAsync(channelId: string, channel: Record<string, any>): Promise<void>;
 }
@@ -363,7 +371,13 @@ declare module "@react-navigation/native" {
     setOptions(options: Record<string, any>): void;
     canGoBack(): boolean;
     getState(): any;
+    isReady?(): boolean;
   };
+  export type NavigationContainerRef<T extends Record<string, any> = Record<string, any>> = NavigationProp<T> & {
+    isReady(): boolean;
+    current?: any;
+  };
+  export function useNavigationContainerRef<T extends Record<string, any> = Record<string, any>>(): NavigationContainerRef<T>;
   export type RouteProp<T extends Record<string, any>, K extends keyof T = keyof T> = {
     key: string;
     name: K;

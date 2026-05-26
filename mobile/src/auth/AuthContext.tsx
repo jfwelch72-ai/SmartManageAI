@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { api, baseUrl, setAuthToken } from "@/api/client";
+import { registerPushForCurrentUser, unregisterPushForCurrentUser } from "@/push/pushManager";
 
 type User = {
   id: string;
@@ -34,7 +35,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const refresh = useCallback(async () => {
     try {
       const me = await api<{ user: User }>("/api/auth/me");
-      setUser(me.user ?? null);
+      const nextUser = me.user ?? null;
+      setUser(nextUser);
+      // (Re-)register for push whenever we confirm an authenticated session.
+      // Safe to call repeatedly — registerForPushAsync no-ops on simulators
+      // and the backend upserts on (deviceId).
+      if (nextUser) {
+        void registerPushForCurrentUser();
+      }
     } catch {
       setUser(null);
     } finally {
@@ -76,6 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error("Login response missing token (server may not be advertising X-Mobile-Client support)");
     }
     await setAuthToken(token);
+    // refresh() will trigger push registration once /api/auth/me confirms
+    // the session, so we don't need to call registerPushForCurrentUser() here.
     await refresh();
   }, [refresh]);
 
@@ -101,6 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ code }),
       });
       await setAuthToken(token);
+      // refresh() handles push registration after the session is confirmed.
       await refresh();
     };
     const result = await WebBrowser.openAuthSessionAsync(ssoStartUrl, redirectUrl);
@@ -118,6 +129,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [refresh]);
 
   const logout = useCallback(async () => {
+    // Best-effort: clear the stored Expo push token server-side before we
+    // discard auth so the previous user stops receiving notifications.
+    try { await unregisterPushForCurrentUser(); } catch {}
     try { await api("/api/auth/logout", { method: "POST" }); } catch {}
     await setAuthToken(null);
     setUser(null);
