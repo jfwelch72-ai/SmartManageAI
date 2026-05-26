@@ -20,6 +20,7 @@ type HomeNavParamList = {
   Daily: undefined; Time: undefined; Photos: undefined; Punch: undefined; Inventory: undefined;
   RFI: undefined; Submittals: undefined; Inspections: undefined; Drawings: undefined; Conflicts: undefined;
   ReportEquipmentIssue: undefined;
+  HaulTickets: undefined;
 };
 
 export function HomeScreen() {
@@ -50,6 +51,7 @@ export function HomeScreen() {
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },
             { label: "Drawings", to: "Drawings" },
+            { label: "Haul Tickets", to: "HaulTickets" },
             { label: "Conflicts", to: "Conflicts" },
           ] as Array<{ label: string; to: keyof HomeNavParamList }>).map((tile) => (
             <Pressable key={tile.to} style={styles.tile} onPress={() => nav.navigate(tile.to)}>
