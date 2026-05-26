@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as Location from "expo-location";
+import { useNavigation, type NavigationProp } from "@react-navigation/native";
 
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useSync } from "@/sync/SyncContext";
 import { enqueue, listOutbox } from "@/sync/outbox";
 import { colors, spacing } from "@/theme";
 import type { OutboxRecord } from "@/sync/types";
+
+type TimeClockNavParamList = { LeaveRequests: undefined };
 
 interface PunchPayload {
   kind: "IN" | "OUT";
@@ -18,6 +21,7 @@ interface PunchPayload {
 
 export function TimeClockScreen() {
   const { syncNow } = useSync();
+  const nav = useNavigation<NavigationProp<TimeClockNavParamList>>();
   const [punches, setPunches] = useState<OutboxRecord[]>([]);
   const [busy, setBusy] = useState(false);
 
@@ -57,6 +61,15 @@ export function TimeClockScreen() {
         </Pressable>
         <Pressable onPress={() => punch("OUT")} disabled={busy} style={[styles.btn, { backgroundColor: colors.danger }]}>
           <Text style={styles.btnText}>Clock Out</Text>
+        </Pressable>
+      </View>
+      <View style={{ paddingHorizontal: spacing(2), paddingBottom: spacing(1) }}>
+        <Pressable
+          onPress={() => nav.navigate("LeaveRequests")}
+          style={[styles.btn, { backgroundColor: colors.surface }]}
+          testID="button-request-leave"
+        >
+          <Text style={[styles.btnText, { color: colors.text }]}>Request time off (PTO / Sick)</Text>
         </Pressable>
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(1) }}>

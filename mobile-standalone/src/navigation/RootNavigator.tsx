@@ -35,6 +35,7 @@ import { AnalyzePhotoScreen } from "@/screens/AnalyzePhoto";
 import { DeliveriesScreen } from "@/screens/Deliveries";
 import { DeliveryDetailScreen } from "@/screens/DeliveryDetail";
 import { IssueCapturesScreen } from "@/screens/IssueCaptures";
+import { LeaveRequestsScreen } from "@/screens/LeaveRequests";
 import { colors } from "@/theme";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -167,6 +168,7 @@ export function RootNavigator({
       <Stack.Screen name="Deliveries" component={DeliveriesScreen} options={{ title: "Deliveries" }} />
       <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={{ title: "Confirm Delivery" }} />
       <Stack.Screen name="IssueCaptures" component={IssueCapturesScreen} options={{ title: "Issue Captures" }} />
+      <Stack.Screen name="LeaveRequests" component={LeaveRequestsScreen} options={{ title: "Leave Requests" }} />
     </Stack.Navigator>
   );
 }

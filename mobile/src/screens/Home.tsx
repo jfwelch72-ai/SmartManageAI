@@ -31,6 +31,7 @@ type HomeNavParamList = {
   AnalyzePhoto: undefined;
   Deliveries: undefined;
   IssueCaptures: undefined;
+  LeaveRequests: undefined;
 };
 
 export function HomeScreen() {
@@ -92,6 +93,7 @@ export function HomeScreen() {
             { label: "Documents", to: "Documents" },
             { label: "Haul Tickets", to: "HaulTickets" },
             { label: "Issue Captures", to: "IssueCaptures" },
+            { label: "Leave Requests", to: "LeaveRequests" },
             { label: "Conflicts", to: "Conflicts" },
             { label: "Notifications", to: "NotificationSettings" },
           ] as Array<{ label: string; to: keyof HomeNavParamList }>).map((tile) => (

@@ -98,7 +98,16 @@ export type SyncEntityType =
   // sync envelope has no issueCaptures section. Photo attachments are
   // uploaded to object storage first; the resulting object keys land on
   // the issue capture row as photoObjectKeys.
-  | "ISSUE_CAPTURE";
+  | "ISSUE_CAPTURE"
+  // Task #3102: worker-submitted PTO / sick / unpaid leave requests. Pushed
+  // directly to POST /api/leave/requests by pushLeave() in the sync
+  // coordinator — not routed through the unified mobile sync envelope (the
+  // /mobile/sync contract has no leave section). Payload shape:
+  //   { leaveType, leaveTypeId?, startDate, endDate, partialDayHours?, reason? }
+  // The mobile screen resolves `leaveType` (PTO/SICK/UNPAID/OTHER) to a
+  // server-side leaveTypeId at submit time (or, when offline, on push) by
+  // consulting the cached /api/leave/types list.
+  | "LEAVE_REQUEST";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

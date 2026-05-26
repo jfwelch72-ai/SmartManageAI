@@ -140,6 +140,11 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // + POST. Empty string keeps the map total for TS exhaustiveness and
   // tells push() to skip these records.
   ISSUE_CAPTURE: "",
+  // Task #3102: routed by pushLeave() to POST /api/leave/requests. Same
+  // rationale as the entries above — empty string keeps the map total for
+  // TS exhaustiveness while the `if (!serverField) continue;` guard in
+  // push() skips it.
+  LEAVE_REQUEST: "",
 };
 
 export async function pull(): Promise<number> {
@@ -1090,6 +1095,85 @@ export async function pushIssueCaptures(): Promise<{ pushed: number; failed: num
   return { pushed, failed };
 }
 
+// Task #3102: drain LEAVE_REQUEST outbox rows by POSTing to
+// /api/leave/requests. The mobile screen captures a coarse `leaveType`
+// (PTO / SICK / UNPAID / OTHER); we resolve it to the org's actual
+// leaveTypeId here by hitting /api/leave/types so a request enqueued
+// offline still survives even if the cached types list has been pruned.
+// Terminal-4xx semantics match pushMaintenance/pushTaskUpdates.
+export async function pushLeave(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "LEAVE_REQUEST");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  let cachedTypes: Array<{ id: string; name: string }> | null = null;
+  async function resolveTypeId(payload: Record<string, unknown>): Promise<string | null> {
+    const direct = typeof payload.leaveTypeId === "string" ? (payload.leaveTypeId as string) : null;
+    if (direct) return direct;
+    const coarse = String(payload.leaveType ?? "").toUpperCase();
+    if (!cachedTypes) {
+      try {
+        cachedTypes = await api<Array<{ id: string; name: string }>>("/api/leave/types");
+      } catch {
+        cachedTypes = [];
+      }
+    }
+    const want = coarse === "PTO" ? "vacation"
+      : coarse === "SICK" ? "sick"
+      : coarse === "UNPAID" ? "unpaid"
+      : coarse === "OTHER" ? "other"
+      : "";
+    const match = cachedTypes.find((t) => t.name.toLowerCase().includes(want))
+      ?? cachedTypes.find((t) => t.name.toLowerCase() === "other")
+      ?? cachedTypes[0];
+    return match?.id ?? null;
+  }
+  for (const rec of pending) {
+    const p = rec.payload as Record<string, unknown>;
+    try {
+      const leaveTypeId = await resolveTypeId(p);
+      if (!leaveTypeId) {
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Could not resolve leave type");
+        failed++;
+        continue;
+      }
+      const reasonParts: string[] = [];
+      if (typeof p.partialDayHours === "number" && p.partialDayHours > 0) {
+        reasonParts.push(`Partial day: ${p.partialDayHours}h`);
+      }
+      if (typeof p.reason === "string" && p.reason.trim().length > 0) {
+        reasonParts.push(p.reason.trim());
+      }
+      await api(`/api/leave/requests`, {
+        method: "POST",
+        body: JSON.stringify({
+          leaveTypeId,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          reason: reasonParts.join(" — ") || undefined,
+        }),
+      });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
@@ -1102,9 +1186,10 @@ export async function syncNow(): Promise<SyncStats> {
   const msgs = await pushMessages();
   const deliveries = await pushDeliveryReceipts();
   const iss = await pushIssueCaptures();
+  const leave = await pushLeave();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed + leave.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }
