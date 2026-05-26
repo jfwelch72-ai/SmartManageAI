@@ -767,6 +767,179 @@ function calculateDepreciation(params: {
 // Routes from equipmentMgmtRoutes.ts
 // ========================================
 
+// Mobile maintenance request submission — open to any authenticated user
+// in the org (operators report broken equipment from the field without the
+// canManageEquipment feature flag the desktop equipment module gates on).
+// Registered BEFORE the router.use() below so the feature-permission
+// middleware does not apply. Cross-tenant safety is enforced by checking
+// equipment.organizationId via the org filter.
+router.post(
+  "/api/equipment/:equipmentId/maintenance-requests",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+      const { equipmentId } = req.params;
+      const bodySchema = z.object({
+        severity: z.enum(["DOWN", "LIMITED", "COSMETIC"]),
+        issueType: z.string().trim().min(1).max(120),
+        description: z.string().trim().min(1).max(4000),
+        projectId: z.string().uuid().optional().nullable(),
+        photoObjectKeys: z.array(z.string().min(1).max(1024)).max(20).optional(),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid payload", details: parsed.error.flatten() });
+      }
+      const { severity, issueType, description, projectId, photoObjectKeys } = parsed.data;
+
+      const conditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      const [equipmentItem] = await db.select().from(equipment).where(and(...conditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+
+      // Validate optional projectId is in same org
+      if (projectId && shouldFilter && orgId) {
+        const [projectRow] = await db
+          .select({ id: projects.id })
+          .from(projects)
+          .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)))
+          .limit(1);
+        if (!projectRow) {
+          return res.status(404).json({ error: "Project not found" });
+        }
+      }
+
+      // Generate next REP-#### number
+      const lastRepair = await db
+        .select({ repairNumber: equipmentRepairs.repairNumber })
+        .from(equipmentRepairs)
+        .orderBy(desc(equipmentRepairs.createdAt))
+        .limit(1);
+      let nextNumber = 1;
+      if (lastRepair.length > 0) {
+        const match = lastRepair[0].repairNumber?.match(/REP-(\d+)/);
+        if (match) nextNumber = parseInt(match[1], 10) + 1;
+      }
+      const repairNumber = `REP-${String(nextNumber).padStart(4, "0")}`;
+
+      // Compose a description that surfaces severity + issue type in the
+      // existing desktop repair list (which only renders `description`).
+      // Detailed narrative + photo object keys land in problemDescription
+      // and repairNotes so the desktop reviewer sees everything.
+      const composedDescription = `[${severity}] ${issueType}`;
+      const photoNote = photoObjectKeys && photoObjectKeys.length > 0
+        ? `\n\nPhotos attached: ${photoObjectKeys.length}`
+        : "";
+
+      const [repair] = await db.insert(equipmentRepairs).values({
+        equipmentId,
+        repairNumber,
+        description: composedDescription,
+        status: "PENDING",
+        problemReportedById: req.user!.id,
+        problemDescription: `${description}${photoNote}`,
+        hoursAtReport: equipmentItem.currentHours ?? null,
+        repairNotes: photoObjectKeys && photoObjectKeys.length > 0
+          ? JSON.stringify({ source: "mobile", projectId: projectId ?? null, photos: photoObjectKeys })
+          : JSON.stringify({ source: "mobile", projectId: projectId ?? null }),
+      }).returning();
+
+      // Mirror the desktop repair route: DOWN severity flips the equipment
+      // to IN_REPAIR so dispatch can see at a glance the unit is offline.
+      if (severity === "DOWN") {
+        await db.update(equipment).set({
+          status: "IN_REPAIR",
+          updatedAt: new Date(),
+        }).where(eq(equipment.id, equipmentId));
+      }
+
+      res.status(201).json(repair);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// List recent maintenance requests submitted by the current user (mobile
+// "My recent requests" panel). Also open to any authenticated user, scoped
+// by reporter id + tenant org via the equipment join.
+router.get(
+  "/api/equipment/my-maintenance-requests",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json([]);
+
+      const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+      const conditions = [eq(equipmentRepairs.problemReportedById, req.user!.id)];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      const rows = await db
+        .select({
+          id: equipmentRepairs.id,
+          repairNumber: equipmentRepairs.repairNumber,
+          description: equipmentRepairs.description,
+          status: equipmentRepairs.status,
+          problemReportedAt: equipmentRepairs.problemReportedAt,
+          equipmentId: equipmentRepairs.equipmentId,
+          equipmentName: equipment.name,
+          equipmentCode: equipment.equipmentCode,
+        })
+        .from(equipmentRepairs)
+        .innerJoin(equipment, eq(equipmentRepairs.equipmentId, equipment.id))
+        .where(and(...conditions))
+        .orderBy(desc(equipmentRepairs.problemReportedAt))
+        .limit(limit);
+      res.json(rows);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+// Mobile-safe equipment lookup for the Report Equipment Issue picker.
+// Open to any authenticated user in the org so operators (who do not have
+// the canManageEquipment feature flag) can still find the unit they need
+// to report. Returns only the minimal fields the picker renders.
+router.get(
+  "/api/equipment/mobile-list",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) return res.json([]);
+      const conditions: any[] = [];
+      if (shouldFilter && orgId) {
+        conditions.push(eq(equipment.organizationId, orgId));
+      }
+      const rows = await db
+        .select({
+          id: equipment.id,
+          equipmentCode: equipment.equipmentCode,
+          name: equipment.name,
+          status: equipment.status,
+        })
+        .from(equipment)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(equipment.name)
+        .limit(500);
+      res.json(rows);
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEquipment'));
 
   // ============================================================

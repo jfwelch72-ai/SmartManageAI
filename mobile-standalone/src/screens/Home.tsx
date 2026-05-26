@@ -19,6 +19,7 @@ interface HomeProject {
 type HomeNavParamList = {
   Daily: undefined; Time: undefined; Photos: undefined; Punch: undefined; Inventory: undefined;
   RFI: undefined; Submittals: undefined; Inspections: undefined; Drawings: undefined; Conflicts: undefined;
+  ReportEquipmentIssue: undefined;
 };
 
 export function HomeScreen() {
@@ -44,6 +45,7 @@ export function HomeScreen() {
             { label: "Photos", to: "Photos" },
             { label: "Punch List", to: "Punch" },
             { label: "Inventory", to: "Inventory" },
+            { label: "Report Equipment Issue", to: "ReportEquipmentIssue" },
             { label: "RFIs", to: "RFI" },
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },

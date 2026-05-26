@@ -15,6 +15,7 @@ import { ConflictsScreen } from "@/screens/Conflicts";
 import { InventoryScreen } from "@/screens/Inventory";
 import { InventoryScanScreen } from "@/screens/InventoryScan";
 import { InventoryActionScreen } from "@/screens/InventoryAction";
+import { ReportEquipmentIssueScreen } from "@/screens/ReportEquipmentIssue";
 import { colors } from "@/theme";
 
 const Tabs = createBottomTabNavigator();
@@ -58,6 +59,7 @@ export function RootNavigator() {
       <Stack.Screen name="Conflicts" component={ConflictsScreen} options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="InventoryScan" component={InventoryScanScreen} options={{ title: "Scan Material" }} />
       <Stack.Screen name="InventoryAction" component={InventoryActionScreen} options={{ title: "Inventory Action" }} />
+      <Stack.Screen name="ReportEquipmentIssue" component={ReportEquipmentIssueScreen} options={{ title: "Report Equipment Issue" }} />
     </Stack.Navigator>
   );
 }

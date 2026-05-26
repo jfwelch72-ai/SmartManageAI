@@ -29,7 +29,15 @@ export type SyncEntityType =
   // consistent with every other field action.
   | "INVENTORY_RECEIPT"
   | "INVENTORY_ISSUE"
-  | "INVENTORY_TRANSFER";
+  | "INVENTORY_TRANSFER"
+  // Task #3098: jobsite-reported equipment maintenance requests. Pushed by
+  // pushMaintenance() in the sync coordinator directly to
+  // /api/equipment/:equipmentId/maintenance-requests after attachments
+  // (photos) are uploaded via the signed-PUT path. Like the inventory
+  // entity types, this is NOT routed through the unified mobile sync
+  // envelope; the dedicated endpoint keeps cross-tenant auth, severity
+  // validation, and equipment-status side-effects in one place.
+  | "MAINT_REQUEST";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

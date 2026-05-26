@@ -92,6 +92,12 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   INVENTORY_RECEIPT: "",
   INVENTORY_ISSUE: "",
   INVENTORY_TRANSFER: "",
+  // Task #3098: pushed by pushMaintenance() to the dedicated REST endpoint
+  // /api/equipment/:equipmentId/maintenance-requests, not via the unified
+  // mobile sync envelope. Empty string keeps the entity↔field map total
+  // for TS exhaustiveness while the `if (!serverField) continue;` guard in
+  // push() skips it.
+  MAINT_REQUEST: "",
 };
 
 export async function pull(): Promise<number> {
@@ -159,7 +165,7 @@ export async function pull(): Promise<number> {
   return pulled;
 }
 
-async function uploadAttachment(att: NonNullable<OutboxRecord["attachments"]>[number]): Promise<string | null> {
+export async function uploadAttachment(att: NonNullable<OutboxRecord["attachments"]>[number]): Promise<string | null> {
   try {
     const info = await FileSystem.getInfoAsync(att.uri);
     if (!info.exists) return null;
@@ -349,9 +355,61 @@ export async function pushInventory(): Promise<{ pushed: number; failed: number 
   return { pushed, failed };
 }
 
+// Task #3098: drain MAINT_REQUEST outbox rows by uploading any photos and
+// POSTing to /api/equipment/:equipmentId/maintenance-requests. Follows the
+// same terminal-4xx semantics as pushInventory(): permanent validation
+// errors (other than auth / 408 / 429) are recorded with markFailed and
+// retried out of the queue, while network/5xx errors stay retryable.
+export async function pushMaintenance(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "MAINT_REQUEST");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const equipmentId = (rec.payload as any)?.equipmentId as string | undefined;
+    if (!equipmentId) {
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Missing equipmentId");
+      failed++;
+      continue;
+    }
+    try {
+      const photoObjectKeys: string[] = [];
+      if (rec.attachments) {
+        for (const a of rec.attachments) {
+          const key = await uploadAttachment(a);
+          if (key) photoObjectKeys.push(key);
+        }
+      }
+      const { equipmentId: _e, ...rest } = rec.payload as Record<string, unknown>;
+      await api(`/api/equipment/${encodeURIComponent(equipmentId)}/maintenance-requests`, {
+        method: "POST",
+        body: JSON.stringify({ ...rest, photoObjectKeys }),
+      });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
   const inv = await pushInventory();
-  return { pulled, pushed: pushed + inv.pushed, conflicts };
+  const maint = await pushMaintenance();
+  return { pulled, pushed: pushed + inv.pushed + maint.pushed, conflicts };
 }
