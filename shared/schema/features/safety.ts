@@ -231,6 +231,11 @@ export const oshaIncidents = pgTable("osha_incidents", {
   resultedInDeath: boolean("resulted_in_death").notNull().default(false),
   reportedBy: varchar("reported_by").references(() => users.id),
   reportedByName: text("reported_by_name"),
+  // Photo / file attachments captured at incident time. JSONB array of
+  // `{ objectKey, mime?, name? }`. Populated by the mobile sync handler so
+  // office staff can view field-uploaded photos from the incident detail
+  // page; web `POST /api/osha-incidents` may also write this.
+  attachmentsJson: jsonb("attachments_json").$type<Array<{ objectKey: string; mime?: string; name?: string }>>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

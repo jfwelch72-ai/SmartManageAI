@@ -18,6 +18,7 @@ import { InventoryScanScreen } from "@/screens/InventoryScan";
 import { InventoryActionScreen } from "@/screens/InventoryAction";
 import { ReportEquipmentIssueScreen } from "@/screens/ReportEquipmentIssue";
 import { HaulTicketsScreen } from "@/screens/HaulTickets";
+import { ReportIncidentScreen } from "@/screens/ReportIncident";
 import { colors } from "@/theme";
 
 const Tabs = createBottomTabNavigator();
@@ -64,6 +65,7 @@ export function RootNavigator() {
       <Stack.Screen name="InventoryAction" component={InventoryActionScreen} options={{ title: "Inventory Action" }} />
       <Stack.Screen name="ReportEquipmentIssue" component={ReportEquipmentIssueScreen} options={{ title: "Report Equipment Issue" }} />
       <Stack.Screen name="HaulTickets" component={HaulTicketsScreen} options={{ title: "Haul Tickets" }} />
+      <Stack.Screen name="ReportIncident" component={ReportIncidentScreen} options={{ title: "Report Incident" }} />
     </Stack.Navigator>
   );
 }

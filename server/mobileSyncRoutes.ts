@@ -2,9 +2,9 @@ import { logError, logWarn } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis, dailyReports, media, punchListItems, projectInspections, submittals, submittalReviews, submittalActivity, mobileSyncEvents, payRuns, users } from "@shared/schema";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis, dailyReports, media, punchListItems, projectInspections, submittals, submittalReviews, submittalActivity, mobileSyncEvents, payRuns, users, oshaIncidents } from "@shared/schema";
 import { ENTITY_STRATEGY_MAP, type SyncStrategy, type SyncOutcome } from "@shared/schema/features/mobileSync";
-import { eq, and, count, max, desc, gte, inArray, or, isNull, isNotNull, lte, lt } from "drizzle-orm";
+import { eq, and, count, max, desc, gte, inArray, or, isNull, isNotNull, lte, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
 import { advanceChain } from "./submittalRoutes";
@@ -816,6 +816,12 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
           comments?: string;
           [k: string]: unknown;
         }>;
+        // Field-reported safety incidents. The mobile form collects only
+        // the bare facts a crew can capture in the moment (type, severity,
+        // location, description, people, photos). The server-side handler
+        // fills in OSHA-required NOT NULL columns with sensible defaults
+        // so office staff can finish the recordable workflow in the web app.
+        safetyIncidents?: Array<{ localId: string; [k: string]: unknown }>;
       };
     };
     // CRITICAL: mobile_pending_uploads.device_id is a FK to mobileDevices.id
@@ -855,7 +861,8 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       dailyReports: ProcessedItem[];
       drawingMarkups: ProcessedItem[];
       submittalStamps: ProcessedItem[];
-    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [], punchItems: [], rfis: [], inspections: [], dailyReports: [], drawingMarkups: [], submittalStamps: [] };
+      safetyIncidents: ProcessedItem[];
+    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [], punchItems: [], rfis: [], inspections: [], dailyReports: [], drawingMarkups: [], submittalStamps: [], safetyIncidents: [] };
     const conflicts: ConflictItem[] = [];
 
     if (changes?.timeClockEvents) {
@@ -1960,6 +1967,142 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
         } catch (err) {
           logError(err, { route: "mobile-sync SUBMITTAL_STAMP persist", localId: stamp.localId });
           processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
+        }
+      }
+    }
+
+    // ---- SAFETY_INCIDENT ---------------------------------------------------
+    // Field-reported incidents get persisted directly into osha_incidents so
+    // they show up on the existing web /api/osha-incidents list immediately.
+    // The mobile form collects only a handful of fields a crew can fill in
+    // safely on a glove-tap UI; we fill in OSHA-required NOT NULL columns
+    // with safe defaults ("NOT_SPECIFIED" / "NONE") so the office team can
+    // complete the full record from the web app afterwards.
+    if (Array.isArray(changes?.safetyIncidents)) {
+      for (const item of changes.safetyIncidents) {
+        if (!item?.localId) continue;
+        const siClientTs = typeof item.clientTimestamp === "string" ? new Date(item.clientTimestamp) : null;
+        const siLogicalClock = typeof item.logicalClock === "number" ? item.logicalClock : null;
+        if (await alreadyPersisted("SAFETY_INCIDENT", item.localId)) {
+          processed.safetyIncidents.push({ localId: item.localId, status: "DUPLICATE" });
+          await writeSyncEvent({
+            organizationId, deviceId: deviceId ?? "unknown", entityType: "SAFETY_INCIDENT",
+            localId: item.localId, serverId: null, operation: "CREATE",
+            strategy: "APPEND_ONLY", outcome: "DEDUPLICATED",
+            clientTimestamp: siClientTs, logicalClock: siLogicalClock,
+          });
+          continue;
+        }
+        try {
+          const projectId = typeof item.projectId === "string" ? item.projectId : null;
+          const validProject = projectId && (await db
+            .select({ id: projects.id })
+            .from(projects)
+            .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)))
+            .limit(1)).length > 0;
+          // Severity drives classification & recordability for the OSHA log.
+          // CRITICAL/HIGH → DAYS_AWAY (recordable), MEDIUM → RESTRICTED
+          // (recordable), LOW → OTHER_RECORDABLE (recordable), NONE/NEAR_MISS
+          // → NONE (not recordable, lets office classify after follow-up).
+          const severity = typeof item.severity === "string" ? item.severity.toUpperCase() : "LOW";
+          const itemTypeUpper = typeof item.incidentType === "string" ? item.incidentType.toUpperCase() : "OTHER";
+          let classification = "OTHER_RECORDABLE";
+          let isRecordable = true;
+          // Near-miss / property-damage / environmental are NOT injuries
+          // and aren't OSHA-recordable by default. They live on the incident
+          // log so the office can spot trends, but the recordable flag stays
+          // off until a safety admin reviews them.
+          if (itemTypeUpper === "NEAR_MISS" || itemTypeUpper === "PROPERTY_DAMAGE" || itemTypeUpper === "ENVIRONMENTAL" || severity === "NONE") {
+            classification = "NONE";
+            isRecordable = false;
+          } else if (severity === "CRITICAL" || severity === "HIGH") {
+            classification = "DAYS_AWAY";
+          } else if (severity === "MEDIUM") {
+            classification = "RESTRICTED";
+          }
+          // Stitch GPS coords into the location text so they survive without
+          // schema changes — office staff get a "37.421, -122.084" appendix.
+          const locText = typeof item.location === "string" ? item.location.trim() : "";
+          const lat = typeof item.latitude === "number" ? item.latitude : null;
+          const lng = typeof item.longitude === "number" ? item.longitude : null;
+          const locationOfIncident = [
+            locText || null,
+            lat !== null && lng !== null ? `GPS ${lat.toFixed(5)}, ${lng.toFixed(5)}` : null,
+          ].filter(Boolean).join(" · ") || null;
+          // Witnesses + people-involved are appended to the description so
+          // they reach office staff without adding new columns. Photo object
+          // keys are appended too — the OSHA form's photo gallery is the
+          // attachmentsJson-based collateral that the existing review screen
+          // already knows how to render after office triage.
+          const description = typeof item.description === "string" ? item.description.trim() : "";
+          const peopleInvolved = typeof item.peopleInvolved === "string" ? item.peopleInvolved.trim() : "";
+          const witnessNames = typeof item.witnessNames === "string" ? item.witnessNames.trim() : "";
+          // Persist the actual photo object keys on the incident row so
+          // office staff can pull them back through the existing /objects
+          // download flow. We also keep a `Photos: N` line in
+          // eventDescription as a human-readable hint, but the canonical
+          // source of truth is `attachmentsJson`.
+          const attachments: Array<{ objectKey: string; mime?: string; name?: string }> = Array.isArray(item.attachments)
+            ? (item.attachments as Array<Record<string, unknown>>)
+                .map((a) => ({
+                  objectKey: typeof a.objectKey === "string" ? a.objectKey : "",
+                  mime: typeof a.mime === "string" ? a.mime : undefined,
+                  name: typeof a.name === "string" ? a.name : undefined,
+                }))
+                .filter((a) => a.objectKey.length > 0)
+            : [];
+          const eventDescription = [
+            description || "(no description provided)",
+            peopleInvolved ? `People involved: ${peopleInvolved}` : null,
+            witnessNames ? `Witnesses: ${witnessNames}` : null,
+            attachments.length > 0 ? `Photos: ${attachments.length}` : null,
+          ].filter(Boolean).join("\n");
+          const incidentType = typeof item.incidentType === "string" ? item.incidentType : "OTHER";
+          const dateRaw = typeof item.date === "string" ? item.date : null;
+          const dateOfInjury = dateRaw && /^\d{4}-\d{2}-\d{2}/.test(dateRaw)
+            ? dateRaw.slice(0, 10)
+            : new Date().toISOString().slice(0, 10);
+          const timeOfEvent = typeof item.time === "string" ? item.time.slice(0, 8) : null;
+          // Generate a case number using the same pattern as the web POST.
+          const [countResult] = await db.select({ count: sql<number>`count(*)::int` })
+            .from(oshaIncidents)
+            .where(eq(oshaIncidents.organizationId, organizationId));
+          const caseNumber = `OSHA-${new Date().getFullYear()}-${String((countResult?.count ?? 0) + 1).padStart(4, "0")}`;
+          const reporterName = `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim() || req.user!.email || "Field user";
+          const [row] = await db.insert(oshaIncidents).values({
+            organizationId,
+            caseNumber,
+            projectId: validProject ? projectId : null,
+            employeeName: peopleInvolved || reporterName,
+            dateOfInjury,
+            timeOfEvent,
+            locationOfIncident,
+            eventDescription,
+            injuryIllnessType: incidentType,
+            bodyPartAffected: typeof item.bodyPartAffected === "string" && item.bodyPartAffected.trim()
+              ? item.bodyPartAffected.trim()
+              : "NOT_SPECIFIED",
+            treatmentType: typeof item.treatmentType === "string" && item.treatmentType.trim()
+              ? item.treatmentType.trim()
+              : "NONE",
+            classification,
+            isRecordable,
+            resultedInDeath: severity === "CRITICAL" && item.resultedInDeath === true,
+            reportedBy: userId,
+            reportedByName: reporterName,
+            attachmentsJson: attachments.length > 0 ? attachments : null,
+          } as typeof oshaIncidents.$inferInsert).returning({ id: oshaIncidents.id });
+          await markPersisted("SAFETY_INCIDENT", item.localId, item);
+          processed.safetyIncidents.push({ localId: item.localId, status: "SAVED", serverId: row?.id });
+          await writeSyncEvent({
+            organizationId, deviceId: deviceId ?? "unknown", entityType: "SAFETY_INCIDENT",
+            localId: item.localId, serverId: row?.id ?? null, operation: "CREATE",
+            strategy: "APPEND_ONLY", outcome: "SAVED",
+            clientTimestamp: siClientTs, logicalClock: siLogicalClock,
+          });
+        } catch (err) {
+          logError(err, { route: "mobile-sync SAFETY_INCIDENT persist", localId: item.localId });
+          await queuePending([item], "SAFETY_INCIDENT", processed.safetyIncidents);
         }
       }
     }

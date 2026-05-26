@@ -22,6 +22,7 @@ type HomeNavParamList = {
   RFI: undefined; Submittals: undefined; Inspections: undefined; Drawings: undefined; Conflicts: undefined;
   ReportEquipmentIssue: undefined;
   HaulTickets: undefined;
+  ReportIncident: undefined;
 };
 
 export function HomeScreen() {
@@ -41,6 +42,16 @@ export function HomeScreen() {
       <SyncStatusBar />
       <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(2) }}>
         <Text style={styles.h1}>Hello, {user?.firstName ?? user?.email}</Text>
+
+        <Pressable
+          onPress={() => nav.navigate("ReportIncident")}
+          style={[styles.tile, { backgroundColor: colors.danger, flexBasis: "100%" }]}
+          testID="tile-report-incident"
+        >
+          <Text style={[styles.tileText, { color: "#fff", fontSize: 18 }]}>
+            ⚠ Report Safety Incident
+          </Text>
+        </Pressable>
 
         <View style={styles.grid}>
           {([

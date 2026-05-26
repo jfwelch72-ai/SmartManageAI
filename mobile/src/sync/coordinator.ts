@@ -103,6 +103,10 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // string keeps the map total for TS exhaustiveness while signalling
   // push() should skip it.
   TASK_UPDATE: "",
+  // Field-reported safety incidents — pushed via the unified mobile sync
+  // envelope. Server-side handler maps the lightweight field payload onto
+  // the osha_incidents table with sensible defaults.
+  SAFETY_INCIDENT: "safetyIncidents",
 };
 
 export async function pull(): Promise<number> {

@@ -564,7 +564,7 @@ router.post("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Re
       reportedByName: (req.body.reportedByName as string) || userName,
     }, res);
     if (!parsed) return;
-    const [created] = await db.insert(oshaIncidents).values(parsed).returning();
+    const [created] = await db.insert(oshaIncidents).values(parsed as typeof oshaIncidents.$inferInsert).returning();
     res.status(201).json(created);
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : "Unknown error"; res.status(400).json({ error: errMsg });

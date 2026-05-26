@@ -45,7 +45,12 @@ export type SyncEntityType =
   // contract has no tasks section). Payload shape:
   //   { kind: "STATUS", taskId, status, dismissReason? }
   //   { kind: "COMMENT", taskId, content }
-  | "TASK_UPDATE";
+  | "TASK_UPDATE"
+  // Safety incidents reported on-the-spot from the field. Pushed through
+  // the unified mobile sync envelope (changes.safetyIncidents) and
+  // persisted server-side into osha_incidents with sensible defaults so
+  // office staff can complete the OSHA-grade record in the web app.
+  | "SAFETY_INCIDENT";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
