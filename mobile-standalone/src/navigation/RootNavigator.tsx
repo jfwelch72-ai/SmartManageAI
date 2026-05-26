@@ -14,6 +14,7 @@ import { RFIScreen } from "@/screens/RFI";
 import { SubmittalsScreen } from "@/screens/Submittals";
 import { InspectionsScreen } from "@/screens/Inspections";
 import { DrawingsScreen } from "@/screens/Drawings";
+import { DocumentsScreen } from "@/screens/Documents";
 import { ConflictsScreen } from "@/screens/Conflicts";
 import { InventoryScreen } from "@/screens/Inventory";
 import { InventoryScanScreen } from "@/screens/InventoryScan";
@@ -79,6 +80,7 @@ export function RootNavigator({
       <Stack.Screen name="Submittals" component={SubmittalsScreen} options={{ title: "Submittals" }} />
       <Stack.Screen name="Inspections" component={InspectionsScreen} />
       <Stack.Screen name="Drawings" component={DrawingsScreen} />
+      <Stack.Screen name="Documents" component={DocumentsScreen} />
       <Stack.Screen name="Conflicts" component={ConflictsScreen} options={{ title: "Sync Conflicts" }} />
       <Stack.Screen name="InventoryScan" component={InventoryScanScreen} options={{ title: "Scan Material" }} />
       <Stack.Screen name="InventoryAction" component={InventoryActionScreen} options={{ title: "Inventory Action" }} />

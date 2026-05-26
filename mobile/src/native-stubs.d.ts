@@ -187,6 +187,7 @@ declare module "expo-file-system" {
   export function writeAsStringAsync(fileUri: string, contents: string, options?: Record<string, any>): Promise<void>;
   export function getInfoAsync(fileUri: string): Promise<{ exists: boolean; isDirectory: boolean; size?: number; uri: string }>;
   export function deleteAsync(fileUri: string, options?: { idempotent?: boolean }): Promise<void>;
+  export function makeDirectoryAsync(fileUri: string, options?: { intermediates?: boolean }): Promise<void>;
 }
 
 declare module "expo-application" {
@@ -359,6 +360,23 @@ declare module "expo-location" {
 declare module "expo-sharing" {
   export function shareAsync(url: string, options?: Record<string, any>): Promise<void>;
   export function isAvailableAsync(): Promise<boolean>;
+}
+
+declare module "react-native-pdf" {
+  import type { FC } from "react";
+  interface PdfProps {
+    source: { uri: string; cache?: boolean; headers?: Record<string, string> };
+    style?: any;
+    onLoadComplete?: (numberOfPages: number, filePath: string) => void;
+    onPageChanged?: (page: number, numberOfPages: number) => void;
+    onError?: (err: unknown) => void;
+    trustAllCerts?: boolean;
+    enablePaging?: boolean;
+    enableAnnotationRendering?: boolean;
+    [key: string]: any;
+  }
+  const Pdf: FC<PdfProps>;
+  export default Pdf;
 }
 
 declare module "expo-linking" {
