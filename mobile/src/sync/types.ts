@@ -82,7 +82,15 @@ export type SyncEntityType =
   // pushMessages() in the sync coordinator — not routed through the
   // unified mobile sync envelope (the server-side handler is part of
   // the web messaging system, not mobileSyncRoutes).
-  | "MESSAGE";
+  | "MESSAGE"
+  // Task #3100: jobsite delivery-receipt confirmations against an open PO.
+  // Pushed by pushDeliveryReceipts() directly to
+  // /api/procurement-module/orders/:poId/receipts after attachments are
+  // uploaded via the signed-PUT path. Like inventory and maintenance, this
+  // bypasses the unified mobile sync envelope — the procurement endpoint
+  // owns receivable-status validation, line quantity rollup, and the
+  // po.receipt_recorded event emission.
+  | "DELIVERY_RECEIPT";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

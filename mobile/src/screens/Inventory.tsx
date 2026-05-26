@@ -12,6 +12,7 @@ type InventoryStack = {
   Inventory: undefined;
   InventoryScan: undefined;
   RequestMaterial: undefined;
+  Deliveries: undefined;
 };
 
 const INVENTORY_TYPES: ReadonlySet<SyncEntityType> = new Set([
@@ -66,6 +67,15 @@ export function InventoryScreen() {
           <Text style={[styles.scanBtnSub, { color: colors.textMuted }]}>
             Short on stock? Send the office a request from the field.
           </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => nav.navigate("Deliveries")}
+          style={[styles.scanBtn, { backgroundColor: colors.surface }]}
+          testID="button-go-deliveries"
+        >
+          <Text style={[styles.scanBtnText, { color: colors.text }]}>Confirm deliveries</Text>
+          <Text style={styles.scanBtnSub}>Receive against open POs</Text>
         </Pressable>
 
         <Pressable

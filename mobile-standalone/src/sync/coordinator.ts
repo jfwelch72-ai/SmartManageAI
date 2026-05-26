@@ -131,6 +131,9 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // not the unified mobile sync envelope. Empty string keeps the field map
   // total and signals push() to skip these rows.
   MESSAGE: "",
+  // Task #3100: drained by pushDeliveryReceipts() to the procurement
+  // receipts endpoint. Same rationale as the inventory entries above.
+  DELIVERY_RECEIPT: "",
 };
 
 export async function pull(): Promise<number> {
@@ -586,6 +589,88 @@ export async function pushTaskUpdates(): Promise<{ pushed: number; failed: numbe
   return { pushed, failed };
 }
 
+// Task #3100: drain DELIVERY_RECEIPT outbox rows. Per-record flow:
+//   1. Upload any attached photos (top-level + per-line) via signed PUT.
+//   2. POST the resolved payload to
+//      /api/procurement-module/orders/:poId/receipts.
+// Same terminal-4xx semantics as pushInventory() / pushMaintenance():
+// permanent validation errors are recorded and dropped from the retry
+// window, network/5xx stays retryable.
+export async function pushDeliveryReceipts(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "DELIVERY_RECEIPT");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const poId = (rec.payload as any)?.poId as string | undefined;
+    if (!poId) {
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Missing poId");
+      failed++;
+      continue;
+    }
+    try {
+      // Photos live on rec.attachments with a `line:<poItemId>` or
+      // `receipt` discriminator stored in attachment.name's prefix so we
+      // can route uploaded object keys back to the right line.
+      const keyByLocalId = new Map<string, string>();
+      if (rec.attachments) {
+        for (const a of rec.attachments) {
+          const key = await uploadAttachment(a);
+          if (key) keyByLocalId.set(a.localId, key);
+        }
+      }
+      const payload = rec.payload as {
+        poId: string;
+        deliveryNote?: string;
+        notes?: string;
+        items: Array<{
+          poItemId: string;
+          quantityReceived: string;
+          condition?: "GOOD" | "DAMAGED" | "REJECTED";
+          notes?: string;
+          photoLocalIds?: string[];
+        }>;
+        photoLocalIds?: string[];
+      };
+      const resolveKeys = (ids?: string[]) =>
+        (ids ?? []).map((id) => keyByLocalId.get(id)).filter((k): k is string => !!k);
+      const body = {
+        deliveryNote: payload.deliveryNote ?? null,
+        notes: payload.notes ?? null,
+        photoObjectKeys: resolveKeys(payload.photoLocalIds),
+        items: payload.items.map((it) => ({
+          poItemId: it.poItemId,
+          quantityReceived: it.quantityReceived,
+          condition: it.condition ?? "GOOD",
+          notes: it.notes ?? null,
+          photoObjectKeys: resolveKeys(it.photoLocalIds),
+        })),
+      };
+      await api(`/api/procurement-module/orders/${encodeURIComponent(poId)}/receipts`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 // Task #3090: Drain TM_TICKET outbox rows. Each row maps to a 3-step server
 // flow that mirrors what the web app does:
 //   1. POST /api/projects/:projectId/tm-tickets   — create the ticket
@@ -760,10 +845,8 @@ function readErrorMessage(err: ApiError): string | null {
     const e = (body as Record<string, unknown>).error;
     if (typeof e === "string") return e;
   }
-  if (typeof body === "string") return body;
   return null;
-// Task #3097: drain queued equipment-hour logs to the per-equipment REST
-// endpoint. Same shape as pushInventory — 4xx (except auth/timeout/429)
+}
 // are terminal because the server has already validated the payload
 // (cross-tenant, duplicate week per equipment_hour_logs_unique_week,
 // etc.) and a retry will keep failing. Network/5xx errors stay
@@ -949,9 +1032,10 @@ export async function syncNow(): Promise<SyncStats> {
   const tm = await pushTmTickets();
   const mr = await pushMaterialRequests();
   const msgs = await pushMessages();
+  const deliveries = await pushDeliveryReceipts();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

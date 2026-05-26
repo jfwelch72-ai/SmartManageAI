@@ -1625,13 +1625,27 @@ router.get("/api/procurement-module/orders/:id/receipts", requireAuth, requireRo
 const receiptCreateSchema = z.object({
   deliveryNote: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
+  // Task #3100: mobile delivery-receipt flow uploads photos via signed PUT
+  // first, then sends the resulting object keys here. Persisted as a JSON
+  // metadata block appended to `notes` so AP can find them without a
+  // schema migration. Per-line photos are similarly attached to the
+  // line's `notes` text so the photo trail survives at line granularity.
+  photoObjectKeys: z.array(z.string()).optional(),
   items: z.array(z.object({
     poItemId: z.string(),
     quantityReceived: z.string(),
     condition: z.enum(["GOOD", "DAMAGED", "REJECTED"]).optional(),
     notes: z.string().nullable().optional(),
+    photoObjectKeys: z.array(z.string()).optional(),
   })),
 });
+
+function appendPhotoRefs(existing: string | null | undefined, keys: string[] | undefined): string | null {
+  const base = existing?.trim() ?? "";
+  if (!keys || keys.length === 0) return base || null;
+  const tag = `[mobile-photos] ${keys.join(", ")}`;
+  return base ? `${base}\n\n${tag}` : tag;
+}
 
 router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireRole(...ROLES), async (req: AuthRequest, res, next) => {
   try {
@@ -1666,7 +1680,7 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
         poId: po.id,
         receivedById: req.user!.id,
         deliveryNote: parsed.data.deliveryNote || null,
-        notes: parsed.data.notes || null,
+        notes: appendPhotoRefs(parsed.data.notes, parsed.data.photoObjectKeys),
       }).returning();
 
       for (const item of parsed.data.items) {
@@ -1675,7 +1689,7 @@ router.post("/api/procurement-module/orders/:id/receipts", requireAuth, requireR
           poItemId: item.poItemId,
           quantityReceived: item.quantityReceived,
           condition: item.condition || "GOOD",
-          notes: item.notes || null,
+          notes: appendPhotoRefs(item.notes, item.photoObjectKeys),
         });
 
         const qtyReceived = parseFloat(item.quantityReceived);

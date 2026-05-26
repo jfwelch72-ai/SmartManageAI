@@ -29,6 +29,7 @@ type HomeNavParamList = {
   RequestMaterial: undefined;
   EquipmentHours: undefined;
   AnalyzePhoto: undefined;
+  Deliveries: undefined;
 };
 
 export function HomeScreen() {
@@ -77,6 +78,7 @@ export function HomeScreen() {
             { label: "Punch List", to: "Punch" },
             { label: taskBadge > 0 ? `Tasks (${taskBadge})` : "Tasks", to: "Tasks" },
             { label: "Inventory", to: "Inventory" },
+            { label: "Deliveries", to: "Deliveries" },
             { label: "Report Equipment Issue", to: "ReportEquipmentIssue" },
             { label: "T&M Tickets", to: "TMTickets" },
             { label: "Request Material", to: "RequestMaterial" },

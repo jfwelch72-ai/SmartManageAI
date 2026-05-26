@@ -32,6 +32,8 @@ import { EquipmentHoursScreen } from "@/screens/EquipmentHours";
 import { MessagesScreen } from "@/screens/Messages";
 import { ConversationScreen } from "@/screens/Conversation";
 import { AnalyzePhotoScreen } from "@/screens/AnalyzePhoto";
+import { DeliveriesScreen } from "@/screens/Deliveries";
+import { DeliveryDetailScreen } from "@/screens/DeliveryDetail";
 import { colors } from "@/theme";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -161,6 +163,8 @@ export function RootNavigator({
       <Stack.Screen name="EquipmentHours" component={EquipmentHoursScreen} options={{ title: "Equipment Hours" }} />
       <Stack.Screen name="Conversation" component={ConversationScreen} options={{ title: "Conversation" }} />
       <Stack.Screen name="AnalyzePhoto" component={AnalyzePhotoScreen} options={{ title: "Analyze Photo" }} />
+      <Stack.Screen name="Deliveries" component={DeliveriesScreen} options={{ title: "Deliveries" }} />
+      <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={{ title: "Confirm Delivery" }} />
     </Stack.Navigator>
   );
 }
