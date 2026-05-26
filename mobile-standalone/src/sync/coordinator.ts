@@ -127,6 +127,10 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // endpoint; not part of the unified mobile sync envelope. Empty
   // string keeps SyncEntityType ↔ field map total for TS exhaustiveness.
   EQUIPMENT_HOUR_LOG: "",
+  // Task #3094: routed by pushMessages() to POST /api/conversations/:id/messages,
+  // not the unified mobile sync envelope. Empty string keeps the field map
+  // total and signals push() to skip these rows.
+  MESSAGE: "",
 };
 
 export async function pull(): Promise<number> {
@@ -348,6 +352,97 @@ const INVENTORY_PATHS: Partial<Record<SyncEntityType, string>> = {
   INVENTORY_ISSUE: "/api/inventory/issue",
   INVENTORY_TRANSFER: "/api/inventory/transfer",
 };
+
+// Task #3094: drain queued chat MESSAGE outbox rows.
+// Payload shape: { conversationId, content, attachmentUri?, attachmentMime?, attachmentName? }
+// If an attachment URI is present we first upload it via the messaging
+// multipart endpoint (which returns a conversation-scoped proxy URL the
+// /messages handler accepts), then post the message. Like inventory, 4xx
+// (except auth/transient) are terminal — bump retry past the cap to drop
+// the row instead of retrying forever.
+export async function pushMessages(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "MESSAGE");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const payload = rec.payload as {
+      conversationId?: string;
+      content?: string;
+    };
+    const conversationId = payload.conversationId;
+    if (!conversationId) {
+      await markFailed(rec.localId, "Missing conversationId");
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Missing conversationId");
+      failed++;
+      continue;
+    }
+    try {
+      let attachmentUrl: string | undefined;
+      let attachmentName: string | undefined;
+      let attachmentType: string | undefined;
+      let attachmentSize: number | undefined;
+      const att = rec.attachments?.[0];
+      if (att) {
+        const info = await FileSystem.getInfoAsync(att.uri);
+        if (info.exists) {
+          const uploadResult = await FileSystem.uploadAsync(
+            `${(await import("@/api/client")).baseUrl}/api/conversations/${conversationId}/upload`,
+            att.uri,
+            {
+              httpMethod: "POST",
+              uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+              fieldName: "file",
+              mimeType: att.mime,
+              parameters: {},
+              headers: await (async () => {
+                const { getAuthToken } = await import("@/api/client");
+                const tok = await getAuthToken();
+                return tok ? { Cookie: `auth_token=${tok}` } : {};
+              })(),
+            }
+          );
+          if (uploadResult.status >= 200 && uploadResult.status < 300) {
+            try {
+              const parsed = JSON.parse(uploadResult.body) as {
+                url: string; name?: string; type?: string; size?: number;
+              };
+              attachmentUrl = parsed.url;
+              attachmentName = parsed.name ?? att.name;
+              attachmentType = parsed.type ?? att.mime;
+              attachmentSize = parsed.size ?? att.size;
+            } catch {
+              // fall through — send text-only
+            }
+          }
+        }
+      }
+      await api(`/api/conversations/${conversationId}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          content: payload.content ?? "",
+          ...(attachmentUrl ? { attachmentUrl, attachmentName, attachmentType, attachmentSize } : {}),
+        }),
+      });
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        await markFailed(rec.localId, `HTTP ${err.status}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
 
 export async function pushInventory(): Promise<{ pushed: number; failed: number }> {
   if (!(await isOnline())) return { pushed: 0, failed: 0 };
@@ -853,9 +948,10 @@ export async function syncNow(): Promise<SyncStats> {
   const eq = await pushEquipmentHours();
   const tm = await pushTmTickets();
   const mr = await pushMaterialRequests();
+  const msgs = await pushMessages();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

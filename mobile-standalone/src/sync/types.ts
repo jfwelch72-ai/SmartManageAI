@@ -76,7 +76,13 @@ export type SyncEntityType =
   // as `[Meter photo: <key>]` so the office can pull it from
   // object storage — the server endpoint has no first-class photo
   // field today.
-  | "EQUIPMENT_HOUR_LOG";
+  | "EQUIPMENT_HOUR_LOG"
+  // Task #3094: outgoing chat message from the mobile messaging UI.
+  // Pushed directly to POST /api/conversations/:id/messages by
+  // pushMessages() in the sync coordinator — not routed through the
+  // unified mobile sync envelope (the server-side handler is part of
+  // the web messaging system, not mobileSyncRoutes).
+  | "MESSAGE";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
