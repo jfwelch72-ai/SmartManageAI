@@ -226,18 +226,107 @@ app.use(helmet({
   referrerPolicy: { policy: "no-referrer" },
 }));
 
-const allowedOrigins: string[] = [];
-if (process.env.FRONTEND_URL) allowedOrigins.push(process.env.FRONTEND_URL);
-if (process.env.REPLIT_DEV_DOMAIN) allowedOrigins.push(`https://${process.env.REPLIT_DEV_DOMAIN.trim()}`);
+// CORS allowlist.
+//
+// Exact-match entries come from FRONTEND_URL, REPLIT_DEV_DOMAIN, and
+// REPLIT_DOMAINS. Operators can extend the list at runtime via
+// ADDITIONAL_ALLOWED_ORIGINS (comma-separated), which also accepts
+// suffix-wildcard entries like `https://*.replit.app` so the mobile
+// project's auto-generated preview domains do not have to be enumerated.
+//
+// We intentionally keep `credentials: true` + strict allowlist instead of
+// `origin: true` / `*` — the JWT cookie flow needs credentials, and
+// `threat_model.md` §4 calls for an explicit allowlist.
+//
+// Requests with no `Origin` header (native mobile fetch, server-to-server,
+// curl) are allowed, matching the `cors` package's default. That is what
+// lets React Native fetch from Expo Go work without a CORS dance.
+const allowedExactOrigins = new Set<string>();
+const allowedOriginPatterns: RegExp[] = [];
+
+const addExact = (value: string | undefined | null): void => {
+  if (!value) return;
+  const trimmed = value.trim();
+  if (trimmed) allowedExactOrigins.add(trimmed);
+};
+
+const escapeForRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const addEntry = (raw: string): void => {
+  const trimmed = raw.trim();
+  if (!trimmed) return;
+  if (trimmed.includes("*")) {
+    const pattern = "^" + trimmed.split("*").map(escapeForRegExp).join(".*") + "$";
+    allowedOriginPatterns.push(new RegExp(pattern));
+  } else {
+    allowedExactOrigins.add(trimmed);
+  }
+};
+
+addExact(process.env.FRONTEND_URL);
+if (process.env.REPLIT_DEV_DOMAIN) {
+  addExact(`https://${process.env.REPLIT_DEV_DOMAIN.trim()}`);
+}
 if (process.env.REPLIT_DOMAINS) {
   for (const d of process.env.REPLIT_DOMAINS.split(",")) {
     const trimmed = d.trim();
-    if (trimmed) allowedOrigins.push(`https://${trimmed}`);
+    if (trimmed) addExact(`https://${trimmed}`);
   }
 }
-if (allowedOrigins.length === 0) allowedOrigins.push("http://localhost:5173");
+if (process.env.ADDITIONAL_ALLOWED_ORIGINS) {
+  for (const entry of process.env.ADDITIONAL_ALLOWED_ORIGINS.split(",")) {
+    addEntry(entry);
+  }
+}
+
+// Local mobile-dev defaults. Production stays strict-allowlist-only.
+if (process.env.NODE_ENV !== "production") {
+  addExact("http://localhost:5173");
+  addExact("http://localhost:5000");
+  addExact("http://localhost:19006"); // Expo web
+  addExact("http://localhost:8081");  // Metro
+}
+
+if (
+  allowedExactOrigins.size === 0 &&
+  allowedOriginPatterns.length === 0
+) {
+  addExact("http://localhost:5173");
+}
+
+const rejectedOriginsLogged = new Set<string>();
+
+const isOriginAllowed = (origin: string): boolean => {
+  if (allowedExactOrigins.has(origin)) return true;
+  for (const pattern of allowedOriginPatterns) {
+    if (pattern.test(origin)) return true;
+  }
+  return false;
+};
+
 app.use(cors({
-  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
+  origin: (origin, callback) => {
+    // No Origin header → server-to-server, curl, or native mobile fetch.
+    // The cors package's default behavior is to allow these; preserve it.
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    if (isOriginAllowed(origin)) {
+      callback(null, true);
+      return;
+    }
+    if (!rejectedOriginsLogged.has(origin)) {
+      rejectedOriginsLogged.add(origin);
+      console.warn(
+        `[cors] Rejected origin ${origin}. Add it to ADDITIONAL_ALLOWED_ORIGINS ` +
+        `(comma-separated; supports suffix wildcards like https://*.replit.app) ` +
+        `and restart the server.`
+      );
+    }
+    callback(null, false);
+  },
   credentials: true,
 }));
 

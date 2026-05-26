@@ -299,6 +299,45 @@ CPU spikes from request latency.
 
 ---
 
+## 8. Mobile origin blocked by CORS
+
+**Symptoms**
+- The mobile app (Expo web build, EAS preview/production web, or a
+  deployed mobile Replit project) shows
+  `blocked by CORS policy: No 'Access-Control-Allow-Origin' header`
+  in devtools when calling the API.
+- Server logs include
+  `[cors] Rejected origin <origin>. Add it to ADDITIONAL_ALLOWED_ORIGINS …`
+  (logged once per offending origin per process lifetime).
+
+**Triage**
+1. Copy the exact origin string from the rejection log line. CORS is
+   character-for-character — `https://app.example.com` and
+   `https://www.app.example.com` are different origins.
+2. Confirm it isn't already in `FRONTEND_URL`, `REPLIT_DEV_DOMAIN`, or
+   `REPLIT_DOMAINS`. Those are the built-in allowlist sources.
+
+**Mitigation**
+Add the origin to `ADDITIONAL_ALLOWED_ORIGINS` (comma-separated) and
+restart the server. Suffix wildcards are supported so you can cover a
+whole Replit/Expo preview namespace in one entry:
+
+```
+ADDITIONAL_ALLOWED_ORIGINS=https://mobile.smartmanageai.com,https://*.replit.app,https://*.expo.app
+```
+
+Native mobile fetch (Expo Go on a phone, React Native bare) sends no
+`Origin` header at all and is allowed by default — no env change is
+required for it.
+
+**Post-incident**
+- If this is a permanent origin (new mobile production domain), add it
+  to the deployment's secrets store so it survives restarts.
+- Verify with the CORS preflight check baked into
+  `scripts/smoke-test.sh` (set `SMOKE_CORS_ORIGIN=<the new origin>`).
+
+---
+
 ## Wired-up evidence
 
 The pieces below are already implemented; this section is the index so a

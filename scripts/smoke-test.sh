@@ -79,4 +79,53 @@ else
   echo "[smoke] Skipping /api/ops/beta-readiness check (SUPER_ADMIN_COOKIE not set)"
 fi
 
+# ── CORS allowlist check ─────────────────────────────────────────────────────
+# Issue an OPTIONS preflight with a disallowed Origin and assert no
+# Access-Control-Allow-Origin header comes back. Then repeat with an allowed
+# Origin (defaults to the first probed health endpoint's host; override with
+# SMOKE_CORS_ORIGIN) and assert the header echoes it. Keeps the strict
+# allowlist honest against future regressions.
+echo "[smoke] Checking CORS allowlist on /api/health ..."
+CORS_URL="${BASE_URL%/}/api/health"
+
+DISALLOWED_ORIGIN="https://example-not-allowed-${RANDOM}.invalid"
+DISALLOWED_HEADERS=$(curl -sS -D - -o /dev/null \
+  --max-time "${TIMEOUT}" \
+  -X OPTIONS \
+  -H "Origin: ${DISALLOWED_ORIGIN}" \
+  -H "Access-Control-Request-Method: GET" \
+  "${CORS_URL}" || echo "")
+if echo "${DISALLOWED_HEADERS}" | grep -i -q "^access-control-allow-origin:"; then
+  echo "[smoke]   CORS allowlist -> FAIL (disallowed origin ${DISALLOWED_ORIGIN} got an ACAO header)"
+  echo "${DISALLOWED_HEADERS}"
+  exit 1
+fi
+echo "[smoke]   CORS rejects ${DISALLOWED_ORIGIN} (no ACAO header) -> OK"
+
+ALLOWED_ORIGIN="${SMOKE_CORS_ORIGIN:-}"
+if [[ -z "${ALLOWED_ORIGIN}" ]]; then
+  # Derive a likely-allowed origin from BASE_URL (FRONTEND_URL/REPLIT_DOMAINS
+  # are typically the server's own host). Falls back to localhost:5173, which
+  # the non-prod allowlist seeds by default.
+  if [[ "${BASE_URL}" == http://localhost:* ]]; then
+    ALLOWED_ORIGIN="http://localhost:5173"
+  else
+    ALLOWED_ORIGIN="${BASE_URL%/}"
+  fi
+fi
+
+ALLOWED_HEADERS=$(curl -sS -D - -o /dev/null \
+  --max-time "${TIMEOUT}" \
+  -X OPTIONS \
+  -H "Origin: ${ALLOWED_ORIGIN}" \
+  -H "Access-Control-Request-Method: GET" \
+  "${CORS_URL}" || echo "")
+ACAO=$( (echo "${ALLOWED_HEADERS}" | grep -i "^access-control-allow-origin:" || true) | head -1 | tr -d '\r' | sed 's/^[Aa]ccess-[Cc]ontrol-[Aa]llow-[Oo]rigin:[[:space:]]*//')
+if [[ "${ACAO}" == "${ALLOWED_ORIGIN}" ]]; then
+  echo "[smoke]   CORS allows ${ALLOWED_ORIGIN} (ACAO echoed) -> OK"
+else
+  echo "[smoke]   CORS allowlist -> WARN (expected ACAO=${ALLOWED_ORIGIN}, got '${ACAO}')"
+  echo "[smoke]   This is a soft warning — set SMOKE_CORS_ORIGIN to a known-allowed origin to make it strict."
+fi
+
 echo "[smoke] OK"

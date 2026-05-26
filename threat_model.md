@@ -63,7 +63,14 @@ The major components:
 - `frame-ancestors 'none'` + `frameguard: deny` (clickjacking).
 - `hsts: maxAge=1y, includeSubDomains, preload` in production.
 - `referrer-policy: no-referrer`.
-- `cors` is allowlist-driven from env (`FRONTEND_URL`, `REPLIT_DOMAINS`).
+- `cors` is allowlist-driven from env (`FRONTEND_URL`, `REPLIT_DEV_DOMAIN`,
+  `REPLIT_DOMAINS`, and the optional `ADDITIONAL_ALLOWED_ORIGINS` —
+  comma-separated, supports suffix-wildcards like `https://*.replit.app`
+  so the mobile project's preview domains can be added without a code
+  change). `credentials: true` is preserved (cookie-based JWT auth); we
+  intentionally do NOT switch to `origin: true` / `*`. Rejected origins
+  are logged once per origin per process at `warn` level so future CORS
+  issues are diagnosable (runbook §8).
 
 ### 5.2 Authentication & sessions (`server/auth.ts`)
 - bcrypt(10) password hashing.

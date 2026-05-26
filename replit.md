@@ -18,6 +18,9 @@ SmartManageAI is a white-label SaaS platform that centralizes and streamlines th
 *   `ANTHROPIC_API_KEY` (for Takeoff family AI routing)
 *   `STRICT_TENANT_RLS=true` (production only — server fails fast on boot if missing or `false`; dev/test may opt out). See `docs/architecture/tenant-isolation.md`.
 
+**Optional Environment Variables**:
+*   `ADDITIONAL_ALLOWED_ORIGINS` (comma-separated CORS allowlist for non-Replit origins, e.g. the mobile app's Expo/EAS/Replit preview domains; supports suffix-wildcard entries like `https://*.replit.app`). Non-production also auto-allows `http://localhost:19006`, `http://localhost:8081`, and `http://localhost:5000` for Expo web / Metro. See `docs/ops/runbook.md` §8.
+
 ## Green Baseline
 
 The following workflows must boot cleanly and stay green:
