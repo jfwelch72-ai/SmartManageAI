@@ -1604,6 +1604,44 @@ router.delete(
 );
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Inbound-email audit events — SUPER_ADMIN only.
+// GET /api/support/inbound-email-events?limit=N
+// Returns recent audit_log rows where entityType = 'support_inbound_email'
+// so support agents can confirm the SendGrid Inbound Parse integration is live.
+// ──────────────────────────────────────────────────────────────────────────────
+
+router.get(
+  "/api/support/inbound-email-events",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res, next) => {
+    try {
+      const { auditLog } = await import("@shared/schema");
+      const limit = 20;
+      const rows = await db
+        .select()
+        .from(auditLog)
+        .where(eq(auditLog.entityType, "support_inbound_email"))
+        .orderBy(desc(auditLog.createdAt))
+        .limit(limit);
+      const events = rows.map((r) => {
+        let parsed: Record<string, unknown> = {};
+        try {
+          if (r.newValue) parsed = JSON.parse(r.newValue);
+        } catch {
+          // ignore
+        }
+        return { ...r, details: parsed };
+      });
+      const secretConfigured = !!process.env.SUPPORT_INBOUND_SECRET;
+      res.json({ events, secretConfigured });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ──────────────────────────────────────────────────────────────────────────────
 // SLA sweep
 // ──────────────────────────────────────────────────────────────────────────────
 

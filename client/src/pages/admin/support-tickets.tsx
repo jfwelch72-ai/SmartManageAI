@@ -10,9 +10,11 @@ import {
   Clock,
   FileDown,
   Inbox,
+  Mail,
   MessageSquare,
   MessageSquareText,
   Paperclip,
+  RefreshCw,
   Search,
   Send,
   Settings,
@@ -23,6 +25,7 @@ import {
   TicketCheck,
   X,
   Download,
+  XCircle,
 } from "lucide-react";
 import {
   BarChart,
@@ -687,6 +690,174 @@ function TicketDetailSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Inbound Email Panel
+// ──────────────────────────────────────────────────────────────────────────────
+
+interface InboundEmailDetails {
+  senderEmail?: string;
+  senderName?: string | null;
+  action?: string;
+  attachmentCount?: number;
+  ticketId?: string;
+  isAnonymousSender?: boolean;
+  correlationId?: string;
+}
+
+interface InboundEmailEvent {
+  id: string;
+  entityId: string;
+  action: string;
+  newValue: string | null;
+  createdAt: string;
+  details: InboundEmailDetails;
+}
+
+interface InboundEmailEventsResponse {
+  events: InboundEmailEvent[];
+  secretConfigured: boolean;
+}
+
+function InboundEmailPanel() {
+  const { data, isLoading, refetch, isFetching } = useQuery<InboundEmailEventsResponse>({
+    queryKey: ["/api/support/inbound-email-events"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/support/inbound-email-events");
+      return res.json();
+    },
+    refetchInterval: 60_000,
+  });
+
+  const events = data?.events ?? [];
+  const secretConfigured = data?.secretConfigured ?? false;
+
+  return (
+    <Card data-testid="card-inbound-email">
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Mail className="h-5 w-5 text-muted-foreground" />
+            <CardTitle className="text-base">Inbound Email (SendGrid Parse)</CardTitle>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            data-testid="button-refresh-inbound-events"
+            className="gap-1"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+        <CardDescription>
+          Recent tickets and replies created via the SendGrid Inbound Parse webhook.
+          Confirms that inbound email is flowing into the system.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div
+          className={`flex items-center gap-2 rounded-md border px-3 py-2 text-sm ${
+            secretConfigured
+              ? "border-green-200 bg-green-50 text-green-800 dark:border-green-800 dark:bg-green-950 dark:text-green-200"
+              : "border-yellow-200 bg-yellow-50 text-yellow-800 dark:border-yellow-800 dark:bg-yellow-950 dark:text-yellow-200"
+          }`}
+          data-testid="status-inbound-secret"
+        >
+          {secretConfigured ? (
+            <CheckCircle2 className="h-4 w-4 flex-shrink-0" />
+          ) : (
+            <XCircle className="h-4 w-4 flex-shrink-0" />
+          )}
+          <span>
+            {secretConfigured
+              ? "SUPPORT_INBOUND_SECRET is configured — webhook endpoint is active."
+              : "SUPPORT_INBOUND_SECRET is not set. Set this secret to enable inbound email. All webhook requests are currently rejected (401)."}
+          </span>
+        </div>
+
+        {!secretConfigured && (
+          <div className="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground space-y-1">
+            <p className="font-semibold">Setup instructions</p>
+            <ol className="list-decimal list-inside space-y-1">
+              <li>Generate a random secret: <code className="bg-background px-1 rounded">openssl rand -hex 32</code></li>
+              <li>Set <code className="bg-background px-1 rounded">SUPPORT_INBOUND_SECRET</code> in Replit Secrets.</li>
+              <li>In the SendGrid dashboard, configure Inbound Parse to POST to:<br />
+                <code className="bg-background px-1 rounded">POST /api/support/inbound-email</code>
+              </li>
+              <li>Add a custom header to the SendGrid Inbound Parse request:<br />
+                <code className="bg-background px-1 rounded">X-Support-Inbound-Token: &lt;your secret&gt;</code>
+              </li>
+            </ol>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="space-y-2">
+            {[1, 2, 3].map((i) => <Skeleton key={i} className="h-10 w-full" />)}
+          </div>
+        ) : events.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 py-8 text-muted-foreground" data-testid="empty-state-inbound-events">
+            <Inbox className="h-8 w-8" />
+            <p className="text-sm font-medium">No inbound email events yet</p>
+            <p className="text-xs">Events will appear here once an email is received via SendGrid Inbound Parse.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-md border" data-testid="table-inbound-events">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Action</TableHead>
+                  <TableHead>Sender</TableHead>
+                  <TableHead>Ticket</TableHead>
+                  <TableHead className="hidden sm:table-cell">Attachments</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {events.map((event) => (
+                  <TableRow key={event.id} data-testid={`row-inbound-event-${event.id}`}>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap" data-testid={`text-inbound-time-${event.id}`}>
+                      {format(new Date(event.createdAt), "MMM d, yyyy h:mm a")}
+                    </TableCell>
+                    <TableCell data-testid={`badge-inbound-action-${event.id}`}>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          event.details.action === "email_new_ticket"
+                            ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-100"
+                            : "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-100"
+                        }
+                      >
+                        {event.details.action === "email_reply" ? "Reply" : "New Ticket"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-sm max-w-[180px] truncate" data-testid={`text-inbound-sender-${event.id}`}>
+                      {event.details.senderName
+                        ? `${event.details.senderName} <${event.details.senderEmail}>`
+                        : (event.details.senderEmail ?? "—")}
+                      {event.details.isAnonymousSender && (
+                        <span className="ml-1 text-xs text-muted-foreground">(guest)</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs font-mono text-muted-foreground" data-testid={`text-inbound-ticket-${event.id}`}>
+                      {event.details.ticketId ? event.details.ticketId.slice(0, 8) : event.entityId.slice(0, 8)}
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell text-xs text-muted-foreground" data-testid={`text-inbound-attachments-${event.id}`}>
+                      {event.details.attachmentCount ?? 0}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1979,7 +2150,10 @@ export default function AdminSupportTicketsPage() {
           </TabsContent>
 
           <TabsContent value="settings" className="mt-4">
-            <SupportSettingsCard />
+            <div className="space-y-6">
+              <SupportSettingsCard />
+              <InboundEmailPanel />
+            </div>
           </TabsContent>
         </Tabs>
       </main>
