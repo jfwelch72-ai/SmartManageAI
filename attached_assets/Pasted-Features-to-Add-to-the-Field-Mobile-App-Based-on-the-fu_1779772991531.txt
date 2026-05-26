@@ -1,0 +1,139 @@
+Features to Add to the Field Mobile App
+
+Based on the full web app, here's what's missing from the mobile plan, organized by priority for field workers:
+
+ 
+Must-Have (Daily field use)
+
+Feature
+
+Why it's needed on mobile
+
+Punch Lists
+
+Field workers close out punch items on-site, not at a desk
+
+Inspections
+
+Log inspection pass/fail results, schedule from the field
+
+T&M Tickets
+
+Create labor/equipment/material tickets on-site with digital signature capture from the client
+
+RFIs
+
+Project Engineers submit and track RFIs from the field without going back to the office
+
+Safety Incident Reporting
+
+Incidents must be logged immediately at the scene
+
+Issue Captures
+
+Field issues need to be logged in real time (this page exists on web but isn't in the mobile plan)
+
+Push Notifications
+
+New assignments, change order approvals, urgent messages, safety alerts — none are wired yet
+
+Messaging (read + send)
+
+Direct and project-based messaging for field crews
+
+Task Viewing & Updates
+
+Field workers have assigned tasks they need to check off
+
+Haul Tickets
+
+Heavy civil and earthwork crews log haul ticket counts from the field
+
+ 
+Should-Have (Weekly field use)
+
+Feature
+
+Why it's needed on mobile
+
+Equipment Hour Logging
+
+Operators log meter hours daily; currently desktop-only
+
+Equipment Maintenance Requests
+
+Report a broken machine immediately from the jobsite
+
+Material/Purchase Requests
+
+Supers need to request materials when something runs short on-site
+
+Delivery Receipt Confirmation
+
+Confirm PO deliveries when materials arrive on-site
+
+Drawing / Plan Viewer
+
+View current drawing sets and revisions from the field (read-only)
+
+SWPPP Inspections
+
+Required environmental compliance inspections done on-site
+
+Leave Requests
+
+Workers submit PTO/sick requests from anywhere
+
+Voice Logs
+
+Hands-free daily reporting via voice dictation (exists on web, not in mobile plan)
+
+Project Documents (read-only)
+
+Access specs, submittals, contracts from the field
+
+ 
+Nice-to-Have (Situational field use)
+
+Feature
+
+Why it's needed on mobile
+
+AI Note Insights
+
+Get AI-generated action items from daily notes right after submitting
+
+AI Jobsite Camera Analysis
+
+Snap a photo and get AI safety/progress feedback immediately
+
+Weather for Project Site
+
+Weather context built into daily reports and delay logging
+
+Change Order Initiation
+
+Supers initiate a change event from the field when scope changes
+
+Crew Schedule Viewer
+
+Workers can see who is assigned where that day
+
+Submittals (read-only)
+
+Verify submittal approval status before installing materials
+
+ 
+Explicitly Out of Scope for Mobile
+
+These web features are office/admin functions and should stay desktop-only:
+
+• Bid management, takeoff, estimating
+• AIA billing, SOV, WIP reports
+• Payroll management, pay runs
+• CRM, hiring/ATS
+• Website builder, social media
+• Platform administration
+• Financial dashboards (CFO, company health)
+ 
+Summary: The current mobile plan covers about 5-6 features. There are roughly 19 additional features from the web app that field workers genuinely need daily or weekly. The biggest gaps are punch lists, T&M tickets, safety incident reporting, RFIs, and push notifications.
