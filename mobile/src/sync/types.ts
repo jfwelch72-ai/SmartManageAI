@@ -90,7 +90,15 @@ export type SyncEntityType =
   // bypasses the unified mobile sync envelope — the procurement endpoint
   // owns receivable-status validation, line quantity rollup, and the
   // po.receipt_recorded event emission.
-  | "DELIVERY_RECEIPT";
+  | "DELIVERY_RECEIPT"
+  // Task #3092: real-time field issue captures (quality defects,
+  // coordination problems, blockers) posted from the mobile app. Pushed
+  // directly to /api/field-productivity/issue-captures by
+  // pushIssueCaptures() in the sync coordinator — the unified mobile
+  // sync envelope has no issueCaptures section. Photo attachments are
+  // uploaded to object storage first; the resulting object keys land on
+  // the issue capture row as photoObjectKeys.
+  | "ISSUE_CAPTURE";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

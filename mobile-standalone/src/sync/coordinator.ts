@@ -134,6 +134,12 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // Task #3100: drained by pushDeliveryReceipts() to the procurement
   // receipts endpoint. Same rationale as the inventory entries above.
   DELIVERY_RECEIPT: "",
+  // Task #3092: ISSUE_CAPTURE is pushed via the existing web REST
+  // endpoint (/api/field-productivity/issue-captures), not the unified
+  // mobile sync envelope. pushIssueCaptures() handles attachment upload
+  // + POST. Empty string keeps the map total for TS exhaustiveness and
+  // tells push() to skip these records.
+  ISSUE_CAPTURE: "",
 };
 
 export async function pull(): Promise<number> {
@@ -1022,6 +1028,68 @@ export async function pushMaterialRequests(): Promise<{ pushed: number; failed: 
   return { pushed, failed };
 }
 
+// Task #3092: drain ISSUE_CAPTURE outbox rows. Photos go through the
+// shared signed-upload helper first so the server only sees object keys;
+// then we POST the issue to the existing web endpoint. 4xx (other than
+// auth/timeouts) is terminal — the server already validated the payload
+// (cross-tenant project, invalid enum, etc.) and a retry will keep
+// failing, so we burn the retry budget to clear the row.
+export async function pushIssueCaptures(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "ISSUE_CAPTURE");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    try {
+      // All-or-nothing attachment semantics. Evidence photos are the
+      // entire point of an issue capture — if any upload fails we must
+      // NOT post the issue with a partial set and mark SYNCED, or the
+      // user loses that photo silently. Defer the whole record so the
+      // next syncNow() retries the failed upload(s).
+      const objectKeys: string[] = [];
+      let uploadFailed = false;
+      for (const a of rec.attachments ?? []) {
+        const key = await uploadAttachment(a);
+        if (!key) { uploadFailed = true; break; }
+        objectKeys.push(key);
+      }
+      if (uploadFailed) {
+        await markFailed(rec.localId, "Photo upload failed; will retry on next sync");
+        failed++;
+        continue;
+      }
+      const body = {
+        ...rec.payload,
+        photoObjectKeys: [
+          ...((rec.payload.photoObjectKeys as string[] | undefined) ?? []),
+          ...objectKeys,
+        ],
+      };
+      const created = await api<{ id: string }>("/api/field-productivity/issue-captures", {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      await markSynced(rec.localId, created?.id);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
@@ -1033,9 +1101,10 @@ export async function syncNow(): Promise<SyncStats> {
   const mr = await pushMaterialRequests();
   const msgs = await pushMessages();
   const deliveries = await pushDeliveryReceipts();
+  const iss = await pushIssueCaptures();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }
