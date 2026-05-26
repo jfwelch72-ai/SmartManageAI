@@ -98,6 +98,11 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // for TS exhaustiveness while the `if (!serverField) continue;` guard in
   // push() skips it.
   MAINT_REQUEST: "",
+  // Task #3095: routed by pushTaskUpdates() to /api/tasks/:id and
+  // /api/tasks/:id/comments. Same rationale as inventory above — empty
+  // string keeps the map total for TS exhaustiveness while signalling
+  // push() should skip it.
+  TASK_UPDATE: "",
 };
 
 export async function pull(): Promise<number> {
@@ -406,10 +411,67 @@ export async function pushMaintenance(): Promise<{ pushed: number; failed: numbe
   return { pushed, failed };
 }
 
+// Task #3095: drain TASK_UPDATE outbox rows. Status updates → PATCH
+// /api/tasks/:id; comment creates → POST /api/tasks/:id/comments. Same
+// terminal-4xx semantics as pushInventory(): validation failures (bad
+// status, missing task, permission denied) are dropped from the queue
+// after exhausting retries so a malformed payload doesn't stall sync.
+export async function pushTaskUpdates(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "TASK_UPDATE");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    const p = rec.payload as {
+      kind?: "STATUS" | "COMMENT";
+      taskId?: string;
+      status?: string;
+      dismissReason?: string;
+      content?: string;
+    };
+    if (!p?.taskId || !p?.kind) {
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "Invalid TASK_UPDATE payload");
+      failed++;
+      continue;
+    }
+    try {
+      if (p.kind === "STATUS") {
+        await api(`/api/tasks/${encodeURIComponent(p.taskId)}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: p.status, dismissReason: p.dismissReason }),
+        });
+      } else {
+        await api(`/api/tasks/${encodeURIComponent(p.taskId)}/comments`, {
+          method: "POST",
+          body: JSON.stringify({ content: p.content }),
+        });
+      }
+      await markSynced(rec.localId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
   const inv = await pushInventory();
   const maint = await pushMaintenance();
-  return { pulled, pushed: pushed + inv.pushed + maint.pushed, conflicts };
+  const tasks = await pushTaskUpdates();
+  return { pulled, pushed: pushed + inv.pushed + maint.pushed + tasks.pushed, conflicts };
 }

@@ -7,6 +7,7 @@ import { DailyReportsScreen } from "@/screens/DailyReports";
 import { TimeClockScreen } from "@/screens/TimeClock";
 import { PhotosScreen } from "@/screens/Photos";
 import { PunchListScreen } from "@/screens/PunchList";
+import { TasksScreen } from "@/screens/Tasks";
 import { RFIScreen } from "@/screens/RFI";
 import { SubmittalsScreen } from "@/screens/Submittals";
 import { InspectionsScreen } from "@/screens/Inspections";
@@ -38,6 +39,7 @@ function FieldTabs() {
       <Tabs.Screen name="Time" component={TimeClockScreen} options={{ title: "Time Clock" }} />
       <Tabs.Screen name="Photos" component={PhotosScreen} />
       <Tabs.Screen name="Punch" component={PunchListScreen} options={{ title: "Punch List" }} />
+      <Tabs.Screen name="Tasks" component={TasksScreen} options={{ title: "Tasks" }} />
       <Tabs.Screen name="Inventory" component={InventoryScreen} options={{ title: "Inventory" }} />
     </Tabs.Navigator>
   );

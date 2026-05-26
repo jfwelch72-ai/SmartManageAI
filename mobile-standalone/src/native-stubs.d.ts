@@ -25,6 +25,7 @@ declare module "react-native" {
   export const Image: FC<BaseProps>;
   export const Modal: FC<BaseProps>;
   export const ActivityIndicator: FC<BaseProps>;
+  export const RefreshControl: FC<BaseProps & { refreshing?: boolean; onRefresh?: () => void; tintColor?: string }>;
   export const KeyboardAvoidingView: FC<BaseProps>;
   export const SafeAreaView: FC<BaseProps>;
   export const TouchableOpacity: FC<BaseProps>;

@@ -6,6 +6,7 @@ import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useAuth } from "@/auth/AuthContext";
 import { useSync } from "@/sync/SyncContext";
 import { cacheList } from "@/sync/db";
+import { getOverdueTaskCount } from "@/screens/Tasks";
 import { colors, spacing } from "@/theme";
 import type { NavigationProp } from "@react-navigation/native";
 
@@ -17,7 +18,7 @@ interface HomeProject {
 }
 
 type HomeNavParamList = {
-  Daily: undefined; Time: undefined; Photos: undefined; Punch: undefined; Inventory: undefined;
+  Daily: undefined; Time: undefined; Photos: undefined; Punch: undefined; Tasks: undefined; Inventory: undefined;
   RFI: undefined; Submittals: undefined; Inspections: undefined; Drawings: undefined; Conflicts: undefined;
   ReportEquipmentIssue: undefined;
   HaulTickets: undefined;
@@ -28,10 +29,12 @@ export function HomeScreen() {
   const { lastResult } = useSync();
   const nav = useNavigation<NavigationProp<HomeNavParamList>>();
   const [projects, setProjects] = useState<HomeProject[]>([]);
+  const [taskBadge, setTaskBadge] = useState(0);
 
   useEffect(() => {
     void cacheList<HomeProject>("PROJECT").then(setProjects);
-  }, [lastResult]);
+    void getOverdueTaskCount(user?.id).then(setTaskBadge);
+  }, [lastResult, user?.id]);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -45,6 +48,7 @@ export function HomeScreen() {
             { label: "Time Clock", to: "Time" },
             { label: "Photos", to: "Photos" },
             { label: "Punch List", to: "Punch" },
+            { label: taskBadge > 0 ? `Tasks (${taskBadge})` : "Tasks", to: "Tasks" },
             { label: "Inventory", to: "Inventory" },
             { label: "Report Equipment Issue", to: "ReportEquipmentIssue" },
             { label: "RFIs", to: "RFI" },

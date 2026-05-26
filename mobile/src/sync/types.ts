@@ -37,7 +37,15 @@ export type SyncEntityType =
   // entity types, this is NOT routed through the unified mobile sync
   // envelope; the dedicated endpoint keeps cross-tenant auth, severity
   // validation, and equipment-status side-effects in one place.
-  | "MAINT_REQUEST";
+  | "MAINT_REQUEST"
+  // Task #3095: status / comment updates a field worker makes against a
+  // task assigned to them. Pushed directly to /api/tasks/:id (PATCH) or
+  // /api/tasks/:id/comments (POST) by pushTaskUpdates() — not routed
+  // through the unified mobile sync envelope (the server's /mobile/sync
+  // contract has no tasks section). Payload shape:
+  //   { kind: "STATUS", taskId, status, dismissReason? }
+  //   { kind: "COMMENT", taskId, content }
+  | "TASK_UPDATE";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
