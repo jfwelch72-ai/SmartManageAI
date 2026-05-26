@@ -48,3 +48,9 @@ id = "YPWlPTWRVSpSh-E38x9NK"
 uri = "file://smartmanage-deep-audit.txt"
 type = "text"
 title = "SmartManageAI Deep Wiring Audit (6 targets)"
+
+[[outputs]]
+id = "iKUvxBMXWl7Sb3q5iYcuZ"
+uri = "file://exports/smartmanageai-mobile.tar.gz"
+type = "unspecified"
+title = "smartmanageai-mobile (standalone Expo project)"
