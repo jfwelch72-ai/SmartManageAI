@@ -1,0 +1,21 @@
+modules = ["nodejs-20"]
+run = "npx expo start --tunnel"
+hidden = [".config", ".git", "node_modules", ".expo"]
+
+[nix]
+channel = "stable-25_05"
+
+[env]
+EXPO_NO_TELEMETRY = "1"
+
+[workflows]
+runButton = "Start mobile"
+
+[[workflows.workflow]]
+name = "Start mobile"
+mode = "sequential"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "npx expo start --tunnel"
