@@ -89,6 +89,14 @@ export async function pendingCount(): Promise<number> {
   return row?.c ?? 0;
 }
 
+// Task #3090: persist a server-assigned id mid-flight without flipping the
+// row to SYNCED. Used by the multi-step T&M push (create → submit →
+// signoff) so a retry after a partial failure skips the duplicate create.
+export async function setOutboxServerId(localId: string, serverId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE outbox SET server_id=? WHERE local_id=?", [serverId, localId]);
+}
+
 export async function markSynced(localId: string, serverId?: string | null): Promise<void> {
   const db = await getDb();
   await db.runAsync(

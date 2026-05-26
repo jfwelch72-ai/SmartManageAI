@@ -24,6 +24,7 @@ type HomeNavParamList = {
   HaulTickets: undefined;
   ReportIncident: undefined;
   NotificationSettings: undefined;
+  TMTickets: undefined;
 };
 
 export function HomeScreen() {
@@ -63,6 +64,7 @@ export function HomeScreen() {
             { label: taskBadge > 0 ? `Tasks (${taskBadge})` : "Tasks", to: "Tasks" },
             { label: "Inventory", to: "Inventory" },
             { label: "Report Equipment Issue", to: "ReportEquipmentIssue" },
+            { label: "T&M Tickets", to: "TMTickets" },
             { label: "RFIs", to: "RFI" },
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },

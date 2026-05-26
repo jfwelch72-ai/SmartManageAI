@@ -11,6 +11,7 @@ import {
   markConflict,
   markFailed,
   markSynced,
+  setOutboxServerId,
 } from "./outbox";
 import type { OutboxRecord, SyncEntityType } from "./types";
 
@@ -112,6 +113,10 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // envelope. Server-side handler maps the lightweight field payload onto
   // the osha_incidents table with sensible defaults.
   SAFETY_INCIDENT: "safetyIncidents",
+  // Task #3090: Pushed by pushTmTickets() via dedicated REST endpoints.
+  // Empty string keeps the map total for TS exhaustiveness while signalling
+  // that push() should skip it.
+  TM_TICKET: "",
 };
 
 export async function pull(): Promise<number> {
@@ -179,7 +184,7 @@ export async function pull(): Promise<number> {
   return pulled;
 }
 
-export async function uploadAttachment(att: NonNullable<OutboxRecord["attachments"]>[number]): Promise<string | null> {
+async function uploadAttachment(att: NonNullable<OutboxRecord["attachments"]>[number]): Promise<string | null> {
   try {
     const info = await FileSystem.getInfoAsync(att.uri);
     if (!info.exists) return null;
@@ -476,11 +481,194 @@ export async function pushTaskUpdates(): Promise<{ pushed: number; failed: numbe
   return { pushed, failed };
 }
 
+// Task #3090: Drain TM_TICKET outbox rows. Each row maps to a 3-step server
+// flow that mirrors what the web app does:
+//   1. POST /api/projects/:projectId/tm-tickets   — create the ticket
+//   2. POST /api/tm-tickets/:id/submit             — DRAFT → SUBMITTED
+//   3. POST /api/tm-tickets/:id/client-signoff     — write the captured PNG
+// The signature image is sent inline as a base64 data URL on step 3 (the
+// server stores it in clientSignoffSignature, max 500 KB). We persist the
+// returned ticket id on the outbox row after step 1 so a retry after a
+// partial failure resumes at step 2/3 instead of creating a duplicate.
+//
+// Payload shape (carried in OutboxRecord.payload):
+//   {
+//     projectId: string;          // required; URL :projectId
+//     workDate?: string;          // YYYY-MM-DD; server defaults to today
+//     scopeDescription?: string;  // server defaults to "Work performed"
+//     notes?: string;
+//     costCode?: string;
+//     laborEntries:    Array<{ employeeName, regularHours, rate, ... }>
+//     equipmentEntries:Array<{ equipmentType, hours, rate, ... }>
+//     materialEntries: Array<{ description, quantity, unit, unitCost, ... }>
+//     clientRepresentativeName?: string;
+//     signatureDataUrl?: string;  // "data:image/...;base64,..."
+//   }
+export async function pushTmTickets(): Promise<{ pushed: number; failed: number; conflicts: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0, conflicts: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "TM_TICKET");
+  if (pending.length === 0) return { pushed: 0, failed: 0, conflicts: 0 };
+  let pushed = 0;
+  let failed = 0;
+  let conflicts = 0;
+  for (const rec of pending) {
+    const payload = rec.payload as {
+      projectId?: string;
+      clientRepresentativeName?: string;
+      signatureDataUrl?: string;
+      [k: string]: unknown;
+    };
+    const projectId = payload.projectId;
+    if (!projectId) {
+      await markFailed(rec.localId, "TM_TICKET payload missing projectId");
+      for (let i = 0; i < 5; i++) await markFailed(rec.localId, "missing projectId");
+      failed++;
+      continue;
+    }
+    // Classify a server response as a "real" conflict (someone else
+    // already advanced/locked/signed the ticket) vs. a benign "already in
+    // that state" idempotent retry. Conflict messages from server/tmRoutes.ts:
+    //   - "Ticket is locked — it has been billed"
+    //   - "Client sign-off has already been recorded"
+    //   - "Ticket must be in SUBMITTED or APPROVED status"
+    // All of these mean the local outbox row can never succeed and the
+    // user has to decide what to do — surface in the Conflicts screen.
+    const conflictMessage = (err: ApiError): string | null => {
+      // Explicit HTTP 409 always wins.
+      if (err.status === 409) return readErrorMessage(err) ?? "Server reports a conflict";
+      if (err.status === 404) return "Ticket was removed on the server";
+      if (err.status === 400) {
+        const msg = readErrorMessage(err) ?? "";
+        const lower = msg.toLowerCase();
+        if (lower.includes("locked")) return msg;
+        if (lower.includes("already been recorded")) return msg;
+        if (lower.includes("must be in submitted")) return msg;
+      }
+      return null;
+    };
+
+    try {
+      // Step 1: create the ticket if we don't already have a server id.
+      let ticketId = rec.serverId ?? null;
+      if (!ticketId) {
+        const { signatureDataUrl: _sig, clientRepresentativeName: _name, projectId: _pid, ...body } =
+          payload;
+        const created = await api<{ id: string }>(
+          `/api/projects/${encodeURIComponent(projectId)}/tm-tickets`,
+          { method: "POST", body: JSON.stringify(body) }
+        );
+        ticketId = created.id;
+        await setOutboxServerId(rec.localId, ticketId);
+      }
+      // Step 2: submit so the ticket leaves DRAFT (client-signoff requires
+      // SUBMITTED or APPROVED). Two sub-cases on 400:
+      //   - "already submitted or approved" — benign idempotent retry; the
+      //     ticket is already past DRAFT (likely from a previous push that
+      //     succeeded server-side then died before markSynced). Swallow
+      //     and continue to signoff.
+      //   - "Ticket is locked — billed" — REAL conflict; office closed it.
+      try {
+        await api(`/api/tm-tickets/${encodeURIComponent(ticketId)}/submit`, { method: "POST" });
+      } catch (err) {
+        if (err instanceof ApiError) {
+          const reason = conflictMessage(err);
+          if (reason) {
+            await markConflict(rec.localId, new Date().toISOString(), reason);
+            conflicts++;
+            continue;
+          }
+          if (err.status === 400) {
+            // benign — already submitted/approved by a previous attempt.
+          } else {
+            throw err;
+          }
+        } else {
+          throw err;
+        }
+      }
+      // Step 3: write the signature if one was captured. Same conflict-
+      // vs-benign classification: "already been recorded" by us-on-retry
+      // is benign; "must be in SUBMITTED/APPROVED" means status moved
+      // under us → conflict.
+      if (payload.signatureDataUrl && payload.clientRepresentativeName) {
+        try {
+          await api(`/api/tm-tickets/${encodeURIComponent(ticketId)}/client-signoff`, {
+            method: "POST",
+            body: JSON.stringify({
+              clientName: payload.clientRepresentativeName,
+              signature: payload.signatureDataUrl,
+            }),
+          });
+        } catch (err) {
+          if (err instanceof ApiError) {
+            const reason = conflictMessage(err);
+            if (reason && !reason.toLowerCase().includes("already been recorded")) {
+              await markConflict(rec.localId, new Date().toISOString(), reason);
+              conflicts++;
+              continue;
+            }
+            if (err.status === 400) {
+              // benign — already recorded by us on a previous attempt.
+            } else {
+              throw err;
+            }
+          } else {
+            throw err;
+          }
+        }
+      }
+      await markSynced(rec.localId, ticketId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError) {
+        const reason = conflictMessage(err);
+        if (reason) {
+          await markConflict(rec.localId, new Date().toISOString(), reason);
+          conflicts++;
+          continue;
+        }
+        if (
+          err.status >= 400 && err.status < 500 &&
+          err.status !== 401 && err.status !== 403 &&
+          err.status !== 408 && err.status !== 429
+        ) {
+          const detail = (() => {
+            try { return JSON.stringify(err.body); } catch { return String(err.body); }
+          })();
+          await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+          for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+          failed++;
+          continue;
+        }
+      }
+      await markFailed(rec.localId, msg.slice(0, 500));
+      failed++;
+    }
+  }
+  return { pushed, failed, conflicts };
+}
+
+function readErrorMessage(err: ApiError): string | null {
+  const body = err.body as unknown;
+  if (body && typeof body === "object" && "error" in (body as Record<string, unknown>)) {
+    const e = (body as Record<string, unknown>).error;
+    if (typeof e === "string") return e;
+  }
+  if (typeof body === "string") return body;
+  return null;
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
   const inv = await pushInventory();
   const maint = await pushMaintenance();
   const tasks = await pushTaskUpdates();
-  return { pulled, pushed: pushed + inv.pushed + maint.pushed + tasks.pushed, conflicts };
+  const tm = await pushTmTickets();
+  return {
+    pulled,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + tm.pushed,
+    conflicts: conflicts + tm.conflicts,
+  };
 }

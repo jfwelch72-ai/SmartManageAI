@@ -50,7 +50,13 @@ export type SyncEntityType =
   // the unified mobile sync envelope (changes.safetyIncidents) and
   // persisted server-side into osha_incidents with sensible defaults so
   // office staff can complete the OSHA-grade record in the web app.
-  | "SAFETY_INCIDENT";
+  | "SAFETY_INCIDENT"
+  // Task #3090: Field-app Time & Materials tickets. CREATE-only from the
+  // mobile outbox today (edit/void is web-only). Pushed by pushTmTickets()
+  // in the sync coordinator via a 3-step flow (create → submit →
+  // client-signoff) against the existing web endpoints; not routed through
+  // the unified mobile sync envelope.
+  | "TM_TICKET";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 

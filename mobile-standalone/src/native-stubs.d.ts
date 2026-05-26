@@ -57,6 +57,24 @@ declare module "react-native" {
     openURL(url: string): Promise<void>;
     canOpenURL(url: string): Promise<boolean>;
   };
+  export interface LayoutChangeEvent {
+    nativeEvent: { layout: { x: number; y: number; width: number; height: number } };
+  }
+  export interface GestureResponderEvent {
+    nativeEvent: {
+      locationX: number;
+      locationY: number;
+      pageX: number;
+      pageY: number;
+      [k: string]: any;
+    };
+  }
+  export interface PanResponderInstance {
+    panHandlers: Record<string, any>;
+  }
+  export const PanResponder: {
+    create(config: Record<string, (e: GestureResponderEvent, g?: any) => boolean | void>): PanResponderInstance;
+  };
 }
 
 declare module "react-native-safe-area-context" {
