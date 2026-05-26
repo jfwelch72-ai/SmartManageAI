@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useRoute, type RouteProp } from "@react-navigation/native";
 
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useSync } from "@/sync/SyncContext";
@@ -37,21 +37,32 @@ const SEVERITIES = [
   { value: "CRITICAL", label: "Critical", color: "#dc2626" },
 ];
 
+type IncidentPrefill = {
+  projectId?: string | null;
+  description?: string;
+  severity?: string;
+  photo?: PendingAttachment;
+};
+
+type ReportIncidentParams = { prefill?: IncidentPrefill };
+
 export function ReportIncidentScreen() {
   const nav = useNavigation();
+  const route = useRoute<RouteProp<Record<string, ReportIncidentParams | undefined>, string>>();
+  const prefill = route.params?.prefill;
   const { syncNow } = useSync();
   const [projects, setProjects] = useState<CachedProject[]>([]);
-  const [projectId, setProjectId] = useState<string | null>(null);
+  const [projectId, setProjectId] = useState<string | null>(prefill?.projectId ?? null);
   const [incidentType, setIncidentType] = useState<string>("INJURY");
-  const [severity, setSeverity] = useState<string>("MEDIUM");
+  const [severity, setSeverity] = useState<string>(prefill?.severity ?? "MEDIUM");
   const [when, setWhen] = useState<Date>(new Date());
   const [location, setLocation] = useState<string>("");
   const [gps, setGps] = useState<{ lat: number; lng: number } | null>(null);
   const [gpsBusy, setGpsBusy] = useState(false);
-  const [description, setDescription] = useState<string>("");
+  const [description, setDescription] = useState<string>(prefill?.description ?? "");
   const [peopleInvolved, setPeopleInvolved] = useState<string>("");
   const [witnesses, setWitnesses] = useState<string>("");
-  const [photos, setPhotos] = useState<PendingAttachment[]>([]);
+  const [photos, setPhotos] = useState<PendingAttachment[]>(prefill?.photo ? [prefill.photo] : []);
   const [submitting, setSubmitting] = useState(false);
   const [reference, setReference] = useState<string | null>(null);
 

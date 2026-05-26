@@ -28,6 +28,7 @@ type HomeNavParamList = {
   TMTickets: undefined;
   RequestMaterial: undefined;
   EquipmentHours: undefined;
+  AnalyzePhoto: undefined;
 };
 
 export function HomeScreen() {
@@ -55,6 +56,16 @@ export function HomeScreen() {
         >
           <Text style={[styles.tileText, { color: "#fff", fontSize: 18 }]}>
             ⚠ Report Safety Incident
+          </Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => nav.navigate("AnalyzePhoto")}
+          style={[styles.tile, { backgroundColor: colors.primary, flexBasis: "100%" }]}
+          testID="tile-analyze-photo"
+        >
+          <Text style={[styles.tileText, { color: "#fff", fontSize: 16 }]}>
+            📷 Analyze Photo (AI safety + progress)
           </Text>
         </Pressable>
 

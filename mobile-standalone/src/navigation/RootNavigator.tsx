@@ -31,6 +31,7 @@ import { RequestMaterialScreen } from "@/screens/RequestMaterial";
 import { EquipmentHoursScreen } from "@/screens/EquipmentHours";
 import { MessagesScreen } from "@/screens/Messages";
 import { ConversationScreen } from "@/screens/Conversation";
+import { AnalyzePhotoScreen } from "@/screens/AnalyzePhoto";
 import { colors } from "@/theme";
 import { useEffect, useState } from "react";
 import { AppState } from "react-native";
@@ -159,6 +160,7 @@ export function RootNavigator({
       <Stack.Screen name="RequestMaterial" component={RequestMaterialScreen} options={{ title: "Request Material" }} />
       <Stack.Screen name="EquipmentHours" component={EquipmentHoursScreen} options={{ title: "Equipment Hours" }} />
       <Stack.Screen name="Conversation" component={ConversationScreen} options={{ title: "Conversation" }} />
+      <Stack.Screen name="AnalyzePhoto" component={AnalyzePhotoScreen} options={{ title: "Analyze Photo" }} />
     </Stack.Navigator>
   );
 }

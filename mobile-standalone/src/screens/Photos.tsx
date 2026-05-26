@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import { useNavigation } from "@react-navigation/native";
 
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useSync } from "@/sync/SyncContext";
@@ -12,6 +13,7 @@ import type { CachedProject } from "./types";
 
 export function PhotosScreen() {
   const { syncNow } = useSync();
+  const nav = useNavigation<any>();
   const [pending, setPending] = useState<OutboxRecord[]>([]);
   const [projects, setProjects] = useState<CachedProject[]>([]);
   const [projectId, setProjectId] = useState<string | null>(null);
@@ -63,9 +65,18 @@ export function PhotosScreen() {
             </Pressable>
           ))}
         </ScrollView>
-        <Pressable onPress={capture} style={styles.btn}>
-          <Text style={styles.btnText}>Capture photo</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: spacing(1) }}>
+          <Pressable onPress={capture} style={[styles.btn, { flex: 1 }]} testID="button-capture-photo">
+            <Text style={styles.btnText}>Capture photo</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => nav.navigate("AnalyzePhoto")}
+            style={[styles.btn, { flex: 1, backgroundColor: colors.surfaceMuted }]}
+            testID="button-analyze-photo"
+          >
+            <Text style={[styles.btnText, { color: colors.text }]}>Analyze with AI</Text>
+          </Pressable>
+        </View>
       </View>
       <ScrollView contentContainerStyle={{ padding: spacing(2), flexDirection: "row", flexWrap: "wrap", gap: spacing(1) }}>
         {pending.map((p) => {
