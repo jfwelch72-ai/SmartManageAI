@@ -89,13 +89,22 @@ export async function pendingCount(): Promise<number> {
   return row?.c ?? 0;
 }
 
-// Task #3090: persist a server-assigned id mid-flight without flipping the
-// row to SYNCED. Used by the multi-step T&M push (create → submit →
-// signoff) so a retry after a partial failure skips the duplicate create.
+// Save a server-assigned id onto an outbox row WITHOUT changing its status.
+// Used for multi-step pushes (e.g. T&M tickets: create → submit → signoff;
+// material requests: create → submit) where the first call has already
+// succeeded server-side and a transient failure on the follow-up call must
+// not cause a duplicate on retry. The next retry inspects rec.serverId and
+// skips straight to the follow-up step.
+//
+// Two names are exported for the same underlying function: `setOutboxServerId`
+// (Task #3090, T&M tickets) and `attachServerId` (Task #3099, material
+// requests). They are aliases — kept separate so each call site reads as
+// the verb the surrounding code expects.
 export async function setOutboxServerId(localId: string, serverId: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("UPDATE outbox SET server_id=? WHERE local_id=?", [serverId, localId]);
 }
+export const attachServerId = setOutboxServerId;
 
 export async function markSynced(localId: string, serverId?: string | null): Promise<void> {
   const db = await getDb();

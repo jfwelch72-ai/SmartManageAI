@@ -24,6 +24,7 @@ import { ReportIncidentScreen } from "@/screens/ReportIncident";
 import { NotificationSettingsScreen } from "@/screens/NotificationSettings";
 import { installNotificationHandlers } from "@/push/pushManager";
 import { TMTicketsScreen } from "@/screens/TMTickets";
+import { RequestMaterialScreen } from "@/screens/RequestMaterial";
 import { colors } from "@/theme";
 
 const Tabs = createBottomTabNavigator();
@@ -88,6 +89,7 @@ export function RootNavigator({
         options={{ title: "Notifications" }}
       />
       <Stack.Screen name="TMTickets" component={TMTicketsScreen} options={{ title: "T&M Tickets" }} />
+      <Stack.Screen name="RequestMaterial" component={RequestMaterialScreen} options={{ title: "Request Material" }} />
     </Stack.Navigator>
   );
 }

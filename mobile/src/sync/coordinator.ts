@@ -7,6 +7,7 @@ import { Platform } from "react-native";
 import { api, ApiError } from "@/api/client";
 import { cachePut, getMeta, setMeta } from "./db";
 import {
+  attachServerId,
   listRetryable,
   markConflict,
   markFailed,
@@ -117,6 +118,11 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // Empty string keeps the map total for TS exhaustiveness while signalling
   // that push() should skip it.
   TM_TICKET: "",
+  // Task #3099: pushed by pushMaterialRequests() to
+  // /api/procurement-module/requests. Empty string here keeps the map
+  // total for TS exhaustiveness while signalling that push() should skip
+  // it.
+  MATERIAL_REQUEST: "",
 };
 
 export async function pull(): Promise<number> {
@@ -659,6 +665,125 @@ function readErrorMessage(err: ApiError): string | null {
   return null;
 }
 
+// Task #3099: drain MATERIAL_REQUEST outbox rows by calling the procurement
+// REST endpoints directly: first POST /api/procurement-module/requests with
+// the DRAFT payload, then POST /requests/:id/submit so the row lands in
+// PENDING_APPROVAL on the office side instead of staying as a DRAFT only
+// the submitter can see. Optional photos are uploaded to object storage
+// first and the returned objectKey is appended to the notes field as a
+// human-readable "Photo: /objects/<key>" reference (the procurement
+// schema has no first-class attachment column).
+export async function pushMaterialRequests(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "MATERIAL_REQUEST");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    try {
+      const p = rec.payload as {
+        projectId: string;
+        title: string;
+        neededByDate?: string | null;
+        notes?: string | null;
+        item: { description: string; quantity?: string | null; unit?: string | null; costCode?: string | null };
+      };
+      // Two-step create+submit must both succeed before we can mark the
+      // record SYNCED. If create already succeeded on a previous attempt
+      // we have rec.serverId and skip straight to the submit retry —
+      // otherwise a transient submit failure would either strand the
+      // request in DRAFT forever (if we marked SYNCED) or create a
+      // duplicate on every retry (if we re-POSTed).
+      let serverId = rec.serverId ?? null;
+      if (!serverId) {
+        let notes = p.notes ?? "";
+        if (rec.attachments && rec.attachments.length > 0) {
+          for (const att of rec.attachments) {
+            const key = await uploadAttachment(att);
+            if (key) {
+              notes = `${notes}${notes ? "\n" : ""}Photo: /objects/${key}`;
+            }
+          }
+        }
+        const created = await api<{ id: string; prNumber: string; status: string }>(
+          "/api/procurement-module/requests",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              projectId: p.projectId,
+              title: p.title,
+              neededByDate: p.neededByDate ?? null,
+              notes: notes || null,
+              items: [
+                {
+                  description: p.item.description,
+                  quantity: p.item.quantity ?? null,
+                  unit: p.item.unit ?? null,
+                  costCode: p.item.costCode ?? null,
+                },
+              ],
+            }),
+          }
+        );
+        serverId = created.id;
+        // Persist the server id BEFORE attempting submit so a crash or
+        // submit failure does not lose the link to the created DRAFT.
+        await attachServerId(rec.localId, serverId);
+      }
+      // Move from DRAFT → PENDING_APPROVAL so approvers see it. This must
+      // succeed before we can call the record done; otherwise it stays
+      // FAILED-but-retryable with serverId stored, and the next sync run
+      // skips create and re-attempts submit.
+      //
+      // /submit is non-idempotent: once the row is past DRAFT the server
+      // returns 400. If a previous attempt succeeded server-side but the
+      // client never got the response, the retry would otherwise be
+      // permanently FAILED. Treat 400-not-DRAFT as success by reading
+      // back the current status.
+      try {
+        await api(`/api/procurement-module/requests/${serverId}/submit`, { method: "POST" });
+      } catch (submitErr) {
+        if (submitErr instanceof ApiError && submitErr.status === 400) {
+          const current = await api<{ status?: string }>(
+            `/api/procurement-module/requests/${serverId}`
+          ).catch(() => null);
+          if (current && current.status && current.status !== "DRAFT") {
+            // Already submitted (or further along) on a previous attempt.
+          } else {
+            throw submitErr;
+          }
+        } else {
+          throw submitErr;
+        }
+      }
+      await markSynced(rec.localId, serverId);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        err instanceof ApiError &&
+        err.status >= 400 &&
+        err.status < 500 &&
+        err.status !== 401 &&
+        err.status !== 403 &&
+        err.status !== 408 &&
+        err.status !== 429
+      ) {
+        const detail = (() => {
+          try { return JSON.stringify(err.body); } catch { return String(err.body); }
+        })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
@@ -666,9 +791,10 @@ export async function syncNow(): Promise<SyncStats> {
   const maint = await pushMaintenance();
   const tasks = await pushTaskUpdates();
   const tm = await pushTmTickets();
+  const mr = await pushMaterialRequests();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + tm.pushed,
+    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + tm.pushed + mr.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

@@ -11,6 +11,7 @@ import type { OutboxRecord, SyncEntityType } from "@/sync/types";
 type InventoryStack = {
   Inventory: undefined;
   InventoryScan: undefined;
+  RequestMaterial: undefined;
 };
 
 const INVENTORY_TYPES: ReadonlySet<SyncEntityType> = new Set([
@@ -54,6 +55,17 @@ export function InventoryScreen() {
         >
           <Text style={styles.scanBtnText}>Scan barcode / QR</Text>
           <Text style={styles.scanBtnSub}>Look up SKU, then receive, issue, or transfer</Text>
+        </Pressable>
+
+        <Pressable
+          onPress={() => nav.navigate("RequestMaterial")}
+          style={[styles.scanBtn, { backgroundColor: colors.surfaceMuted }]}
+          testID="button-request-material"
+        >
+          <Text style={[styles.scanBtnText, { color: colors.text }]}>Request material / PO</Text>
+          <Text style={[styles.scanBtnSub, { color: colors.textMuted }]}>
+            Short on stock? Send the office a request from the field.
+          </Text>
         </Pressable>
 
         <Pressable

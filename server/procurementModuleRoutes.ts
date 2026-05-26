@@ -513,6 +513,11 @@ router.get("/api/procurement-module/requests", requireAuth, requireRole(...ROLES
     if (!orgId) return;
 
     const conditions: SQL[] = [eq(purchaseRequests.orgId, orgId)];
+    if (req.query.mine === "true" || req.query.mine === "1") {
+      const uid = req.user?.id;
+      if (!uid) { res.status(401).json({ error: "Not authenticated" }); return; }
+      conditions.push(eq(purchaseRequests.requestedById, uid));
+    }
     if (req.query.projectId) conditions.push(eq(purchaseRequests.projectId, String(req.query.projectId)));
     if (req.query.status) {
       const s = String(req.query.status);

@@ -56,7 +56,14 @@ export type SyncEntityType =
   // in the sync coordinator via a 3-step flow (create → submit →
   // client-signoff) against the existing web endpoints; not routed through
   // the unified mobile sync envelope.
-  | "TM_TICKET";
+  | "TM_TICKET"
+  // Task #3099: field-originated purchase request. Pushed directly to
+  // /api/procurement-module/requests by pushMaterialRequests() in the
+  // sync coordinator (not via the unified mobile sync envelope, which
+  // has no procurement section). The coordinator follows up with
+  // /requests/:id/submit so the office sees the row as
+  // PENDING_APPROVAL instead of stuck in DRAFT.
+  | "MATERIAL_REQUEST";
 
 export type SyncOperation = "CREATE" | "UPDATE" | "DELETE";
 
