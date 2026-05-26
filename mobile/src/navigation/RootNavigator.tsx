@@ -13,6 +13,7 @@ import { TasksScreen } from "@/screens/Tasks";
 import { RFIScreen } from "@/screens/RFI";
 import { SubmittalsScreen } from "@/screens/Submittals";
 import { InspectionsScreen } from "@/screens/Inspections";
+import { SwpppInspectionScreen } from "@/screens/SwpppInspection";
 import { DrawingsScreen } from "@/screens/Drawings";
 import { DocumentsScreen } from "@/screens/Documents";
 import { ConflictsScreen } from "@/screens/Conflicts";
@@ -79,6 +80,7 @@ export function RootNavigator({
       <Stack.Screen name="RFI" component={RFIScreen} options={{ title: "RFIs" }} />
       <Stack.Screen name="Submittals" component={SubmittalsScreen} options={{ title: "Submittals" }} />
       <Stack.Screen name="Inspections" component={InspectionsScreen} />
+      <Stack.Screen name="SwpppInspection" component={SwpppInspectionScreen} options={{ title: "SWPPP Inspection" }} />
       <Stack.Screen name="Drawings" component={DrawingsScreen} />
       <Stack.Screen name="Documents" component={DocumentsScreen} />
       <Stack.Screen name="Conflicts" component={ConflictsScreen} options={{ title: "Sync Conflicts" }} />

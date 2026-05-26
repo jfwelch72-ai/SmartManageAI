@@ -19,7 +19,8 @@ interface HomeProject {
 
 type HomeNavParamList = {
   Daily: undefined; Time: undefined; Photos: undefined; Punch: undefined; Tasks: undefined; Inventory: undefined;
-  RFI: undefined; Submittals: undefined; Inspections: undefined; Drawings: undefined; Documents: undefined; Conflicts: undefined;
+  RFI: undefined; Submittals: undefined; Inspections: undefined; SwpppInspection: undefined;
+  Drawings: undefined; Documents: undefined; Conflicts: undefined;
   ReportEquipmentIssue: undefined;
   HaulTickets: undefined;
   ReportIncident: undefined;
@@ -72,6 +73,7 @@ export function HomeScreen() {
             { label: "RFIs", to: "RFI" },
             { label: "Submittals", to: "Submittals" },
             { label: "Inspections", to: "Inspections" },
+            { label: "SWPPP Inspection", to: "SwpppInspection" },
             { label: "Drawings", to: "Drawings" },
             { label: "Documents", to: "Documents" },
             { label: "Haul Tickets", to: "HaulTickets" },
