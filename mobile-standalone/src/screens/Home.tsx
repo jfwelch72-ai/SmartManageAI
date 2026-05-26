@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 
 import { SyncStatusBar } from "@/components/SyncStatusBar";
+import { WeatherWidget } from "@/components/WeatherWidget";
 import { useAuth } from "@/auth/AuthContext";
 import { useSync } from "@/sync/SyncContext";
 import { cacheList } from "@/sync/db";
@@ -15,6 +16,8 @@ interface HomeProject {
   name?: string;
   title?: string;
   status?: string;
+  siteLatitude?: number | null;
+  siteLongitude?: number | null;
 }
 
 type HomeNavParamList = {
@@ -33,6 +36,7 @@ type HomeNavParamList = {
   IssueCaptures: undefined;
   LeaveRequests: undefined;
   VoiceLogs: undefined;
+  WeatherDetail: undefined;
 };
 
 export function HomeScreen() {
@@ -52,6 +56,11 @@ export function HomeScreen() {
       <SyncStatusBar />
       <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(2) }}>
         <Text style={styles.h1}>Hello, {user?.firstName ?? user?.email}</Text>
+
+        <WeatherWidget
+          project={projects.find((p) => p.siteLatitude != null && p.siteLongitude != null) ?? projects[0] ?? null}
+          onPress={() => nav.navigate("WeatherDetail")}
+        />
 
         <Pressable
           onPress={() => nav.navigate("ReportIncident")}

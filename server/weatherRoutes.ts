@@ -276,6 +276,142 @@ router.get("/history", requireAuth, async (req: AuthRequest, res: Response, next
   }
 });
 
+// Task #3107 — Mobile site weather. Single round-trip that returns the
+// current observation, the next 24 hours of hourly data, and the next 7
+// days of daily data so the mobile widget + detail screen + daily-report
+// snapshot capture only need one cache key per project. Backed by the
+// same Open-Meteo source the existing /forecast endpoint already uses,
+// so no new outbound destination is added to the threat model.
+interface WeatherHour {
+  time: string;
+  temp: number;
+  precipitation: number;
+  windSpeed: number;
+  conditions: string;
+  weatherCode: number;
+}
+
+interface WeatherCurrent {
+  observedAt: string;
+  temp: number;
+  windSpeed: number;
+  precipitation: number;
+  conditions: string;
+  weatherCode: number;
+  todayHigh: number | null;
+  todayLow: number | null;
+}
+
+interface WeatherSiteResponse {
+  location: { lat: number; lng: number };
+  fetchedAt: string;
+  source: string;
+  current: WeatherCurrent | null;
+  hourly: WeatherHour[];
+  daily: WeatherDay[];
+}
+
+router.get("/site", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      res.status(400).json({ error: "Latitude and longitude are required" });
+      return;
+    }
+    const latitude = parseFloat(lat as string);
+    const longitude = parseFloat(lng as string);
+    if (isNaN(latitude) || isNaN(longitude)) {
+      res.status(400).json({ error: "Invalid latitude or longitude" });
+      return;
+    }
+
+    const cacheKey = getCacheKey("site", latitude, longitude);
+    const cached = getFromCache<WeatherSiteResponse>(cacheKey);
+    if (cached) {
+      res.json({ ...cached, fromCache: true });
+      return;
+    }
+
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+      `&current=temperature_2m,weather_code,wind_speed_10m,precipitation` +
+      `&hourly=temperature_2m,weather_code,wind_speed_10m,precipitation` +
+      `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,wind_speed_10m_max` +
+      `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch&timezone=auto&forecast_days=7`;
+
+    let current: WeatherCurrent | null = null;
+    let hourly: WeatherHour[] = [];
+    let daily: WeatherDay[] = [];
+    let source = "open-meteo";
+
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const response = await fetch(url, { signal: controller.signal });
+      clearTimeout(timeout);
+      if (!response.ok) {
+        logError("Open-Meteo /site error", { status: response.status });
+        daily = generateFallbackForecast(7);
+        source = "fallback";
+      } else {
+        const data = await response.json();
+        if (data.daily?.time) {
+          daily = data.daily.time.map((date: string, i: number) => ({
+            date,
+            tempHigh: data.daily.temperature_2m_max[i],
+            tempLow: data.daily.temperature_2m_min[i],
+            precipitation: data.daily.precipitation_sum[i] || 0,
+            windSpeed: data.daily.wind_speed_10m_max[i] || 0,
+            conditions: getConditionsFromCode(data.daily.weather_code[i]),
+            weatherCode: data.daily.weather_code[i],
+          }));
+        }
+        if (data.hourly?.time) {
+          const now = Date.now();
+          const all: WeatherHour[] = data.hourly.time.map((t: string, i: number) => ({
+            time: t,
+            temp: data.hourly.temperature_2m[i],
+            precipitation: data.hourly.precipitation[i] || 0,
+            windSpeed: data.hourly.wind_speed_10m[i] || 0,
+            conditions: getConditionsFromCode(data.hourly.weather_code[i]),
+            weatherCode: data.hourly.weather_code[i],
+          }));
+          hourly = all.filter((h) => new Date(h.time).getTime() >= now - 60 * 60 * 1000).slice(0, 24);
+        }
+        if (data.current) {
+          const today = daily[0] ?? null;
+          current = {
+            observedAt: data.current.time ?? new Date().toISOString(),
+            temp: data.current.temperature_2m,
+            windSpeed: data.current.wind_speed_10m ?? 0,
+            precipitation: data.current.precipitation ?? 0,
+            conditions: getConditionsFromCode(data.current.weather_code),
+            weatherCode: data.current.weather_code,
+            todayHigh: today?.tempHigh ?? null,
+            todayLow: today?.tempLow ?? null,
+          };
+        }
+      }
+    } catch (fetchErr) {
+      logError("Open-Meteo /site fetch failed", {}, fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)));
+      daily = generateFallbackForecast(7);
+      source = "fallback";
+    }
+
+    const result: WeatherSiteResponse = {
+      location: { lat: latitude, lng: longitude },
+      fetchedAt: new Date().toISOString(),
+      source,
+      current,
+      hourly,
+      daily,
+    };
+    setCache(cacheKey, result);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/geocode", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { address } = req.query;

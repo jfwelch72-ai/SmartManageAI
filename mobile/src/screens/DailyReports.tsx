@@ -1,13 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Audio } from "expo-av";
 import { useNavigation, type NavigationProp } from "@react-navigation/native";
@@ -15,10 +7,18 @@ import { useNavigation, type NavigationProp } from "@react-navigation/native";
 import { SyncStatusBar } from "@/components/SyncStatusBar";
 import { useSync } from "@/sync/SyncContext";
 import { enqueue } from "@/sync/outbox";
-import { cacheList, cachePut } from "@/sync/db";
+import { cacheList, cachePut, getMeta } from "@/sync/db";
 import { api, ApiError } from "@/api/client";
+import {
+  fetchSiteWeather,
+  snapshotFromCurrent,
+  snapshotToString,
+  type WeatherSiteResponse,
+  type WeatherSnapshot,
+} from "@/api/weather";
 import { colors, spacing } from "@/theme";
 import type { CreateTaskPrefill } from "@/screens/CreateTask";
+
 
 type DailyReportsNavParamList = {
   CreateTask: { prefill: CreateTaskPrefill };
@@ -32,12 +32,6 @@ type DailyReport = {
   status?: string;
 };
 
-type PendingAttachment = {
-  localId: string;
-  uri: string;
-  mime: string;
-  name: string;
-};
 
 // Mirror of the server-side AIInsight shape returned by
 // GET /api/insights/daily-report/:reportId. Not persisted, so the mobile
@@ -68,167 +62,58 @@ function isServerId(id: string): boolean {
   return UUID_RE.test(id);
 }
 
-export function DailyReportsScreen() {
-  const { syncNow, lastResult } = useSync();
-  const [items, setItems] = useState<DailyReport[]>([]);
-  const [draft, setDraft] = useState("");
-  const [pending, setPending] = useState<PendingAttachment[]>([]);
-  const [recording, setRecording] = useState(false);
-  const recorderRef = useRef<Audio.Recording | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+type PendingAttachment = {
+  localId: string;
+  uri: string;
+  mime: string;
+  name: string;
+};
 
-  useEffect(() => {
-    void cacheList<DailyReport>("DAILY_REPORT").then(setItems);
-  }, [lastResult]);
+// Task #3107 — pull the primary project's coordinates from the offline
+// PROJECT cache. Used to capture a weather snapshot at save time so the
+// synced daily report retains defensible field context.
+interface ProjectRow {
+  id: string;
+  name?: string;
+  title?: string;
+  siteLatitude?: number | null;
+  siteLongitude?: number | null;
+}
 
-  async function capturePhoto() {
-    const photo = await ImagePicker.launchCameraAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7,
-    });
-    if (photo.canceled) return;
-    const a = photo.assets[0];
-    setPending((prev) => [
-      ...prev,
-      {
-        localId: `photo-${Date.now()}`,
-        uri: a.uri,
-        mime: a.mimeType ?? "image/jpeg",
-        name: a.fileName ?? `photo-${Date.now()}.jpg`,
-      },
-    ]);
-  }
-
-  // Voice notes — required by the daily reports spec. Recording uses
-  // expo-av and produces an .m4a file we attach to the outbox record. The
-  // sync coordinator's attachment uploader treats it identically to a photo.
-  async function startRecording() {
-    try {
-      const perm = await Audio.requestPermissionsAsync();
-      if (!perm.granted) return;
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-      const { recording: r } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
-      );
-      recorderRef.current = r;
-      setRecording(true);
-    } catch (e) {
-      console.warn("[voice] start failed", e);
+async function captureWeatherSnapshot(): Promise<{
+  snapshot: WeatherSnapshot | null;
+  projectId: string | null;
+}> {
+  try {
+    const projects = await cacheList<ProjectRow>("PROJECT");
+    const primary = projects.find((p) => p.siteLatitude != null && p.siteLongitude != null);
+    if (!primary || primary.siteLatitude == null || primary.siteLongitude == null) {
+      return { snapshot: null, projectId: projects[0]?.id ?? null };
     }
-  }
-
-  async function stopRecording() {
-    const r = recorderRef.current;
-    recorderRef.current = null;
-    setRecording(false);
-    if (!r) return;
+    // Prefer a fresh fetch but fall back to last-known cached widget data
+    // so the offline / airplane-mode case still records *something*.
     try {
-      await r.stopAndUnloadAsync();
-      const uri = r.getURI();
-      if (!uri) return;
-      setPending((prev) => [
-        ...prev,
-        {
-          localId: `voice-${Date.now()}`,
-          uri,
-          mime: "audio/m4a",
-          name: `voice-${Date.now()}.m4a`,
-        },
-      ]);
-    } catch (e) {
-      console.warn("[voice] stop failed", e);
+      const fresh = await fetchSiteWeather(primary.siteLatitude, primary.siteLongitude);
+      if (fresh.current) {
+        return { snapshot: snapshotFromCurrent(fresh.current, fresh.source), projectId: primary.id };
+      }
+    } catch {
+      /* fall through to cache */
     }
+    const cached = await getMeta("weather.site." + primary.id);
+    if (cached) {
+      const data = JSON.parse(cached) as WeatherSiteResponse;
+      if (data.current) {
+        return {
+          snapshot: snapshotFromCurrent(data.current, `${data.source} (cached)`),
+          projectId: primary.id,
+        };
+      }
+    }
+    return { snapshot: null, projectId: primary.id };
+  } catch {
+    return { snapshot: null, projectId: null };
   }
-
-  async function save() {
-    const date = new Date().toISOString().slice(0, 10);
-    const rec = await enqueue({
-      entityType: "DAILY_REPORT",
-      operation: "CREATE",
-      payload: { notes: draft, date },
-      attachments: pending.length > 0 ? pending : undefined,
-    });
-    // Optimistic cache write so the new report appears in the list
-    // immediately, before push() round-trips to the server. Keyed by the
-    // outbox localId; on successful push the server-issued row will replace
-    // it on the next pull (same id space won't collide because server ids
-    // are UUIDs while localIds are timestamp-prefixed strings).
-    await cachePut(
-      "DAILY_REPORT",
-      rec.localId,
-      { id: rec.localId, date, notes: draft, status: "PENDING" },
-      new Date().toISOString()
-    );
-    setItems((prev) => [
-      { id: rec.localId, date, notes: draft, status: "PENDING" },
-      ...prev.filter((p) => p.id !== rec.localId),
-    ]);
-    setDraft("");
-    setPending([]);
-    void syncNow();
-  }
-
-  return (
-    <View style={{ flex: 1, backgroundColor: colors.background }}>
-      <SyncStatusBar />
-      <View style={{ padding: spacing(2), gap: spacing(1) }}>
-        <TextInput
-          placeholder="Today's notes — saves offline"
-          placeholderTextColor={colors.textMuted}
-          multiline value={draft} onChangeText={setDraft} style={styles.input}
-          testID="input-daily-notes"
-        />
-        <View style={{ flexDirection: "row", gap: spacing(1) }}>
-          <Pressable onPress={capturePhoto} style={[styles.btn, { flex: 1 }]} testID="button-add-photo">
-            <Text style={styles.btnText}>Photo</Text>
-          </Pressable>
-          <Pressable
-            onPress={recording ? stopRecording : startRecording}
-            style={[styles.btn, { flex: 1, backgroundColor: recording ? colors.danger : colors.primary }]}
-            testID="button-toggle-voice"
-          >
-            <Text style={styles.btnText}>{recording ? "Stop voice" : "Voice note"}</Text>
-          </Pressable>
-        </View>
-        {pending.length > 0 ? (
-          <Text style={{ color: colors.textMuted, fontSize: 12 }} testID="text-pending-attachments">
-            {pending.length} attachment{pending.length === 1 ? "" : "s"} ready
-          </Text>
-        ) : null}
-        <Pressable onPress={save} style={[styles.btn, { backgroundColor: colors.success ?? "#16a34a" }]} testID="button-save-report">
-          <Text style={styles.btnText}>Save report</Text>
-        </Pressable>
-      </View>
-      <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(1) }}>
-        {items.map((it) => {
-          const expanded = expandedId === it.id;
-          const synced = isServerId(it.id);
-          return (
-            <View key={it.id} style={styles.row} testID={`row-report-${it.id}`}>
-              <Pressable
-                onPress={() => setExpandedId(expanded ? null : it.id)}
-                testID={`button-toggle-report-${it.id}`}
-              >
-                <Text style={styles.rowTitle}>{it.date}</Text>
-                <Text style={styles.rowSub} numberOfLines={expanded ? undefined : 2}>
-                  {it.notes ?? ""}
-                </Text>
-                <Text style={styles.rowHint}>
-                  {synced
-                    ? expanded ? "Tap to collapse" : "Tap to view AI insights"
-                    : "Syncing — insights available after upload"}
-                </Text>
-              </Pressable>
-              {expanded && synced ? (
-                <DailyReportInsights reportId={it.id} />
-              ) : null}
-            </View>
-          );
-        })}
-        {items.length === 0 ? <Text style={{ color: colors.textMuted }}>No reports yet</Text> : null}
-      </ScrollView>
-    </View>
-  );
 }
 
 // Module-level cache so re-opening a report doesn't re-bill the LLM for
@@ -372,6 +257,181 @@ function severityColor(s: AIInsight["severity"]): string {
     case "MEDIUM": return "#ca8a04";
     case "LOW": return colors.textMuted;
   }
+}
+
+export function DailyReportsScreen() {
+  const { syncNow, lastResult } = useSync();
+  const [items, setItems] = useState<DailyReport[]>([]);
+  const [draft, setDraft] = useState("");
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
+  const [recording, setRecording] = useState(false);
+  const recorderRef = useRef<Audio.Recording | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void cacheList<DailyReport>("DAILY_REPORT").then(setItems);
+  }, [lastResult]);
+
+  async function capturePhoto() {
+    const photo = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+    });
+    if (photo.canceled) return;
+    const a = photo.assets[0];
+    setPending((prev) => [
+      ...prev,
+      {
+        localId: `photo-${Date.now()}`,
+        uri: a.uri,
+        mime: a.mimeType ?? "image/jpeg",
+        name: a.fileName ?? `photo-${Date.now()}.jpg`,
+      },
+    ]);
+  }
+
+  // Voice notes — required by the daily reports spec. Recording uses
+  // expo-av and produces an .m4a file we attach to the outbox record. The
+  // sync coordinator's attachment uploader treats it identically to a photo.
+  async function startRecording() {
+    try {
+      const perm = await Audio.requestPermissionsAsync();
+      if (!perm.granted) return;
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+      const { recording: r } = await Audio.Recording.createAsync(
+        Audio.RecordingOptionsPresets.HIGH_QUALITY
+      );
+      recorderRef.current = r;
+      setRecording(true);
+    } catch (e) {
+      console.warn("[voice] start failed", e);
+    }
+  }
+
+  async function stopRecording() {
+    const r = recorderRef.current;
+    recorderRef.current = null;
+    setRecording(false);
+    if (!r) return;
+    try {
+      await r.stopAndUnloadAsync();
+      const uri = r.getURI();
+      if (!uri) return;
+      setPending((prev) => [
+        ...prev,
+        {
+          localId: `voice-${Date.now()}`,
+          uri,
+          mime: "audio/m4a",
+          name: `voice-${Date.now()}.m4a`,
+        },
+      ]);
+    } catch (e) {
+      console.warn("[voice] stop failed", e);
+    }
+  }
+
+  async function save() {
+    const date = new Date().toISOString().slice(0, 10);
+    // Task #3107 — Capture a current-conditions snapshot at save time so
+    // the synced daily report retains defensible weather context. The
+    // mobile sync envelope persists `weather` as a text column; we send
+    // both the structured snapshot (weatherSnapshot) and a human-readable
+    // string (weather) so the office web app sees the rendered summary.
+    const { snapshot, projectId } = await captureWeatherSnapshot();
+    const rec = await enqueue({
+      entityType: "DAILY_REPORT",
+      operation: "CREATE",
+      payload: {
+        notes: draft,
+        date,
+        projectId: projectId ?? undefined,
+        weather: snapshot ? snapshotToString(snapshot) : undefined,
+        weatherSnapshot: snapshot ?? undefined,
+      },
+      attachments: pending.length > 0 ? pending : undefined,
+    });
+    // Optimistic cache write so the new report appears in the list
+    // immediately, before push() round-trips to the server. Keyed by the
+    // outbox localId; on successful push the server-issued row will replace
+    // it on the next pull (same id space won't collide because server ids
+    // are UUIDs while localIds are timestamp-prefixed strings).
+    await cachePut(
+      "DAILY_REPORT",
+      rec.localId,
+      { id: rec.localId, date, notes: draft, status: "PENDING" },
+      new Date().toISOString()
+    );
+    setItems((prev) => [
+      { id: rec.localId, date, notes: draft, status: "PENDING" },
+      ...prev.filter((p) => p.id !== rec.localId),
+    ]);
+    setDraft("");
+    setPending([]);
+    void syncNow();
+  }
+
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <SyncStatusBar />
+      <View style={{ padding: spacing(2), gap: spacing(1) }}>
+        <TextInput
+          placeholder="Today's notes — saves offline"
+          placeholderTextColor={colors.textMuted}
+          multiline value={draft} onChangeText={setDraft} style={styles.input}
+          testID="input-daily-notes"
+        />
+        <View style={{ flexDirection: "row", gap: spacing(1) }}>
+          <Pressable onPress={capturePhoto} style={[styles.btn, { flex: 1 }]} testID="button-add-photo">
+            <Text style={styles.btnText}>Photo</Text>
+          </Pressable>
+          <Pressable
+            onPress={recording ? stopRecording : startRecording}
+            style={[styles.btn, { flex: 1, backgroundColor: recording ? colors.danger : colors.primary }]}
+            testID="button-toggle-voice"
+          >
+            <Text style={styles.btnText}>{recording ? "Stop voice" : "Voice note"}</Text>
+          </Pressable>
+        </View>
+        {pending.length > 0 ? (
+          <Text style={{ color: colors.textMuted, fontSize: 12 }} testID="text-pending-attachments">
+            {pending.length} attachment{pending.length === 1 ? "" : "s"} ready
+          </Text>
+        ) : null}
+        <Pressable onPress={save} style={[styles.btn, { backgroundColor: colors.success ?? "#16a34a" }]} testID="button-save-report">
+          <Text style={styles.btnText}>Save report</Text>
+        </Pressable>
+      </View>
+      <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(1) }}>
+        {items.map((it) => {
+          const expanded = expandedId === it.id;
+          const synced = isServerId(it.id);
+          return (
+            <View key={it.id} style={styles.row} testID={`row-report-${it.id}`}>
+              <Pressable
+                onPress={() => setExpandedId(expanded ? null : it.id)}
+                testID={`button-toggle-report-${it.id}`}
+              >
+                <Text style={styles.rowTitle}>{it.date}</Text>
+                <Text style={styles.rowSub} numberOfLines={expanded ? undefined : 2}>
+                  {it.notes ?? ""}
+                </Text>
+                <Text style={styles.rowHint}>
+                  {synced
+                    ? expanded ? "Tap to collapse" : "Tap to view AI insights"
+                    : "Syncing — insights available after upload"}
+                </Text>
+              </Pressable>
+              {expanded && synced ? (
+                <DailyReportInsights reportId={it.id} />
+              ) : null}
+            </View>
+          );
+        })}
+        {items.length === 0 ? <Text style={{ color: colors.textMuted }}>No reports yet</Text> : null}
+      </ScrollView>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
