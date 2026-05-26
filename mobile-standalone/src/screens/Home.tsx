@@ -8,6 +8,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { useSync } from "@/sync/SyncContext";
 import { cacheList } from "@/sync/db";
 import { getOverdueTaskCount } from "@/screens/Tasks";
+import { getTodaysCrewScheduleCount } from "@/screens/CrewSchedule";
 import { colors, spacing } from "@/theme";
 import type { NavigationProp } from "@react-navigation/native";
 
@@ -37,6 +38,7 @@ type HomeNavParamList = {
   LeaveRequests: undefined;
   VoiceLogs: undefined;
   WeatherDetail: undefined;
+  CrewSchedule: undefined;
 };
 
 export function HomeScreen() {
@@ -45,10 +47,12 @@ export function HomeScreen() {
   const nav = useNavigation<NavigationProp<HomeNavParamList>>();
   const [projects, setProjects] = useState<HomeProject[]>([]);
   const [taskBadge, setTaskBadge] = useState(0);
+  const [crewBadge, setCrewBadge] = useState(0);
 
   useEffect(() => {
     void cacheList<HomeProject>("PROJECT").then(setProjects);
     void getOverdueTaskCount(user?.id).then(setTaskBadge);
+    void getTodaysCrewScheduleCount().then(setCrewBadge);
   }, [lastResult, user?.id]);
 
   return (
@@ -84,6 +88,7 @@ export function HomeScreen() {
 
         <View style={styles.grid}>
           {([
+            { label: crewBadge > 0 ? `Crew Schedule (${crewBadge})` : "Crew Schedule", to: "CrewSchedule" },
             { label: "Daily Reports", to: "Daily" },
             { label: "Voice Logs", to: "VoiceLogs" },
             { label: "Time Clock", to: "Time" },

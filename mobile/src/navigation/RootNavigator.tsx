@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import type { NavigationContainerRef } from "@react-navigation/native";
@@ -38,8 +38,9 @@ import { IssueCapturesScreen } from "@/screens/IssueCaptures";
 import { LeaveRequestsScreen } from "@/screens/LeaveRequests";
 import { VoiceLogsScreen } from "@/screens/VoiceLogs";
 import { WeatherDetailScreen } from "@/screens/WeatherDetail";
+import { CrewScheduleScreen } from "@/screens/CrewSchedule";
 import { colors } from "@/theme";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppState } from "react-native";
 import { getUnreadCount } from "@/sync/messaging";
 import { useSync } from "@/sync/SyncContext";
@@ -173,6 +174,7 @@ export function RootNavigator({
       <Stack.Screen name="LeaveRequests" component={LeaveRequestsScreen} options={{ title: "Leave Requests" }} />
       <Stack.Screen name="VoiceLogs" component={VoiceLogsScreen} options={{ title: "Voice Logs" }} />
       <Stack.Screen name="WeatherDetail" component={WeatherDetailScreen} options={{ title: "Weather" }} />
+      <Stack.Screen name="CrewSchedule" component={CrewScheduleScreen} options={{ title: "Crew Schedule" }} />
     </Stack.Navigator>
   );
 }

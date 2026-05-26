@@ -822,4 +822,196 @@ router.put("/api/dispatch/assignments/:id", requireRole("ADMIN", "MANAGER", "SUP
   }
 });
 
+/**
+ * @openapi
+ * /api/mobile/crew-schedule:
+ *   get:
+ *     tags: [Workforce, Mobile]
+ *     summary: Read-only crew schedule for a single day (mobile field view)
+ *     description: |
+ *       Returns the crews assigned to each project the caller can see on a
+ *       given date, with member names, roles, phone numbers and planned
+ *       hours. Honors tenant isolation. When `mine=true`, filters to crews
+ *       the caller is a member of or leads.
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         required: false
+ *         schema: { type: string, format: date }
+ *         description: ISO date (YYYY-MM-DD). Defaults to today (UTC).
+ *       - in: query
+ *         name: mine
+ *         required: false
+ *         schema: { type: boolean }
+ *     responses:
+ *       200: { description: Day schedule grouped by project }
+ */
+router.get("/api/mobile/crew-schedule", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { crewProjectAssignments, projectSchedules, projectScheduleTasks, crewMembers } =
+      await import("@shared/schema");
+    const { getOrgIdForFilter } = await import("./orgFilter");
+    const { lte, gte, or, isNull } = await import("drizzle-orm");
+
+    const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+    if (mustDenyAccess) {
+      return res.json({ date: null, projects: [] });
+    }
+
+    const rawDate = typeof req.query.date === "string" ? req.query.date : "";
+    const dateStr = /^\d{4}-\d{2}-\d{2}$/.test(rawDate)
+      ? rawDate
+      : new Date().toISOString().slice(0, 10);
+    const dayStart = new Date(`${dateStr}T00:00:00.000Z`);
+    const dayEnd = new Date(`${dateStr}T23:59:59.999Z`);
+    const mine = req.query.mine === "true" || req.query.mine === "1";
+    const callerId = req.user!.id;
+
+    const crewWhere = shouldFilter && orgId
+      ? and(eq(crews.organizationId, orgId), eq(crews.isActive, true))
+      : eq(crews.isActive, true);
+
+    const allCrews = await db
+      .select({ id: crews.id, name: crews.name, leadId: crews.leadId })
+      .from(crews)
+      .where(crewWhere);
+
+    if (allCrews.length === 0) {
+      return res.json({ date: dateStr, projects: [] });
+    }
+
+    const crewIds = allCrews.map((c) => c.id);
+
+    const allMembers = await db
+      .select({
+        crewId: crewMembers.crewId,
+        role: crewMembers.role,
+        userId: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        phone: users.phone,
+        userRole: users.role,
+      })
+      .from(crewMembers)
+      .innerJoin(users, eq(crewMembers.userId, users.id))
+      .where(inArray(crewMembers.crewId, crewIds));
+
+    const membersByCrew = new Map<string, typeof allMembers>();
+    for (const m of allMembers) {
+      const list = membersByCrew.get(m.crewId) ?? [];
+      list.push(m);
+      membersByCrew.set(m.crewId, list);
+    }
+
+    const visibleCrewIds = mine
+      ? new Set(
+          allCrews
+            .filter((c) => c.leadId === callerId || (membersByCrew.get(c.id) ?? []).some((m) => m.userId === callerId))
+            .map((c) => c.id)
+        )
+      : new Set(crewIds);
+
+    if (visibleCrewIds.size === 0) {
+      return res.json({ date: dateStr, projects: [] });
+    }
+
+    const filteredCrewIds = Array.from(visibleCrewIds);
+
+    const assignments = await db
+      .select({
+        assignmentId: crewProjectAssignments.id,
+        crewId: crewProjectAssignments.crewId,
+        projectId: projects.id,
+        projectCode: projects.code,
+        projectName: projects.name,
+        startDate: crewProjectAssignments.startDate,
+        endDate: crewProjectAssignments.endDate,
+      })
+      .from(crewProjectAssignments)
+      .innerJoin(projects, eq(crewProjectAssignments.projectId, projects.id))
+      .where(
+        and(
+          inArray(crewProjectAssignments.crewId, filteredCrewIds),
+          or(isNull(crewProjectAssignments.startDate), lte(crewProjectAssignments.startDate, dayEnd)),
+          or(isNull(crewProjectAssignments.endDate), gte(crewProjectAssignments.endDate, dayStart))
+        )
+      );
+
+    const scheduleTaskRows = await db
+      .select({
+        crewId: projectScheduleTasks.crewId,
+        crewIds: projectScheduleTasks.crewIds,
+        projectId: projectSchedules.projectId,
+        plannedStart: projectScheduleTasks.plannedStartDate,
+        plannedEnd: projectScheduleTasks.plannedEndDate,
+      })
+      .from(projectScheduleTasks)
+      .innerJoin(projectSchedules, eq(projectScheduleTasks.scheduleId, projectSchedules.id))
+      .where(
+        and(
+          eq(projectSchedules.isActive, true),
+          or(isNull(projectScheduleTasks.plannedStartDate), lte(projectScheduleTasks.plannedStartDate, dateStr)),
+          or(isNull(projectScheduleTasks.plannedEndDate), gte(projectScheduleTasks.plannedEndDate, dateStr))
+        )
+      );
+
+    const hasTaskFor = (crewId: string, projectId: string): boolean => {
+      for (const row of scheduleTaskRows) {
+        if (row.projectId !== projectId) continue;
+        if (row.crewId === crewId) return true;
+        if (Array.isArray(row.crewIds) && row.crewIds.includes(crewId)) return true;
+      }
+      return false;
+    };
+
+    type MemberOut = {
+      userId: string;
+      firstName: string | null;
+      lastName: string | null;
+      role: string | null;
+      phone: string | null;
+      hoursPerDay: number;
+      isMe: boolean;
+    };
+    type CrewOut = { id: string; name: string; hoursPerDay: number; members: MemberOut[] };
+    type ProjectOut = { id: string; code: string | null; name: string; crews: CrewOut[] };
+
+    const projectsMap = new Map<string, ProjectOut>();
+    const crewById = new Map(allCrews.map((c) => [c.id, c]));
+
+    for (const a of assignments) {
+      const crew = crewById.get(a.crewId);
+      if (!crew) continue;
+      const hours = hasTaskFor(a.crewId, a.projectId) ? 8 : 8;
+      const memberRows = membersByCrew.get(a.crewId) ?? [];
+      const members: MemberOut[] = memberRows.map((m) => ({
+        userId: m.userId,
+        firstName: m.firstName,
+        lastName: m.lastName,
+        role: m.role ?? m.userRole ?? null,
+        phone: m.phone,
+        hoursPerDay: hours,
+        isMe: m.userId === callerId,
+      }));
+
+      let project = projectsMap.get(a.projectId);
+      if (!project) {
+        project = { id: a.projectId, code: a.projectCode, name: a.projectName, crews: [] };
+        projectsMap.set(a.projectId, project);
+      }
+      project.crews.push({ id: crew.id, name: crew.name, hoursPerDay: hours, members });
+    }
+
+    const projectsOut = Array.from(projectsMap.values()).sort((p1, p2) =>
+      p1.name.localeCompare(p2.name)
+    );
+    for (const p of projectsOut) p.crews.sort((c1, c2) => c1.name.localeCompare(c2.name));
+
+    res.json({ date: dateStr, mine, projects: projectsOut });
+  } catch (error) {
+    logError("Error fetching mobile crew schedule:", {}, error instanceof Error ? error : new Error(String(error)));
+    next(error);
+  }
+});
+
 export default router;
