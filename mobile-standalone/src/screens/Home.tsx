@@ -32,6 +32,7 @@ type HomeNavParamList = {
   Deliveries: undefined;
   IssueCaptures: undefined;
   LeaveRequests: undefined;
+  VoiceLogs: undefined;
 };
 
 export function HomeScreen() {
@@ -75,6 +76,7 @@ export function HomeScreen() {
         <View style={styles.grid}>
           {([
             { label: "Daily Reports", to: "Daily" },
+            { label: "Voice Logs", to: "VoiceLogs" },
             { label: "Time Clock", to: "Time" },
             { label: "Photos", to: "Photos" },
             { label: "Punch List", to: "Punch" },

@@ -110,6 +110,10 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   // string keeps the map total for TS exhaustiveness while signalling
   // push() should skip it.
   TASK_UPDATE: "",
+  // Task #3103: pushed by pushVoiceLogs() to /api/field-productivity/voice-logs.
+  // Same rationale as inventory above — empty string keeps the map total for
+  // TS exhaustiveness while signalling push() should skip it.
+  VOICE_LOG: "",
   // Field-reported safety incidents — pushed via the unified mobile sync
   // envelope. Server-side handler maps the lightweight field payload onto
   // the osha_incidents table with sensible defaults.
@@ -1174,6 +1178,96 @@ export async function pushLeave(): Promise<{ pushed: number; failed: number }> {
   return { pushed, failed };
 }
 
+// Task #3103: drain VOICE_LOG outbox rows. The audio attachment (.m4a) is
+// uploaded via the signed-PUT object-storage path, then a single POST to
+// /api/field-productivity/voice-logs creates the row server-side. Server
+// fills organizationId + userId from the session; mobile sends
+// audioObjectKey + duration + projectId + category + transcription
+// (recorder-set title until the server-side transcription worker fills in
+// the real text). Same terminal-4xx semantics as pushInventory().
+export async function pushVoiceLogs(): Promise<{ pushed: number; failed: number }> {
+  if (!(await isOnline())) return { pushed: 0, failed: 0 };
+  const pending = (await listRetryable()).filter((r) => r.entityType === "VOICE_LOG");
+  if (pending.length === 0) return { pushed: 0, failed: 0 };
+  let pushed = 0;
+  let failed = 0;
+  for (const rec of pending) {
+    try {
+      let audioObjectKey: string | null = null;
+      const audio = rec.attachments?.[0];
+      if (audio) audioObjectKey = await uploadAttachment(audio);
+      if (!audioObjectKey) {
+        // Without a successful upload there is no point creating the row.
+        // Leave PENDING so the next syncNow() retries once the network/
+        // object-storage hiccup clears.
+        await markFailed(rec.localId, "Audio upload failed");
+        failed++;
+        continue;
+      }
+      const p = rec.payload as {
+        projectId?: string | null;
+        category?: string | null;
+        title?: string | null;
+        duration?: number | null;
+      };
+      const created = await api<{ id: string; createdAt?: string; updatedAt?: string }>(
+        "/api/field-productivity/voice-logs",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            projectId: p.projectId ?? undefined,
+            audioUrl: audioObjectKey,
+            audioObjectKey,
+            duration: p.duration ?? undefined,
+            // Server's voice_logs.transcription column doubles as the
+            // human-entered title until the transcription worker fills it
+            // with the real text. We tag the category in front so office
+            // staff can scan the list before transcripts arrive.
+            transcription: p.title
+              ? p.category
+                ? `[${p.category}] ${p.title}`
+                : p.title
+              : undefined,
+            status: "PENDING",
+          }),
+        }
+      );
+      // Optimistic cache write so the new voice log shows up in the list
+      // immediately, before the next pull round-trips. Replaces the local
+      // PENDING placeholder seeded by the screen.
+      await cachePut(
+        "VOICE_LOG",
+        created.id,
+        {
+          ...created,
+          projectId: p.projectId ?? null,
+          duration: p.duration ?? null,
+          status: "PENDING",
+          transcription: p.title ?? null,
+          category: p.category ?? null,
+        },
+        created.updatedAt ?? new Date().toISOString()
+      );
+      await markSynced(rec.localId, created.id);
+      pushed++;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (err instanceof ApiError && err.status >= 400 && err.status < 500
+          && err.status !== 401 && err.status !== 403
+          && err.status !== 408 && err.status !== 429) {
+        const detail = (() => { try { return JSON.stringify(err.body); } catch { return String(err.body); } })();
+        await markFailed(rec.localId, `HTTP ${err.status}: ${detail}`.slice(0, 500));
+        for (let i = 0; i < 5; i++) await markFailed(rec.localId, `HTTP ${err.status}`);
+        failed++;
+      } else {
+        await markFailed(rec.localId, msg.slice(0, 500));
+        failed++;
+      }
+    }
+  }
+  return { pushed, failed };
+}
+
 export async function syncNow(): Promise<SyncStats> {
   const pulled = await pull();
   const { pushed, conflicts } = await push();
@@ -1187,9 +1281,11 @@ export async function syncNow(): Promise<SyncStats> {
   const deliveries = await pushDeliveryReceipts();
   const iss = await pushIssueCaptures();
   const leave = await pushLeave();
+  const voice = await pushVoiceLogs();
   return {
     pulled,
-    pushed: pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed + leave.pushed,
+    pushed:
+      pushed + inv.pushed + maint.pushed + tasks.pushed + eq.pushed + tm.pushed + mr.pushed + msgs.pushed + deliveries.pushed + iss.pushed + leave.pushed + voice.pushed,
     conflicts: conflicts + tm.conflicts,
   };
 }

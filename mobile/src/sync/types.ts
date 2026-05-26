@@ -46,6 +46,15 @@ export type SyncEntityType =
   //   { kind: "STATUS", taskId, status, dismissReason? }
   //   { kind: "COMMENT", taskId, content }
   | "TASK_UPDATE"
+  // Task #3103: hands-free voice logs recorded in the field. Pushed by
+  // pushVoiceLogs() in the sync coordinator: the .m4a is uploaded via the
+  // signed-PUT object-storage path, then a POST to
+  // /api/field-productivity/voice-logs creates the row server-side with
+  // audioObjectKey + transcription title + optional projectId + category.
+  // Server returns voice_logs.id; on subsequent pulls the transcript field
+  // is updated by the server-side transcription worker (or stays
+  // "Transcript pending" until then).
+  | "VOICE_LOG"
   // Safety incidents reported on-the-spot from the field. Pushed through
   // the unified mobile sync envelope (changes.safetyIncidents) and
   // persisted server-side into osha_incidents with sensible defaults so

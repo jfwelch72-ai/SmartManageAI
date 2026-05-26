@@ -36,8 +36,9 @@ import { DeliveriesScreen } from "@/screens/Deliveries";
 import { DeliveryDetailScreen } from "@/screens/DeliveryDetail";
 import { IssueCapturesScreen } from "@/screens/IssueCaptures";
 import { LeaveRequestsScreen } from "@/screens/LeaveRequests";
+import { VoiceLogsScreen } from "@/screens/VoiceLogs";
 import { colors } from "@/theme";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { AppState } from "react-native";
 import { getUnreadCount } from "@/sync/messaging";
 import { useSync } from "@/sync/SyncContext";
@@ -169,6 +170,7 @@ export function RootNavigator({
       <Stack.Screen name="DeliveryDetail" component={DeliveryDetailScreen} options={{ title: "Confirm Delivery" }} />
       <Stack.Screen name="IssueCaptures" component={IssueCapturesScreen} options={{ title: "Issue Captures" }} />
       <Stack.Screen name="LeaveRequests" component={LeaveRequestsScreen} options={{ title: "Leave Requests" }} />
+      <Stack.Screen name="VoiceLogs" component={VoiceLogsScreen} options={{ title: "Voice Logs" }} />
     </Stack.Navigator>
   );
 }
