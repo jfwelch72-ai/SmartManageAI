@@ -5,13 +5,14 @@ import { routedGeneralChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { quarantineUserText } from "./ai/promptInjectionGuard";
 import { db } from "./db";
-import { 
-  projectNotes, 
-  companyDailyNotes, 
-  aiRuns, 
+import {
+  projectNotes,
+  companyDailyNotes,
+  aiRuns,
   aiNoteInsights,
   users,
-  projects 
+  projects,
+  dailyReports,
 } from "@shared/schema";
 import { eq, and, gte, desc, sql } from "drizzle-orm";
 
@@ -466,6 +467,91 @@ Return format: { "insights": [ ... ] }`;
 
       throw error;
     }
+  }
+
+  /**
+   * Analyze a single mobile daily report on demand and return insights
+   * synchronously. Used by the mobile DailyReports detail view to surface
+   * AI action items right after a report syncs. Insights are returned as
+   * in-memory `AIInsight` shapes (not persisted in `ai_note_insights`,
+   * whose source_type enum is PROJECT/COMPANY) and the caller is expected
+   * to cache them client-side.
+   */
+  async analyzeDailyReportById(
+    reportId: string,
+    organizationId: string,
+  ): Promise<{ reportId: string; insights: AIInsight[] }> {
+    const [report] = await db
+      .select({
+        id: dailyReports.id,
+        notes: dailyReports.notes,
+        reportDate: dailyReports.reportDate,
+        projectId: dailyReports.projectId,
+        submittedById: dailyReports.submittedById,
+        createdAt: dailyReports.createdAt,
+      })
+      .from(dailyReports)
+      .where(
+        and(
+          eq(dailyReports.id, reportId),
+          eq(dailyReports.organizationId, organizationId),
+        ),
+      )
+      .limit(1);
+
+    if (!report) {
+      throw Object.assign(new Error("Daily report not found"), { status: 404 });
+    }
+
+    const noteText = (report.notes ?? "").trim();
+    if (!noteText) {
+      return { reportId: report.id, insights: [] };
+    }
+
+    let authorName = "Field user";
+    if (report.submittedById) {
+      const [author] = await db
+        .select({ firstName: users.firstName, lastName: users.lastName })
+        .from(users)
+        .where(eq(users.id, report.submittedById))
+        .limit(1);
+      if (author) {
+        authorName = `${author.firstName ?? ""} ${author.lastName ?? ""}`.trim() || authorName;
+      }
+    }
+
+    let projectName: string | null = null;
+    let projectCode: string | null = null;
+    if (report.projectId) {
+      const [project] = await db
+        .select({ name: projects.name, code: projects.code })
+        .from(projects)
+        .where(eq(projects.id, report.projectId))
+        .limit(1);
+      if (project) {
+        projectName = project.name ?? null;
+        projectCode = project.code ?? null;
+      }
+    }
+
+    const note: NoteForAnalysis = {
+      id: report.id,
+      text: noteText,
+      createdAt: report.createdAt ?? new Date(),
+      authorName,
+      projectId: report.projectId ?? null,
+      projectName,
+      projectCode,
+      sourceType: report.projectId ? "PROJECT" : "COMPANY",
+    };
+
+    const insights = await this.analyzeNotesWithAI([note]);
+    // The model may have skipped or remapped IDs; force the sourceNoteId
+    // back to the report we asked about so the client can correlate.
+    return {
+      reportId: report.id,
+      insights: insights.map((i) => ({ ...i, sourceNoteId: report.id })),
+    };
   }
 
   /**

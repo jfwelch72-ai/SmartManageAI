@@ -3119,6 +3119,37 @@ router.get("/insights/role", requireAuth, async (req: AuthRequest, res: Response
   }
 });
 
+/**
+ * Synchronous AI insights for a single mobile Daily Report.
+ *
+ * Used by the mobile DailyReports detail view to surface action items,
+ * suggested follow-ups, and risk flags right after a report syncs. The
+ * mobile client lazy-fetches this once per report; results are not
+ * persisted in `ai_note_insights` (whose source_type enum is
+ * PROJECT/COMPANY) so the client should cache them locally.
+ *
+ * Returns: { reportId, insights: AIInsight[] } where each insight has
+ *   { category, summary, recommendedActions[], severity, recipients[],
+ *     sourceNoteId, projectId, sourceType }
+ */
+router.get("/insights/daily-report/:reportId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
+    if (!user.organizationId) {
+      return res.status(400).json({ error: "User must belong to an organization" });
+    }
+    const { reportId } = req.params;
+    const result = await aiNotesService.analyzeDailyReportById(reportId, user.organizationId);
+    res.json(result);
+  } catch (error: any) {
+    if (error?.status === 404) {
+      return res.status(404).json({ error: error.message ?? "Daily report not found" });
+    }
+    next(error);
+  }
+});
+
 router.get("/insights/project/:projectId", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const user = getUserOrThrow(req, res);
