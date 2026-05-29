@@ -54,3 +54,9 @@ id = "iKUvxBMXWl7Sb3q5iYcuZ"
 uri = "file://exports/smartmanageai-mobile.tar.gz"
 type = "unspecified"
 title = "smartmanageai-mobile (standalone Expo project)"
+
+[[outputs]]
+id = "qKBy3iIgp7f0Xy0MxYLFt"
+uri = "file://exports/mobile-standalone.zip"
+type = "unspecified"
+title = "mobile-standalone.zip"
