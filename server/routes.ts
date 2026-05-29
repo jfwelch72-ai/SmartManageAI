@@ -285,6 +285,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Serve Swagger UI at /api-docs — publicly accessible without authentication
   setupSwagger(app);
 
+  // Public API route catalogue — no auth required
+  const { registerApiDocsRoutes } = await import("./apiDocsRoutes");
+  registerApiDocsRoutes(app);
+
   // Apply auth middleware to all routes
   app.use(authMiddleware);
 
