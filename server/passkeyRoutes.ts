@@ -1,3 +1,115 @@
+/**
+ * @openapi
+ * tags:
+ *   - name: Authentication
+ *
+ * /api/auth/passkey/register-options:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Get passkey registration options
+ *     description: Returns WebAuthn registration options for the authenticated user. Requires an existing session.
+ *     responses:
+ *       200:
+ *         description: WebAuthn PublicKeyCredentialCreationOptions + regSessionId
+ *       401:
+ *         description: Not authenticated
+ *
+ * /api/auth/passkey/register-verify:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify passkey registration
+ *     description: Verifies the authenticator attestation response and stores the new credential.
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               regSessionId:
+ *                 type: string
+ *               credential:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Credential registered
+ *       400:
+ *         description: Verification failed
+ *
+ * /api/auth/passkey/auth-options:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Get passkey authentication options
+ *     description: Public endpoint. Returns WebAuthn authentication options to begin a passkey sign-in.
+ *     security: []
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               email:
+ *                 type: string
+ *                 format: email
+ *     responses:
+ *       200:
+ *         description: WebAuthn PublicKeyCredentialRequestOptions + authSessionId
+ *
+ * /api/auth/passkey/auth-verify:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Verify passkey authentication
+ *     description: Verifies the authenticator assertion. Sets the auth cookie on success. Pass `X-Mobile-Client: 1` header to receive the JWT in the response body instead.
+ *     security: []
+ *     parameters:
+ *       - in: header
+ *         name: X-Mobile-Client
+ *         schema:
+ *           type: string
+ *           enum: ["1"]
+ *         description: Set to `1` to receive token in response body (mobile)
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               authSessionId:
+ *                 type: string
+ *               credential:
+ *                 type: object
+ *     responses:
+ *       200:
+ *         description: Authenticated — auth cookie set (or token in body for mobile)
+ *       401:
+ *         description: Verification failed
+ *
+ * /api/auth/passkey/credentials:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: List registered passkey credentials
+ *     description: Returns all passkeys registered for the current user.
+ *     responses:
+ *       200:
+ *         description: Array of credential metadata
+ *
+ * /api/auth/passkey/credentials/{id}:
+ *   delete:
+ *     tags: [Authentication]
+ *     summary: Delete a passkey credential
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Credential deleted
+ *       404:
+ *         description: Not found
+ */
 import { logError } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import {

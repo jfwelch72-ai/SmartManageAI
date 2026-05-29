@@ -1,3 +1,117 @@
+/**
+ * @openapi
+ * tags:
+ *   - name: Authentication
+ *     description: OAuth and social login flows
+ *
+ * /api/auth/providers:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: List available auth providers
+ *     description: Public endpoint. Returns all configured login methods (Google, Apple, Microsoft, Passkey) with initiation URLs for mobile clients.
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: Provider list
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 providers:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       id:
+ *                         type: string
+ *                         example: google
+ *                       name:
+ *                         type: string
+ *                         example: Google
+ *                       available:
+ *                         type: boolean
+ *                       flow:
+ *                         type: string
+ *                         enum: [oauth_mobile_exchange, passkey]
+ *                       initiateUrl:
+ *                         type: string
+ *                       mobileExchangeRedeemUrl:
+ *                         type: string
+ *
+ * /api/auth/google:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Initiate Google OAuth flow
+ *     description: Redirects the browser to Google's consent screen. Pass `redirect=smartmanageai://auth/callback` for mobile deep-link return.
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: redirect
+ *         schema:
+ *           type: string
+ *         description: Deep-link URI for mobile (must start with `smartmanageai://`)
+ *     responses:
+ *       302:
+ *         description: Redirect to Google
+ *
+ * /api/auth/google/callback:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Google OAuth callback
+ *     description: Handles the redirect from Google. On mobile exchange flow, redirects to the deep-link with a short-lived code; otherwise sets the auth cookie and redirects to the app.
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to app or deep-link
+ *
+ * /api/auth/apple:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Initiate Apple Sign-In flow
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: redirect
+ *         schema:
+ *           type: string
+ *     responses:
+ *       302:
+ *         description: Redirect to Apple
+ *
+ * /api/auth/apple/callback:
+ *   post:
+ *     tags: [Authentication]
+ *     summary: Apple Sign-In callback (POST)
+ *     description: Apple sends form-encoded data back. On mobile exchange flow, redirects to the deep-link with a short-lived code.
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to app or deep-link
+ *
+ * /api/auth/microsoft:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Initiate Microsoft OAuth flow
+ *     security: []
+ *     parameters:
+ *       - in: query
+ *         name: redirect
+ *         schema:
+ *           type: string
+ *     responses:
+ *       302:
+ *         description: Redirect to Microsoft
+ *
+ * /api/auth/microsoft/callback:
+ *   get:
+ *     tags: [Authentication]
+ *     summary: Microsoft OAuth callback
+ *     security: []
+ *     responses:
+ *       302:
+ *         description: Redirect to app or deep-link
+ */
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";

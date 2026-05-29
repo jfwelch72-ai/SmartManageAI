@@ -133,6 +133,8 @@ const swaggerOptions: swaggerJsdoc.Options = {
     "./server/aiaBillingRoutes.ts",
     "./server/publicApi/routes.ts",
     "./server/publicApi/oauthRoutes.ts",
+    "./server/oauthRoutes.ts",
+    "./server/passkeyRoutes.ts",
   ],
 };
 
