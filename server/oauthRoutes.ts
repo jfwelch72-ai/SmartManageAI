@@ -2,6 +2,7 @@ import { logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { db } from "./db";
+import { pool as oauthPool } from "./db";
 import { users, organizations } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { generateToken, setAuthCookie } from "./auth";
@@ -14,20 +15,64 @@ import {
   inspectOAuthState,
   hashOAuthStatePrefix,
 } from "./oauthStateStore";
+import { authLimiter } from "./rateLimiter";
+import { logAuthEvent } from "./auditLogger";
 
 const router = Router();
 
 router.use(express.urlencoded({ extended: true }));
 
-function generateState(): string {
+function generateNonce(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+// ─── State parameter encoding ─────────────────────────────────────────────
+//
+// The OAuth `state` parameter serves two purposes:
+//   1. CSRF protection: a random nonce bound to the user's session.
+//   2. Mobile redirect transport: carry the smartmanageai:// deep-link
+//      redirect URL that must survive the round-trip through the provider.
+//
+// We embed the redirect (when present) directly into the state parameter
+// sent to the provider, which the provider echoes back verbatim.  This
+// binds the redirect to the specific nonce — concurrent auth attempts
+// each carry their own nonce so their redirects cannot interfere.
+//
+// Format:
+//   Without redirect:  <64-char hex nonce>
+//   With redirect:     <64-char hex nonce>~<base64url(redirect)>
+//
+// The tilde (`~`) separator is URL-safe and never appears in base64url
+// output or in hex strings, making splitting unambiguous.
+
+function buildStateParam(nonce: string, redirect?: string): string {
+  if (!redirect) return nonce;
+  const encodedRedirect = Buffer.from(redirect).toString("base64url");
+  return `${nonce}~${encodedRedirect}`;
+}
+
+function parseStateParam(stateParam: string): { nonce: string; redirect: string | null } {
+  const sep = stateParam.indexOf("~");
+  if (sep === -1) return { nonce: stateParam, redirect: null };
+  const nonce = stateParam.slice(0, sep);
+  const encodedRedirect = stateParam.slice(sep + 1);
+  try {
+    const redirect = Buffer.from(encodedRedirect, "base64url").toString("utf8");
+    return { nonce, redirect: isValidMobileRedirect(redirect) ? redirect : null };
+  } catch {
+    return { nonce, redirect: null };
+  }
 }
 
 // Used for GET-redirect OAuth providers (Google, Microsoft). Apple uses a
 // cross-site form_post callback which drops SameSite cookies in modern
 // browsers, so it stores its state server-side via oauthStateStore instead.
-function setStateCookie(res: Response, state: string, provider: string) {
-  res.cookie(`oauth_state_${provider}`, state, {
+//
+// The cookie stores only the nonce. The full state param (nonce~redirect)
+// is sent to the provider and echoed back; callbacks extract the nonce from
+// it and compare to the cookie value.
+function setNonceCookie(res: Response, nonce: string, provider: string) {
+  res.cookie(`oauth_state_${provider}`, nonce, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -36,22 +81,52 @@ function setStateCookie(res: Response, state: string, provider: string) {
   });
 }
 
-function validateState(req: Request, provider: string): boolean {
-  const cookieState = req.cookies?.[`oauth_state_${provider}`];
-  const returnedState = req.query?.state as string | undefined;
-  if (!cookieState || !returnedState || cookieState !== returnedState) {
-    return false;
-  }
-  return true;
-}
-
-function clearStateCookie(res: Response, provider: string) {
+function clearNonceCookie(res: Response, provider: string) {
   res.clearCookie(`oauth_state_${provider}`, {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
   });
+}
+
+// Validate the CSRF nonce for GET-redirect providers (Google, Microsoft).
+// The state param may carry a redirect suffix; we parse out the nonce before
+// comparing to the cookie so the comparison is always nonce vs. nonce.
+function validateNonceCookie(req: Request, provider: string): { valid: boolean; nonce: string } {
+  const cookieNonce = req.cookies?.[`oauth_state_${provider}`];
+  const returnedStateParam = req.query?.state as string | undefined;
+  if (!cookieNonce || !returnedStateParam) return { valid: false, nonce: "" };
+  const { nonce } = parseStateParam(returnedStateParam);
+  return { valid: cookieNonce === nonce, nonce };
+}
+
+function isValidMobileRedirect(redirect: string): boolean {
+  return /^smartmanageai:\/\//i.test(redirect);
+}
+
+// Mint a short-lived (60 s) one-time mobile exchange code and store it in
+// Postgres. The caller redirects the browser to the deep link appending
+// ?code=<code>. The native app catches the link and redeems the code at
+// POST /api/auth/mobile-exchange/redeem.
+async function createMobileExchangeCode(userId: string, tokenVersion: number): Promise<string> {
+  const code = crypto.randomBytes(32).toString("base64url");
+  await oauthPool.query(
+    `INSERT INTO mobile_exchange_codes (code, user_id, token_version, expires_at)
+     VALUES ($1, $2, $3, NOW() + INTERVAL '60 seconds')`,
+    [code, userId, tokenVersion]
+  );
+  return code;
+}
+
+async function redirectToMobileDeepLink(
+  res: Response,
+  redirect: string,
+  user: { id: string; tokenVersion?: number | null }
+): Promise<void> {
+  const code = await createMobileExchangeCode(user.id, user.tokenVersion ?? 0);
+  const sep = redirect.includes("?") ? "&" : "?";
+  res.redirect(302, `${redirect}${sep}code=${encodeURIComponent(code)}`);
 }
 
 async function findOrCreateOAuthUser(
@@ -131,6 +206,88 @@ function getRedirectPath(user: {
   return "/dashboard";
 }
 
+// ─── Provider discovery ────────────────────────────────────────────────────
+// GET /api/auth/providers
+// Public, unauthenticated endpoint. Returns available login methods with the
+// information a mobile client needs to initiate each flow.
+// Rate-limited by the shared authLimiter (same bucket as /api/auth/login).
+router.get("/api/auth/providers", authLimiter, (req: Request, res: Response) => {
+  const base = getCanonicalBaseUrl(req);
+
+  const googleConfigured =
+    !!process.env.GOOGLE_CLIENT_ID &&
+    process.env.GOOGLE_CLIENT_ID !== "REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID";
+
+  const appleConfigured = isAppleConfigured();
+
+  const microsoftConfigured =
+    !!process.env.MICROSOFT_CLIENT_ID &&
+    process.env.MICROSOFT_CLIENT_ID !== "REPLACE_WITH_YOUR_MICROSOFT_CLIENT_ID";
+
+  const providers: Array<{
+    id: string;
+    name: string;
+    iconHint: string;
+    available: boolean;
+    flow: "oauth_mobile_exchange" | "passkey";
+    initiateUrl?: string;
+    mobileExchangeRedeemUrl?: string;
+    deepLinkScheme?: string;
+    notes?: string;
+  }> = [
+    {
+      id: "google",
+      name: "Google",
+      iconHint: "google",
+      available: googleConfigured,
+      flow: "oauth_mobile_exchange",
+      initiateUrl: `${base}/api/auth/google?redirect=smartmanageai://auth/callback`,
+      mobileExchangeRedeemUrl: `${base}/api/auth/mobile-exchange/redeem`,
+      deepLinkScheme: "smartmanageai://auth/callback",
+      notes: "Open initiateUrl in a system browser. Append &redirect=<your-deep-link> to override the callback deep link.",
+    },
+    {
+      id: "apple",
+      name: "Apple",
+      iconHint: "apple",
+      available: appleConfigured,
+      flow: "oauth_mobile_exchange",
+      initiateUrl: `${base}/api/auth/apple?redirect=smartmanageai://auth/callback`,
+      mobileExchangeRedeemUrl: `${base}/api/auth/mobile-exchange/redeem`,
+      deepLinkScheme: "smartmanageai://auth/callback",
+      notes: "The redirect is embedded in the OAuth state parameter echoed back by Apple — no separate cookie needed.",
+    },
+    {
+      id: "microsoft",
+      name: "Microsoft",
+      iconHint: "microsoft",
+      available: microsoftConfigured,
+      flow: "oauth_mobile_exchange",
+      initiateUrl: `${base}/api/auth/microsoft?redirect=smartmanageai://auth/callback`,
+      mobileExchangeRedeemUrl: `${base}/api/auth/mobile-exchange/redeem`,
+      deepLinkScheme: "smartmanageai://auth/callback",
+      notes: "Open initiateUrl in a system browser. Append &redirect=<your-deep-link> to override the callback deep link.",
+    },
+    {
+      id: "passkey",
+      name: "Passkey",
+      iconHint: "passkey",
+      available: true,
+      flow: "passkey",
+      notes: "Two-step JSON flow: POST /api/auth/passkey/auth-options then POST /api/auth/passkey/auth-verify. Send X-Mobile-Client: 1 to receive the JWT in the response body.",
+    },
+  ];
+
+  res.json({
+    providers,
+    mobileExchangeRedeemUrl: `${base}/api/auth/mobile-exchange/redeem`,
+    passkeyAuthOptionsUrl: `${base}/api/auth/passkey/auth-options`,
+    passkeyAuthVerifyUrl: `${base}/api/auth/passkey/auth-verify`,
+  });
+});
+
+// ─── Google OAuth ──────────────────────────────────────────────────────────
+
 router.get("/api/auth/google", (req: Request, res: Response) => {
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId || clientId === "REPLACE_WITH_YOUR_GOOGLE_CLIENT_ID") {
@@ -141,8 +298,21 @@ router.get("/api/auth/google", (req: Request, res: Response) => {
     return;
   }
 
-  const state = generateState();
-  setStateCookie(res, state, "google");
+  // Validate the optional mobile deep-link redirect before embedding it in state.
+  const redirectParam = String(req.query.redirect || "");
+  if (redirectParam && !isValidMobileRedirect(redirectParam)) {
+    res.status(400).json({ error: "redirect must be a smartmanageai:// deep link" });
+    return;
+  }
+
+  const nonce = generateNonce();
+  // Store only the nonce in the cookie for CSRF validation.
+  setNonceCookie(res, nonce, "google");
+
+  // Embed the redirect in the state parameter so it is bound to this specific
+  // nonce and survives the round-trip through Google's servers. Concurrent
+  // auth attempts each get their own nonce (and thus their own redirect).
+  const stateParam = buildStateParam(nonce, redirectParam || undefined);
 
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/google/callback`;
   const scope = encodeURIComponent("openid email profile");
@@ -154,7 +324,7 @@ router.get("/api/auth/google", (req: Request, res: Response) => {
     `&scope=${scope}` +
     `&access_type=offline` +
     `&prompt=select_account` +
-    `&state=${state}`;
+    `&state=${encodeURIComponent(stateParam)}`;
 
   res.redirect(authUrl);
 });
@@ -163,12 +333,18 @@ router.get(
   "/api/auth/google/callback",
   async (req: Request, res: Response) => {
     try {
-      if (!validateState(req, "google")) {
+      const returnedStateParam = req.query?.state as string | undefined;
+      const { valid, nonce: _ } = validateNonceCookie(req, "google");
+      void _;
+      if (!valid) {
         logError("Google OAuth state mismatch — possible CSRF");
         res.redirect("/login?error=google_failed");
         return;
       }
-      clearStateCookie(res, "google");
+      clearNonceCookie(res, "google");
+
+      // Extract the mobile redirect from the state param (bound to this nonce).
+      const { redirect: mobileRedirect } = parseStateParam(returnedStateParam || "");
 
       const { code } = req.query;
       if (!code || typeof code !== "string") {
@@ -246,13 +422,22 @@ router.get(
 
       const token = generateToken(user.id, user.tokenVersion ?? 0);
       setAuthCookie(res, token);
-      res.redirect(getRedirectPath(user));
+
+      logAuthEvent(user.id, "LOGIN", { method: "OAUTH_GOOGLE" }, req).catch(() => {});
+
+      if (mobileRedirect) {
+        await redirectToMobileDeepLink(res, mobileRedirect, user);
+      } else {
+        res.redirect(getRedirectPath(user));
+      }
     } catch (error) {
       logError("Google OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.redirect("/login?error=google_failed");
     }
   }
 );
+
+// ─── Apple OAuth ───────────────────────────────────────────────────────────
 
 function isAppleConfigured(): boolean {
   const clientId = process.env.APPLE_CLIENT_ID;
@@ -304,9 +489,14 @@ router.get("/api/auth/apple", async (req: Request, res: Response) => {
     return;
   }
 
-  // Verify the client-secret JWT can actually be generated up-front so users
-  // are not bounced through the Apple consent screen only to fail on the
-  // callback. A failure here usually means APPLE_PRIVATE_KEY is malformed.
+  // Validate the optional mobile deep-link redirect before embedding in state.
+  const redirectParam = String(req.query.redirect || "");
+  if (redirectParam && !isValidMobileRedirect(redirectParam)) {
+    res.status(400).json({ error: "redirect must be a smartmanageai:// deep link" });
+    return;
+  }
+
+  // Verify the client-secret JWT can be generated before the round-trip.
   try {
     generateAppleClientSecret();
   } catch (err) {
@@ -320,15 +510,11 @@ router.get("/api/auth/apple", async (req: Request, res: Response) => {
   }
 
   const clientId = process.env.APPLE_CLIENT_ID!;
-  let state: string;
+  let nonce: string;
   try {
-    // Task #2056 — `createOAuthState` is now async because the state is
-    // persisted to Postgres so the callback (which may land on a sibling
-    // replica or after a deploy-driven restart) can still find it. A DB
-    // failure here means we cannot guarantee the callback will validate,
-    // so abort the redirect rather than send the user to Apple with a
-    // state we never managed to store.
-    state = await createOAuthState("apple");
+    // Task #2056 — createOAuthState persists the nonce to Postgres so any
+    // replica can consume it in the callback.
+    nonce = await createOAuthState("apple");
   } catch (err) {
     logError(
       "Apple OAuth state persistence failed at /api/auth/apple",
@@ -339,20 +525,19 @@ router.get("/api/auth/apple", async (req: Request, res: Response) => {
     return;
   }
 
+  // Embed the redirect in the state parameter sent to Apple. Apple echoes
+  // the state back verbatim in the form_post callback, so we can extract
+  // both the nonce (for server-side validation) and the redirect from it.
+  // This binds the redirect to the specific auth attempt's nonce — concurrent
+  // attempts each have their own nonce and therefore their own redirect value.
+  const stateParam = buildStateParam(nonce, redirectParam || undefined);
+
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
 
-  // Task #2061 — emit a structured "state issued" log line at create
-  // time so we can correlate it with the consume-time log on the
-  // callback for a single sign-in attempt. We log the SHA-256 prefix
-  // (NOT the raw state) so an attacker who reads logs cannot replay
-  // the state. Length and the redirect_uri Apple will POST back to
-  // are also logged so a callback that lands on a different
-  // deployment / replica is obvious from the absence of a matching
-  // "issued" line.
   logInfo("Apple OAuth state issued", {
     provider: "apple",
-    statePrefix: hashOAuthStatePrefix(state),
-    stateLength: state.length,
+    statePrefix: hashOAuthStatePrefix(nonce),
+    stateLength: nonce.length,
     redirectUri,
     issuedAt: new Date().toISOString(),
   });
@@ -364,7 +549,7 @@ router.get("/api/auth/apple", async (req: Request, res: Response) => {
     `&response_type=code` +
     `&scope=${scope}` +
     `&response_mode=form_post` +
-    `&state=${state}`;
+    `&state=${encodeURIComponent(stateParam)}`;
 
   res.redirect(authUrl);
 });
@@ -379,15 +564,7 @@ router.post(
         return;
       }
 
-      // Defense-in-depth against login-CSRF: because the state lives
-      // server-side and is keyed only by its random value, an attacker who
-      // obtains a valid state (e.g. by initiating their own Apple flow)
-      // could try to POST it from a malicious page in a victim's browser to
-      // log the victim into the attacker's Apple account. Browsers populate
-      // the Origin header on cross-site form POSTs to the source origin, so
-      // we reject any callback whose Origin is not Apple. Some browsers
-      // strip Origin to "null" on cross-origin redirects — accept that, but
-      // reject any concrete non-Apple origin.
+      // Defense-in-depth against login-CSRF via cross-origin form_post.
       const originHeader = (req.headers.origin || "") as string;
       if (originHeader && originHeader !== "null" && originHeader !== "https://appleid.apple.com") {
         logError("Apple OAuth callback rejected — Origin is not Apple", { origin: originHeader });
@@ -395,103 +572,68 @@ router.post(
         return;
       }
 
-      const returnedState = req.body?.state;
-      if (!returnedState || typeof returnedState !== "string") {
+      const returnedStateParam = req.body?.state;
+      if (!returnedStateParam || typeof returnedStateParam !== "string") {
         logError("Apple OAuth callback missing state parameter");
         res.redirect("/login?error=apple_state_mismatch");
         return;
       }
-      // Task #2061 — hash the returned state up-front so every log line
-      // on the callback path can carry the same correlation id back to
-      // the "Apple OAuth state issued" log emitted on the GET. Never
-      // log the raw state.
-      const returnedStatePrefix = hashOAuthStatePrefix(returnedState);
+
+      // Parse the state param to extract the nonce and (optionally) the redirect.
+      // The nonce is what we persisted to Postgres; the redirect is the mobile
+      // deep-link URL embedded in the state at initiation time.
+      const { nonce, redirect: mobileRedirect } = parseStateParam(returnedStateParam);
+
+      const returnedNoncePrefix = hashOAuthStatePrefix(nonce);
       let stateConsumed = false;
       try {
-        // Task #2056 — `consumeOAuthState` now reads from a shared Postgres
-        // table so a state issued by any replica can be consumed by any
-        // replica. A DB error is rare but treated as a hard fail rather
-        // than a silent allow, since the alternative would be to bypass
-        // CSRF protection on a transient outage.
-        stateConsumed = await consumeOAuthState("apple", returnedState);
+        // Task #2056 — consumeOAuthState does an atomic DELETE ... RETURNING
+        // on the nonce so only one replica can ever redeem a given state.
+        stateConsumed = await consumeOAuthState("apple", nonce);
       } catch (stateErr) {
-        // Task #2061 — surface DB-error-driven failures with a distinct
-        // error code (`apple_state_consume_error`) so operators reading
-        // logs / user reports can immediately tell this apart from a
-        // "row genuinely didn't match" mismatch. The original behavior
-        // silently degraded to `apple_state_mismatch`, which made an
-        // outage indistinguishable from a CSRF attempt.
         logError(
           "Apple OAuth state consume threw — DB error, not a true mismatch",
-          { provider: "apple", statePrefix: returnedStatePrefix, stateLength: returnedState.length },
+          { provider: "apple", statePrefix: returnedNoncePrefix, stateLength: nonce.length },
           stateErr instanceof Error ? stateErr : new Error(String(stateErr)),
         );
         res.redirect("/login?error=apple_state_consume_error");
         return;
       }
       if (!stateConsumed) {
-        // Task #2061 — the bare "state mismatch" log was unactionable: it
-        // collapsed four very different failure modes (no row at all,
-        // row exists for the wrong provider, row exists but already
-        // expired, row exists and *should* have matched) into one
-        // message. Peek at whatever is currently in the table for this
-        // state value (read-only, does not consume) so we can attach
-        // the actually-disambiguating context to the log line. The peek
-        // is wrapped in its own try because a DB hiccup here must not
-        // mask the original mismatch.
         const serverNow = new Date();
         let inspected: { provider: string; expiresAt: Date } | null = null;
         let inspectError: Error | null = null;
         try {
-          inspected = await inspectOAuthState(returnedState);
+          inspected = await inspectOAuthState(nonce);
         } catch (inspectErr) {
           inspectError = inspectErr instanceof Error ? inspectErr : new Error(String(inspectErr));
         }
 
         if (inspected) {
-          // The row IS in the table — consume rejected it on the
-          // `provider` or `expires_at > now()` filter. This is the
-          // most diagnostic-rich case: dump the row's actual provider
-          // and expires_at alongside the server's current time so the
-          // four candidate causes (encoding diff is now ruled out;
-          // wrong provider, expired, or shouldn't-have-rejected) are
-          // legible from a single log line.
           const isExpired = inspected.expiresAt.getTime() <= serverNow.getTime();
           const providerMismatch = inspected.provider !== "apple";
           logError(
             "Apple OAuth state mismatch — row found in oauth_state but consume rejected it",
             {
               provider: "apple",
-              statePrefix: returnedStatePrefix,
-              stateLength: returnedState.length,
+              statePrefix: returnedNoncePrefix,
+              stateLength: nonce.length,
               rowProvider: inspected.provider,
               rowExpiresAt: inspected.expiresAt.toISOString(),
               serverNow: serverNow.toISOString(),
               msUntilExpiry: inspected.expiresAt.getTime() - serverNow.getTime(),
               providerMismatch,
               isExpired,
-              // If neither flag is true the consume should have
-              // succeeded — this is the smoking gun for a clock-skew
-              // / parameter-binding / replication-lag bug.
               shouldHaveMatched: !providerMismatch && !isExpired,
             },
           );
         } else {
-          // No row at all. Either the state was never issued by us
-          // (CSRF / forged callback), Apple POSTed back something
-          // that doesn't byte-for-byte match what we INSERTed (the
-          // "encoding diff" hypothesis), the state was already
-          // consumed (replay), or the row was swept after expiry.
-          // Cross-reference with the "Apple OAuth state issued" log
-          // sharing the same `statePrefix`: if there is no matching
-          // issued line, this callback is for a state we never
-          // created (or one created on a different deployment).
           logError(
-            "Apple OAuth state mismatch — no row found for returned state",
+            "Apple OAuth state mismatch — no row found for returned nonce",
             {
               provider: "apple",
-              statePrefix: returnedStatePrefix,
-              stateLength: returnedState.length,
+              statePrefix: returnedNoncePrefix,
+              stateLength: nonce.length,
               serverNow: serverNow.toISOString(),
               inspectErrorMessage: inspectError?.message ?? null,
             },
@@ -573,9 +715,7 @@ router.post(
         return;
       }
 
-      const jwksRes = await fetch(
-        "https://appleid.apple.com/auth/keys"
-      );
+      const jwksRes = await fetch("https://appleid.apple.com/auth/keys");
       if (!jwksRes.ok) {
         logError("Apple JWKS fetch failed", { status: jwksRes.status });
         res.redirect("/login?error=apple_token_invalid");
@@ -591,9 +731,6 @@ router.post(
         return;
       }
 
-      // Convert the JWK to a PEM-encoded SPKI public key using Node's
-      // built-in crypto (no extra dependency needed) and verify the
-      // id_token signature with RS256, the issuer and the audience.
       let publicKeyPem: string;
       try {
         publicKeyPem = crypto
@@ -690,13 +827,22 @@ router.post(
 
       const token = generateToken(user.id, user.tokenVersion ?? 0);
       setAuthCookie(res, token);
-      res.redirect(getRedirectPath(user));
+
+      logAuthEvent(user.id, "LOGIN", { method: "OAUTH_APPLE" }, req).catch(() => {});
+
+      if (mobileRedirect) {
+        await redirectToMobileDeepLink(res, mobileRedirect, user);
+      } else {
+        res.redirect(getRedirectPath(user));
+      }
     } catch (error) {
       logError("Apple OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.redirect("/login?error=apple_failed");
     }
   }
 );
+
+// ─── Microsoft OAuth ───────────────────────────────────────────────────────
 
 router.get("/api/auth/microsoft", (req: Request, res: Response) => {
   const clientId = process.env.MICROSOFT_CLIENT_ID;
@@ -705,8 +851,18 @@ router.get("/api/auth/microsoft", (req: Request, res: Response) => {
     return;
   }
 
-  const state = generateState();
-  setStateCookie(res, state, "microsoft");
+  // Validate the optional mobile deep-link redirect before embedding in state.
+  const redirectParam = String(req.query.redirect || "");
+  if (redirectParam && !isValidMobileRedirect(redirectParam)) {
+    res.status(400).json({ error: "redirect must be a smartmanageai:// deep link" });
+    return;
+  }
+
+  const nonce = generateNonce();
+  setNonceCookie(res, nonce, "microsoft");
+
+  // Embed the redirect in the state parameter — bound to this nonce.
+  const stateParam = buildStateParam(nonce, redirectParam || undefined);
 
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/microsoft/callback`;
   const scope = encodeURIComponent("openid email profile");
@@ -717,7 +873,7 @@ router.get("/api/auth/microsoft", (req: Request, res: Response) => {
     `&response_type=code` +
     `&scope=${scope}` +
     `&response_mode=query` +
-    `&state=${state}`;
+    `&state=${encodeURIComponent(stateParam)}`;
 
   res.redirect(authUrl);
 });
@@ -726,12 +882,17 @@ router.get(
   "/api/auth/microsoft/callback",
   async (req: Request, res: Response) => {
     try {
-      if (!validateState(req, "microsoft")) {
+      const returnedStateParam = req.query?.state as string | undefined;
+      const { valid } = validateNonceCookie(req, "microsoft");
+      if (!valid) {
         logError("Microsoft OAuth state mismatch — possible CSRF");
         res.redirect("/login?error=microsoft_failed");
         return;
       }
-      clearStateCookie(res, "microsoft");
+      clearNonceCookie(res, "microsoft");
+
+      // Extract the mobile redirect from the state param.
+      const { redirect: mobileRedirect } = parseStateParam(returnedStateParam || "");
 
       const { code } = req.query;
       if (!code || typeof code !== "string") {
@@ -813,7 +974,14 @@ router.get(
 
       const token = generateToken(user.id, user.tokenVersion ?? 0);
       setAuthCookie(res, token);
-      res.redirect(getRedirectPath(user));
+
+      logAuthEvent(user.id, "LOGIN", { method: "OAUTH_MICROSOFT" }, req).catch(() => {});
+
+      if (mobileRedirect) {
+        await redirectToMobileDeepLink(res, mobileRedirect, user);
+      } else {
+        res.redirect(getRedirectPath(user));
+      }
     } catch (error) {
       logError("Microsoft OAuth error:", {}, error instanceof Error ? error : new Error(String(error)));
       res.redirect("/login?error=microsoft_failed");

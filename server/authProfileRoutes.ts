@@ -2804,7 +2804,26 @@ router.post("/api/auth/mobile-exchange/redeem", async (req, res, next) => {
       res.status(401).json({ error: "Code is invalid or expired" });
       return;
     }
-    const token = generateToken(rows[0].user_id, rows[0].token_version);
+    const { user_id: userId, token_version: tokenVersion } = rows[0];
+    const token = generateToken(userId, tokenVersion);
+
+    // Look up the user's OAuth provider so we can record the specific auth
+    // method in the audit trail (SOC 2 requirement — threat_model.md §5.5).
+    const [redeemedUser] = await db
+      .select({ oauthProvider: users.oauthProvider })
+      .from(users)
+      .where(eq(users.id, userId))
+      .limit(1);
+    const oauthProvider = redeemedUser?.oauthProvider ?? "oauth";
+    const auditMethod = oauthProvider === "google"
+      ? "OAUTH_GOOGLE"
+      : oauthProvider === "apple"
+      ? "OAUTH_APPLE"
+      : oauthProvider === "microsoft"
+      ? "OAUTH_MICROSOFT"
+      : "OAUTH";
+    logAuthEvent(userId, "LOGIN", { method: auditMethod, via: "mobile_exchange" }, req).catch(() => {});
+
     res.json({ token });
   } catch (err) {
     next(err);

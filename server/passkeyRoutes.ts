@@ -16,6 +16,7 @@ import {
   requireAuth,
   type AuthRequest,
 } from "./auth";
+import { logAuthEvent } from "./auditLogger";
 import crypto from "crypto";
 
 const router = Router();
@@ -425,6 +426,9 @@ router.post(
       const token = generateToken(user.id, user.tokenVersion ?? 0);
       setAuthCookie(res, token);
 
+      // Audit log the passkey authentication.
+      logAuthEvent(user.id, "LOGIN", { method: "PASSKEY" }, req).catch(() => {});
+
       const redirectPath = user.role === "SUPER_ADMIN"
         ? "/admin"
         : user.role === "HUSTLER"
@@ -432,6 +436,12 @@ router.post(
         : !user.organizationId
         ? "/onboarding"
         : "/dashboard";
+
+      // Mobile clients (which cannot reliably read Set-Cookie from fetch() in
+      // React Native) opt in to a JSON-token response by sending the
+      // X-Mobile-Client header — mirroring the existing behaviour in
+      // POST /api/auth/login.
+      const wantsMobileToken = String(req.headers["x-mobile-client"] ?? "").trim() !== "";
 
       res.json({
         verified: true,
@@ -444,6 +454,7 @@ router.post(
           organizationId: user.organizationId,
         },
         redirectTo: redirectPath,
+        ...(wantsMobileToken ? { token } : {}),
       });
     } catch (error) {
       next(error);
