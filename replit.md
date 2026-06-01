@@ -85,4 +85,5 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **Pagination Contract**: `docs/api/pagination.md`
 *   **Billing Migration Playbook**: `docs/billing/manual-to-stripe-playbook.md`
 *   **Product Features**: `docs/product/features.md`
+*   **Module Directory**: `docs/product/modules.md` — full list of product modules and their descriptions
 *   **SLA**: `docs/sla.md` (generated from `shared/sla/policy.ts` — do not edit directly)
