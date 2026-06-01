@@ -60,3 +60,9 @@ id = "qKBy3iIgp7f0Xy0MxYLFt"
 uri = "file://exports/mobile-standalone.zip"
 type = "unspecified"
 title = "mobile-standalone.zip"
+
+[[outputs]]
+id = "M8zIJcSptJtw0mpOZFmpV"
+uri = "file://.local/tasks/smartmanageai-modules.md"
+type = "text"
+title = "SmartManageAI — Module Directory"
