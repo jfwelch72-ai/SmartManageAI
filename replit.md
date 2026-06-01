@@ -82,6 +82,7 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **Observability Triage**: `docs/runbooks/observability.md`
 
 ### Other Docs
+*   **Module Directory**: `docs/module-directory.md` — every product module: purpose, pages, components, routes, schema files, and access roles.
 *   **Pagination Contract**: `docs/api/pagination.md`
 *   **Billing Migration Playbook**: `docs/billing/manual-to-stripe-playbook.md`
 *   **Product Features**: `docs/product/features.md`
