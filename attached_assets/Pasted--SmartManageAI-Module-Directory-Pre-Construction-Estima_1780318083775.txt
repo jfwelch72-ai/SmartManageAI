@@ -1,0 +1,112 @@
+# SmartManageAI — Module Directory
+
+---
+
+## Pre-Construction & Estimating
+
+| Module | Description |
+|--------|-------------|
+| Bids & Estimating | Bid creation, analysis, and management |
+| Bid Wizard | AI-guided bid creation flow |
+| AI Takeoff | Automated quantity takeoff from plan documents |
+| AI Estimator Workspace | AI-driven drafting, research, and chat for estimates |
+| Cost Book | Centralized material pricing and historical costs |
+| Cost Rates | Labor and equipment rate management |
+| DOT Pay Items | State/federal DOT pay item catalog integration |
+
+---
+
+## Project Management
+
+| Module | Description |
+|--------|-------------|
+| Project Central | Project dashboards, lifecycle tracking (Bid → Closed) |
+| Daily Reports | Field data capture, site conditions, notes |
+| Daily Inspector Reports (IDRs) | Inspector-side daily logs |
+| Document Control | Version-controlled plans, submittals, RFIs with expiry tracking |
+| RFIs | Request for Information management |
+| Change Orders | Change order creation and approval workflows |
+
+---
+
+## Field Operations & Workforce
+
+| Module | Description |
+|--------|-------------|
+| Crews | Crew composition and management |
+| Dispatch Board | Field resource scheduling and dispatching |
+| Time Clock | GPS/offline time tracking for workers |
+| Payroll Management | Payroll processing and certified payroll (WH-347) |
+| Haul Tickets | Truck haul ticket capture and reconciliation |
+
+---
+
+## Finance & Accounting
+
+| Module | Description |
+|--------|-------------|
+| CFO Dashboard | Financial health and revenue recognition |
+| WIP Report | Work In Progress reporting |
+| AIA Pay Applications | Billing applications (G702/G703 standard) |
+| Procurement | Purchase orders and subcontractor payables |
+| Inventory | Material inventory tracking |
+| Invoices | Invoice generation and management |
+
+---
+
+## Business Intelligence & CRM
+
+| Module | Description |
+|--------|-------------|
+| CRM | Sales pipeline and lead scoring |
+| Sequences | Automated communication sequences |
+| Executive Digest | Automated weekly pipeline and project health reports |
+
+---
+
+## Safety & Compliance
+
+| Module | Description |
+|--------|-------------|
+| DBE/MBE/WBE Goals | Disadvantaged business compliance tracking |
+| COI Compliance | Certificate of Insurance tracking |
+| Buy America | Material certification for federal projects |
+| Safety Incidents | Incident logging and reporting |
+
+---
+
+## Portals
+
+| Portal | Audience |
+|--------|----------|
+| Vendor Portal | External subcontractors/suppliers for pricing and bids |
+| Hustler Portal | Multi-org dashboard for owners/executives |
+| Field Worker View | Simplified "My Day" view for field staff |
+| Client Portal | External client-facing project status |
+
+---
+
+## Administration & Platform
+
+| Module | Description |
+|--------|-------------|
+| Super Admin | Platform-wide org management, analytics, support tickets |
+| Feature Flags | Enable/disable modules per organization |
+| User & Role Management | RBAC, role assignments, MFA |
+| Audit Log | Append-only compliance trail for all money-path events |
+
+---
+
+## Integrations (via Feature Flags)
+
+- QuickBooks Online (QBO)
+- Sage Intacct
+- Procore / Autodesk Construction Cloud
+- Bluebeam
+- Zapier
+- Twilio (SMS)
+- SAML / SSO
+
+---
+
+*Generated: June 01, 2026 — SmartManageAI Construction Management Platform*
