@@ -1742,6 +1742,149 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
     }
   });
 
+  // AI-powered maintenance schedule generation
+  router.post("/api/equipment/:equipmentId/generate-maintenance-schedule", requireAuth, requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const { equipmentId } = req.params;
+
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+
+      const maintenanceHistory = await db
+        .select()
+        .from(equipmentMaintenanceHistory)
+        .where(eq(equipmentMaintenanceHistory.equipmentId, equipmentId))
+        .orderBy(desc(equipmentMaintenanceHistory.performedAt))
+        .limit(10);
+
+      const { openai, AI_MODEL_GPT5 } = await import('./ai/openaiClient');
+      const equipOrgId = equipmentItem.organizationId || req.user?.organizationId || "system";
+
+      const systemPrompt = `You are an expert construction equipment maintenance advisor.
+Generate a preventative maintenance schedule for the given equipment.
+Respond ONLY in valid JSON with this exact structure:
+{
+  "schedules": [
+    {
+      "name": "string (e.g. Oil & Filter Change)",
+      "description": "string",
+      "maintenanceType": "PREVENTATIVE|SCHEDULED_SERVICE|WEAR_ITEM|INSPECTION|CALIBRATION",
+      "intervalHours": number or null,
+      "intervalDays": number or null
+    }
+  ],
+  "manufacturerNotes": "string",
+  "totalAnnualMaintenanceCost": number,
+  "criticalItems": ["string"]
+}
+Rules: intervalHours is for hour-based tasks (e.g. 250), intervalDays for calendar-based (e.g. 90). At least one must be non-null per schedule item.`;
+
+      const userPrompt = `Equipment:
+- Name: ${equipmentItem.name}
+- Type: ${equipmentItem.type}
+- Make: ${equipmentItem.make || 'Unknown'}
+- Model: ${equipmentItem.model || 'Unknown'}
+- Year: ${equipmentItem.year || 'Unknown'}
+- Current Hours: ${equipmentItem.currentHours || 0}
+- Last Maintenance: ${equipmentItem.lastMaintenanceDate ? new Date(equipmentItem.lastMaintenanceDate).toLocaleDateString() : 'Unknown'}
+
+Recent Maintenance History:
+${maintenanceHistory.length > 0
+  ? maintenanceHistory.map(m => `- ${m.maintenanceType}: ${m.description || 'Completed'} at ${m.hoursAtMaintenance || 'Unknown'} hours`).join('\n')
+  : 'No recent maintenance records'}
+
+Generate a comprehensive PM schedule with 5-10 items covering all major service intervals for this equipment type.`;
+
+      const { result: aiResult, blocked, reason } = await governedAiCall({
+        orgId: equipOrgId,
+        userId: req.user?.id || null,
+        actionType: "equipment_generate_pm_schedule",
+        inputRefs: { equipmentId },
+        fn: async () => {
+          const completion = await openai.chat.completions.create({
+            model: AI_MODEL_GPT5,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 2048,
+          });
+          const content = completion.choices[0]?.message?.content;
+          if (!content) throw new Error('No response from AI');
+          return { result: JSON.parse(content), completion };
+        },
+      });
+
+      if (blocked) {
+        return res.status(429).json({ error: reason || "AI usage limit reached" });
+      }
+
+      const scheduleItems: Array<{
+        name: string;
+        description?: string;
+        maintenanceType: string;
+        intervalHours?: number | null;
+        intervalDays?: number | null;
+      }> = aiResult?.schedules || [];
+
+      const validTypes = ["PREVENTATIVE", "SCHEDULED_SERVICE", "WEAR_ITEM", "INSPECTION", "CALIBRATION"];
+
+      const insertedSchedules = [];
+      for (const item of scheduleItems) {
+        if (!item.name) continue;
+
+        const maintenanceType = validTypes.includes(item.maintenanceType) ? item.maintenanceType as "PREVENTATIVE" | "SCHEDULED_SERVICE" | "WEAR_ITEM" | "INSPECTION" | "CALIBRATION" : "PREVENTATIVE";
+
+        let nextDueAt: Date | null = null;
+        let nextDueHours: string | null = null;
+
+        if (item.intervalDays) {
+          nextDueAt = new Date();
+          nextDueAt.setDate(nextDueAt.getDate() + item.intervalDays);
+        }
+        if (item.intervalHours) {
+          nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + item.intervalHours).toString();
+        }
+
+        const [schedule] = await db.insert(equipmentMaintenanceSchedules).values({
+          equipmentId,
+          name: item.name,
+          description: item.description || null,
+          maintenanceType,
+          intervalHours: item.intervalHours || null,
+          intervalDays: item.intervalDays || null,
+          nextDueAt,
+          nextDueHours,
+        }).returning();
+
+        insertedSchedules.push(schedule);
+      }
+
+      return res.status(201).json({
+        schedules: insertedSchedules,
+        manufacturerNotes: aiResult?.manufacturerNotes || null,
+        totalAnnualMaintenanceCost: aiResult?.totalAnnualMaintenanceCost || null,
+        criticalItems: aiResult?.criticalItems || [],
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Record maintenance completion
   router.post("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res, next) => {
     try {
