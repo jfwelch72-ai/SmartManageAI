@@ -698,87 +698,114 @@ router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (re
     const orgName = org?.name || "Organization";
 
     const PDFDocument = (await import("pdfkit")).default;
-    const doc = new PDFDocument({ size: "LETTER", layout: "landscape", margin: 40 });
+    // Landscape LETTER: 792 × 612 pt. Margins: 40 each side → usable width = 712.
+    const MARGIN = 40;
+    const PAGE_W = 792;
+    const USABLE_W = PAGE_W - MARGIN * 2; // 712
+
+    const doc = new PDFDocument({ size: "LETTER", layout: "landscape", margin: MARGIN });
 
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="OSHA_300A_${orgName.replace(/\s+/g, "_")}_${year}.pdf"`);
     doc.pipe(res);
 
-    doc.fontSize(18).font("Helvetica-Bold").text("OSHA's Form 300A", { align: "center" });
-    doc.fontSize(12).font("Helvetica").text("Summary of Work-Related Injuries and Illnesses", { align: "center" });
-    doc.fontSize(10).text(`Calendar Year ${year}`, { align: "center" });
-    doc.moveDown(0.5);
-    doc.fontSize(10).font("Helvetica").text(`Establishment: ${orgName}          Generated: ${reportDate}`);
-    doc.moveDown(0.8);
-
-    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af").text("Number of Cases");
-    doc.fillColor("#000000");
-    doc.moveDown(0.3);
-
+    // Helper: draw a bordered data cell with a label and numeric value
     const drawRow = (label: string, value: number, x: number, y: number, w: number) => {
-      doc.fontSize(9).font("Helvetica").text(label, x + 4, y + 4, { width: w - 40 });
-      doc.font("Helvetica-Bold").fontSize(13).text(String(value), x + w - 36, y + 2, { width: 32, align: "right" });
-      doc.rect(x, y, w, 22).stroke();
+      const rowH = 22;
+      doc.rect(x, y, w, rowH).stroke();
+      doc.fontSize(9).font("Helvetica").fillColor("#000000")
+        .text(label, x + 4, y + 5, { width: w - 44, lineBreak: false });
+      doc.fontSize(13).font("Helvetica-Bold").fillColor("#000000")
+        .text(String(value), x + w - 38, y + 3, { width: 32, align: "right", lineBreak: false });
     };
 
+    // Helper: reset cursor to left margin at the given y so subsequent doc.text() starts correctly
+    const resetCursor = (y: number) => { doc.x = MARGIN; doc.y = y; };
+
+    // ── Title block ────────────────────────────────────────────────────────────
+    doc.fontSize(18).font("Helvetica-Bold").fillColor("#000000")
+      .text("OSHA's Form 300A", MARGIN, doc.y, { width: USABLE_W, align: "center" });
+    doc.fontSize(12).font("Helvetica")
+      .text("Summary of Work-Related Injuries and Illnesses", MARGIN, doc.y, { width: USABLE_W, align: "center" });
+    doc.fontSize(10)
+      .text(`Calendar Year ${year}`, MARGIN, doc.y, { width: USABLE_W, align: "center" });
+    doc.moveDown(0.5);
+    doc.fontSize(10).font("Helvetica")
+      .text(`Establishment: ${orgName}          Generated: ${reportDate}`, MARGIN, doc.y, { width: USABLE_W });
+    doc.moveDown(0.8);
+
+    // ── Number of Cases ────────────────────────────────────────────────────────
+    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af")
+      .text("Number of Cases", MARGIN, doc.y, { width: USABLE_W });
+    doc.moveDown(0.3);
+
+    const colW = Math.floor(USABLE_W / 4); // 178 pt each — fits exactly within usable width
     let cy = doc.y;
-    const colW = 180;
-    drawRow("Total Deaths", deaths, 40, cy, colW);
-    drawRow("Cases with Days Away", daysAwayCases, 40 + colW, cy, colW);
-    drawRow("Cases with Job Transfer/Restriction", restrictedCases, 40 + colW * 2, cy, colW);
-    drawRow("Other Recordable Cases", otherRecordable, 40 + colW * 3, cy, colW);
-    doc.y = cy + 30;
-    doc.moveDown(0.3);
-
-    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af").text("Number of Days");
-    doc.fillColor("#000000");
-    doc.moveDown(0.3);
-    cy = doc.y;
-    drawRow("Total Days Away From Work", totalDaysAway, 40, cy, colW * 2);
-    drawRow("Total Days of Job Transfer/Restriction", totalDaysRestricted, 40 + colW * 2, cy, colW * 2);
-    doc.y = cy + 30;
-    doc.moveDown(0.3);
-
-    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af").text("Injury and Illness Types");
-    doc.fillColor("#000000");
-    doc.moveDown(0.3);
-    cy = doc.y;
-    const tw = 120;
-    const typeData: [string, number][] = [
-      ["Injuries", injuryCases], ["Skin Disorders", skinDisorderCases],
-      ["Respiratory", respiratoryCases], ["Poisonings", poisoningCases],
-      ["Hearing Loss", hearingLossCases], ["Other Illnesses", otherIllnessCases],
-    ];
-    typeData.forEach(([label, val], i) => {
-      drawRow(label, val, 40 + (i % 3) * tw * 2, cy + Math.floor(i / 3) * 26, tw * 2);
-    });
-    doc.y = cy + 60;
+    drawRow("Total Deaths", deaths, MARGIN, cy, colW);
+    drawRow("Cases with Days Away", daysAwayCases, MARGIN + colW, cy, colW);
+    drawRow("Cases with Job Transfer/Restriction", restrictedCases, MARGIN + colW * 2, cy, colW);
+    drawRow("Other Recordable Cases", otherRecordable, MARGIN + colW * 3, cy, colW);
+    resetCursor(cy + 30);
     doc.moveDown(0.5);
 
-    doc.font("Helvetica").fontSize(9).text(`Total recordable cases for ${year}: ${records.length}`);
+    // ── Number of Days ─────────────────────────────────────────────────────────
+    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af")
+      .text("Number of Days", MARGIN, doc.y, { width: USABLE_W });
+    doc.moveDown(0.3);
+
+    cy = doc.y;
+    drawRow("Total Days Away From Work", totalDaysAway, MARGIN, cy, colW * 2);
+    drawRow("Total Days of Job Transfer/Restriction", totalDaysRestricted, MARGIN + colW * 2, cy, colW * 2);
+    resetCursor(cy + 30);
+    doc.moveDown(0.5);
+
+    // ── Injury and Illness Types ───────────────────────────────────────────────
+    doc.fontSize(11).font("Helvetica-Bold").fillColor("#1e40af")
+      .text("Injury and Illness Types", MARGIN, doc.y, { width: USABLE_W });
+    doc.moveDown(0.3);
+
+    cy = doc.y;
+    const typeColW = Math.floor(USABLE_W / 3); // 237 pt each — three per row
+    const typeData: [string, number][] = [
+      ["Injuries", injuryCases], ["Skin Disorders", skinDisorderCases], ["Respiratory", respiratoryCases],
+      ["Poisonings", poisoningCases], ["Hearing Loss", hearingLossCases], ["Other Illnesses", otherIllnessCases],
+    ];
+    typeData.forEach(([label, val], i) => {
+      const col = i % 3;
+      const row = Math.floor(i / 3);
+      drawRow(label, val, MARGIN + col * typeColW, cy + row * 26, typeColW);
+    });
+    resetCursor(cy + 60);
+    doc.moveDown(0.5);
+
+    // ── Total and log section ──────────────────────────────────────────────────
+    doc.fontSize(9).font("Helvetica").fillColor("#000000")
+      .text(`Total recordable cases for ${year}: ${records.length}`, MARGIN, doc.y, { width: USABLE_W });
     doc.moveDown(1);
 
-    doc.fontSize(11).font("Helvetica-Bold").text("OSHA 300 Log — Recordable Cases");
+    doc.fontSize(11).font("Helvetica-Bold").fillColor("#000000")
+      .text("OSHA 300 Log — Recordable Cases", MARGIN, doc.y, { width: USABLE_W });
     doc.moveDown(0.3);
 
     if (records.length === 0) {
-      doc.fontSize(9).font("Helvetica").text("No recordable cases for this period.");
+      doc.fontSize(9).font("Helvetica").fillColor("#000000")
+        .text("No recordable cases for this period.", MARGIN, doc.y, { width: USABLE_W });
     } else {
       const headers = ["Case #", "Employee", "Job Title", "Date", "Location", "Description", "Type", "Body Part", "Death", "Days Away", "Restricted", "Class."];
       const colWidths = [55, 70, 55, 55, 60, 100, 55, 55, 35, 40, 45, 55];
-      let tx = 40;
+      let tx = MARGIN;
       cy = doc.y;
-      doc.font("Helvetica-Bold").fontSize(7);
+      doc.font("Helvetica-Bold").fontSize(7).fillColor("#000000");
       headers.forEach((h, i) => {
-        doc.text(h, tx + 2, cy + 2, { width: colWidths[i] - 4 });
+        doc.text(h, tx + 2, cy + 2, { width: colWidths[i] - 4, lineBreak: false });
         doc.rect(tx, cy, colWidths[i], 14).stroke();
         tx += colWidths[i];
       });
-      doc.y = cy + 16;
+      resetCursor(cy + 16);
 
       records.forEach(r => {
         if (doc.y > 540) { doc.addPage(); }
-        tx = 40;
+        tx = MARGIN;
         cy = doc.y;
         const vals = [
           r.caseNumber, r.employeeName, r.employeeJobTitle || "", r.dateOfInjury,
@@ -787,19 +814,19 @@ router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (re
           r.resultedInDeath ? "Y" : "", String(r.daysAwayFromWork ?? 0),
           String(r.daysOfRestrictedDuty ?? 0), r.classification,
         ];
-        doc.font("Helvetica").fontSize(6);
+        doc.font("Helvetica").fontSize(6).fillColor("#000000");
         vals.forEach((v, i) => {
-          doc.text(v, tx + 2, cy + 2, { width: colWidths[i] - 4 });
+          doc.text(v, tx + 2, cy + 2, { width: colWidths[i] - 4, lineBreak: false });
           doc.rect(tx, cy, colWidths[i], 14).stroke();
           tx += colWidths[i];
         });
-        doc.y = cy + 16;
+        resetCursor(cy + 16);
       });
     }
 
     doc.moveDown(1);
     doc.fontSize(7).font("Helvetica").fillColor("#94a3b8")
-      .text(`Generated by SmartManageAI | ${orgName} | ${reportDate} | Confidential`, { align: "center" });
+      .text(`Generated by SmartManageAI | ${orgName} | ${reportDate} | Confidential`, MARGIN, doc.y, { width: USABLE_W, align: "center" });
 
     doc.end();
   } catch (err: unknown) {
