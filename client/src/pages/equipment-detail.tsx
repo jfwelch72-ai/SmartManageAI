@@ -188,7 +188,7 @@ export default function EquipmentDetailPage() {
       if (!equipmentId) return [];
       const response = await fetch(
         `/api/equipment/${equipmentId}/maintenance-schedules`,
-        { credentials: "include" },
+        { credentials: "include", cache: "no-store" },
       );
       if (!response.ok)
         throw new Error("Failed to fetch maintenance schedules");
@@ -204,7 +204,7 @@ export default function EquipmentDetailPage() {
       if (!equipmentId) return [];
       const response = await fetch(
         `/api/equipment/${equipmentId}/maintenance-history`,
-        { credentials: "include" },
+        { credentials: "include", cache: "no-store" },
       );
       if (!response.ok) throw new Error("Failed to fetch maintenance history");
       return response.json();
