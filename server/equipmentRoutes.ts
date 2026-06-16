@@ -1885,6 +1885,93 @@ Generate a comprehensive PM schedule with 5-10 items covering all major service 
     }
   });
 
+  // Mark a maintenance schedule as completed
+  router.post("/api/equipment/:equipmentId/maintenance-schedules/:scheduleId/complete", async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+
+      if (mustDenyAccess) {
+        return res.status(403).json({ error: "Access denied - no organization" });
+      }
+
+      const { equipmentId, scheduleId } = req.params;
+      const { notes, laborCost, partsCost, performedByVendor } = req.body;
+
+      // SECURITY: Verify equipment belongs to user's org
+      const equipConditions = [eq(equipment.id, equipmentId)];
+      if (shouldFilter && orgId) {
+        equipConditions.push(eq(equipment.organizationId, orgId));
+      }
+
+      const [equipmentItem] = await db.select().from(equipment).where(and(...equipConditions)).limit(1);
+      if (!equipmentItem) {
+        return res.status(404).json({ error: "Equipment not found" });
+      }
+
+      // Verify schedule belongs to this equipment
+      const [schedule] = await db
+        .select()
+        .from(equipmentMaintenanceSchedules)
+        .where(and(
+          eq(equipmentMaintenanceSchedules.id, scheduleId),
+          eq(equipmentMaintenanceSchedules.equipmentId, equipmentId)
+        ))
+        .limit(1);
+
+      if (!schedule) {
+        return res.status(404).json({ error: "Maintenance schedule not found" });
+      }
+
+      const totalCost = (parseFloat(laborCost || "0") + parseFloat(partsCost || "0")).toString();
+
+      // Create maintenance history record
+      const [history] = await db.insert(equipmentMaintenanceHistory).values({
+        equipmentId,
+        scheduleId,
+        maintenanceType: schedule.maintenanceType,
+        description: schedule.name,
+        performedAt: new Date(),
+        hoursAtMaintenance: equipmentItem.currentHours,
+        performedById: req.user!.id,
+        performedByVendor: performedByVendor || null,
+        laborCost: laborCost || null,
+        partsCost: partsCost || null,
+        totalCost,
+        notes: notes || null,
+      }).returning();
+
+      // Calculate next due dates and update the schedule
+      let nextDueAt: Date | null = null;
+      let nextDueHours: string | null = null;
+
+      if (schedule.intervalDays) {
+        nextDueAt = new Date();
+        nextDueAt.setDate(nextDueAt.getDate() + schedule.intervalDays);
+      }
+      if (schedule.intervalHours) {
+        nextDueHours = (parseFloat(equipmentItem.currentHours || "0") + schedule.intervalHours).toString();
+      }
+
+      await db.update(equipmentMaintenanceSchedules).set({
+        lastPerformedAt: new Date(),
+        lastPerformedHours: equipmentItem.currentHours,
+        nextDueAt,
+        nextDueHours,
+        updatedAt: new Date(),
+      }).where(eq(equipmentMaintenanceSchedules.id, scheduleId));
+
+      // Update equipment's last maintenance date
+      await db.update(equipment).set({
+        lastMaintenanceDate: new Date(),
+        updatedAt: new Date(),
+      }).where(eq(equipment.id, equipmentId));
+
+      return res.status(201).json(history);
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Record maintenance completion
   router.post("/api/equipment/:equipmentId/maintenance-history", async (req: AuthRequest, res, next) => {
     try {
