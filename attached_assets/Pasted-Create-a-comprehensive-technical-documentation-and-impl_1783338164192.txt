@@ -1,0 +1,276 @@
+Create a comprehensive technical documentation and implementation guide for developing the **mobile application** of the existing system.
+
+The documentation should be written from the perspective of a **senior software architect, senior mobile engineer, and product architect**, and should serve as the complete blueprint for the mobile frontend.
+
+### Objectives
+
+* Design a production-ready mobile architecture that will seamlessly integrate with the existing backend once the application has been decoupled.
+* Ensure scalability, maintainability, security, and high performance.
+* Cover every feature, workflow, lifecycle, and user role available in the current web application.
+* Provide enough detail for a development team to build the mobile application from start to finish without requiring additional architectural decisions.
+
+### Documentation Requirements
+
+#### 1. System Overview
+
+* Purpose of the mobile application
+* Business objectives
+* User personas
+* Supported user roles
+* Core architecture principles
+* High-level mobile ecosystem
+
+#### 2. Mobile Architecture
+
+Design the best possible architecture using modern mobile development standards.
+
+Include:
+
+* Folder structure
+* Feature-based architecture
+* Clean Architecture
+* MVVM or equivalent architecture
+* Domain-driven organization
+* State management strategy
+* Dependency Injection
+* Networking layer
+* API abstraction
+* Repository pattern
+* Service layer
+* Local storage strategy
+* Offline-first capability
+* Caching strategy
+* Background synchronization
+* Push notification architecture
+* Deep linking
+* Universal links
+* Analytics integration
+* Logging
+* Error handling
+* Crash reporting
+* Security architecture
+* Token lifecycle
+* Authentication flow
+* Session management
+* Permission management
+* Feature flags
+* Environment configuration
+* Build flavors
+* CI/CD recommendations
+
+#### 3. Complete Feature Breakdown
+
+Document every feature that exists in the web application, including:
+
+* Dashboard
+* Projects
+* Estimates
+* AI Features
+* Plans
+* Takeoff
+* Documents
+* Calendar
+* CRM
+* Marketing
+* Reports
+* Notifications
+* User Management
+* Organization Management
+* Billing
+* Subscription
+* Timesheets
+* Workforce Management
+* Vendor Portal
+* Client Portal
+* Subcontractor Portal
+* Field Worker
+* Manager
+* CFO
+* Estimator
+* Admin
+* Super Admin
+
+For every module, include:
+
+* Business purpose
+* Mobile user experience
+* Screen hierarchy
+* Navigation flow
+* API endpoints
+* Request/response contracts
+* State management
+* Validation rules
+* Error handling
+* Permissions
+* Offline behavior
+* Synchronization strategy
+
+#### 4. Workflow Documentation
+
+Create detailed workflow documentation for every major business process.
+
+Include:
+
+* User journey
+* Sequence diagrams
+* Activity diagrams
+* Screen flow
+* Decision trees
+* Lifecycle events
+* Success paths
+* Failure paths
+* Recovery flows
+
+Examples:
+
+* Authentication
+* Project lifecycle
+* Estimate lifecycle
+* Takeoff workflow
+* AI workflow
+* CRM workflow
+* Marketing workflow
+* Subscription workflow
+* Approval workflow
+* Notifications workflow
+* Document workflow
+
+#### 5. Mobile UI/UX Architecture
+
+Design the frontend with a mobile-first approach.
+
+Include:
+
+* Navigation architecture
+* Bottom navigation
+* Drawer navigation
+* Nested navigation
+* Responsive layouts
+* Tablet support
+* Dark mode
+* Accessibility
+* Loading states
+* Empty states
+* Error states
+* Skeleton loaders
+* Animations
+* Design system
+* Component library
+* Reusable widgets
+* Theme architecture
+
+#### 6. Backend Integration Strategy
+
+Assume the backend has already been decoupled.
+
+Document:
+
+* REST API integration
+* Authentication
+* Authorization
+* API versioning
+* Pagination
+* File uploads
+* Streaming
+* WebSockets
+* Real-time updates
+* Background jobs
+* Retry mechanisms
+* Rate limiting
+* Request interceptors
+* Response interceptors
+* Token refresh flow
+
+#### 7. Data Models
+
+Create complete frontend models for every entity.
+
+Include:
+
+* DTOs
+* Domain models
+* View models
+* Serialization
+* Mapping strategy
+* Validation
+
+#### 8. State Management
+
+Define a scalable state management architecture.
+
+Include:
+
+* Global state
+* Feature state
+* Cache management
+* Async state
+* Error state
+* Optimistic updates
+
+#### 9. Security
+
+Document:
+
+* Secure storage
+* Biometrics
+* JWT lifecycle
+* Refresh tokens
+* Certificate pinning
+* Encryption
+* API security
+* Permission handling
+
+#### 10. Performance
+
+Document optimization strategies for:
+
+* Rendering
+* Images
+* Infinite scrolling
+* Lazy loading
+* Pagination
+* Memory usage
+* Battery optimization
+* Startup performance
+
+#### 11. Testing Strategy
+
+Include:
+
+* Unit testing
+* Widget/UI testing
+* Integration testing
+* End-to-end testing
+* API mocking
+* Test coverage strategy
+
+#### 12. Deployment
+
+Include:
+
+* Android release process
+* iOS release process
+* Environment management
+* Versioning
+* Store deployment
+* Feature rollout
+* Monitoring
+
+#### 13. Future Scalability
+
+Explain how the architecture supports:
+
+* 10,000+ users
+* 100,000+ users
+* Millions of users
+* Modular feature expansion
+* AI enhancements
+* Multi-tenant architecture
+* White-label support
+* Plugin/module system
+
+### Deliverable Requirements
+
+Produce the documentation as a professional software architecture guide with clear headings, diagrams (using Mermaid where applicable), flowcharts, architecture illustrations, tables, API integration examples, and implementation recommendations.
+
+The final document should be suitable for handoff to a senior mobile development team and act as the authoritative reference for building the mobile frontend that integrates seamlessly with the decoupled backend.
