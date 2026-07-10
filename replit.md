@@ -88,3 +88,6 @@ I prefer clear, concise explanations and direct answers. I value an iterative de
 *   **Product Features**: `docs/product/features.md`
 *   **Module Directory**: `docs/product/modules.md` — full list of product modules and their descriptions
 *   **SLA**: `docs/sla.md` (generated from `shared/sla/policy.ts` — do not edit directly)
+
+### Mobile App Blueprint
+*   **Mobile App Architecture Blueprint**: `docs/mobile/README.md` — full documentation set for the planned native mobile app (Expo/React Native): overview, architecture, per-module feature docs, workflows, UI/UX, data models, backend integration, security, performance, testing, deployment, and scalability. Docs-only planning artifact — no mobile app code exists yet. Reconciles with `docs/architecture/mobile-sync.md` and `docs/api/mobile-auth.md` (ground truth) and flags `docs/feature-G-mobile-offline.md` as partially superseded legacy.
