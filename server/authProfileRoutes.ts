@@ -956,6 +956,11 @@ const upload = multer({
               isPrimaryContact: true,
               isActive: true,
             });
+          } else if (!existingVu.isActive) {
+            await db
+              .update(vendorUsers)
+              .set({ isActive: true })
+              .where(eq(vendorUsers.id, existingVu.id));
           }
           const [existingEnr] = await db
             .select()
@@ -1029,37 +1034,46 @@ const upload = multer({
           }
 
           // 1. Seed Shared Documents (plan_documents + file_permissions)
-          const existingDocs = await db
-            .select({ id: planDocuments.id })
-            .from(planDocuments)
-            .where(eq(planDocuments.organizationId, devOrg.id))
-            .limit(3);
+          // Use specific titles so this seed is idempotent and doesn't
+          // accidentally grab arbitrary uploaded documents from the org.
           const docsToSeed = [
             { title: "Project Spec Sheet", fileName: "project-spec-sheet.pdf" },
             { title: "Safety Plan", fileName: "safety-plan.pdf" },
           ];
-          const seededDocIds: string[] = existingDocs.map(d => d.id);
-          const docsNeeded = Math.max(0, 2 - existingDocs.length);
-          for (let i = 0; i < docsNeeded; i++) {
-            const d = docsToSeed[i];
-            const [newDoc] = await db
-              .insert(planDocuments)
-              .values({
-                scope: "ORG",
-                organizationId: devOrg.id,
-                type: "OTHER",
-                title: d.title,
-                fileName: d.fileName,
-                fileUrl: `https://dev-placeholder.invalid/${d.fileName}`,
-                mimeType: "application/pdf",
-                fileSize: 102400,
-                uploadedById: testUser.id,
-              })
-              .returning();
-            seededDocIds.push(newDoc.id);
+          const seededDocIds: string[] = [];
+          for (const d of docsToSeed) {
+            const [existingDoc] = await db
+              .select({ id: planDocuments.id })
+              .from(planDocuments)
+              .where(
+                and(
+                  eq(planDocuments.organizationId, devOrg.id),
+                  eq(planDocuments.title, d.title),
+                ),
+              )
+              .limit(1);
+            if (existingDoc) {
+              seededDocIds.push(existingDoc.id);
+            } else {
+              const [newDoc] = await db
+                .insert(planDocuments)
+                .values({
+                  scope: "ORG",
+                  organizationId: devOrg.id,
+                  type: "OTHER",
+                  title: d.title,
+                  fileName: d.fileName,
+                  fileUrl: `https://dev-placeholder.invalid/${d.fileName}`,
+                  mimeType: "application/pdf",
+                  fileSize: 102400,
+                  uploadedById: testUser.id,
+                })
+                .returning();
+              seededDocIds.push(newDoc.id);
+            }
           }
           // Ensure file_permissions exist so the vendor user can see these docs
-          for (const docId of seededDocIds.slice(0, 2)) {
+          for (const docId of seededDocIds) {
             const [existingPerm] = await db
               .select({ id: filePermissions.fileId })
               .from(filePermissions)
