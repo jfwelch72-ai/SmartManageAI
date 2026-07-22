@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isVendor } from "@/lib/rbac";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -14,6 +16,9 @@ import {
   Calendar,
   Download,
   Eye,
+  Tag,
+  User,
+  HardDrive,
 } from "lucide-react";
 
 interface SharedDocument {
@@ -46,6 +51,7 @@ async function getDocumentUrl(docId: string): Promise<string | null> {
 export default function VendorDocumentsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [selectedDoc, setSelectedDoc] = useState<SharedDocument | null>(null);
 
   if (!isVendor(user?.role)) {
     return <Redirect to="/dashboard" />;
@@ -67,13 +73,7 @@ export default function VendorDocumentsPage() {
   async function handlePreview(doc: SharedDocument) {
     const url = await getDocumentUrl(doc.id);
     if (url) {
-      const previewable = /\.(pdf|png|jpg|jpeg|gif|webp|svg)$/i.test(doc.fileName) ||
-        doc.fileType === "pdf" || (doc.fileType && /^image/.test(doc.fileType));
-      if (previewable) {
-        window.open(url, "_blank", "noopener,noreferrer");
-      } else {
-        window.open(url, "_blank", "noopener,noreferrer");
-      }
+      window.open(url, "_blank", "noopener,noreferrer");
     } else {
       toast({ title: "Unable to preview", description: "Could not retrieve the document URL.", variant: "destructive" });
     }
@@ -87,7 +87,7 @@ export default function VendorDocumentsPage() {
             Shared Documents
           </h1>
           <p className="text-muted-foreground">
-            View documents shared by your contractor clients (read-only)
+            Click any document to view its details
           </p>
         </div>
 
@@ -112,7 +112,12 @@ export default function VendorDocumentsPage() {
         ) : (
           <div className="space-y-3">
             {documents.map(doc => (
-              <Card key={doc.id} data-testid={`card-document-${doc.id}`}>
+              <Card
+                key={doc.id}
+                data-testid={`card-document-${doc.id}`}
+                className="cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => setSelectedDoc(doc)}
+              >
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
@@ -140,7 +145,7 @@ export default function VendorDocumentsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
                       {doc.category && (
                         <Badge variant="outline" className="text-xs">
                           {doc.category}
@@ -173,6 +178,93 @@ export default function VendorDocumentsPage() {
           </div>
         )}
       </main>
+
+      <Dialog open={!!selectedDoc} onOpenChange={(open) => { if (!open) setSelectedDoc(null); }}>
+        <DialogContent className="max-w-lg" data-testid="modal-document-detail">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="w-5 h-5 text-primary" />
+              Document Details
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedDoc && (
+            <div className="space-y-5 pt-1">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">File Name</p>
+                <p className="text-base font-semibold break-all" data-testid="text-modal-filename">{selectedDoc.fileName}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Tag className="w-3 h-3" /> File Type
+                  </p>
+                  <Badge variant="secondary" className="text-xs" data-testid="text-modal-filetype">
+                    {selectedDoc.fileType}
+                  </Badge>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <HardDrive className="w-3 h-3" /> File Size
+                  </p>
+                  <p className="text-sm" data-testid="text-modal-filesize">{formatFileSize(selectedDoc.fileSize)}</p>
+                </div>
+              </div>
+
+              {selectedDoc.category && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Tag className="w-3 h-3" /> Category
+                  </p>
+                  <Badge variant="outline" className="text-xs" data-testid="text-modal-category">
+                    {selectedDoc.category}
+                  </Badge>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Building2 className="w-3 h-3" /> Shared By
+                </p>
+                <p className="text-sm" data-testid="text-modal-sharedby">
+                  <span className="font-medium">{selectedDoc.sharedByName}</span>
+                  <span className="text-muted-foreground"> · {selectedDoc.contractorOrgName}</span>
+                </p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Calendar className="w-3 h-3" /> Shared On
+                </p>
+                <p className="text-sm" data-testid="text-modal-sharedat">
+                  {new Date(selectedDoc.sharedAt).toLocaleDateString("en-US", {
+                    weekday: "long", year: "numeric", month: "long", day: "numeric",
+                  })}
+                </p>
+              </div>
+
+              <div className="flex gap-2 pt-2 border-t" onClick={e => e.stopPropagation()}>
+                <Button
+                  className="flex-1"
+                  variant="outline"
+                  onClick={() => handlePreview(selectedDoc)}
+                  data-testid="button-modal-preview"
+                >
+                  <Eye className="w-4 h-4 mr-2" /> Preview
+                </Button>
+                <Button
+                  className="flex-1"
+                  onClick={() => handleDownload(selectedDoc)}
+                  data-testid="button-modal-download"
+                >
+                  <Download className="w-4 h-4 mr-2" /> Download
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

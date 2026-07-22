@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isVendor } from "@/lib/rbac";
 import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
@@ -19,6 +20,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock,
+  Tag,
 } from "lucide-react";
 
 interface ComplianceDocument {
@@ -33,6 +35,7 @@ interface ComplianceDocument {
 export default function VendorCompliancePage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [selectedDoc, setSelectedDoc] = useState<ComplianceDocument | null>(null);
 
   if (!isVendor(user?.role)) {
     return <Redirect to="/dashboard" />;
@@ -55,12 +58,21 @@ export default function VendorCompliancePage() {
     }
   };
 
+  const getStatusDescription = (status: string) => {
+    switch (status) {
+      case "valid": return "This document is current and accepted.";
+      case "expiring_soon": return "This document will expire soon. Please renew it.";
+      case "expired": return "This document has expired. Upload a renewed version.";
+      default: return "This document is pending review.";
+    }
+  };
+
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Compliance Documents</h1>
-          <p className="text-muted-foreground mt-1">Upload and manage your insurance certificates, W-9s, and other compliance documents required by contractors.</p>
+          <p className="text-muted-foreground mt-1">Click any document to view full details.</p>
         </div>
         <Button data-testid="button-upload-document">
           <Upload className="w-4 h-4 mr-2" />
@@ -119,7 +131,7 @@ export default function VendorCompliancePage() {
       <Card>
         <CardHeader>
           <CardTitle data-testid="text-documents-title">Document History</CardTitle>
-          <CardDescription>All compliance documents you've submitted to contractors</CardDescription>
+          <CardDescription>Click any document to see full details</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -131,7 +143,12 @@ export default function VendorCompliancePage() {
           ) : documents && documents.length > 0 ? (
             <div className="space-y-3">
               {documents.map((doc) => (
-                <div key={doc.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`row-document-${doc.id}`}>
+                <div
+                  key={doc.id}
+                  className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  data-testid={`row-document-${doc.id}`}
+                  onClick={() => setSelectedDoc(doc)}
+                >
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-muted-foreground" />
                     <div>
@@ -160,6 +177,68 @@ export default function VendorCompliancePage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!selectedDoc} onOpenChange={(open) => { if (!open) setSelectedDoc(null); }}>
+        <DialogContent className="max-w-lg" data-testid="modal-compliance-detail">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-primary" />
+              Compliance Document Details
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedDoc && (
+            <div className="space-y-5 pt-1">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">File Name</p>
+                <p className="text-base font-semibold break-all" data-testid="text-modal-filename">{selectedDoc.fileName}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Tag className="w-3 h-3" /> Document Type
+                  </p>
+                  <p className="text-sm font-medium" data-testid="text-modal-type">{selectedDoc.type}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Status</p>
+                  {getStatusBadge(selectedDoc.status)}
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-muted text-sm text-muted-foreground">
+                {getStatusDescription(selectedDoc.status)}
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Calendar className="w-3 h-3" /> Uploaded
+                  </p>
+                  <p className="text-sm" data-testid="text-modal-uploadedat">
+                    {new Date(selectedDoc.uploadedAt).toLocaleDateString("en-US", {
+                      year: "numeric", month: "long", day: "numeric",
+                    })}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Calendar className="w-3 h-3" /> Expiration
+                  </p>
+                  <p className="text-sm" data-testid="text-modal-expiration">
+                    {selectedDoc.expirationDate
+                      ? new Date(selectedDoc.expirationDate).toLocaleDateString("en-US", {
+                          year: "numeric", month: "long", day: "numeric",
+                        })
+                      : <span className="text-muted-foreground">No expiration</span>}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

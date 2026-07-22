@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { isVendor } from "@/lib/rbac";
 import { useAuth } from "@/hooks/use-auth";
 import { Redirect } from "wouter";
@@ -14,6 +16,8 @@ import {
   CheckCircle2,
   Clock,
   Truck,
+  Hash,
+  FolderOpen,
 } from "lucide-react";
 
 interface PurchaseOrder {
@@ -30,6 +34,7 @@ interface PurchaseOrder {
 
 export default function VendorPurchaseOrdersPage() {
   const { user } = useAuth();
+  const [selectedOrder, setSelectedOrder] = useState<PurchaseOrder | null>(null);
 
   if (!isVendor(user?.role)) {
     return <Redirect to="/dashboard" />;
@@ -57,11 +62,16 @@ export default function VendorPurchaseOrdersPage() {
   const formatCurrency = (amount: number) =>
     new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 
+  const formatDate = (date: string) =>
+    new Date(date).toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric",
+    });
+
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       <div>
         <h1 className="text-2xl font-bold" data-testid="text-page-title">Purchase Orders</h1>
-        <p className="text-muted-foreground mt-1">View and track purchase orders from contractors for your materials and services.</p>
+        <p className="text-muted-foreground mt-1">Click any order to see full details.</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -115,7 +125,7 @@ export default function VendorPurchaseOrdersPage() {
       <Card>
         <CardHeader>
           <CardTitle data-testid="text-orders-title">All Purchase Orders</CardTitle>
-          <CardDescription>Purchase orders issued to you by contractor organizations</CardDescription>
+          <CardDescription>Click any order to see full details</CardDescription>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -127,7 +137,12 @@ export default function VendorPurchaseOrdersPage() {
           ) : orders && orders.length > 0 ? (
             <div className="space-y-3">
               {orders.map((order) => (
-                <div key={order.id} className="flex items-center justify-between p-4 border rounded-lg" data-testid={`row-order-${order.id}`}>
+                <div
+                  key={order.id}
+                  className="flex items-center justify-between p-4 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  data-testid={`row-order-${order.id}`}
+                  onClick={() => setSelectedOrder(order)}
+                >
                   <div className="flex items-center gap-4">
                     <div className="p-2 rounded bg-muted">
                       <ShoppingCart className="w-5 h-5 text-muted-foreground" />
@@ -164,6 +179,90 @@ export default function VendorPurchaseOrdersPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={!!selectedOrder} onOpenChange={(open) => { if (!open) setSelectedOrder(null); }}>
+        <DialogContent className="max-w-lg" data-testid="modal-order-detail">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-primary" />
+              Purchase Order Details
+            </DialogTitle>
+          </DialogHeader>
+
+          {selectedOrder && (
+            <div className="space-y-5 pt-1">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+                    <Hash className="w-3 h-3" /> PO Number
+                  </p>
+                  <p className="text-base font-semibold" data-testid="text-modal-ponumber">
+                    PO #{selectedOrder.poNumber}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Status</p>
+                  {getStatusBadge(selectedOrder.status)}
+                </div>
+              </div>
+
+              <div className="p-4 rounded-lg bg-muted flex items-center justify-between">
+                <div>
+                  <p className="text-xs text-muted-foreground">Total Value</p>
+                  <p className="text-2xl font-bold text-foreground" data-testid="text-modal-amount">
+                    {formatCurrency(selectedOrder.totalAmount)}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-muted-foreground">Line Items</p>
+                  <p className="text-2xl font-bold text-foreground" data-testid="text-modal-items">
+                    {selectedOrder.items}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <FolderOpen className="w-3 h-3" /> Project
+                </p>
+                <p className="text-sm font-medium" data-testid="text-modal-project">{selectedOrder.projectName}</p>
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <Building2 className="w-3 h-3" /> Contractor
+                </p>
+                <p className="text-sm" data-testid="text-modal-contractor">{selectedOrder.contractorOrgName}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Calendar className="w-3 h-3" /> Created
+                  </p>
+                  <p className="text-sm" data-testid="text-modal-created">
+                    {new Date(selectedOrder.createdAt).toLocaleDateString("en-US", {
+                      year: "numeric", month: "long", day: "numeric",
+                    })}
+                  </p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                    <Truck className="w-3 h-3" /> Expected Delivery
+                  </p>
+                  <p className="text-sm" data-testid="text-modal-delivery">
+                    {selectedOrder.expectedDelivery
+                      ? new Date(selectedOrder.expectedDelivery).toLocaleDateString("en-US", {
+                          year: "numeric", month: "long", day: "numeric",
+                        })
+                      : <span className="text-muted-foreground">Not specified</span>}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
