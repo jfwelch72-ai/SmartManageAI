@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { db } from "./db";
 import { insertNotification } from "./services/notificationService";
-import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems, conversations, conversationParticipants, messages, planDocuments, filePermissions, vendorServiceCatalog, insertVendorServiceCatalogSchema } from "@shared/schema";
-import { eq, and, sql, desc, inArray, type SQL } from "drizzle-orm";
+import { crmOrganisations, vendorEnrollments, vendorUsers, vendorPricingCatalogs, auditLog, users, organizations, notifications, pricebookImportJobs, insertVendorPricingCatalogSchema, rentalEquipmentCatalog, insertRentalEquipmentCatalogSchema, vendorPricebooks, vendorPricebookItems, conversations, conversationParticipants, messages, planDocuments, filePermissions, vendorServiceCatalog, insertVendorServiceCatalogSchema, projectSchedules, projectScheduleTasks, projects, crmOrganisationCertifications, suretyBonds, purchaseOrders, purchaseOrderItems } from "@shared/schema";
+import { eq, and, sql, desc, inArray, count, type SQL } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest, requireFeaturePermission } from "./auth";
 import { sendEmail } from "./email";
 import { logAudit } from "./auditLogger";
@@ -3548,7 +3548,78 @@ router.get("/api/vendor/documents", requireAuth, requireRole("VENDOR"), async (r
 
 router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
-    res.json([]);
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db
+      .select()
+      .from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) return res.json([]);
+
+    const now = new Date();
+    const thirtyDaysOut = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const certs = await db
+      .select({
+        id: crmOrganisationCertifications.id,
+        type: crmOrganisationCertifications.certificationType,
+        certNumber: crmOrganisationCertifications.certificationNumber,
+        expirationDate: crmOrganisationCertifications.expirationDate,
+        createdAt: crmOrganisationCertifications.createdAt,
+      })
+      .from(crmOrganisationCertifications)
+      .where(eq(crmOrganisationCertifications.crmOrganisationId, vendorUser.crmOrganisationId));
+
+    const bonds = await db
+      .select({
+        id: suretyBonds.id,
+        bondType: suretyBonds.bondType,
+        bondNumber: suretyBonds.bondNumber,
+        status: suretyBonds.status,
+        expirationDate: suretyBonds.expirationDate,
+        createdAt: suretyBonds.createdAt,
+      })
+      .from(suretyBonds)
+      .innerJoin(vendorEnrollments, eq(suretyBonds.organizationId, vendorEnrollments.contractorOrgId))
+      .where(
+        and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.status, "ACTIVE"),
+        ),
+      );
+
+    const getStatus = (expirationDate: string | null, isActive?: boolean): "valid" | "expiring_soon" | "expired" | "pending" => {
+      if (!isActive && isActive !== undefined) return "expired";
+      if (!expirationDate) return "valid";
+      const exp = new Date(expirationDate);
+      if (exp < now) return "expired";
+      if (exp <= thirtyDaysOut) return "expiring_soon";
+      return "valid";
+    };
+
+    const result = [
+      ...certs.map(c => ({
+        id: c.id,
+        type: c.type as string,
+        fileName: `${c.type} Certification${c.certNumber ? ` (${c.certNumber})` : ""}`,
+        status: getStatus(c.expirationDate),
+        expirationDate: c.expirationDate,
+        uploadedAt: c.createdAt.toISOString(),
+      })),
+      ...bonds.map(b => ({
+        id: b.id,
+        type: `BOND_${b.bondType}`,
+        fileName: `${b.bondType} Bond (${b.bondNumber})`,
+        status: getStatus(b.expirationDate, b.status === "ACTIVE"),
+        expirationDate: b.expirationDate,
+        uploadedAt: b.createdAt.toISOString(),
+      })),
+    ];
+
+    res.json(result);
   } catch (error) {
     logError("Get vendor compliance documents error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
@@ -3557,7 +3628,91 @@ router.get("/api/vendor/compliance-documents", requireAuth, requireRole("VENDOR"
 
 router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
-    res.json([]);
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db
+      .select()
+      .from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) return res.json([]);
+
+    const enrollments = await db
+      .select({ contractorOrgId: vendorEnrollments.contractorOrgId, contractorOrgName: organizations.name })
+      .from(vendorEnrollments)
+      .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+      .where(
+        and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.status, "ACTIVE"),
+        ),
+      );
+
+    if (enrollments.length === 0) return res.json([]);
+
+    const orgNameMap: Record<string, string> = Object.fromEntries(enrollments.map(e => [e.contractorOrgId, e.contractorOrgName]));
+    const enrolledOrgIds = enrollments.map(e => e.contractorOrgId);
+
+    const pos = await db
+      .select({
+        id: purchaseOrders.id,
+        poNumber: purchaseOrders.poNumber,
+        orgId: purchaseOrders.orgId,
+        projectId: purchaseOrders.projectId,
+        status: purchaseOrders.status,
+        totalCost: purchaseOrders.totalCost,
+        neededByDate: purchaseOrders.neededByDate,
+        createdAt: purchaseOrders.createdAt,
+        projectName: projects.name,
+      })
+      .from(purchaseOrders)
+      .innerJoin(projects, eq(projects.id, purchaseOrders.projectId))
+      .where(
+        and(
+          inArray(purchaseOrders.orgId, enrolledOrgIds),
+          eq(purchaseOrders.vendorId, vendorUser.crmOrganisationId),
+        ),
+      )
+      .orderBy(desc(purchaseOrders.createdAt))
+      .limit(50);
+
+    if (pos.length === 0) return res.json([]);
+
+    const poIds = pos.map(p => p.id);
+    const itemCounts = await db
+      .select({ poId: purchaseOrderItems.poId, cnt: count() })
+      .from(purchaseOrderItems)
+      .where(inArray(purchaseOrderItems.poId, poIds))
+      .groupBy(purchaseOrderItems.poId);
+
+    const itemCountMap: Record<string, number> = Object.fromEntries(itemCounts.map(ic => [ic.poId, Number(ic.cnt)]));
+
+    const statusMap: Record<string, "pending" | "approved" | "shipped" | "delivered" | "cancelled"> = {
+      DRAFT: "pending",
+      PENDING: "pending",
+      APPROVED: "approved",
+      ISSUED: "approved",
+      PARTIALLY_RECEIVED: "shipped",
+      RECEIVED: "delivered",
+      CLOSED: "delivered",
+      CANCELLED: "cancelled",
+    };
+
+    const result = pos.map(po => ({
+      id: po.id,
+      poNumber: po.poNumber,
+      contractorOrgName: orgNameMap[po.orgId] || "Contractor",
+      projectName: po.projectName,
+      status: statusMap[po.status] ?? "pending",
+      totalAmount: parseFloat(po.totalCost ?? "0"),
+      items: itemCountMap[po.id] ?? 0,
+      createdAt: po.createdAt.toISOString(),
+      expectedDelivery: po.neededByDate ? po.neededByDate.toISOString() : null,
+    }));
+
+    res.json(result);
   } catch (error) {
     logError("Get vendor purchase orders error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);
@@ -3566,7 +3721,96 @@ router.get("/api/vendor/purchase-orders", requireAuth, requireRole("VENDOR"), as
 
 router.get("/api/vendor/schedule", requireAuth, requireRole("VENDOR"), async (req: AuthRequest, res, next) => {
   try {
-    res.json([]);
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+    const [vendorUser] = await db
+      .select()
+      .from(vendorUsers)
+      .where(and(eq(vendorUsers.userId, userId), eq(vendorUsers.isActive, true)))
+      .limit(1);
+
+    if (!vendorUser) return res.json([]);
+
+    const enrollments = await db
+      .select({ contractorOrgId: vendorEnrollments.contractorOrgId, contractorOrgName: organizations.name })
+      .from(vendorEnrollments)
+      .innerJoin(organizations, eq(organizations.id, vendorEnrollments.contractorOrgId))
+      .where(
+        and(
+          eq(vendorEnrollments.vendorCrmOrgId, vendorUser.crmOrganisationId),
+          eq(vendorEnrollments.status, "ACTIVE"),
+        ),
+      );
+
+    if (enrollments.length === 0) return res.json([]);
+
+    const orgNameMap: Record<string, string> = Object.fromEntries(enrollments.map(e => [e.contractorOrgId, e.contractorOrgName]));
+    const enrolledOrgIds = enrollments.map(e => e.contractorOrgId);
+
+    const schedules = await db
+      .select({ id: projectSchedules.id, organizationId: projectSchedules.organizationId, projectId: projectSchedules.projectId })
+      .from(projectSchedules)
+      .where(
+        and(
+          inArray(projectSchedules.organizationId, enrolledOrgIds),
+          eq(projectSchedules.isActive, true),
+        ),
+      );
+
+    if (schedules.length === 0) return res.json([]);
+
+    const scheduleIds = schedules.map(s => s.id);
+    const scheduleOrgMap: Record<string, string> = Object.fromEntries(schedules.map(s => [s.id, s.organizationId]));
+    const scheduleProjectMap: Record<string, string> = Object.fromEntries(schedules.map(s => [s.id, s.projectId]));
+
+    const projectIds = [...new Set(schedules.map(s => s.projectId))];
+    const projectRows = await db
+      .select({ id: projects.id, name: projects.name })
+      .from(projects)
+      .where(inArray(projects.id, projectIds));
+    const projectNameMap: Record<string, string> = Object.fromEntries(projectRows.map(p => [p.id, p.name]));
+
+    const tasks = await db
+      .select({
+        id: projectScheduleTasks.id,
+        scheduleId: projectScheduleTasks.scheduleId,
+        name: projectScheduleTasks.name,
+        plannedStartDate: projectScheduleTasks.plannedStartDate,
+        plannedEndDate: projectScheduleTasks.plannedEndDate,
+        actualStartDate: projectScheduleTasks.actualStartDate,
+        actualEndDate: projectScheduleTasks.actualEndDate,
+        status: projectScheduleTasks.status,
+      })
+      .from(projectScheduleTasks)
+      .where(inArray(projectScheduleTasks.scheduleId, scheduleIds))
+      .orderBy(projectScheduleTasks.sortOrder)
+      .limit(100);
+
+    const now = new Date();
+    const getEventStatus = (task: typeof tasks[0]): "upcoming" | "in_progress" | "completed" | "delayed" => {
+      if (task.status === "COMPLETE" || task.actualEndDate) return "completed";
+      if (task.status === "IN_PROGRESS" || task.actualStartDate) return "in_progress";
+      if (task.plannedEndDate && new Date(task.plannedEndDate) < now) return "delayed";
+      return "upcoming";
+    };
+
+    const result = tasks.map(task => {
+      const orgId = scheduleOrgMap[task.scheduleId];
+      const projectId = scheduleProjectMap[task.scheduleId];
+      return {
+        id: task.id,
+        projectName: projectNameMap[projectId] || "Project",
+        contractorOrgName: orgNameMap[orgId] || "Contractor",
+        description: task.name,
+        startDate: task.plannedStartDate || task.actualStartDate || new Date().toISOString(),
+        endDate: task.plannedEndDate || task.actualEndDate || new Date().toISOString(),
+        location: null,
+        status: getEventStatus(task),
+      };
+    });
+
+    res.json(result);
   } catch (error) {
     logError("Get vendor schedule error:", {}, error instanceof Error ? error : new Error(String(error)));
     next(error);

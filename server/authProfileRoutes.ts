@@ -450,6 +450,10 @@ import {
   aiEstimatorUserAccess, aiEstimatorChatSessions, aiEstimatorChatMessages,
   crmOrganisations, vendorUsers, vendorEnrollments,
   bids, bidSubcontractorQuotes, projects, scheduleOfValues, payApplications,
+  planDocuments, filePermissions,
+  projectSchedules, projectScheduleTasks,
+  crmOrganisationCertifications, suretyBonds,
+  purchaseOrders, purchaseOrderItems,
 } from "@shared/schema";
 import {
   requireAuth, hashPassword, verifyPassword, generateToken, invalidateAuthCache,
@@ -980,6 +984,258 @@ const upload = multer({
         } catch (vendorSetupErr) {
           logWarn("[DEV] Vendor fixture setup failed", {
             error: vendorSetupErr instanceof Error ? vendorSetupErr.message : String(vendorSetupErr),
+          });
+        }
+
+        // Seed vendor portal content: documents, schedule, compliance, purchase orders
+        try {
+          // Use the SAME lookup the portal routes use: first active vendor_users row for this user.
+          // This guarantees seeds and route queries reference the same crmOrganisationId, even if
+          // there are multiple vendor_users rows (e.g. after an org migration).
+          const [activeVendorUser] = await db
+            .select({ crmOrganisationId: vendorUsers.crmOrganisationId })
+            .from(vendorUsers)
+            .where(and(eq(vendorUsers.userId, testUser.id), eq(vendorUsers.isActive, true)))
+            .limit(1);
+
+          if (!activeVendorUser) throw new Error("Active vendor_users row not found for portal seed");
+
+          const [vcOrg] = await db
+            .select()
+            .from(crmOrganisations)
+            .where(eq(crmOrganisations.id, activeVendorUser.crmOrganisationId))
+            .limit(1);
+
+          if (!vcOrg) throw new Error("Dev Vendor Org not found for portal seed");
+
+          // --- Find or create a dev project for schedule / PO seeds ---
+          let [devProject] = await db
+            .select()
+            .from(projects)
+            .where(eq(projects.code, "DEV-SEED-001"))
+            .limit(1);
+          if (!devProject) {
+            [devProject] = await db
+              .insert(projects)
+              .values({
+                name: "Dev Seed Project",
+                code: "DEV-SEED-001",
+                clientName: "Dev Client",
+                status: "ACTIVE",
+                gcOrganizationId: devOrg.id,
+              })
+              .returning();
+            logInfo("[DEV] Created dev seed project: " + devProject.id);
+          }
+
+          // 1. Seed Shared Documents (plan_documents + file_permissions)
+          const existingDocs = await db
+            .select({ id: planDocuments.id })
+            .from(planDocuments)
+            .where(eq(planDocuments.organizationId, devOrg.id))
+            .limit(3);
+          const docsToSeed = [
+            { title: "Project Spec Sheet", fileName: "project-spec-sheet.pdf" },
+            { title: "Safety Plan", fileName: "safety-plan.pdf" },
+          ];
+          const seededDocIds: string[] = existingDocs.map(d => d.id);
+          const docsNeeded = Math.max(0, 2 - existingDocs.length);
+          for (let i = 0; i < docsNeeded; i++) {
+            const d = docsToSeed[i];
+            const [newDoc] = await db
+              .insert(planDocuments)
+              .values({
+                scope: "ORG",
+                organizationId: devOrg.id,
+                type: "OTHER",
+                title: d.title,
+                fileName: d.fileName,
+                fileUrl: `https://dev-placeholder.invalid/${d.fileName}`,
+                mimeType: "application/pdf",
+                fileSize: 102400,
+                uploadedById: testUser.id,
+              })
+              .returning();
+            seededDocIds.push(newDoc.id);
+          }
+          // Ensure file_permissions exist so the vendor user can see these docs
+          for (const docId of seededDocIds.slice(0, 2)) {
+            const [existingPerm] = await db
+              .select({ id: filePermissions.fileId })
+              .from(filePermissions)
+              .where(
+                and(
+                  eq(filePermissions.fileId, docId),
+                  eq(filePermissions.userId, testUser.id),
+                ),
+              )
+              .limit(1);
+            if (!existingPerm) {
+              await db.insert(filePermissions).values({
+                fileId: docId,
+                fileType: "DOCUMENT",
+                userId: testUser.id,
+                grantedById: testUser.id,
+              });
+            }
+          }
+          logInfo("[DEV] Vendor portal: documents seeded");
+
+          // 2. Seed Schedule (project_schedules + project_schedule_tasks)
+          let [devSchedule] = await db
+            .select()
+            .from(projectSchedules)
+            .where(eq(projectSchedules.projectId, devProject.id))
+            .limit(1);
+          if (!devSchedule) {
+            [devSchedule] = await db
+              .insert(projectSchedules)
+              .values({
+                organizationId: devOrg.id,
+                projectId: devProject.id,
+                name: "Master Schedule",
+                generatedBy: "MANUAL",
+                baselineStartDate: "2026-07-01",
+                baselineEndDate: "2026-12-31",
+                createdByUserId: testUser.id,
+              })
+              .returning();
+            logInfo("[DEV] Created dev project schedule: " + devSchedule.id);
+          }
+          const existingTasks = await db
+            .select({ id: projectScheduleTasks.id })
+            .from(projectScheduleTasks)
+            .where(eq(projectScheduleTasks.scheduleId, devSchedule.id))
+            .limit(3);
+          const taskDefs = [
+            { name: "Foundation Work", start: "2026-07-15", end: "2026-08-15", sort: 0 },
+            { name: "Framing", start: "2026-08-16", end: "2026-09-30", sort: 1 },
+          ];
+          const tasksNeeded = Math.max(0, 2 - existingTasks.length);
+          for (let i = 0; i < tasksNeeded; i++) {
+            const t = taskDefs[i];
+            await db.insert(projectScheduleTasks).values({
+              scheduleId: devSchedule.id,
+              name: t.name,
+              plannedStartDate: t.start,
+              plannedEndDate: t.end,
+              status: "NOT_STARTED",
+              sortOrder: t.sort,
+            });
+          }
+          if (tasksNeeded > 0) logInfo("[DEV] Vendor portal: schedule tasks seeded");
+
+          // 3. Seed Compliance (crm_organisation_certifications + surety_bonds)
+          const existingCerts = await db
+            .select({ type: crmOrganisationCertifications.certificationType })
+            .from(crmOrganisationCertifications)
+            .where(eq(crmOrganisationCertifications.crmOrganisationId, vcOrg.id))
+            .limit(5);
+          const existingCertTypes = new Set(existingCerts.map(c => c.type));
+          const certDefs = [
+            { type: "DBE" as const, agency: "State DOT", number: "DEV-DBE-2026" },
+            { type: "MBE" as const, agency: "City Office", number: "DEV-MBE-2026" },
+          ];
+          for (const certDef of certDefs) {
+            if (existingCerts.length >= 2) break;
+            if (existingCertTypes.has(certDef.type)) continue;
+            await db.insert(crmOrganisationCertifications).values({
+              organizationId: devOrg.id,
+              crmOrganisationId: vcOrg.id,
+              certificationType: certDef.type,
+              certifyingAgency: certDef.agency,
+              certificationNumber: certDef.number,
+              effectiveDate: "2025-01-01",
+              expirationDate: "2027-12-31",
+            });
+            existingCertTypes.add(certDef.type);
+          }
+          const [existingBond] = await db
+            .select({ id: suretyBonds.id })
+            .from(suretyBonds)
+            .where(eq(suretyBonds.organizationId, devOrg.id))
+            .limit(1);
+          if (!existingBond) {
+            await db.insert(suretyBonds).values({
+              organizationId: devOrg.id,
+              projectId: devProject.id,
+              bondType: "PERFORMANCE",
+              status: "ACTIVE",
+              bondNumber: "DEV-BOND-2026-001",
+              suretyCompany: "Dev Surety Co",
+              bondAmount: "500000",
+              effectiveDate: "2026-01-01",
+              expirationDate: "2027-01-01",
+              createdById: testUser.id,
+            });
+            logInfo("[DEV] Vendor portal: surety bond seeded");
+          }
+
+          // 4. Seed Purchase Orders (purchase_orders + purchase_order_items)
+          // po_number is globally unique — look up by number and fix vendorId if wrong.
+          const poDefs = [
+            {
+              poNum: "DEV-PO-2026-001",
+              items: [
+                { desc: "Framing Lumber", qty: "100", unit: "BF", cost: "4.50", code: "06-100" },
+                { desc: "Concrete Mix", qty: "50", unit: "CY", cost: "185.00", code: "03-300" },
+              ],
+            },
+            {
+              poNum: "DEV-PO-2026-002",
+              items: [
+                { desc: "Steel Rebar #5", qty: "2000", unit: "LF", cost: "1.85", code: "03-200" },
+                { desc: "Aggregate Stone", qty: "30", unit: "TN", cost: "42.00", code: "31-230" },
+              ],
+            },
+          ];
+          let posUpserted = 0;
+          for (const poDef of poDefs) {
+            const [existingPO] = await db
+              .select({ id: purchaseOrders.id, vendorId: purchaseOrders.vendorId })
+              .from(purchaseOrders)
+              .where(eq(purchaseOrders.poNumber, poDef.poNum))
+              .limit(1);
+            if (existingPO) {
+              // Fix vendorId if it doesn't match the active vendor CRM org
+              if (existingPO.vendorId !== vcOrg.id) {
+                await db
+                  .update(purchaseOrders)
+                  .set({ vendorId: vcOrg.id, orgId: devOrg.id, projectId: devProject.id })
+                  .where(eq(purchaseOrders.id, existingPO.id));
+                posUpserted++;
+              }
+            } else {
+              const [newPO] = await db
+                .insert(purchaseOrders)
+                .values({
+                  orgId: devOrg.id,
+                  projectId: devProject.id,
+                  vendorId: vcOrg.id,
+                  poNumber: poDef.poNum,
+                  status: "APPROVED",
+                  totalCost: "12500.00",
+                  deliveryAddress: "123 Dev Site Rd, Sandbox, CA 90001",
+                  neededByDate: new Date("2026-09-01"),
+                })
+                .returning();
+              await db.insert(purchaseOrderItems).values(
+                poDef.items.map(it => ({
+                  poId: newPO.id,
+                  description: it.desc,
+                  quantity: it.qty,
+                  unit: it.unit,
+                  unitCost: it.cost,
+                  costCode: it.code,
+                })),
+              );
+              posUpserted++;
+            }
+          }
+          if (posUpserted > 0) logInfo("[DEV] Vendor portal: purchase orders seeded/fixed (" + posUpserted + ")");
+        } catch (portalSeedErr) {
+          logWarn("[DEV] Vendor portal seed failed", {
+            error: portalSeedErr instanceof Error ? portalSeedErr.message : String(portalSeedErr),
           });
         }
       }
