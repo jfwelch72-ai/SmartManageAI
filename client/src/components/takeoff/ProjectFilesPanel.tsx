@@ -26,7 +26,7 @@
  * Plans / Specs / BIM / Photos / Other tree without requiring any
  * schema change.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowUpRight,
@@ -74,6 +74,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import FilePreview from "@/components/FilePreview";
+import { ObjectUploader } from "@/components/ObjectUploader";
 import type { TakeoffSheet } from "@shared/schema";
 
 // ---------------------------------------------------------------------------
@@ -576,6 +577,8 @@ export function ProjectFilesPanel({
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [previewDoc, setPreviewDoc] = useState<ProjectFileDoc | null>(null);
   const [importingDocId, setImportingDocId] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const uploadBtnRef = useRef<HTMLButtonElement>(null);
 
   // ── Import-plan mutation ────────────────────────────────────────
   const importMutation = useMutation({
@@ -626,6 +629,60 @@ export function ProjectFilesPanel({
       });
     },
   });
+
+  // ── Upload handler ─────────────────────────────────────────────
+  const handleUploadComplete = async (result: any) => {
+    setUploading(false);
+    if (!result.successful?.length) {
+      toast({ title: "Upload failed", description: "No file was uploaded.", variant: "destructive" });
+      return;
+    }
+    let saved = 0;
+    let failed = 0;
+    await Promise.all(
+      result.successful.map(async (uploaded: any) => {
+        const file = uploaded.data as File;
+        const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
+        const baseName = file.name.replace(/\.[^/.]+$/, "");
+        try {
+          if (contextType === "bid") {
+            await apiRequest("POST", `/api/bids/${contextCode}/documents`, {
+              title: baseName,
+              fileName: file.name,
+              fileUrl,
+              objectKey: fileUrl,
+              fileSize: file.size,
+              mimeType: file.type,
+              type: "OTHER",
+            });
+          } else {
+            await apiRequest("POST", "/api/documents", {
+              projectId: contextId,
+              title: baseName,
+              type: "OTHER",
+              fileUrl,
+              fileName: file.name,
+              fileSize: file.size,
+              mimeType: file.type,
+              objectKey: fileUrl,
+            });
+          }
+          saved++;
+        } catch {
+          failed++;
+        }
+      }),
+    );
+    queryClient.invalidateQueries({ queryKey: docsQueryKey });
+    if (saved > 0) {
+      toast({
+        title: saved === 1 ? "File uploaded" : `${saved} files uploaded`,
+        description: failed > 0 ? `${failed} file${failed === 1 ? "" : "s"} failed.` : undefined,
+      });
+    } else {
+      toast({ title: "Upload failed", description: "Could not save the file. Please try again.", variant: "destructive" });
+    }
+  };
 
   // ── Per-row handlers ───────────────────────────────────────────
   const handleOpenInTakeoff = (doc: ProjectFileDoc) => {
@@ -820,26 +877,29 @@ export function ProjectFilesPanel({
             </DropdownMenu>
 
             <div className="flex-1" />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs gap-1"
-                  data-testid="button-upload"
-                  disabled
-                >
+            <ObjectUploader
+              maxNumberOfFiles={10}
+              fileType="DOCUMENT"
+              onComplete={handleUploadComplete}
+              onProcessingStart={() => setUploading(true)}
+              testId="button-upload"
+            >
+              <Button
+                ref={uploadBtnRef}
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1"
+                data-testid="button-upload"
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
                   <Upload className="h-3 w-3" />
-                  Upload
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p className="text-xs">
-                  Upload from the {contextType === "bid" ? "Bid" : "Project"}{" "}
-                  Plans tab.
-                </p>
-              </TooltipContent>
-            </Tooltip>
+                )}
+                Upload
+              </Button>
+            </ObjectUploader>
           </div>
         </div>
 
