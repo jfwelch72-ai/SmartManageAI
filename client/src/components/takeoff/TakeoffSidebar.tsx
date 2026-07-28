@@ -694,7 +694,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
 
   if (collapsed) {
     return (
-      <div className={cn("hidden sm:flex w-9 bg-card border-l flex-col shrink-0 items-center py-2 gap-1", aiPanelOpen && "hidden md:flex")}>
+      <div className={cn("flex w-9 bg-card border-l flex-col shrink-0 items-center py-2 gap-1", aiPanelOpen && "hidden md:flex")}>
         <button
           onClick={onToggleCollapse}
           className="w-7 h-7 rounded flex items-center justify-center hover:bg-accent text-muted-foreground hover:text-foreground"
@@ -740,7 +740,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   }
 
   return (
-    <div className={cn("hidden sm:flex absolute top-0 right-0 h-full w-full sm:w-[320px] md:w-[340px] lg:w-[360px] bg-card border-l flex-col min-w-0 overflow-hidden shadow-2xl z-30", aiPanelOpen && "hidden md:flex")}>
+    <div className={cn("flex absolute top-0 right-0 h-full w-full sm:w-[320px] md:w-[340px] lg:w-[360px] bg-card border-l flex-col min-w-0 overflow-hidden shadow-2xl z-30", aiPanelOpen && "hidden md:flex")}>
       <div className="flex border-b shrink-0 bg-muted/30 items-stretch">
         <button
           onClick={onToggleCollapse}
