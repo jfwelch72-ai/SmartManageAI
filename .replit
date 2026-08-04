@@ -40,10 +40,6 @@ args = "Start application"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "tile-renderer-baselines"
-
-[[workflows.workflow.tasks]]
-task = "workflow.run"
 args = "Job worker"
 
 [[workflows.workflow.tasks]]
