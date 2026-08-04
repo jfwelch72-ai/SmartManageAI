@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings, Search } from "lucide-react";
+import { Bell, CheckCheck, User, LogOut, MessageSquare, Bot, Settings, Search, HelpCircle } from "lucide-react";
 import { openCommandPalette } from "./CommandPalette";
 import ThemeToggle from "./ThemeToggle";
 import { SidebarTrigger } from "@/components/ui/sidebar";
@@ -24,6 +24,9 @@ import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { getNotificationDestination } from "@/lib/notificationDestination";
 import { JobMetricAlertBellItem } from "@/components/notifications/JobMetricAlertItem";
 import { BackgroundActivityTray } from "@/components/BackgroundActivityTray";
+import { ContextualHelpPanel } from "./ContextualHelpPanel";
+
+const HELP_PANEL_DISMISSED_KEY = "smartmanage-help-panel-dismissed";
 
 const ASK_AI_STORAGE_KEY = "smartmanage-ask-ai-enabled";
 
@@ -58,6 +61,7 @@ export default function TopHeader() {
 
   const [, setLocation] = useLocation();
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [helpPanelOpen, setHelpPanelOpen] = useState(false);
 
   const handleNotificationClick = (notification: typeof notifications[0]) => {
     if (!notification.isRead) {
@@ -82,6 +86,7 @@ export default function TopHeader() {
   };
 
   return (
+    <>
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-14 items-center justify-between px-2 sm:px-4 gap-2 sm:gap-4">
         <div className="flex items-center gap-2">
@@ -118,6 +123,19 @@ export default function TopHeader() {
           >
             <Search className="w-5 h-5" />
           </Button>
+
+          {/* Contextual help button — visible on all pages for all roles */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setHelpPanelOpen(true)}
+            data-testid="button-contextual-help"
+            aria-label="What can I do here?"
+            title="What can I do here?"
+          >
+            <HelpCircle className="w-5 h-5" />
+          </Button>
+
           {hasContractorAccess(userRole) && (
             <Button variant="ghost" size="icon" className="relative" onClick={() => window.dispatchEvent(new CustomEvent("open-messaging-widget"))} data-testid="button-messages">
                 <MessageSquare className="w-5 h-5" />
@@ -316,5 +334,12 @@ export default function TopHeader() {
         </div>
       </div>
     </header>
+
+      {/* Contextual help slide-out panel */}
+      <ContextualHelpPanel
+        open={helpPanelOpen}
+        onClose={() => setHelpPanelOpen(false)}
+      />
+    </>
   );
 }
