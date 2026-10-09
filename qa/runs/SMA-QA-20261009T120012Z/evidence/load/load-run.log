@@ -1,0 +1,13 @@
+load fixtures: project 260020, users ok 25/25
+stage vu-1 start 2026-10-09T13:13:24.273Z (60s)
+{"stage":"vu-1","rps":0.48,"p95":51,"errRate":0,"aborted":null}
+stage vu-5 start 2026-10-09T13:14:24.642Z (120s)
+{"stage":"vu-5","rps":2.38,"p95":57,"errRate":0,"aborted":null}
+stage vu-10 start 2026-10-09T13:16:26.403Z (120s)
+{"stage":"vu-10","rps":4.87,"p95":61,"errRate":0,"aborted":null}
+stage vu-25 start 2026-10-09T13:18:28.492Z (120s)
+{"stage":"vu-25","rps":11.99,"p95":70,"errRate":0,"aborted":null}
+stage soak-25 start 2026-10-09T13:20:31.396Z (900s)
+{"stage":"soak-25","rps":12.25,"p95":72,"errRate":0,"aborted":null}
+integrity: production 201s=1347 persisted qty sum=1347
+EXIT=0

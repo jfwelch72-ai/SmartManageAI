@@ -1,0 +1,313 @@
+{
+ "meta": {
+  "id": "TEN-002",
+  "title": "Cross-tenant writes by another org's ADMIN",
+  "module": "Tenant isolation",
+  "role": "ADMIN (RealTest Subcontractors)",
+  "tenant": "RealTest Subcontractors -> RealTest Construction",
+  "req": "tenant isolation",
+  "expected": "All denied; target records unchanged"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:27.153Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "PATCH",
+   "url": "/api/projects/260015",
+   "status": 403,
+   "ms": 20,
+   "reqBody": {
+    "description": "TENANT ATTACK"
+   },
+   "resBody": {
+    "error": "Access denied"
+   },
+   "requestId": "b000d862-4a92-4a4a-a760-f1a244de55c6"
+  },
+  {
+   "at": "2026-10-09T12:33:27.167Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/change-orders",
+   "status": 403,
+   "ms": 14,
+   "reqBody": {
+    "projectId": "76e3037d-e669-4047-97a7-9ed01eeda49f",
+    "title": "x",
+    "description": "TENANT ATTACK",
+    "amount": "1"
+   },
+   "resBody": {
+    "error": "Access denied"
+   },
+   "requestId": "ca90d4ce-400a-4b47-a695-5ca716656f83"
+  },
+  {
+   "at": "2026-10-09T12:33:27.187Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/change-orders/87cf84ce-216b-4dab-bc31-c2a6e536fb5f/approve",
+   "status": 403,
+   "ms": 20,
+   "reqBody": {},
+   "resBody": {
+    "error": "Access denied"
+   },
+   "requestId": "5588f09a-f7e2-4c11-b83a-2aaa40760cdb"
+  },
+  {
+   "at": "2026-10-09T12:33:27.200Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "PATCH",
+   "url": "/api/aia-billing/pay-applications/08977ccb-9381-4ee8-b495-8fe11103e110/status",
+   "status": 404,
+   "ms": 13,
+   "reqBody": {
+    "status": "DRAFT"
+   },
+   "resBody": {
+    "error": "Not found"
+   },
+   "requestId": "b6d96c3f-5b75-49b1-8525-3473265f1700"
+  },
+  {
+   "at": "2026-10-09T12:33:27.221Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/bids/260008/convert",
+   "status": 403,
+   "ms": 20,
+   "reqBody": {},
+   "resBody": {
+    "error": "Access denied"
+   },
+   "requestId": "8d16b550-4ac2-4e56-84ad-c80f50492f1c"
+  },
+  {
+   "at": "2026-10-09T12:33:27.233Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/line-items/bulk",
+   "status": 404,
+   "ms": 12,
+   "reqBody": {
+    "lineItems": [
+     {
+      "category": "GENERAL",
+      "description": "TENANT ATTACK",
+      "quantity": "1",
+      "unit": "EA",
+      "materialCost": "1",
+      "laborCost": "0",
+      "laborHours": "0",
+      "equipmentCost": "0",
+      "equipmentHours": "0",
+      "consumablesCost": "0",
+      "subcontractCost": "0",
+      "overheadAllocation": "0",
+      "profitAllocation": "0"
+     }
+    ]
+   },
+   "resBody": {
+    "error": "Estimate not found"
+   },
+   "requestId": "58a9b740-5a84-47aa-a81f-ab55af447311"
+  },
+  {
+   "at": "2026-10-09T12:33:27.257Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/scope-items/27bc019b-8ff9-41f3-9cef-880c7d8fee26/progress",
+   "status": 201,
+   "ms": 24,
+   "reqBody": {
+    "workDate": "2026-07-01",
+    "quantityCompleted": "1"
+   },
+   "resBody": {
+    "id": "6176cc56-5fd3-480d-bb93-3aecaeb5d562",
+    "scopeItemId": "27bc019b-8ff9-41f3-9cef-880c7d8fee26",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "organizationSowItemId": null,
+    "workDate": "2026-07-01",
+    "quantityCompleted": "1.00",
+    "billedQuantity": "0.00",
+    "billingStatus": "NOT_READY",
+    "billedDate": null,
+    "billedById": null,
+    "notes": null,
+    "laborHours": null,
+    "laborCost": null,
+    "crewSize": null,
+    "materialCost": null,
+    "equipmentHours": null,
+    "equipmentCost": null,
+    "laborHoursPerUnit": null,
+    "laborCostPerUnit": null,
+    "materialCostPerUnit": null,
+    "totalCostPerUnit": null,
+    "createdById": "8009e4ab-3894-459e-ade9-2b776f1f8c5d",
+    "createdAt": "2026-10-09T12:33:27.243Z",
+    "updatedAt": "2026-10-09T12:33:27.243Z"
+   },
+   "requestId": "fb406740-53f8-496a-a060-22ac58a9738f"
+  },
+  {
+   "at": "2026-10-09T12:33:27.295Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/time-clock/clock-in",
+   "status": 400,
+   "ms": 38,
+   "reqBody": {
+    "projectId": "76e3037d-e669-4047-97a7-9ed01eeda49f"
+   },
+   "resBody": {
+    "error": "Project not found or does not belong to your organization"
+   },
+   "requestId": "a9090212-6b1b-4539-9ea3-45c02264b18e"
+  },
+  {
+   "at": "2026-10-09T12:33:27.313Z",
+   "actor": "subadmin@(ADMIN, RealTest Subcontractors)",
+   "method": "POST",
+   "url": "/api/time-clock/clock-out",
+   "status": 400,
+   "ms": 18,
+   "reqBody": {},
+   "resBody": {
+    "error": "No active shift found. Please clock in first."
+   },
+   "requestId": "4c0981b3-5630-4c54-81ca-0d5d843c8703"
+  },
+  {
+   "at": "2026-10-09T12:33:27.133Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/projects/260015",
+   "status": 200,
+   "ms": 16,
+   "resBody": {
+    "id": "c003cab3-84da-4756-badb-25cc9f32a296",
+    "name": "SMA-QA-20261009T120012Z Completion-gate probe (SYNTHETIC)",
+    "code": "260015",
+    "clientName": "QA",
+    "clientContactName": null,
+    "clientContactEmail": null,
+    "clientContactPhone": null,
+    "status": "CLOSED",
+    "locationAddress": null,
+    "city": null,
+    "state": null,
+    "startDate": null,
+    "endDate": null,
+    "estimatedCompletionDate": null,
+    "description": "edit after close",
+    "budget": null,
+    "contractAmount": null,
+    "budgetAmount": null,
+    "texturaDrawDate": null,
+    "drawDayOfMonth": null,
+    "estimatorId": null,
+    "superintendentId": null,
+    "projectManagerId": null,
+    "gcOrganizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "ownerRepOrganizationId": null,
+    "siteLatitude": null,
+    "siteLongitude": null,
+    "lastGeocodeAttemptAt": null,
+    "lastGeocodeStatus": null,
+    "geocodeAttemptCount": 0,
+    "geofenceRadius": null,
+    "geofenceEnforcement": "OFF",
+    "budgetAlertThreshold": "80.00",
+    "budgetCriticalThreshold": "95.00",
+    "autoInvoice": false,
+    "autoChangeOrderEnabled": true,
+    "autoChangeOrderThreshold": "0.00",
+    "safetyOfficerId": null,
+    "payrollFormVariant": "WH_347",
+    "regionFactorId": null,
+    "wageDecision": null,
+    "rateChangeSigningPolicy": null,
+    "programId": null,
+    "divisionId": null,
+    "primaryTradeType": null,
+    "createdAt": "2026-10-09T12:29:36.255Z",
+    "updatedAt": "2026-10-09T12:29:36.472Z",
+    "scopeItems": []
+   },
+   "requestId": "593894cf-b197-4837-9f39-e5b95396994b"
+  },
+  {
+   "at": "2026-10-09T12:33:27.326Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/projects/260015",
+   "status": 200,
+   "ms": 11,
+   "resBody": {
+    "id": "c003cab3-84da-4756-badb-25cc9f32a296",
+    "name": "SMA-QA-20261009T120012Z Completion-gate probe (SYNTHETIC)",
+    "code": "260015",
+    "clientName": "QA",
+    "clientContactName": null,
+    "clientContactEmail": null,
+    "clientContactPhone": null,
+    "status": "CLOSED",
+    "locationAddress": null,
+    "city": null,
+    "state": null,
+    "startDate": null,
+    "endDate": null,
+    "estimatedCompletionDate": null,
+    "description": "edit after close",
+    "budget": null,
+    "contractAmount": null,
+    "budgetAmount": null,
+    "texturaDrawDate": null,
+    "drawDayOfMonth": null,
+    "estimatorId": null,
+    "superintendentId": null,
+    "projectManagerId": null,
+    "gcOrganizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "ownerRepOrganizationId": null,
+    "siteLatitude": null,
+    "siteLongitude": null,
+    "lastGeocodeAttemptAt": null,
+    "lastGeocodeStatus": null,
+    "geocodeAttemptCount": 0,
+    "geofenceRadius": null,
+    "geofenceEnforcement": "OFF",
+    "budgetAlertThreshold": "80.00",
+    "budgetCriticalThreshold": "95.00",
+    "autoInvoice": false,
+    "autoChangeOrderEnabled": true,
+    "autoChangeOrderThreshold": "0.00",
+    "safetyOfficerId": null,
+    "payrollFormVariant": "WH_347",
+    "regionFactorId": null,
+    "wageDecision": null,
+    "rateChangeSigningPolicy": null,
+    "programId": null,
+    "divisionId": null,
+    "primaryTradeType": null,
+    "createdAt": "2026-10-09T12:29:36.255Z",
+    "updatedAt": "2026-10-09T12:29:36.472Z",
+    "scopeItems": []
+   },
+   "requestId": "84a44d8d-67ac-4367-9116-352cf3064418"
+  }
+ ],
+ "notes": [
+  "PATCH project: 403 {\"error\":\"Access denied\"}",
+  "POST CO on foreign project: 403 {\"error\":\"Access denied\"}",
+  "approve foreign CO: 403 {\"error\":\"Access denied\"}",
+  "foreign pay app status: 404 {\"error\":\"Not found\"}",
+  "convert foreign bid: 403 {\"error\":\"Access denied\"}",
+  "foreign estimate bulk lines: 404 {\"error\":\"Estimate not found\"}",
+  "foreign scope progress: 201 {\"id\":\"6176cc56-5fd3-480d-bb93-3aecaeb5d562\",\"scopeItemId\":\"27bc019b-8ff9-41f3-9cef-880c7d8fee26\",\"p",
+  "clock in to foreign project: 400 {\"error\":\"Project not found or does not belong to your organization\"}"
+ ]
+}

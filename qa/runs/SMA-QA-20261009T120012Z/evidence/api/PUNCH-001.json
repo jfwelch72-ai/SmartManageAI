@@ -1,0 +1,782 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "PUNCH-001",
+  "title": "Punch list: create, worker resolves, worker cannot verify, manager verifies, PDF export",
+  "module": "Closeout/Punch",
+  "role": "MANAGER + FIELD_WORKER",
+  "req": "punchListRoutes.ts:290+ role matrix",
+  "expected": "create 201; worker IN_PROGRESS/RESOLVED 200; worker VERIFIED 403; manager VERIFIED 200; PDF valid"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:29:35.004Z",
+   "actor": "manager(MANAGER)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 401,
+   "ms": 81,
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "f43795b2-1cb1-4f4f-bdd9-48f1418c9e20"
+  },
+  {
+   "at": "2026-10-09T12:29:35.121Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/auth/login",
+   "status": 200,
+   "ms": 114,
+   "reqBody": {
+    "email": "manager@realtest.com",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "user": {
+     "id": "48c6af30-677f-46be-8846-373718c11e46",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Project",
+     "lastName": "Manager",
+     "email": "manager@realtest.com",
+     "phone": "555-100-0003",
+     "role": "MANAGER",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.129Z",
+     "updatedAt": "2026-10-09T12:09:26.129Z"
+    }
+   },
+   "requestId": "f57412d3-7f05-4dca-bcfc-b9fbc9ffa7b2"
+  },
+  {
+   "at": "2026-10-09T12:29:35.147Z",
+   "actor": "manager(MANAGER)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 200,
+   "ms": 24,
+   "resBody": {
+    "user": {
+     "id": "48c6af30-677f-46be-8846-373718c11e46",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Project",
+     "lastName": "Manager",
+     "email": "manager@realtest.com",
+     "phone": "555-100-0003",
+     "role": "MANAGER",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.129Z",
+     "updatedAt": "2026-10-09T12:09:26.129Z",
+     "isHustlerOwner": false
+    },
+    "organizationName": "RealTest Construction",
+    "organizationOnboardingStatus": "COMPLETED"
+   },
+   "requestId": "359a2a54-f9de-4e74-90a9-c9fc46c1cde7"
+  },
+  {
+   "at": "2026-10-09T12:29:35.567Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/projects/260001/punch-list",
+   "status": 201,
+   "ms": 26,
+   "reqBody": {
+    "title": "Grind high spot at pad F-17 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "location": "Grid C-4"
+   },
+   "resBody": {
+    "id": "69b02e23-8766-41be-a3ff-c60d48961bf5",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-001",
+    "title": "Grind high spot at pad F-17 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "OPEN",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.561Z",
+      "note": "Item created"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": null,
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.562Z",
+    "updatedAt": "2026-10-09T12:29:35.562Z"
+   },
+   "requestId": "a7682f13-95be-43d1-aaa9-77491631c793"
+  },
+  {
+   "at": "2026-10-09T12:29:35.613Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/projects/260001/punch-list",
+   "status": 201,
+   "ms": 45,
+   "reqBody": {
+    "title": "Patch saw-cut overrun at door 3 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "location": "Grid C-4"
+   },
+   "resBody": {
+    "id": "0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-002",
+    "title": "Patch saw-cut overrun at door 3 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "OPEN",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.604Z",
+      "note": "Item created"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": null,
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.605Z",
+    "updatedAt": "2026-10-09T12:29:35.605Z"
+   },
+   "requestId": "ef2da6a8-26ac-471e-a927-f38280e33787"
+  },
+  {
+   "at": "2026-10-09T12:29:35.719Z",
+   "actor": "manager(MANAGER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/69b02e23-8766-41be-a3ff-c60d48961bf5",
+   "status": 200,
+   "ms": 27,
+   "reqBody": {
+    "status": "VERIFIED"
+   },
+   "resBody": {
+    "id": "69b02e23-8766-41be-a3ff-c60d48961bf5",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-001",
+    "title": "Grind high spot at pad F-17 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "VERIFIED",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.561Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.636Z"
+     },
+     {
+      "status": "RESOLVED",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.661Z"
+     },
+     {
+      "status": "VERIFIED",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.709Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": "2026-10-09T12:29:35.661Z",
+    "verifiedAt": "2026-10-09T12:29:35.709Z",
+    "verifiedById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.562Z",
+    "updatedAt": "2026-10-09T12:29:35.709Z"
+   },
+   "requestId": "7e413a55-6f4f-4018-b3f4-287c6b326deb"
+  },
+  {
+   "at": "2026-10-09T12:29:35.802Z",
+   "actor": "manager(MANAGER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+   "status": 200,
+   "ms": 23,
+   "reqBody": {
+    "status": "VERIFIED"
+   },
+   "resBody": {
+    "id": "0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-002",
+    "title": "Patch saw-cut overrun at door 3 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "VERIFIED",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.604Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.736Z"
+     },
+     {
+      "status": "RESOLVED",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.754Z"
+     },
+     {
+      "status": "VERIFIED",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.794Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": "2026-10-09T12:29:35.754Z",
+    "verifiedAt": "2026-10-09T12:29:35.794Z",
+    "verifiedById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.605Z",
+    "updatedAt": "2026-10-09T12:29:35.794Z"
+   },
+   "requestId": "802ebd2d-adf5-41e9-86fb-f59fb7def169"
+  },
+  {
+   "at": "2026-10-09T12:29:35.821Z",
+   "actor": "manager(MANAGER)",
+   "method": "GET",
+   "url": "/api/projects/260001/punch-list/export/pdf",
+   "status": 200,
+   "ms": 19,
+   "resBody": "[binary 3386 bytes text/html; charset=utf-8]",
+   "requestId": "809f4103-1191-4ebd-9ddc-9f24c1ed610d"
+  },
+  {
+   "at": "2026-10-09T12:29:35.307Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 401,
+   "ms": 3,
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "51878be2-2080-4e11-91f9-84eeeae1b457"
+  },
+  {
+   "at": "2026-10-09T12:29:35.404Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/auth/login",
+   "status": 200,
+   "ms": 95,
+   "reqBody": {
+    "email": "worker@realtest.com",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "user": {
+     "id": "733a6e26-e821-4223-919f-cbe15abdba24",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Field",
+     "lastName": "Worker",
+     "email": "worker@realtest.com",
+     "phone": "555-100-0007",
+     "role": "FIELD_WORKER",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.140Z",
+     "updatedAt": "2026-10-09T12:22:29.324Z"
+    }
+   },
+   "requestId": "717ccfe6-99f9-4369-8c13-10572c8fb626"
+  },
+  {
+   "at": "2026-10-09T12:29:35.429Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 200,
+   "ms": 23,
+   "resBody": {
+    "user": {
+     "id": "733a6e26-e821-4223-919f-cbe15abdba24",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Field",
+     "lastName": "Worker",
+     "email": "worker@realtest.com",
+     "phone": "555-100-0007",
+     "role": "FIELD_WORKER",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.140Z",
+     "updatedAt": "2026-10-09T12:22:29.324Z",
+     "isHustlerOwner": false
+    },
+    "organizationName": "RealTest Construction",
+    "organizationOnboardingStatus": "COMPLETED"
+   },
+   "requestId": "869f0032-6689-40c2-ae0d-d4387fa22ba0"
+  },
+  {
+   "at": "2026-10-09T12:29:35.641Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/69b02e23-8766-41be-a3ff-c60d48961bf5",
+   "status": 200,
+   "ms": 27,
+   "reqBody": {
+    "status": "IN_PROGRESS"
+   },
+   "resBody": {
+    "id": "69b02e23-8766-41be-a3ff-c60d48961bf5",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-001",
+    "title": "Grind high spot at pad F-17 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "IN_PROGRESS",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.561Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.636Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": null,
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.562Z",
+    "updatedAt": "2026-10-09T12:29:35.636Z"
+   },
+   "requestId": "3c8350f4-3237-4e17-b992-2987390f97ae"
+  },
+  {
+   "at": "2026-10-09T12:29:35.666Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/69b02e23-8766-41be-a3ff-c60d48961bf5",
+   "status": 200,
+   "ms": 24,
+   "reqBody": {
+    "status": "RESOLVED"
+   },
+   "resBody": {
+    "id": "69b02e23-8766-41be-a3ff-c60d48961bf5",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-001",
+    "title": "Grind high spot at pad F-17 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "RESOLVED",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.561Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.636Z"
+     },
+     {
+      "status": "RESOLVED",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.661Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": "2026-10-09T12:29:35.661Z",
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.562Z",
+    "updatedAt": "2026-10-09T12:29:35.661Z"
+   },
+   "requestId": "477549a1-648a-444c-bc91-be98dcbb3c4b"
+  },
+  {
+   "at": "2026-10-09T12:29:35.691Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/69b02e23-8766-41be-a3ff-c60d48961bf5",
+   "status": 403,
+   "ms": 25,
+   "reqBody": {
+    "status": "VERIFIED"
+   },
+   "resBody": {
+    "error": "Role 'FIELD_WORKER' cannot transition from 'RESOLVED' to 'VERIFIED'."
+   },
+   "requestId": "fa02f9bb-7696-4ec8-acfd-acf0f8bb8a4a"
+  },
+  {
+   "at": "2026-10-09T12:29:35.740Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+   "status": 200,
+   "ms": 21,
+   "reqBody": {
+    "status": "IN_PROGRESS"
+   },
+   "resBody": {
+    "id": "0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-002",
+    "title": "Patch saw-cut overrun at door 3 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "IN_PROGRESS",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.604Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.736Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": null,
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.605Z",
+    "updatedAt": "2026-10-09T12:29:35.736Z"
+   },
+   "requestId": "77ae3ab0-3749-4701-b03d-e17a11ec632c"
+  },
+  {
+   "at": "2026-10-09T12:29:35.759Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+   "status": 200,
+   "ms": 18,
+   "reqBody": {
+    "status": "RESOLVED"
+   },
+   "resBody": {
+    "id": "0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "itemNumber": "PLI-260001-002",
+    "title": "Patch saw-cut overrun at door 3 (SYNTHETIC)",
+    "description": "SMA-QA-20261009T120012Z",
+    "location": "Grid C-4",
+    "trade": "GENERAL",
+    "priority": "MEDIUM",
+    "status": "RESOLVED",
+    "assignedToUserId": null,
+    "assignedToName": null,
+    "assignedToEmail": null,
+    "dueDate": null,
+    "attachments": [],
+    "statusHistory": [
+     {
+      "status": "OPEN",
+      "changedBy": "Project Manager",
+      "changedAt": "2026-10-09T12:29:35.604Z",
+      "note": "Item created"
+     },
+     {
+      "status": "IN_PROGRESS",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.736Z"
+     },
+     {
+      "status": "RESOLVED",
+      "changedBy": "Field Worker",
+      "changedAt": "2026-10-09T12:29:35.754Z"
+     }
+    ],
+    "inspectionId": null,
+    "resolvedAt": "2026-10-09T12:29:35.754Z",
+    "verifiedAt": null,
+    "verifiedById": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:29:35.605Z",
+    "updatedAt": "2026-10-09T12:29:35.754Z"
+   },
+   "requestId": "e405cb92-513f-48fd-834c-f8e0b683060d"
+  },
+  {
+   "at": "2026-10-09T12:29:35.777Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/punch-list/0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+   "status": 403,
+   "ms": 18,
+   "reqBody": {
+    "status": "VERIFIED"
+   },
+   "resBody": {
+    "error": "Role 'FIELD_WORKER' cannot transition from 'RESOLVED' to 'VERIFIED'."
+   },
+   "requestId": "94b0b651-16bc-4aeb-9aca-c1176a715fc5"
+  }
+ ],
+ "notes": [
+  "statuses 200,200,403,200,200,200,403,200; pdf 200 <!DO"
+ ]
+}

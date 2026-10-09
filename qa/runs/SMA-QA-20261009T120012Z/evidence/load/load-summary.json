@@ -1,0 +1,434 @@
+{
+ "runId": "SMA-QA-20261009T120012Z",
+ "base": "http://localhost:5000",
+ "maxRps": 20,
+ "thinkMs": "1000-3000",
+ "stages": [
+  {
+   "stage": "vu-1",
+   "durationSec": 60,
+   "samples": 29,
+   "achievedRps": 0.48,
+   "err5xxOrNet": 0,
+   "errRate": 0,
+   "status4xx": 0,
+   "p50": 25,
+   "p95": 51,
+   "p99": 74,
+   "ops": {
+    "timeclock_cycle": {
+     "n": 3,
+     "p50": 51,
+     "p95": 74,
+     "p99": 74,
+     "statuses": {
+      "200": 3
+     }
+    },
+    "production_write": {
+     "n": 5,
+     "p50": 33,
+     "p95": 50,
+     "p99": 50,
+     "statuses": {
+      "201": 5
+     }
+    },
+    "project_read": {
+     "n": 7,
+     "p50": 22,
+     "p95": 27,
+     "p99": 27,
+     "statuses": {
+      "200": 7
+     }
+    },
+    "project_search": {
+     "n": 8,
+     "p50": 20,
+     "p95": 50,
+     "p99": 50,
+     "statuses": {
+      "200": 8
+     }
+    },
+    "schedule_read": {
+     "n": 3,
+     "p50": 22,
+     "p95": 28,
+     "p99": 28,
+     "statuses": {
+      "200": 3
+     }
+    },
+    "cost_ledger_read": {
+     "n": 2,
+     "p50": 27,
+     "p95": 29,
+     "p99": 29,
+     "statuses": {
+      "200": 2
+     }
+    },
+    "file_g702_pdf": {
+     "n": 1,
+     "p50": 48,
+     "p95": 48,
+     "p99": 48,
+     "statuses": {
+      "200": 1
+     }
+    }
+   },
+   "aborted": null
+  },
+  {
+   "stage": "vu-5",
+   "durationSec": 122,
+   "samples": 290,
+   "achievedRps": 2.38,
+   "err5xxOrNet": 0,
+   "errRate": 0,
+   "status4xx": 0,
+   "p50": 25,
+   "p95": 57,
+   "p99": 130,
+   "ops": {
+    "project_read": {
+     "n": 80,
+     "p50": 23,
+     "p95": 33,
+     "p99": 68,
+     "statuses": {
+      "200": 80
+     }
+    },
+    "scope_read": {
+     "n": 25,
+     "p50": 25,
+     "p95": 33,
+     "p99": 56,
+     "statuses": {
+      "200": 25
+     }
+    },
+    "production_write": {
+     "n": 32,
+     "p50": 32,
+     "p95": 131,
+     "p99": 131,
+     "statuses": {
+      "201": 32
+     }
+    },
+    "project_search": {
+     "n": 45,
+     "p50": 23,
+     "p95": 29,
+     "p99": 43,
+     "statuses": {
+      "200": 45
+     }
+    },
+    "timeclock_cycle": {
+     "n": 25,
+     "p50": 56,
+     "p95": 74,
+     "p99": 96,
+     "statuses": {
+      "200": 25
+     }
+    },
+    "schedule_read": {
+     "n": 41,
+     "p50": 22,
+     "p95": 35,
+     "p99": 47,
+     "statuses": {
+      "200": 41
+     }
+    },
+    "cost_ledger_read": {
+     "n": 26,
+     "p50": 27,
+     "p95": 36,
+     "p99": 38,
+     "statuses": {
+      "200": 26
+     }
+    },
+    "file_g702_pdf": {
+     "n": 16,
+     "p50": 32,
+     "p95": 42,
+     "p99": 42,
+     "statuses": {
+      "200": 16
+     }
+    }
+   },
+   "aborted": null
+  },
+  {
+   "stage": "vu-10",
+   "durationSec": 122,
+   "samples": 595,
+   "achievedRps": 4.87,
+   "err5xxOrNet": 0,
+   "errRate": 0,
+   "status4xx": 0,
+   "p50": 25,
+   "p95": 61,
+   "p99": 105,
+   "ops": {
+    "project_read": {
+     "n": 145,
+     "p50": 23,
+     "p95": 38,
+     "p99": 140,
+     "statuses": {
+      "200": 145
+     }
+    },
+    "scope_read": {
+     "n": 55,
+     "p50": 23,
+     "p95": 44,
+     "p99": 100,
+     "statuses": {
+      "200": 55
+     }
+    },
+    "production_write": {
+     "n": 57,
+     "p50": 29,
+     "p95": 54,
+     "p99": 176,
+     "statuses": {
+      "201": 57
+     }
+    },
+    "cost_ledger_read": {
+     "n": 65,
+     "p50": 27,
+     "p95": 50,
+     "p99": 105,
+     "statuses": {
+      "200": 65
+     }
+    },
+    "schedule_read": {
+     "n": 97,
+     "p50": 20,
+     "p95": 37,
+     "p99": 79,
+     "statuses": {
+      "200": 97
+     }
+    },
+    "timeclock_cycle": {
+     "n": 68,
+     "p50": 55,
+     "p95": 97,
+     "p99": 189,
+     "statuses": {
+      "200": 68
+     }
+    },
+    "project_search": {
+     "n": 80,
+     "p50": 22,
+     "p95": 35,
+     "p99": 40,
+     "statuses": {
+      "200": 80
+     }
+    },
+    "file_g702_pdf": {
+     "n": 28,
+     "p50": 29,
+     "p95": 49,
+     "p99": 75,
+     "statuses": {
+      "200": 28
+     }
+    }
+   },
+   "aborted": null
+  },
+  {
+   "stage": "vu-25",
+   "durationSec": 123,
+   "samples": 1473,
+   "achievedRps": 11.99,
+   "err5xxOrNet": 0,
+   "errRate": 0,
+   "status4xx": 0,
+   "p50": 27,
+   "p95": 70,
+   "p99": 362,
+   "ops": {
+    "scope_read": {
+     "n": 127,
+     "p50": 24,
+     "p95": 63,
+     "p99": 381,
+     "statuses": {
+      "200": 127
+     }
+    },
+    "project_read": {
+     "n": 370,
+     "p50": 23,
+     "p95": 50,
+     "p99": 379,
+     "statuses": {
+      "200": 370
+     }
+    },
+    "schedule_read": {
+     "n": 231,
+     "p50": 22,
+     "p95": 44,
+     "p99": 82,
+     "statuses": {
+      "200": 231
+     }
+    },
+    "production_write": {
+     "n": 141,
+     "p50": 34,
+     "p95": 75,
+     "p99": 546,
+     "statuses": {
+      "201": 141
+     }
+    },
+    "project_search": {
+     "n": 225,
+     "p50": 23,
+     "p95": 44,
+     "p99": 104,
+     "statuses": {
+      "200": 225
+     }
+    },
+    "cost_ledger_read": {
+     "n": 151,
+     "p50": 28,
+     "p95": 61,
+     "p99": 506,
+     "statuses": {
+      "200": 151
+     }
+    },
+    "file_g702_pdf": {
+     "n": 84,
+     "p50": 31,
+     "p95": 51,
+     "p99": 159,
+     "statuses": {
+      "200": 84
+     }
+    },
+    "timeclock_cycle": {
+     "n": 144,
+     "p50": 60,
+     "p95": 112,
+     "p99": 183,
+     "statuses": {
+      "200": 144
+     }
+    }
+   },
+   "aborted": null
+  },
+  {
+   "stage": "soak-25",
+   "durationSec": 903,
+   "samples": 11053,
+   "achievedRps": 12.25,
+   "err5xxOrNet": 0,
+   "errRate": 0,
+   "status4xx": 0,
+   "p50": 27,
+   "p95": 72,
+   "p99": 109,
+   "ops": {
+    "project_read": {
+     "n": 2770,
+     "p50": 24,
+     "p95": 46,
+     "p99": 70,
+     "statuses": {
+      "200": 2770
+     }
+    },
+    "project_search": {
+     "n": 1634,
+     "p50": 23,
+     "p95": 47,
+     "p99": 72,
+     "statuses": {
+      "200": 1634
+     }
+    },
+    "cost_ledger_read": {
+     "n": 1104,
+     "p50": 27,
+     "p95": 57,
+     "p99": 103,
+     "statuses": {
+      "200": 1104
+     }
+    },
+    "file_g702_pdf": {
+     "n": 576,
+     "p50": 31,
+     "p95": 59,
+     "p99": 98,
+     "statuses": {
+      "200": 576
+     }
+    },
+    "scope_read": {
+     "n": 1075,
+     "p50": 24,
+     "p95": 50,
+     "p99": 70,
+     "statuses": {
+      "200": 1075
+     }
+    },
+    "production_write": {
+     "n": 1112,
+     "p50": 35,
+     "p95": 69,
+     "p99": 102,
+     "statuses": {
+      "201": 1112
+     }
+    },
+    "timeclock_cycle": {
+     "n": 1089,
+     "p50": 66,
+     "p95": 114,
+     "p99": 174,
+     "statuses": {
+      "200": 1089
+     }
+    },
+    "schedule_read": {
+     "n": 1693,
+     "p50": 22,
+     "p95": 46,
+     "p99": 66,
+     "statuses": {
+      "200": 1693
+     }
+    }
+   },
+   "aborted": null
+  }
+ ]
+}

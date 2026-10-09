@@ -1,0 +1,7 @@
+{"run_id":"SMA-QA-20261009T120012Z","status":"COMPLETE_WITH_BLOCKERS",
+ "lifecycle_endpoint":"Primary project 260001 COMPLETE; owner billing BLOCKED (SMA-BILL-001) -> tested on fallback 260014; final retainage BLOCKED (SMA-BILL-002); turnover package BLOCKED (no object storage)",
+ "counts":{"PASS":66,"FAIL":44,"BLOCKED":18,"NOT RUN":5,"total":133},"issues":{"Critical":3,"High":17,"Medium":13,"Low":6},
+ "blockers":["Hosted Amplify URL denied by network policy","Firefox/WebKit binaries unavailable","Object storage not configured locally","No AI/integration sandbox credentials","Repository compromise SMA-SEC-001 (local clean postcss used, uncommitted)"],
+ "fixture_ids":"see state.json (no secrets)",
+ "next_actions":["Security incident response for SMA-SEC-001","Allow hosted domain in environment network settings and re-run harness against hosted URL (SMA_QA_BASE_URL) — load harness intentionally refuses non-localhost","Install Firefox/WebKit and re-run qa/harness/ui.mjs","Configure object storage + sandboxes and re-run BLOCKED tests"],
+ "resume":"see qa/README.md"}

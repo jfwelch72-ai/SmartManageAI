@@ -1,0 +1,20 @@
+{
+ "laborF120": 151800.0,
+ "materialH120": 281329.68,
+ "equipmentJ120_cached": 0.0,
+ "equipmentJ_rows11_112": 0.0,
+ "subL120": 98850.0,
+ "otherN120": 91963.0,
+ "costO120": 623942.68,
+ "priceP120_unrounded": 782052.0974789915,
+ "priceP120_cents": 782052.1,
+ "profitQ120": 158109.42,
+ "marginR120": 0.2021724869592067,
+ "app_sum_line_cents": 782052.11,
+ "alternate_rows56_57_price": 17074.29,
+ "base_ex_alt_unrounded": 764977.8117647058,
+ "P23_if_template": 44964.71,
+ "P120_if_P23_template": 827013.8,
+ "A27_pads_times_yards": 881.28,
+ "B27": 1014
+}

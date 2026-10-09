@@ -1,0 +1,2 @@
+calendar,workingDays,holidays,tz
+QA synthetic,Mon-Fri,none,UTC (app stores dates; tz behavior noted)

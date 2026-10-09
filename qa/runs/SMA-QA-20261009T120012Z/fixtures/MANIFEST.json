@@ -1,0 +1,552 @@
+[
+ {
+  "file": "fixtures/estimate_reconciliation.xlsx",
+  "type": "xlsx",
+  "purpose": "Cell-level mapping, row classification, independent expected results, source issues",
+  "provenance": "DERIVED from source workbook",
+  "test_ids": "EST-*, PRJ-*",
+  "related_records": "",
+  "sha256": "6605cce06a56ac999c96a76ea7e673025085afd54f30cd2fcad6dd76a829d56a",
+  "bytes": 16748
+ },
+ {
+  "file": "fixtures/expected_results.json",
+  "type": "json",
+  "purpose": "Independent expected estimate totals (precision + rounding)",
+  "provenance": "DERIVED",
+  "test_ids": "EST-IMP-002, EST-CALC-001, EST-ALT-001",
+  "related_records": "",
+  "sha256": "4b9b02bda0fe8316913832042ffde6a3d9a20c06cef141ed5434968cd94bb156",
+  "bytes": 548
+ },
+ {
+  "file": "fixtures/normalized_import_00420.csv",
+  "type": "csv",
+  "purpose": "Deterministic normalized dataset (NOT a corrected estimate) used for EST-IMP-002 bulk load",
+  "provenance": "DERIVED from source (no value changes)",
+  "test_ids": "EST-IMP-002",
+  "related_records": "eb5babbd-ee04-4459-9a67-6fde14865374",
+  "sha256": "0cc850824a57948893ed94cbf0050e422d5260d76c09878f005b76ef1ffec56d",
+  "bytes": 2227
+ },
+ {
+  "file": "fixtures/scope_and_exclusions.pdf",
+  "type": "pdf",
+  "purpose": "Scope and exclusions",
+  "provenance": "SYNTHETIC",
+  "test_ids": "EST-NOTE-001, EST-PROP-*",
+  "related_records": "260001",
+  "sha256": "12b0421bcfa37653b1aa19ac6460c821b27616ad0f440b1b3e9149c1781e1100",
+  "bytes": 2067
+ },
+ {
+  "file": "fixtures/alternate_schedule.pdf",
+  "type": "pdf",
+  "purpose": "Alternate schedule",
+  "provenance": "SYNTHETIC",
+  "test_ids": "EST-ALT-001, EST-PROP-*",
+  "related_records": "057560dd-1d2f-402d-ada8-5c9727063399",
+  "sha256": "f9b49a9c15e7aec58c50e7756c271c8f0f12449c9e93464ba16fc5dead00779c",
+  "bytes": 2008
+ },
+ {
+  "file": "fixtures/award_notice.pdf",
+  "type": "pdf",
+  "purpose": "Award notice",
+  "provenance": "SYNTHETIC",
+  "test_ids": "BID-AWD-001",
+  "related_records": "260001",
+  "sha256": "ee5d7a98147e6e9545dea919d45c4a1b40fedd54b8ab2b9c6b1f4f1c55ef1bbc",
+  "bytes": 1959
+ },
+ {
+  "file": "fixtures/test_prime_agreement.pdf",
+  "type": "pdf",
+  "purpose": "Test prime agreement",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CTR-EXEC-001",
+  "related_records": "ec183248-1e59-4a49-be02-bddfcaf369c7",
+  "sha256": "2dd4978acba2d65d6b7e4a14ae0280d19206f9e499e0805ed52302578176366e",
+  "bytes": 1902
+ },
+ {
+  "file": "fixtures/baseline_sov.xlsx",
+  "type": "xlsx",
+  "purpose": "Baseline schedule of values (= estimate line prices)",
+  "provenance": "DERIVED",
+  "test_ids": "PRJ-SOV-001",
+  "related_records": "5902a27d-66ee-4be0-a3c9-ef2e8e86f141",
+  "sha256": "954a4bb8faf691e571c3615f7aabde60c3b0420c770410af226118fdc5ec1e11",
+  "bytes": 6252
+ },
+ {
+  "file": "fixtures/cost_code_mapping.csv",
+  "type": "csv",
+  "purpose": "Cost-code mapping as seeded by award",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PRJ-BUD-001",
+  "related_records": "",
+  "sha256": "c104e2769aba8958d2f3b1832e2fdea86a4e593b6fd087e69f85fda7527d6f69",
+  "bytes": 2616
+ },
+ {
+  "file": "fixtures/project_contacts.csv",
+  "type": "csv",
+  "purpose": "Project contacts",
+  "provenance": "SYNTHETIC",
+  "test_ids": "LC-CRM-001",
+  "related_records": "",
+  "sha256": "3e6e545f8d53d25f47c286544775f0bb0eb0a1aebe427ad39817478a6995acf5",
+  "bytes": 252
+ },
+ {
+  "file": "fixtures/work_calendar.csv",
+  "type": "csv",
+  "purpose": "Work calendar",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SCH-004",
+  "related_records": "",
+  "sha256": "7a1aad56c18162db81e69adb36ba9e6cec512e1fc4f5f1e54d8e445bf697c1be",
+  "bytes": 103
+ },
+ {
+  "file": "fixtures/task_schedule.csv",
+  "type": "csv",
+  "purpose": "Task schedule with dependencies/milestone (independent CPM)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SCH-001, SCH-004",
+  "related_records": "",
+  "sha256": "075d49be67ffe1130482fb5a2f46b76436940e2dc65dfbd7a77dfb40087c5798",
+  "bytes": 318
+ },
+ {
+  "file": "fixtures/baseline_staffing.csv",
+  "type": "csv",
+  "purpose": "Baseline staffing (synthetic)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "RES-001",
+  "related_records": "",
+  "sha256": "1b1703184eb792af7323cb48fc58ea64dba9b4e9d738486bc5a799cb26f7a4e5",
+  "bytes": 151
+ },
+ {
+  "file": "fixtures/equipment_roster.csv",
+  "type": "csv",
+  "purpose": "Equipment roster & cost rates (synthetic rates)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "RES-002, RES-003",
+  "related_records": "",
+  "sha256": "44f3d3f8e2ad669cfcb8061f138621527756ed231c4b9e0e6286685e0c2f6380",
+  "bytes": 235
+ },
+ {
+  "file": "fixtures/procurement_schedule.csv",
+  "type": "csv",
+  "purpose": "Procurement schedule",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROC-001",
+  "related_records": "",
+  "sha256": "bf6c320e4ee65dbd65cfd69f769e4cb954f8eb11c14dcb80ac429885074db915",
+  "bytes": 183
+ },
+ {
+  "file": "fixtures/employee_roster.csv",
+  "type": "csv",
+  "purpose": "Employee roster & pay rules (synthetic)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "JC-001, TIME-*",
+  "related_records": "",
+  "sha256": "02add9a7f9efae0b862a4b46f639fc4dcd5570e3d70df689bbf8301db32c7607",
+  "bytes": 200
+ },
+ {
+  "file": "fixtures/subcontractor_roster.csv",
+  "type": "csv",
+  "purpose": "Subcontractor roster",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SUB-001",
+  "related_records": "664de23d-e429-415e-a060-ec278f231290",
+  "sha256": "1324a495b9ebb00444bb1e290316cd556cec689883ba241223154514c12ff378",
+  "bytes": 97
+ },
+ {
+  "file": "fixtures/vendor_quote.pdf",
+  "type": "pdf",
+  "purpose": "Vendor Quote \u2014 Fictional Rebar Supply Co",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROC-001",
+  "related_records": "3f0a8eb0-356b-4893-ab68-57d563617a61",
+  "sha256": "033b7d9c20f6b8463039e25ae257ed066e3c058f9a16fac32413fbb3307bb038",
+  "bytes": 1813
+ },
+ {
+  "file": "fixtures/test_subcontract.pdf",
+  "type": "pdf",
+  "purpose": "Subcontract (fixture)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SUB-001",
+  "related_records": "d4b494e6-b585-4a63-863d-2636feb107c4",
+  "sha256": "189a9c0ae65b112a3b19274c8fab22477581c4e869d6bb7a53d0ce60e975e4f1",
+  "bytes": 1814
+ },
+ {
+  "file": "fixtures/purchase_order.pdf",
+  "type": "pdf",
+  "purpose": "Purchase Order PO-0001 (fixture)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROC-001",
+  "related_records": "73f67dee-919c-46c0-8120-c71265def770",
+  "sha256": "906511855295a9b525469ace17f6f66d7de244daead865448d1b01cbc191b313",
+  "bytes": 1763
+ },
+ {
+  "file": "fixtures/delivery_ticket.pdf",
+  "type": "pdf",
+  "purpose": "Delivery Ticket DT-QA-0001",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROC-001",
+  "related_records": "73f67dee-919c-46c0-8120-c71265def770",
+  "sha256": "b1368c642942c7af95206a75abd1cfe367579ffb6d62188d90a9503389b550b1",
+  "bytes": 1744
+ },
+ {
+  "file": "fixtures/supplier_invoice.pdf",
+  "type": "pdf",
+  "purpose": "Supplier Invoice INV-SMA-QA-20261009T120012Z-1",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROC-001",
+  "related_records": "60decbf0-9795-4903-b5e8-d1a6f0220307",
+  "sha256": "36b9e7d99cb811ce4d935496ad60cc7af5598d52f45be6b4d25708b4040887ce",
+  "bytes": 1762
+ },
+ {
+  "file": "fixtures/daily_field_report.pdf",
+  "type": "pdf",
+  "purpose": "Daily Field Report 2026-07-20",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROD-001",
+  "related_records": "260001",
+  "sha256": "9df1b2f59bf207692e10ec5c82415f3a6c2c06a16a2cac57e41a29dde573259f",
+  "bytes": 1808
+ },
+ {
+  "file": "fixtures/equipment_inspection_maintenance.pdf",
+  "type": "pdf",
+  "purpose": "Equipment Inspection & Maintenance",
+  "provenance": "SYNTHETIC",
+  "test_ids": "RES-003",
+  "related_records": "0ddd5d98-bd0a-4962-9be2-77106e55f93d",
+  "sha256": "878003db280a3721c0dd829f79dd169e5c355f24cb93b8d88808f63456d0a430",
+  "bytes": 1778
+ },
+ {
+  "file": "fixtures/safety_checklist.pdf",
+  "type": "pdf",
+  "purpose": "Safety Checklist \u2014 saw cutting",
+  "provenance": "SYNTHETIC",
+  "test_ids": "(no API run; see coverage)",
+  "related_records": "",
+  "sha256": "83bb865fb3631655c5c42212c8ccd590f8f23f387567856029140df4145ea664",
+  "bytes": 1789
+ },
+ {
+  "file": "fixtures/delay_report.pdf",
+  "type": "pdf",
+  "purpose": "Delay Report",
+  "provenance": "SYNTHETIC",
+  "test_ids": "(fixture only)",
+  "related_records": "",
+  "sha256": "7e5aec681b2313828c896f6085129b578945917ea274458c2fa91cdd065fd28d",
+  "bytes": 1758
+ },
+ {
+  "file": "fixtures/rfi_and_response.pdf",
+  "type": "pdf",
+  "purpose": "RFI-001 & Response",
+  "provenance": "SYNTHETIC",
+  "test_ids": "RFI-001",
+  "related_records": "74fdd216-1fdd-44b4-9bf7-96393358494a",
+  "sha256": "144835dc4bd3d460a88ebb966220455f54e4c1b30ca2d1412225f2fa5fe7c900",
+  "bytes": 1782
+ },
+ {
+  "file": "fixtures/submittal_and_revision.pdf",
+  "type": "pdf",
+  "purpose": "Submittal: Crackbond CSR product data",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SUBM-001",
+  "related_records": "",
+  "sha256": "fc5f25df7a1afd2002b6193033cf997c43f5f491f9cd233ad263b3ab64b62560",
+  "bytes": 1773
+ },
+ {
+  "file": "fixtures/change_request.pdf",
+  "type": "pdf",
+  "purpose": "Change Requests",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CO-001",
+  "related_records": "{\"co1\": \"40e99887-a1f2-4aea-89b1-90196f015e69\", \"co2\": \"87cf84ce-216b-4dab-bc31-c2a6e536fb5f\", \"co3\": \"7d42334e-872e-4d02-b379-4ae01e9118ec\"}",
+  "sha256": "b9e3bc076d4ef79a2f5a6e1d3bcd3d76418412750d0769715fa88df5f0fe2b0a",
+  "bytes": 1799
+ },
+ {
+  "file": "fixtures/sub_progress_claim.pdf",
+  "type": "pdf",
+  "purpose": "Subcontractor Progress Claim #1",
+  "provenance": "SYNTHETIC",
+  "test_ids": "SUB-001",
+  "related_records": "9fd9290e-ed3f-443b-b778-72832978772e",
+  "sha256": "e23e60c51c20104f2747c0a0b83303d06194b50f7f7ebe1a0bb828e00304e421",
+  "bytes": 1790
+ },
+ {
+  "file": "fixtures/completion_checklist.pdf",
+  "type": "pdf",
+  "purpose": "Completion Checklist",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CLOSE-001",
+  "related_records": "",
+  "sha256": "92467e1751d861d5444f4eda5a81516237fa720de2ccd82c56a2062b15511ac5",
+  "bytes": 1784
+ },
+ {
+  "file": "fixtures/test_warranty.pdf",
+  "type": "pdf",
+  "purpose": "Warranty (fixture)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CLOSE-001",
+  "related_records": "",
+  "sha256": "8188cc7e3bbaded3887ddd03ffa72ad2000db2df84118b2fc435b6fffa218811",
+  "bytes": 1747
+ },
+ {
+  "file": "fixtures/turnover_index.pdf",
+  "type": "pdf",
+  "purpose": "Turnover Index",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CLOSE-001",
+  "related_records": "",
+  "sha256": "8fa900eb011b0d562d0859dd7c4208e99a0ebcdf9f961a720daf72c4c58e0d8f",
+  "bytes": 1785
+ },
+ {
+  "file": "fixtures/final_report.pdf",
+  "type": "pdf",
+  "purpose": "Final Report",
+  "provenance": "SYNTHETIC",
+  "test_ids": "LC-COMPLETE-001",
+  "related_records": "",
+  "sha256": "417eee8e5c7e04527d834a0d3e3ebb7c6e33b0309b59f17aedcc8389a76a63cd",
+  "bytes": 1740
+ },
+ {
+  "file": "fixtures/completion_certificate.pdf",
+  "type": "pdf",
+  "purpose": "Certificate of Completion (fixture)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "LC-COMPLETE-001",
+  "related_records": "",
+  "sha256": "316e29db4b5de82ee8b217c6c51621f4401e18ae077b534970ca03cd0d631b30",
+  "bytes": 1757
+ },
+ {
+  "file": "fixtures/ai_injection_probe.pdf",
+  "type": "pdf",
+  "purpose": "Spec section with embedded instruction-like text",
+  "provenance": "SYNTHETIC",
+  "test_ids": "AI-INJ-001",
+  "related_records": "",
+  "sha256": "82841c28fde3c6c5f134fb6b6152d7711ed5fa204818039f8cfb7ce0de4d3bfa",
+  "bytes": 1909
+ },
+ {
+  "file": "fixtures/time_entries.csv",
+  "type": "csv",
+  "purpose": "Time entries (synthetic)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "JC-001",
+  "related_records": "",
+  "sha256": "472f42107655a8542ac8e9c2606888b17c9c44e1e4bb5a2375b7e84759d86609",
+  "bytes": 74
+ },
+ {
+  "file": "fixtures/production_entries.csv",
+  "type": "csv",
+  "purpose": "Production entries",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PROD-001",
+  "related_records": "",
+  "sha256": "2da09727196672b2ba1b673f2d45642727814caf348538f35af4f1af5bf72468",
+  "bytes": 106
+ },
+ {
+  "file": "fixtures/retainage_schedule.csv",
+  "type": "csv",
+  "purpose": "Retainage schedule",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PAY-FB-*, RET-*",
+  "related_records": "",
+  "sha256": "5884172c85dcce38fe86f06c0ad2d5d2d88d2950f89655e930d60a1af1d31b08",
+  "bytes": 105
+ },
+ {
+  "file": "fixtures/punch_list.csv",
+  "type": "csv",
+  "purpose": "Punch list",
+  "provenance": "SYNTHETIC",
+  "test_ids": "PUNCH-001",
+  "related_records": "69b02e23-8766-41be-a3ff-c60d48961bf5,0e8142f8-b813-4fc0-a85f-0b63770d23ad",
+  "sha256": "f10d5d83febed24a894107af866ba7c44c6efb6cf0a8b0821a52468cb0892555",
+  "bytes": 120
+ },
+ {
+  "file": "fixtures/site_diagram.png",
+  "type": "png",
+  "purpose": "Synthetic site diagram",
+  "provenance": "SYNTHETIC",
+  "test_ids": "(attachments blocked: object storage)",
+  "related_records": "",
+  "sha256": "f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f",
+  "bytes": 9125
+ },
+ {
+  "file": "fixtures/as_built_demo.png",
+  "type": "png",
+  "purpose": "As-built demonstration attachment",
+  "provenance": "SYNTHETIC",
+  "test_ids": "CLOSE-001",
+  "related_records": "",
+  "sha256": "f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f",
+  "bytes": 9125
+ },
+ {
+  "file": "fixtures/prevailing_wage_valid.csv",
+  "type": "csv",
+  "purpose": "Valid prevailing-wage import (positive)",
+  "provenance": "SYNTHETIC",
+  "test_ids": "FILE-POS-001",
+  "related_records": "",
+  "sha256": "cf8b4067da3a1e4af9cb9c79c37a6135dcede9c695dd91dc05dd3d4be5ae2417",
+  "bytes": 117
+ },
+ {
+  "file": "fixtures/prevailing_wage_valid.xlsx",
+  "type": "xlsx",
+  "purpose": "Valid prevailing-wage XLSX",
+  "provenance": "SYNTHETIC",
+  "test_ids": "FILE-POS-002",
+  "related_records": "",
+  "sha256": "835029f447fdfc4d8c32d3283b631e8e5eb1f2759fce327940fe4a8f8ef4080b",
+  "bytes": 4954
+ },
+ {
+  "file": "fixtures/negative/empty.csv",
+  "type": "csv",
+  "purpose": "Empty file",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-001",
+  "related_records": "",
+  "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "bytes": 0
+ },
+ {
+  "file": "fixtures/negative/image_named.xlsx",
+  "type": "xlsx",
+  "purpose": "PNG bytes with .xlsx extension (wrong ext/MIME)",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-002",
+  "related_records": "",
+  "sha256": "f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f",
+  "bytes": 9125
+ },
+ {
+  "file": "fixtures/negative/corrupt.xlsx",
+  "type": "xlsx",
+  "purpose": "Truncated XLSX (corrupt)",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-003",
+  "related_records": "",
+  "sha256": "baf7d4ebd8d24ac8bdf5e4994eb0b5ab041d2a38858867b7bb64a6ce8d2760b5",
+  "bytes": 2477
+ },
+ {
+  "file": "fixtures/negative/corrupt.pdf",
+  "type": "pdf",
+  "purpose": "Truncated PDF (corrupt)",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "(attachment uploads blocked)",
+  "related_records": "",
+  "sha256": "ec9952db958219d93c0fde638f54710bf14883f06dc7d423b24d5fccba47c3d0",
+  "bytes": 200
+ },
+ {
+  "file": "fixtures/negative/missing_required_column.csv",
+  "type": "csv",
+  "purpose": "Missing required columns",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-004",
+  "related_records": "",
+  "sha256": "46f12230e2a9a4ae2373c41d7e5df29eeffa2c3dacf83e24b868dd73aae9efb4",
+  "bytes": 32
+ },
+ {
+  "file": "fixtures/negative/invalid_values.csv",
+  "type": "csv",
+  "purpose": "Invalid date/number values",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-005",
+  "related_records": "",
+  "sha256": "675d95266c1c49e08343104310de3f56727a55f1033e01c6395a1b41189969f0",
+  "bytes": 108
+ },
+ {
+  "file": "fixtures/negative/oversized_5MiB_plus.csv",
+  "type": "csv",
+  "purpose": "Bounded oversized file (limit 5 MiB + 256 KiB)",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-006",
+  "related_records": "",
+  "sha256": "79964af36f2e57b3ca46cbdebf1d970652df0873d59fe251b8c7a01351914c9d",
+  "bytes": 5505027
+ },
+ {
+  "file": "fixtures/negative/duplicate_of_valid.csv",
+  "type": "csv",
+  "purpose": "Duplicate document (same bytes as valid)",
+  "provenance": "SYNTHETIC negative",
+  "test_ids": "FILE-NEG-007",
+  "related_records": "",
+  "sha256": "cf8b4067da3a1e4af9cb9c79c37a6135dcede9c695dd91dc05dd3d4be5ae2417",
+  "bytes": 117
+ },
+ {
+  "file": "fixtures/schedule_expected_cpm.json",
+  "type": "json",
+  "purpose": "Independent CPM expectation",
+  "provenance": "DERIVED/SYNTHETIC",
+  "test_ids": "SCH-004",
+  "related_records": "",
+  "sha256": "f63014c454e4140f84e9660b9fc024377085e2b35c57d03bd98b1aab7680bb6f",
+  "bytes": 610
+ },
+ {
+  "file": "fixtures/billing_expected.json",
+  "type": "json",
+  "purpose": "Independent G702 expectations (3 periods)",
+  "provenance": "DERIVED/SYNTHETIC",
+  "test_ids": "PAY-FB-*",
+  "related_records": "",
+  "sha256": "9b751c636f7b03e43f2217a9ede030c6a064d9caab1ea24d0bcb665b14bbde5d",
+  "bytes": 1335
+ },
+ {
+  "file": "fixtures/source/00420_Crane_Logistics_2nd_take_off_with_changes_(2).xlsx",
+  "type": "xlsx",
+  "purpose": "ORIGINAL supplied estimate (immutable, chmod 444)",
+  "provenance": "SOURCE (user-supplied)",
+  "test_ids": "EST-*, UI-IMP-001",
+  "related_records": "",
+  "sha256": "9f1dbbe3c15f411bfc316cae8bc097fca146811823b500de5cbf34ea908a7f7e",
+  "bytes": 25892
+ }
+]

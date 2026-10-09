@@ -1,0 +1,127 @@
+{
+ "meta": {
+  "id": "BID-AWD-NEG-001",
+  "title": "Bid set AWARDED via PATCH (estimator) without conversion",
+  "module": "Bids/Award",
+  "role": "ESTIMATOR then MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "convert requires ADMIN/MANAGER (bidRoutes.ts:697-700); status map allows SUBMITTED->AWARDED via PATCH (bidRoutes.ts:207-210)",
+  "expected": "Either ESTIMATOR cannot set AWARDED directly, or an AWARDED bid can still be converted; never an AWARDED bid with no project and no path to create one"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:17:01.580Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/bids",
+   "status": 201,
+   "ms": 27,
+   "reqBody": {
+    "name": "SMA-QA-20261009T120012Z PATCH-AWARDED probe",
+    "clientName": "SMA-QA-20261009T120012Z Fictional Owner (TEST)",
+    "bidAmount": "1000"
+   },
+   "resBody": {
+    "id": "1d4ba8bb-6e5b-42ba-84fc-73a5fd5795b6",
+    "name": "SMA-QA-20261009T120012Z PATCH-AWARDED probe",
+    "code": "260012",
+    "clientName": "SMA-QA-20261009T120012Z Fictional Owner (TEST)",
+    "clientContactName": null,
+    "clientContactEmail": null,
+    "clientContactPhone": null,
+    "bidAmount": "1000.00",
+    "dueDate": null,
+    "locationAddress": null,
+    "city": null,
+    "state": null,
+    "description": null,
+    "estimatorId": null,
+    "gcOrganizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "ownerRepOrganizationId": null,
+    "status": "DRAFT",
+    "convertedToProjectId": null,
+    "crmOpportunityId": null,
+    "aiWinProbability": null,
+    "awardedAt": null,
+    "submittedAt": null,
+    "wageDecision": null,
+    "createdAt": "2026-10-09T12:17:01.577Z",
+    "updatedAt": "2026-10-09T12:17:01.577Z"
+   },
+   "requestId": "8e3645e1-96f3-4a1e-b4bb-cb30349163d3"
+  },
+  {
+   "at": "2026-10-09T12:17:01.616Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/bids/260012/submit",
+   "status": 200,
+   "ms": 35,
+   "reqBody": {
+    "recipientEmail": "qa-sink@example.test"
+   },
+   "resBody": {
+    "success": true,
+    "submittedAt": "2026-10-09T12:17:01.601Z",
+    "emailSent": true
+   },
+   "requestId": "c9a2f4b1-fd70-4ee9-be2a-ecc003ebe800"
+  },
+  {
+   "at": "2026-10-09T12:17:01.644Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/bids/260012",
+   "status": 200,
+   "ms": 28,
+   "reqBody": {
+    "status": "AWARDED"
+   },
+   "resBody": {
+    "id": "1d4ba8bb-6e5b-42ba-84fc-73a5fd5795b6",
+    "name": "SMA-QA-20261009T120012Z PATCH-AWARDED probe",
+    "code": "260012",
+    "clientName": "SMA-QA-20261009T120012Z Fictional Owner (TEST)",
+    "clientContactName": null,
+    "clientContactEmail": null,
+    "clientContactPhone": null,
+    "bidAmount": "1000.00",
+    "dueDate": null,
+    "locationAddress": null,
+    "city": null,
+    "state": null,
+    "description": null,
+    "estimatorId": null,
+    "gcOrganizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "ownerRepOrganizationId": null,
+    "status": "AWARDED",
+    "convertedToProjectId": null,
+    "crmOpportunityId": null,
+    "aiWinProbability": null,
+    "awardedAt": null,
+    "submittedAt": "2026-10-09T12:17:01.601Z",
+    "wageDecision": null,
+    "createdAt": "2026-10-09T12:17:01.577Z",
+    "updatedAt": "2026-10-09T12:17:01.637Z"
+   },
+   "requestId": "f70154cd-48d3-4b9d-a714-8c8ca8523ed8"
+  },
+  {
+   "at": "2026-10-09T12:17:01.671Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/bids/260012/convert",
+   "status": 409,
+   "ms": 27,
+   "reqBody": {},
+   "resBody": {
+    "error": "Bid already awarded",
+    "newValue": "This bid has already been converted to a project."
+   },
+   "requestId": "5ff9ecab-bf1a-4ed6-9ce8-5db45bd191c1"
+  }
+ ],
+ "notes": [
+  "estimator PATCH AWARDED -> 200; manager convert -> 409 {\"error\":\"Bid already awarded\",\"newValue\":\"This bid has already been converted to a project.\"}"
+ ]
+}

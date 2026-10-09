@@ -1,0 +1,75 @@
+{
+ "synthetic": true,
+ "retainage": "10% on completed & stored (no reduction)",
+ "rounding": "cents, half-up per field",
+ "periods": [
+  {
+   "n": 1,
+   "periodTo": "2026-06-30",
+   "work": {
+    "11": 58463,
+    "13": 17723.53,
+    "16": 1714.29,
+    "28": 58285.72
+   },
+   "stored": {}
+  },
+  {
+   "n": 2,
+   "periodTo": "2026-07-31",
+   "work": {
+    "13": 17723.53,
+    "24": 38102.4,
+    "27": 159342.86,
+    "28": 58285.72
+   },
+   "stored": {
+    "25": 1822.86
+   }
+  },
+  {
+   "n": 3,
+   "periodTo": "2026-08-31",
+   "work": {
+    "25": 1822.86,
+    "27": 159342.85,
+    "29": 38571.43
+   },
+   "stored": {
+    "25": 0
+   }
+  }
+ ],
+ "expected": [
+  {
+   "n": 1,
+   "thisPeriod": 136186.54,
+   "storedToDate": 0,
+   "completedAndStored": 136186.54,
+   "retainage": 13618.65,
+   "earnedLessRetainage": 122567.89,
+   "lessPrevious": 0,
+   "currentDue": 122567.89
+  },
+  {
+   "n": 2,
+   "thisPeriod": 273454.51,
+   "storedToDate": 1822.86,
+   "completedAndStored": 411463.91,
+   "retainage": 41146.39,
+   "earnedLessRetainage": 370317.52,
+   "lessPrevious": 122567.89,
+   "currentDue": 247749.63
+  },
+  {
+   "n": 3,
+   "thisPeriod": 199737.14,
+   "storedToDate": 0,
+   "completedAndStored": 609378.19,
+   "retainage": 60937.82,
+   "earnedLessRetainage": 548440.37,
+   "lessPrevious": 370317.52,
+   "currentDue": 178122.85
+  }
+ ]
+}

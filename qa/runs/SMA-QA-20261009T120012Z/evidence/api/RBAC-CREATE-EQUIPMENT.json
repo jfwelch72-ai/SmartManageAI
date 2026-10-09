@@ -1,0 +1,201 @@
+{
+ "meta": {
+  "id": "RBAC-CREATE-EQUIPMENT",
+  "title": "Role matrix: Create equipment",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:? ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:A ESTIMATOR:? FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:26.563Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 201,
+   "ms": 28,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "id": "924f9311-16fd-4e17-8b4d-19a2828af8db",
+    "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "name": "",
+    "equipmentCode": "EQ-0001",
+    "type": "X",
+    "status": "AVAILABLE",
+    "make": null,
+    "model": null,
+    "year": null,
+    "serialNumber": null,
+    "vinNumber": null,
+    "licensePlate": null,
+    "currentHours": null,
+    "purchaseDate": null,
+    "purchasePrice": null,
+    "warrantyExpirationDate": null,
+    "assignedToCrewId": null,
+    "assignedToProjectId": null,
+    "lastMaintenanceDate": null,
+    "nextMaintenanceDate": null,
+    "description": null,
+    "specifications": null,
+    "notes": null,
+    "homeLocation": null,
+    "currentLocation": null,
+    "imageUrl": null,
+    "manualUrl": null,
+    "depreciationMethod": null,
+    "usefulLifeYears": null,
+    "salvageValue": null,
+    "inServiceDate": null,
+    "createdAt": "2026-10-09T12:33:26.552Z",
+    "updatedAt": "2026-10-09T12:33:26.552Z"
+   },
+   "requestId": "20568645-ea66-4ef7-b88f-8fd3dd22a23f"
+  },
+  {
+   "at": "2026-10-09T12:33:26.582Z",
+   "actor": "admin@(ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 400,
+   "ms": 18,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Equipment code already exists"
+   },
+   "requestId": "3e4dc7e7-7154-4108-86e0-1261da50d4f4"
+  },
+  {
+   "at": "2026-10-09T12:33:26.612Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 400,
+   "ms": 30,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Equipment code already exists"
+   },
+   "requestId": "698c798b-3fe1-4d43-857a-571cb653a320"
+  },
+  {
+   "at": "2026-10-09T12:33:26.636Z",
+   "actor": "manager@(MANAGER)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 400,
+   "ms": 24,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Equipment code already exists"
+   },
+   "requestId": "c986057e-a133-4cf4-be43-6cd87d03424a"
+  },
+  {
+   "at": "2026-10-09T12:33:26.661Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 400,
+   "ms": 24,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Equipment code already exists"
+   },
+   "requestId": "c92a2873-cf10-44e6-89fc-7a066e83e01e"
+  },
+  {
+   "at": "2026-10-09T12:33:26.686Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 400,
+   "ms": 25,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Equipment code already exists"
+   },
+   "requestId": "e9dc36e5-1c33-45d7-8fa3-12080e793f6d"
+  },
+  {
+   "at": "2026-10-09T12:33:26.698Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 403,
+   "ms": 12,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Feature permission required: canManageEquipment"
+   },
+   "requestId": "8029e0a4-9245-4640-93c0-5a13b39b749a"
+  },
+  {
+   "at": "2026-10-09T12:33:26.718Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 403,
+   "ms": 19,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Feature permission required: canManageEquipment"
+   },
+   "requestId": "160b8cf9-47ec-4e46-8e5a-de9e4fc86ba5"
+  },
+  {
+   "at": "2026-10-09T12:33:26.722Z",
+   "actor": "anonymous",
+   "method": "POST",
+   "url": "/api/equipment",
+   "status": 401,
+   "ms": 4,
+   "reqBody": {
+    "name": "",
+    "equipmentCode": "",
+    "type": "X"
+   },
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "a8554963-aed7-44d6-84ba-9823b1710386"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"201\",\"ADMIN\":\"400\",\"HUSTLER\":\"400\",\"MANAGER\":\"400\",\"SUPERINTENDENT\":\"400\",\"ESTIMATOR\":\"400\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

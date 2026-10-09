@@ -1,0 +1,64 @@
+RealTest Construction
+Project Proposal
+
+SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)
+Reference: 260001
+Prepared for: SMA-QA-20261009T120012Z Crane Logistics demo/pads (SYNTHETIC)
+Prepared on: 10/9/2026
+Prepared by: Cost Estimator
+
+
+  Proposal Summary
+   Base bid                                                                          $764,977.82
+   Selected alternates                                                                     $0.00
+   Allowances                                                                              $0.00
+   Contingencies                                                                           $0.00
+   TOTAL PROPOSAL                                                                    $764,977.82
+
+
+BASE BID — SCOPE OF WORK
+Description                                                 Qty     Unit    Source                 Total
+[R11] General Conditions/Mobilization                       1       EA      —              $58,463.00
+[R13] Jeff Barker saw cut revised pricing                   1       lump    —              $35,447.06
+[R15] Cat 87-90 30,000lb w thumb x 2 for job per month      2       each    —              $33,000.00
+[R16] fuel for machines                                     1       lump    —               $3,428.57
+[R18] saw cut demo and haul off of 4 opeings per customer 4         hours   —                 $611.76
+request
+[R19] Jeff barker for 4 openings then cut into 3x3 piers 8" 1       lump    —              $33,588.24
+thk
+[R20] haul and labor to load trucks                         0.15    days    —                 $642.86
+[R23] haul spoils off site                                  294     hours   —                   $3.00
+[R24] rebar lbs 31752 lbs includes 2% fluff                 31752   lbs     —              $38,102.40
+[R25] 3" sbu chairs                                         2200    lf      —               $1,822.86
+[R26] 25 each 3/4"x8" sds drill bits                        25      each    —               $1,500.00
+[R27] concrete yards for spreadasftgs 5.44 yds per pad x 1014       yards   —             $318,685.71
+162 each
+[R28] labor days demo $678.83 labor only                 34         day     —             $145,714.29
+[R29] labor days to pour spread ftgs $238.00 each labor     9       days    —              $38,571.43
+only for pour back
+[R33] haul spoils off site                                  11      hours   —               $1,682.35
+[R34] rebar 24#6 verts with #4 ties 10" oc                  2275    lbs     —               $2,730.00
+[R35] 50 lf 3" sbu chairs                                   50      lf      —                  $41.43
+[R36] concrete yards x 4 each 3'x3'x5' column ftgs at new   15      yards   —               $4,714.29
+openings
+[R37] labor for demo anmd pour back                         2.25    days    —               $9,642.86
+[R38] mini ex day                                           1       days    —                 $250.00
+[R43] concrete yards 374 sf x 36" deep                      48      yards   —              $15,085.71
+[R44] rebar dowels into existing lump sum #5 24" oc x 16"   1       lump    —                 $928.57
+long
+[R45] skid steer days                       1   days     —         $250.00
+[R46] forming material                      1   lump     —         $500.00
+[R47] labor days $22.91 per sf labor only   2   days     —        $8,571.43
+[R50] clean up days                         2   days     —        $8,571.43
+[R52] concrete washout containment rental   2   months   —        $2,428.57
+
+                                                                Subtotal:
+                                                             $764,977.82
+ALTERNATES
+ALT-1 — Crackbond CSR self-leveling (src rows 55-57)   [EXCLUDED]
+Description                                   Qty       Unit   Source           Total
+[R56] 144 22 oz cartridges                    144       each   —          $11,931.43
+[R57] labor days                              1.2       days   —           $5,142.86
+                                                                          Subtotal:
+                                                                        $17,074.29
+

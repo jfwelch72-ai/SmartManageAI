@@ -1,0 +1,16 @@
+{
+ "meta": {
+  "id": "AI-INJ-001",
+  "title": "Prompt-injection guard flags instruction-like text in a document; benign text not flagged",
+  "module": "AI/Security",
+  "role": "n/a",
+  "tenant": "n/a",
+  "mode": "unit (product guard executed via tsx; no provider call)",
+  "req": "docs/architecture/prompt-injection.md; server/ai/promptInjectionGuard.ts:99",
+  "expected": "pdf_probe and role_spoof flagged; benign_spec and benign_word_ignore not flagged; obfuscated variant flagged"
+ },
+ "calls": [],
+ "notes": [
+  "{\"pdf_probe\":true,\"obfuscated\":false,\"role_spoof\":true,\"benign_spec\":false,\"benign_word_ignore\":false}"
+ ]
+}

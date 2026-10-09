@@ -1,0 +1,26 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "mode": "browser E2E (Chromium 141 headless)",
+  "id": "UI-SCREENS-TABLET",
+  "title": "Key screens render as MANAGER at tablet 768x1024",
+  "module": "UI",
+  "role": "MANAGER",
+  "req": "Prompt §7",
+  "expected": "No 5xx API calls, no uncaught page errors, no horizontal overflow; screenshots captured; axe WCAG2 A/AA violations reported"
+ },
+ "calls": [],
+ "notes": [
+  "dashboard: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=aria-input-field-namex1,aria-valid-attr-valuex1,button-namex4,color-contrastx5,labelx2,listx10,listitemx10,meta-viewportx1",
+  "projects: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=button-namex9,color-contrastx6,listx10,listitemx10,meta-viewportx1",
+  "project-detail: overflow=933>768 5xx=1 pageErrors=0 axe(serious+)=aria-progressbar-namex1,aria-valid-attr-valuex1,button-namex3,color-contrastx16,labelx2,listx10,listitemx10,meta-viewportx1",
+  "project-schedule: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex2,color-contrastx6,listx10,listitemx10,meta-viewportx1",
+  "project-financials: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex2,color-contrastx8,listx10,listitemx10,meta-viewportx1",
+  "bid-estimate: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=aria-input-field-namex2,button-namex3,color-contrastx66,labelx2,listx10,listitemx10,meta-viewportx1",
+  "progress-billing: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=button-namex2,color-contrastx6,listx10,listitemx10,meta-viewportx1,scrollable-region-focusablex1",
+  "time-clock: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=button-namex4,color-contrastx4,listx10,listitemx10,meta-viewportx1",
+  "equipment: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=button-namex7,color-contrastx5,listx10,listitemx10,meta-viewportx1",
+  "crm: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=button-namex7,color-contrastx6,listx10,listitemx10,meta-viewportx1",
+  "dispatch-board: overflow=933>768 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex5,color-contrastx5,listx10,listitemx10,meta-viewportx1,scrollable-region-focusablex1"
+ ]
+}

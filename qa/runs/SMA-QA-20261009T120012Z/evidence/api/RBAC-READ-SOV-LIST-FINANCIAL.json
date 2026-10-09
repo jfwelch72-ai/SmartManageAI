@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-READ-SOV-LIST-FINANCIAL",
+  "title": "Role matrix: Read SOV list (financial)",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:A ESTIMATOR:A FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:24.488Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 35,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "27e998a0-8761-4611-81a7-8d6d6fb9ff23"
+  },
+  {
+   "at": "2026-10-09T12:33:24.528Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 38,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "68646f7d-fb58-4d35-a900-1a2a81e6a57e"
+  },
+  {
+   "at": "2026-10-09T12:33:24.561Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 31,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "23fad853-69be-4a7d-a45d-d4678ca5d997"
+  },
+  {
+   "at": "2026-10-09T12:33:24.592Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 30,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "41f59466-d811-4fa9-8add-03722ef702b1"
+  },
+  {
+   "at": "2026-10-09T12:33:24.621Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 25,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "8ce7054c-63bb-4e55-8f08-6249560d1c40"
+  },
+  {
+   "at": "2026-10-09T12:33:24.650Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 200,
+   "ms": 25,
+   "resBody": "[binary 160544 bytes application/json; charset=utf-8]",
+   "requestId": "978eca7a-71bb-48d0-9878-e45f71576f9f"
+  },
+  {
+   "at": "2026-10-09T12:33:24.660Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "328bbb00-810f-4af9-ac8e-d8270806a678"
+  },
+  {
+   "at": "2026-10-09T12:33:24.671Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 403,
+   "ms": 11,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "9328800c-0bfc-4a2d-bfcf-cd4650428509"
+  },
+  {
+   "at": "2026-10-09T12:33:24.695Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/sov",
+   "status": 401,
+   "ms": 24,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "fe087821-c4d8-4197-93df-678e4f01ffbc"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"200\",\"ADMIN\":\"200\",\"HUSTLER\":\"200\",\"MANAGER\":\"200\",\"SUPERINTENDENT\":\"200\",\"ESTIMATOR\":\"200\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

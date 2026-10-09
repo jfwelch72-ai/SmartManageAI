@@ -1,0 +1,48 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "SCH-002",
+  "title": "Dependency cycle rejected",
+  "module": "Schedule",
+  "role": "SUPERINTENDENT",
+  "req": "scheduleRoutes.ts:649-673 detectCycle",
+  "expected": "400 'Circular dependency'"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:19:31.402Z",
+   "actor": "super(SUPERINTENDENT)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/schedule/tasks/96811e8d-efc9-4cf5-b394-4e7496986d42/dependencies",
+   "status": 400,
+   "ms": 20,
+   "reqBody": {
+    "dependencies": [
+     "339e6f6c-0cbe-43bb-9103-330440aba739"
+    ]
+   },
+   "resBody": {
+    "error": "Circular dependency detected"
+   },
+   "requestId": "f575da10-f8a5-4da0-9f5c-f43525828bf6"
+  },
+  {
+   "at": "2026-10-09T12:19:31.419Z",
+   "actor": "super(SUPERINTENDENT)",
+   "method": "PATCH",
+   "url": "/api/projects/260001/schedule/tasks/ac618a7e-6a70-4176-8731-9a1a115428fe/dependencies",
+   "status": 400,
+   "ms": 17,
+   "reqBody": {
+    "dependencies": [
+     "ac618a7e-6a70-4176-8731-9a1a115428fe"
+    ]
+   },
+   "resBody": {
+    "error": "Task cannot depend on itself"
+   },
+   "requestId": "7ee4cbc6-ad4a-4154-9a7b-87002771fc6d"
+  }
+ ],
+ "notes": []
+}

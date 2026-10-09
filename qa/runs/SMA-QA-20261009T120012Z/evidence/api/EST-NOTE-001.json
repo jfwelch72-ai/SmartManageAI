@@ -1,0 +1,59 @@
+{
+ "meta": {
+  "id": "EST-NOTE-001",
+  "title": "Record estimate-level scope notes/exclusions (row 12 GC layout responsibility) so they reach the proposal",
+  "module": "Estimating/Proposal",
+  "role": "ESTIMATOR",
+  "tenant": "RealTest Construction",
+  "mode": "API integration + static inspection",
+  "req": "Prompt §3 'Preserve notes and exclusions, including row 12'; proposalPdf renders est.notes (estimatePricingRoutes.ts:713)",
+  "expected": "An authorized user can set estimate notes/exclusions after creation and they print on the proposal"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:15:21.302Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374",
+   "status": 200,
+   "ms": 19,
+   "reqBody": {
+    "notes": "Row 12: GC Responsible for layout of new 162 ea 7x7 spread ftgs by other not TFR"
+   },
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "3a75690c-a5df-40a2-8ba2-0ba9329c8f5f"
+  },
+  {
+   "at": "2026-10-09T12:15:21.324Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PUT",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374",
+   "status": 200,
+   "ms": 22,
+   "reqBody": {
+    "notes": "Row 12: GC Responsible for layout of new 162 ea 7x7 spread ftgs by other not TFR"
+   },
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "755f3e0e-9255-4574-88b4-70057f50fbd7"
+  },
+  {
+   "at": "2026-10-09T12:15:21.347Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 22,
+   "reqBody": {
+    "notes": "Row 12: GC Responsible for layout of new 162 ea 7x7 spread ftgs by other not TFR"
+   },
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "e7ff5131-985d-4b45-b10d-8dc302e5eca8"
+  }
+ ],
+ "notes": [
+  "PATCH /api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374 -> 200 text/html",
+  "PUT /api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374 -> 200 text/html",
+  "PATCH /api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate -> 200 text/html",
+  "grep: no PATCH/PUT /api/estimates/:id route exists in server/*.ts; estimates.notes only written at creation or by AI paths (aiEstimatorRoutes.ts:855, estimateRoutes.ts:3348 approve)"
+ ]
+}

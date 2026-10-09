@@ -1,0 +1,132 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "TIME-004",
+  "title": "Manual time entry validation (future date, >24h day, duplicates)",
+  "module": "Time Entry",
+  "role": "FIELD_WORKER",
+  "req": "projectFinancialRoutes.ts:134",
+  "expected": "future 400; hoursRegular 30 rejected; duplicate same-day entry flagged/rejected"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:19:32.322Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-entries",
+   "status": 400,
+   "ms": 15,
+   "reqBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2027-01-05",
+    "hoursRegular": "8"
+   },
+   "resBody": {
+    "error": "Invalid date",
+    "details": "Time entries cannot be created for future dates."
+   },
+   "requestId": "08f53edb-a753-4822-b60b-6a4079779fda"
+  },
+  {
+   "at": "2026-10-09T12:19:32.342Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-entries",
+   "status": 201,
+   "ms": 20,
+   "reqBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-05",
+    "hoursRegular": "30"
+   },
+   "resBody": {
+    "id": "21de197e-f327-46ac-abf8-4961085bb8c7",
+    "userId": "733a6e26-e821-4223-919f-cbe15abdba24",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-05T00:00:00.000Z",
+    "hoursRegular": "30.00",
+    "hoursOvertime": "0.00",
+    "costCode": null,
+    "notes": null,
+    "approvalStatus": "PENDING",
+    "approvedById": null,
+    "approvedAt": null,
+    "rejectedById": null,
+    "rejectedAt": null,
+    "rejectionReason": null,
+    "createdAt": "2026-10-09T12:19:32.337Z",
+    "updatedAt": "2026-10-09T12:19:32.337Z"
+   },
+   "requestId": "0f72c93e-1659-4195-ac67-5324a3848e94"
+  },
+  {
+   "at": "2026-10-09T12:19:32.367Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-entries",
+   "status": 201,
+   "ms": 24,
+   "reqBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-06",
+    "hoursRegular": "8",
+    "description": "SMA-QA-20261009T120012Z QA"
+   },
+   "resBody": {
+    "id": "af0e2934-62e7-4c40-b190-25a5293aaaa9",
+    "userId": "733a6e26-e821-4223-919f-cbe15abdba24",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-06T00:00:00.000Z",
+    "hoursRegular": "8.00",
+    "hoursOvertime": "0.00",
+    "costCode": null,
+    "notes": null,
+    "approvalStatus": "PENDING",
+    "approvedById": null,
+    "approvedAt": null,
+    "rejectedById": null,
+    "rejectedAt": null,
+    "rejectionReason": null,
+    "createdAt": "2026-10-09T12:19:32.355Z",
+    "updatedAt": "2026-10-09T12:19:32.355Z"
+   },
+   "requestId": "5adc06f5-a8d5-4c8e-995b-c461f5e0eb77"
+  },
+  {
+   "at": "2026-10-09T12:19:32.387Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-entries",
+   "status": 201,
+   "ms": 20,
+   "reqBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-06",
+    "hoursRegular": "8",
+    "description": "SMA-QA-20261009T120012Z QA dup"
+   },
+   "resBody": {
+    "id": "41bdf4fb-5c49-4870-89fb-4f4776926f6c",
+    "userId": "733a6e26-e821-4223-919f-cbe15abdba24",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "date": "2026-10-06T00:00:00.000Z",
+    "hoursRegular": "8.00",
+    "hoursOvertime": "0.00",
+    "costCode": null,
+    "notes": null,
+    "approvalStatus": "PENDING",
+    "approvedById": null,
+    "approvedAt": null,
+    "rejectedById": null,
+    "rejectedAt": null,
+    "rejectionReason": null,
+    "createdAt": "2026-10-09T12:19:32.381Z",
+    "updatedAt": "2026-10-09T12:19:32.381Z"
+   },
+   "requestId": "a345f396-17b9-4b0d-a64d-44b374e74d1f"
+  }
+ ],
+ "notes": [
+  "future 400; 30h 201; dup1 201; dup2 201"
+ ]
+}

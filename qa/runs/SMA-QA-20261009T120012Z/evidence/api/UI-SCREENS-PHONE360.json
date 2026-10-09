@@ -1,0 +1,26 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "mode": "browser E2E (Chromium 141 headless)",
+  "id": "UI-SCREENS-PHONE360",
+  "title": "Key screens render as MANAGER at phone360 360x800",
+  "module": "UI",
+  "role": "MANAGER",
+  "req": "Prompt §7",
+  "expected": "No 5xx API calls, no uncaught page errors, no horizontal overflow; screenshots captured; axe WCAG2 A/AA violations reported"
+ },
+ "calls": [],
+ "notes": [
+  "dashboard: overflow=no 5xx=0 pageErrors=0 axe(serious+)=aria-input-field-namex1,aria-valid-attr-valuex1,button-namex4,color-contrastx2,labelx2,meta-viewportx1",
+  "projects: overflow=no 5xx=0 pageErrors=0 axe(serious+)=button-namex14,color-contrastx3,meta-viewportx1",
+  "project-detail: overflow=no 5xx=1 pageErrors=0 axe(serious+)=aria-progressbar-namex1,aria-valid-attr-valuex1,button-namex4,color-contrastx16,labelx2,meta-viewportx1",
+  "project-schedule: overflow=no 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex3,color-contrastx3,meta-viewportx1",
+  "project-financials: overflow=no 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex3,color-contrastx5,meta-viewportx1",
+  "bid-estimate: overflow=no 5xx=0 pageErrors=0 axe(serious+)=aria-input-field-namex2,button-namex3,color-contrastx63,labelx2,meta-viewportx1",
+  "progress-billing: overflow=no 5xx=0 pageErrors=0 axe(serious+)=button-namex2,color-contrastx3,meta-viewportx1,scrollable-region-focusablex1",
+  "time-clock: overflow=no 5xx=0 pageErrors=0 axe(serious+)=button-namex4,color-contrastx1,meta-viewportx1",
+  "equipment: overflow=no 5xx=0 pageErrors=0 axe(serious+)=button-namex7,color-contrastx2,meta-viewportx1",
+  "crm: overflow=no 5xx=0 pageErrors=0 axe(serious+)=button-namex7,color-contrastx3,meta-viewportx1",
+  "dispatch-board: overflow=no 5xx=0 pageErrors=0 axe(serious+)=aria-progressbar-namex1,button-namex5,color-contrastx2,meta-viewportx1,scrollable-region-focusablex1"
+ ]
+}

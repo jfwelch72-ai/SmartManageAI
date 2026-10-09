@@ -1,0 +1,481 @@
+{
+ "crmOrgId": "d4e1118a-7fcb-43a7-8963-74309cc32dd0",
+ "crmContactId": "3261c57f-3c34-48cb-98ed-4a9799ba8ed4",
+ "oppId": "0c1373d0-b568-47bc-8a01-4bf17cd338eb",
+ "bidId": "7f3717df-1007-4849-9019-d4805e7eb636",
+ "bidCode": "260001",
+ "estimateId": "eb5babbd-ee04-4459-9a67-6fde14865374",
+ "bidAsSupplied": {
+  "id": "d9dd0567-de28-4af5-b174-a6d966275fc4",
+  "code": "260007",
+  "estimateId": "24a9edef-7fdc-4230-9927-d697414cef40"
+ },
+ "lineItemIds": {
+  "11": "76f37bb7-08f9-44c2-a6e1-45181312226b",
+  "13": "245de401-d932-422b-91e3-afc64444ae82",
+  "15": "79a13179-875b-4634-890a-54858d3bb1f0",
+  "16": "81091c92-1c23-4f4d-b935-b4740fa26ce9",
+  "18": "d6c9ff99-03f0-41af-aca9-78940a424e9b",
+  "19": "4dca64ec-08f1-41cf-bb62-5ea470d6f23b",
+  "20": "d9452608-3bcc-46e3-bed9-a725f6c48986",
+  "23": "22d258bd-3e5f-4a8c-bcec-1eac7eed3f6e",
+  "24": "4f3482e5-3f32-499f-9480-dd578c9afea1",
+  "25": "121a4abf-3579-4549-8aa1-2c8588208787",
+  "26": "a4f49aac-c084-4dea-ab1c-951be51a9bbc",
+  "27": "dd74242b-fb10-480f-8f99-06ddc14a51a0",
+  "28": "92159cd3-1c16-4603-be74-e732aa889e48",
+  "29": "c1b5038f-1003-435e-9037-5233f810f257",
+  "33": "838f57a8-c053-45f5-9486-e2d60bb9d1d1",
+  "34": "cbde1701-5a2e-47a7-ab41-944c828c2bc8",
+  "35": "e0e658de-718e-4f5e-956c-cadbdcdc9307",
+  "36": "0b6485ac-9a69-4803-a467-f2ed47b87bde",
+  "37": "47cb84e8-5084-40ac-935b-9bbfc2f48113",
+  "38": "a6d47c1f-ba52-4b1c-a4f7-7e1eb3b90951",
+  "43": "e965f16e-dd23-4a5a-bd1f-0d877d04a236",
+  "44": "18792b07-b9cf-4240-9aaa-208419b7801b",
+  "45": "ad76f1d4-2cb4-4e49-90fe-bb5f2c0314d7",
+  "46": "b898bbaf-94ae-4bb3-a03b-18c824681452",
+  "47": "de6d866b-9a4b-4159-a50a-bc9b4e6afa59",
+  "50": "ff4cd56a-0d4e-4996-993a-bbe7c1af4f19",
+  "52": "c6dadf52-8f46-4016-ac5e-bdb1e30cdcfc",
+  "56": "94155080-1c60-453b-a13c-0e144f4529d1",
+  "57": "195b0da3-c9ff-49b0-aefc-3de9324dfcce"
+ },
+ "altGroupId": "057560dd-1d2f-402d-ada8-5c9727063399",
+ "sodBid": "260008",
+ "patchAwardBid": "260012",
+ "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+ "projectCode": "260001",
+ "lostBid": "260011",
+ "sovId": "5902a27d-66ee-4be0-a3c9-ef2e8e86f141",
+ "contractId": "ec183248-1e59-4a49-be02-bddfcaf369c7",
+ "scope": {
+  "11": {
+   "id": "7743b553-f641-41c8-b2c2-9756719257d3",
+   "qty": 1,
+   "unit": "EA",
+   "unitPrice": 58463
+  },
+  "13": {
+   "id": "605c4cb7-d6f6-41a6-aeca-13c10f6561e9",
+   "qty": 1,
+   "unit": "lump",
+   "unitPrice": 35447.06
+  },
+  "15": {
+   "id": "24d012cb-bda0-4806-af2c-828aa050e7c3",
+   "qty": 2,
+   "unit": "each",
+   "unitPrice": 16500
+  },
+  "16": {
+   "id": "169382a2-311f-4758-911e-cca8ead421d3",
+   "qty": 1,
+   "unit": "lump",
+   "unitPrice": 3428.57
+  },
+  "18": {
+   "id": "ace25c12-2ae8-47e0-8bd7-cc02116c8eff",
+   "qty": 4,
+   "unit": "hours",
+   "unitPrice": 152.94
+  },
+  "19": {
+   "id": "c67e47a4-98da-4c37-a47b-4a174833ba5e",
+   "qty": 1,
+   "unit": "lump",
+   "unitPrice": 33588.24
+  },
+  "20": {
+   "id": "2816d83d-728e-465f-992a-2ac0db4f7d84",
+   "qty": 0.15,
+   "unit": "days",
+   "unitPrice": 4285.73
+  },
+  "23": {
+   "id": "fea87647-fef4-4594-a3f8-a851c38486a8",
+   "qty": 294,
+   "unit": "hours",
+   "unitPrice": 0.01
+  },
+  "24": {
+   "id": "98c836f3-434a-4653-9696-7b63c05b26c7",
+   "qty": 31752,
+   "unit": "lbs",
+   "unitPrice": 1.2
+  },
+  "25": {
+   "id": "2e998012-4f1b-464e-950b-3b0c37562d66",
+   "qty": 2200,
+   "unit": "lf",
+   "unitPrice": 0.83
+  },
+  "26": {
+   "id": "4ab36c49-c0e9-4bb8-b705-8e0bbef67566",
+   "qty": 25,
+   "unit": "each",
+   "unitPrice": 60
+  },
+  "27": {
+   "id": "43856bbb-0abf-4277-a8ea-645fd932ccf7",
+   "qty": 1014,
+   "unit": "yards",
+   "unitPrice": 314.29
+  },
+  "28": {
+   "id": "8c0d5ba5-cc67-40e2-ba7d-8f8d5e4151e7",
+   "qty": 34,
+   "unit": "day",
+   "unitPrice": 4285.71
+  },
+  "29": {
+   "id": "27bc019b-8ff9-41f3-9cef-880c7d8fee26",
+   "qty": 9,
+   "unit": "days",
+   "unitPrice": 4285.71
+  },
+  "33": {
+   "id": "2de1165c-94ba-407b-9543-6749c45290ca",
+   "qty": 11,
+   "unit": "hours",
+   "unitPrice": 152.94
+  },
+  "34": {
+   "id": "708a07ff-2d02-4ec6-b27a-9e8939112725",
+   "qty": 2275,
+   "unit": "lbs",
+   "unitPrice": 1.2
+  },
+  "35": {
+   "id": "d0252d8c-b3ca-45da-9b44-9845d6c1704a",
+   "qty": 50,
+   "unit": "lf",
+   "unitPrice": 0.83
+  },
+  "36": {
+   "id": "fdc4a8c6-5d9e-4d09-b724-15ba983e7bd8",
+   "qty": 15,
+   "unit": "yards",
+   "unitPrice": 314.29
+  },
+  "37": {
+   "id": "e18764f0-9bdc-40df-b1e4-cf2dcaa29643",
+   "qty": 2.25,
+   "unit": "days",
+   "unitPrice": 4285.72
+  },
+  "38": {
+   "id": "833896d9-03cc-430a-a0cd-185a6a6f458c",
+   "qty": 1,
+   "unit": "days",
+   "unitPrice": 250
+  },
+  "43": {
+   "id": "076fdd16-20c1-4480-af20-c34d0cac8a7d",
+   "qty": 48,
+   "unit": "yards",
+   "unitPrice": 314.29
+  },
+  "44": {
+   "id": "795a1621-a0d7-4c9b-b99a-b5323341e3b9",
+   "qty": 1,
+   "unit": "lump",
+   "unitPrice": 928.57
+  },
+  "45": {
+   "id": "da5c6822-cd11-48e3-8b2b-9b2bf953cac0",
+   "qty": 1,
+   "unit": "days",
+   "unitPrice": 250
+  },
+  "46": {
+   "id": "0da7b6af-7fa8-4576-bf3b-f967f695c837",
+   "qty": 1,
+   "unit": "lump",
+   "unitPrice": 500
+  },
+  "47": {
+   "id": "a85665b1-1a72-4477-903f-1f9b4780619a",
+   "qty": 2,
+   "unit": "days",
+   "unitPrice": 4285.72
+  },
+  "50": {
+   "id": "d588394c-b23d-4e2f-ad5f-2eb99e0d91f8",
+   "qty": 2,
+   "unit": "days",
+   "unitPrice": 4285.72
+  },
+  "52": {
+   "id": "3ce54bd3-d766-4c0c-a38e-5f715b7e1556",
+   "qty": 2,
+   "unit": "months",
+   "unitPrice": 1214.29
+  },
+  "56": {
+   "id": "913af948-f3ba-434f-bf02-fe0f34b2f3b0",
+   "qty": 144,
+   "unit": "each",
+   "unitPrice": 82.86
+  },
+  "57": {
+   "id": "6917ee52-5f02-4cc9-a478-0f3525f0dafc",
+   "qty": 1.2,
+   "unit": "days",
+   "unitPrice": 4285.72
+  }
+ },
+ "tasks": {
+  "MOB": "96811e8d-efc9-4cf5-b394-4e7496986d42",
+  "SAW": "ac618a7e-6a70-4176-8731-9a1a115428fe",
+  "HAUL": "f5fb8982-3afd-47a7-ba65-4547d3f75c5b",
+  "REBAR": "8b4701d3-e7d2-4aff-bb12-9ab2aa06c51f",
+  "POUR": "fb52db97-380a-4cf6-9cc4-18a5f5ad4e68",
+  "OPEN": "4c18fe3c-1350-428f-94aa-608fb64b5317",
+  "DOCK": "5cf436d4-fdd1-4021-925b-d8c62129ca12",
+  "CLEAN": "339e6f6c-0cbe-43bb-9103-330440aba739",
+  "SC": "d0ff7ddc-7304-4061-8e1f-32d43c846aa2"
+ },
+ "badDateTask": "56909372-9786-40ff-8302-f9f8731f266e",
+ "crewId": "749f6877-99cd-432d-b62f-1aa4fb494b44",
+ "workerId": "733a6e26-e821-4223-919f-cbe15abdba24",
+ "equipId": "0ddd5d98-bd0a-4962-9be2-77106e55f93d",
+ "shiftId": "1c35c6d3-e875-4055-b4c8-72db94dd00d9",
+ "timeEntryIds": [
+  "af0e2934-62e7-4c40-b190-25a5293aaaa9",
+  "41bdf4fb-5c49-4870-89fb-4f4776926f6c",
+  "21de197e-f327-46ac-abf8-4961085bb8c7"
+ ],
+ "prodOver": {
+  "neg": 201,
+  "over": 201,
+  "completed": "1150.00"
+ },
+ "otherProjectId": "76e3037d-e669-4047-97a7-9ed01eeda49f",
+ "otherProjectCode": "260013",
+ "crewAssignNoDates": 201,
+ "subOrgId": "664de23d-e429-415e-a060-ec278f231290",
+ "subcontractId": "d4b494e6-b585-4a63-863d-2636feb107c4",
+ "subPayAppId": "9fd9290e-ed3f-443b-b778-72832978772e",
+ "vendorId": "3f0a8eb0-356b-4893-ab68-57d563617a61",
+ "poId": "73f67dee-919c-46c0-8120-c71265def770",
+ "invoiceId": "60decbf0-9795-4903-b5e8-d1a6f0220307",
+ "rfiId": "74fdd216-1fdd-44b4-9bf7-96393358494a",
+ "cos": {
+  "co1": "40e99887-a1f2-4aea-89b1-90196f015e69",
+  "co2": "87cf84ce-216b-4dab-bc31-c2a6e536fb5f",
+  "co3": "7d42334e-872e-4d02-b379-4ae01e9118ec"
+ },
+ "coResult": {
+  "before": 782052.11,
+  "after": 792552.11,
+  "budTot": 782052.11,
+  "sovLines": 33,
+  "sovContract": "782052.11"
+ },
+ "payApps": {},
+ "dupPayApp": "27554520-4812-4e98-8421-8b8008686e54",
+ "sov4": "299d8c1b-5498-4aa7-8bcc-4265947b2602",
+ "fb": {
+  "projectId": "e0c237f0-1ff7-4794-876b-da42dd2e7c12",
+  "code": "260014",
+  "apps": {
+   "1": "4f20280a-f989-4e48-b48b-0a28ed36d0a2",
+   "2": "d4e5092f-9cd2-4787-bede-c7d22170638f",
+   "3": "08977ccb-9381-4ee8-b495-8fe11103e110"
+  }
+ },
+ "punch": [
+  "69b02e23-8766-41be-a3ff-c60d48961bf5",
+  "0e8142f8-b813-4fc0-a85f-0b63770d23ad"
+ ],
+ "gateProbe": "260015",
+ "rbac": [],
+ "tempUserId": "03baefd9-600f-496d-a3c4-4ab18c3c40a5",
+ "dispatcherPasswordChanged": true,
+ "tenantB": "63233184-857c-4946-8d52-29425ef7f514",
+ "uiImportBid": "260019",
+ "load": {
+  "projectId": "b79e0679-7080-4f16-8992-7c829d69a56a",
+  "code": "260020",
+  "scope": [
+   "db1bf77d-3696-46db-8b07-24b0bc7ff83c",
+   "488ed5ce-5690-48b3-b8db-2221b0820002",
+   "fd3b88e1-8846-4294-a75b-aec7148ed2e0",
+   "63d80e6e-569a-49a6-900b-352283ad8df8",
+   "73ce063f-6971-4d3a-81ac-6d5874f9a259",
+   "08a300c4-4744-4d6b-9fa5-40719c9f0e22",
+   "dedbb0eb-70fb-4f57-ae23-5999a41b6006",
+   "8906c470-2efc-443d-a6cb-f5fc00e2f482",
+   "1ee114f1-d7f1-4a92-968c-d106c187753b",
+   "4e62b431-b160-47ba-9f60-31b7b130387d",
+   "abf7dbec-a857-4b59-8900-96228828588d",
+   "6b61fc34-63ef-4a05-9e99-ac92f44622ad",
+   "50d12146-1e4f-4931-97ce-597f40729c35",
+   "250dfc19-4d5b-4e19-87c2-b62582325aec",
+   "cbfa3670-eaf9-410c-be50-eba05bd4edf8",
+   "d8a76060-73b9-4b11-8275-28775292fbbc",
+   "55acc7f1-5ecc-48d0-89c1-3f6792405e2c",
+   "fb873fef-873d-49a6-abe6-69729aa27a12",
+   "b59ac485-3eaa-424b-8c0d-a74f892cbc1f",
+   "b4885c31-701d-4cce-b435-939721768a3b",
+   "fe5216ba-537a-4305-89f6-666e64acfb18",
+   "a0f8d5b1-8fb0-432d-af7f-a34dc70ffa1b",
+   "690ba2e7-bc6d-4700-91fc-e057d6274d70",
+   "8fb237f7-19c2-425b-8385-d95a6c7c00a8",
+   "20f84948-9441-4a5e-8573-6e0526935276"
+  ],
+  "users": [
+   {
+    "email": "qa-load-00-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!0Aa20012Z",
+    "id": "4dccafa2-e226-4571-9eef-7e049a4ab81a",
+    "status": 201
+   },
+   {
+    "email": "qa-load-01-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!1Aa20012Z",
+    "id": "ad2a5260-12c9-4abe-81b6-4da6f06d1bc3",
+    "status": 201
+   },
+   {
+    "email": "qa-load-02-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!2Aa20012Z",
+    "id": "ed9df34b-dc80-46ca-8513-37e7c934c0ee",
+    "status": 201
+   },
+   {
+    "email": "qa-load-03-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!3Aa20012Z",
+    "id": "512c9692-42d2-414a-be82-52fca82101db",
+    "status": 201
+   },
+   {
+    "email": "qa-load-04-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!4Aa20012Z",
+    "id": "d0074a56-e200-4af1-95a2-1ac765113b87",
+    "status": 201
+   },
+   {
+    "email": "qa-load-05-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!5Aa20012Z",
+    "id": "009c1c89-7536-4039-be9b-38ade6b155cd",
+    "status": 201
+   },
+   {
+    "email": "qa-load-06-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!6Aa20012Z",
+    "id": "8e8c4f6f-812c-44c1-bb36-0c134ba73d36",
+    "status": 201
+   },
+   {
+    "email": "qa-load-07-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!7Aa20012Z",
+    "id": "335dff10-412f-41cb-bebc-d4f523edda1a",
+    "status": 201
+   },
+   {
+    "email": "qa-load-08-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!8Aa20012Z",
+    "id": "1817c8f7-5d79-4e70-b3c4-684826a8b5bf",
+    "status": 201
+   },
+   {
+    "email": "qa-load-09-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!9Aa20012Z",
+    "id": "80b546e8-160d-4af3-8bef-9eb99784345b",
+    "status": 201
+   },
+   {
+    "email": "qa-load-10-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!10Aa20012Z",
+    "id": "dac0d4c8-9ba3-4c9a-aceb-65f7d2393be0",
+    "status": 201
+   },
+   {
+    "email": "qa-load-11-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!11Aa20012Z",
+    "id": "2e9a077a-e028-404e-a4d0-b37c8b2e92ea",
+    "status": 201
+   },
+   {
+    "email": "qa-load-12-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!12Aa20012Z",
+    "id": "d3a46845-dbed-4b2b-890f-15efe28cfa32",
+    "status": 201
+   },
+   {
+    "email": "qa-load-13-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!13Aa20012Z",
+    "id": "e420571d-9f9e-4141-aa28-5858292e8121",
+    "status": 201
+   },
+   {
+    "email": "qa-load-14-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!14Aa20012Z",
+    "id": "4bac0b42-6dfc-418a-9014-6f55f7b74a67",
+    "status": 201
+   },
+   {
+    "email": "qa-load-15-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!15Aa20012Z",
+    "id": "628ef0d5-f960-40eb-a5b5-cff62afd1e34",
+    "status": 201
+   },
+   {
+    "email": "qa-load-16-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!16Aa20012Z",
+    "id": "2e64fe08-905c-4ffa-9ed2-da63dbf5c905",
+    "status": 201
+   },
+   {
+    "email": "qa-load-17-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!17Aa20012Z",
+    "id": "cdf93c6d-6582-454c-96d8-852b904737c8",
+    "status": 201
+   },
+   {
+    "email": "qa-load-18-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!18Aa20012Z",
+    "id": "b13b8f3e-38eb-4192-ae01-23369a2be5a6",
+    "status": 201
+   },
+   {
+    "email": "qa-load-19-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!19Aa20012Z",
+    "id": "fed338b1-bf18-42d6-aed1-6a5a183772f8",
+    "status": 201
+   },
+   {
+    "email": "qa-load-20-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!20Aa20012Z",
+    "id": "452ef717-8d40-4bc6-a438-46e6b384a7f4",
+    "status": 201
+   },
+   {
+    "email": "qa-load-21-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!21Aa20012Z",
+    "id": "3c133f75-207a-42e3-98a3-9f9db615f966",
+    "status": 201
+   },
+   {
+    "email": "qa-load-22-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!22Aa20012Z",
+    "id": "46baccca-0398-44bb-9230-0ba8e1021ba2",
+    "status": 201
+   },
+   {
+    "email": "qa-load-23-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!23Aa20012Z",
+    "id": "a4cae1ee-2b85-41bf-8a5e-87d9beb40957",
+    "status": 201
+   },
+   {
+    "email": "qa-load-24-sma-qa-20261009t120012z@example.test",
+    "pw": "QaLoad!24Aa20012Z",
+    "id": "fcad76d0-795d-41bf-b3de-2797a4092148",
+    "status": 201
+   }
+  ]
+ }
+}

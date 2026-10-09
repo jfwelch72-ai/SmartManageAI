@@ -1,0 +1,160 @@
+{
+ "meta": {
+  "id": "RBAC-CREATE-PAY-APPLICATION",
+  "title": "Role matrix: Create pay application",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:D ESTIMATOR:D FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:26.349Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 404,
+   "ms": 16,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "SOV not found"
+   },
+   "requestId": "f3446656-ee17-4d9b-a793-7072af69b83e"
+  },
+  {
+   "at": "2026-10-09T12:33:26.361Z",
+   "actor": "admin@(ADMIN)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 404,
+   "ms": 12,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "SOV not found"
+   },
+   "requestId": "6e245555-6001-4af0-8674-e81b63f42f1a"
+  },
+  {
+   "at": "2026-10-09T12:33:26.374Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 404,
+   "ms": 12,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "SOV not found"
+   },
+   "requestId": "7be91d9e-fdfe-4625-8910-b4accf69d01f"
+  },
+  {
+   "at": "2026-10-09T12:33:26.388Z",
+   "actor": "manager@(MANAGER)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 404,
+   "ms": 14,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "SOV not found"
+   },
+   "requestId": "429ca23e-e637-4e9e-9f53-1c1ac48002d3"
+  },
+  {
+   "at": "2026-10-09T12:33:26.404Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 403,
+   "ms": 16,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "9b7aba69-8029-41f8-a508-53ccc982acf2"
+  },
+  {
+   "at": "2026-10-09T12:33:26.414Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 403,
+   "ms": 10,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "8a496ba2-af78-4ced-beba-06f683f2efa9"
+  },
+  {
+   "at": "2026-10-09T12:33:26.428Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 403,
+   "ms": 13,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "Feature permission required: canViewFinancials"
+   },
+   "requestId": "ec2f43fc-1e53-4efe-97e5-6fa2b4526844"
+  },
+  {
+   "at": "2026-10-09T12:33:26.438Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 403,
+   "ms": 10,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "Feature permission required: canViewFinancials"
+   },
+   "requestId": "9a778d69-10c9-4380-91b3-32ae1b684079"
+  },
+  {
+   "at": "2026-10-09T12:33:26.441Z",
+   "actor": "anonymous",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications",
+   "status": 401,
+   "ms": 3,
+   "reqBody": {
+    "projectId": "00000000-0000-0000-0000-000000000000",
+    "sovId": "00000000-0000-0000-0000-000000000000"
+   },
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "d5691298-4675-4a6f-9300-120933c08ba1"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"404\",\"ADMIN\":\"404\",\"HUSTLER\":\"404\",\"MANAGER\":\"404\",\"SUPERINTENDENT\":\"403\",\"ESTIMATOR\":\"403\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

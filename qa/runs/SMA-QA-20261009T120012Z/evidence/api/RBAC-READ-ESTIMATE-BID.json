@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-READ-ESTIMATE-BID",
+  "title": "Role matrix: Read estimate/bid",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:? ESTIMATOR:A FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:25.454Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "7ca93ef3-5040-40af-be6a-4a97c3c3fd94"
+  },
+  {
+   "at": "2026-10-09T12:33:25.492Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 37,
+   "resBody": "[binary 79563 bytes application/json; charset=utf-8]",
+   "requestId": "dce75fb0-8466-4bed-84ac-5b365fd898c2"
+  },
+  {
+   "at": "2026-10-09T12:33:25.524Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 31,
+   "resBody": "[binary 79563 bytes application/json; charset=utf-8]",
+   "requestId": "3867a88a-7876-4879-927d-05e5f2a5b268"
+  },
+  {
+   "at": "2026-10-09T12:33:25.556Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 30,
+   "resBody": "[binary 79563 bytes application/json; charset=utf-8]",
+   "requestId": "3b6dc4fb-13ab-48c6-b8fe-b99a279a5c48"
+  },
+  {
+   "at": "2026-10-09T12:33:25.589Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 31,
+   "resBody": "[binary 79563 bytes application/json; charset=utf-8]",
+   "requestId": "532199af-8edb-470e-9b4a-55500bf97e64"
+  },
+  {
+   "at": "2026-10-09T12:33:25.628Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 200,
+   "ms": 34,
+   "resBody": "[binary 79563 bytes application/json; charset=utf-8]",
+   "requestId": "971ef679-4933-4ba6-8042-d880569b03b1"
+  },
+  {
+   "at": "2026-10-09T12:33:25.642Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 403,
+   "ms": 14,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "0ec2c630-6f01-4e00-8ab9-b9f6e70ada73"
+  },
+  {
+   "at": "2026-10-09T12:33:25.669Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 403,
+   "ms": 27,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "b3d996e1-6187-497c-b47e-f4c65d03c9ca"
+  },
+  {
+   "at": "2026-10-09T12:33:25.672Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate",
+   "status": 401,
+   "ms": 3,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "f43929db-b0af-4e9e-8e96-8722c53b075a"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"403\",\"ADMIN\":\"200\",\"HUSTLER\":\"200\",\"MANAGER\":\"200\",\"SUPERINTENDENT\":\"200\",\"ESTIMATOR\":\"200\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

@@ -1,0 +1,51 @@
+{
+ "meta": {
+  "id": "PRJ-CTR-001",
+  "title": "Draft prime contract created at award",
+  "module": "Contracts",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "storage.drizzle.ts:1806-1830",
+  "expected": "One DRAFT PRIME contract CTR-<code>-001 value = 782052.11; parties = customer"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:17:54.561Z",
+   "actor": "manager(MANAGER)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 200,
+   "ms": 27,
+   "resBody": [
+    {
+     "id": "ec183248-1e59-4a49-be02-bddfcaf369c7",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+     "bidId": "7f3717df-1007-4849-9019-d4805e7eb636",
+     "contractNumber": "CTR-260001-001",
+     "contractType": "PRIME",
+     "status": "DRAFT",
+     "parties": "SMA-QA-20261009T120012Z Crane Logistics demo/pads (SYNTHETIC)",
+     "contractValue": "782052.11",
+     "effectiveDate": null,
+     "expirationDate": null,
+     "paymentTerms": null,
+     "retentionPercent": null,
+     "insuranceRequirements": null,
+     "scopeSummary": "QA run; source workbook 00420",
+     "keyDates": null,
+     "signatureDate": null,
+     "signatoryNames": null,
+     "executedDocumentUrl": null,
+     "attachmentsJson": null,
+     "currentVersion": 1,
+     "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+     "createdAt": "2026-10-09T12:16:33.542Z",
+     "updatedAt": "2026-10-09T12:16:33.542Z"
+    }
+   ],
+   "requestId": "f4262f16-aeed-4482-8cd7-44fc7533b5b3"
+  }
+ ],
+ "notes": []
+}

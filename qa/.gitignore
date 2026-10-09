@@ -1,0 +1,9 @@
+# Local-only QA secrets and sensitive auth state (never commit)
+.local.env
+**/auth-state/
+**/*.har
+**/cookies*
+# Real customer workbook (business-sensitive) — identified by SHA-256 in fixtures/MANIFEST.csv
+runs/*/fixtures/source/
+# Regenerable bounded oversized fixture (qa/harness/fixtures_gen.py)
+runs/*/fixtures/negative/oversized_*.csv

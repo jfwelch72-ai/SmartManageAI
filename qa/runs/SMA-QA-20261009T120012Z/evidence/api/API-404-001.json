@@ -1,0 +1,51 @@
+{
+ "meta": {
+  "id": "API-404-001",
+  "title": "Unknown /api routes return JSON 404 (not SPA HTML 200)",
+  "module": "Platform/API",
+  "role": "ESTIMATOR",
+  "tenant": "RealTest Construction",
+  "req": "Defensible REST contract; clients rely on status codes",
+  "expected": "404 JSON for GET and PATCH to non-existent /api paths"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:15:21.230Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/versions",
+   "status": 200,
+   "ms": 16,
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "5802dc02-a40b-42c2-a3be-e9b5f47f9ed3"
+  },
+  {
+   "at": "2026-10-09T12:15:21.255Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/line-items/c6dadf52-8f46-4016-ac5e-bdb1e30cdcfc",
+   "status": 200,
+   "ms": 24,
+   "reqBody": {
+    "notes": "x"
+   },
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "d9826420-488b-4e33-a38e-a7e6402e1834"
+  },
+  {
+   "at": "2026-10-09T12:15:21.281Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/this-route-does-not-exist-SMA-QA-20261009T120012Z",
+   "status": 200,
+   "ms": 25,
+   "resBody": "<!DOCTYPE html>\n<html lang=\"en\">\n  <head>\n    <script type=\"module\">\nimport { createHotContext } from \"/@vite/client\";\nconst hot = createHotContext(\"/__dummy__runtime-error-plugin\");\n\nfunction sendError(error) {\n  if (!(error instanceof Error)) {\n    error = new Error(\"(unknown runtime error)\");\n  }\n  const serialized = {\n    message: error.message,\n    stack: error.stack,\n  };\n  hot.send(\"runtime-error-plugin:error\", serialized);\n}\n\nwindow.addEventListener(\"error\", (evt) => {\n  sendError(evt.error);\n});\n\nwindow.addEventListener(\"unhandledrejection\", (evt) => {\n  sendError(evt.reason);\n});\n</script>\n\n    <script type=\"module\">import { injectIntoGlobalHook } from \"/@react-refresh\";\ninjectIntoGlobalHook(window);\nwindow.$RefreshReg$ = () => {};\nwindow.$RefreshSig$ = () => (type) => type;</script>\n\n    <script type=\"module\" src=\"/@vite/client\"></script>\n\n    <meta charset=\"UTF-8\" />\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, maximum-scale=1\" />\n    <title>SmartManageAI - AI-Powered Construction Management Software | 500+ Features for 23 Trades</title>\n    <meta name=\"description\" content=\"Stop losing money on every project. SmartManageAI is the complete AI-powered construction management platform with 500+ features for 23 trades. GPS time clock, estimating, change orders, subcontract management, BIM viewer, CPM scheduling, and 8 AI assistants — all in one platform.\" />\n    <meta name=\"keywords\" content=\"construction management software, AI construction, project management, GPS time clock, estimating software, change orders, subcontract management, BIM viewer, CPM scheduling, contractor software\" />\n    <meta property=\"og:title\" content=\"SmartManageAI - The Complete AI-Powered Construction Management Platform\" />\n    <meta property=\"og:description\" content=\"Replace 6+ scattered tools with one platform. 500+ features, 8 AI assistants, 23 trades supported. GPS time tracking, estimating, financial management, subcontracts, BIM, and more.\" />\n ",
+   "requestId": "90020d9a-512d-4268-9d42-cf3396f31289"
+  }
+ ],
+ "notes": [
+  "GET /api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/versions -> 200 text/html; charset=utf-8",
+  "PATCH /api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/line-items/c6dadf52-8f46-4016-ac5e-bdb1e30cdcfc -> 200 text/html; charset=utf-8",
+  "GET /api/this-route-does-not-exist-SMA-QA-20261009T120012Z -> 200 text/html; charset=utf-8"
+ ]
+}

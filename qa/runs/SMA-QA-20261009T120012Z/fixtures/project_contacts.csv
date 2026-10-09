@@ -1,0 +1,5 @@
+role,name,email (test sink)
+Owner rep,Pat Example (FICTIONAL),qa-owner@example.test
+PM,Project Manager (seed),manager@realtest.com
+Superintendent,Site Superintendent (seed),super@realtest.com
+Sub,Fictional Saw-Cut Sub LLC,qa-sub-sink@example.test

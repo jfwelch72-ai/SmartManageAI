@@ -1,0 +1,275 @@
+Not all input has been taken into account at your final specification.
+Here's the report: 
+
+
+ Error in ./server/passkeyRoutes.ts :
+YAMLSemanticError: Nested mappings are not allowed in compact mappings at line 60, column 18:
+
+    description: Verifies the authenticator assertion. Sets the auth cookie on …
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^…
+
+[2026-10-09T12:09:01.681Z] [INFO] [boot] STRICT_TENANT_RLS is ON — fail-closed tenant isolation active.
+[2026-10-09T12:09:01.681Z] [WARN] [boot] beta-readiness: controls NOT all active — strict_tenant_rls=on[OK] session_secret_set=set[OK] anthropic_api_key_set=missing[FAIL] dev_seed_off=on[FAIL] av_scan_active=permissive[OK] rate_limiting_active=memory-store[FAIL]. Failing: anthropic_api_key_set, dev_seed_off, rate_limiting_active. This is acceptable in development but WILL cause a hard exit in any non-development environment.
+[2026-10-09T12:09:01.707Z] [ERROR] [webhook-secrets-audit] Resend bounce/complaint webhook: RESEND_WEBHOOK_SIGNING_SECRET is not set AND no shared-secret fallback (RESEND_WEBHOOK_SECRET / EMAIL_WEBHOOK_SECRET) is configured — Resend bounce/complaint webhook deliveries will be REJECTED until one is provided. Bounces and complaints will not be recorded. | variable=RESEND_WEBHOOK_SIGNING_SECRET integration=Resend bounce/complaint webhook
+  Error: Missing webhook secret: RESEND_WEBHOOK_SIGNING_SECRET
+  Error: Missing webhook secret: RESEND_WEBHOOK_SIGNING_SECRET
+    at auditWebhookSecretsAtBoot (/home/user/SmartManageAI/server/webhookSecretsAudit.ts:165:9)
+    at registerRoutes (/home/user/SmartManageAI/server/routes.ts:456:3)
+    at async <anonymous> (/home/user/SmartManageAI/server/index.ts:422:18)
+[2026-10-09T12:09:01.709Z] [WARN] [webhook-secrets-audit] Gmail / Outlook push webhook shared secret: EMAIL_WEBHOOK_SECRET is not set — Gmail Pub/Sub push and Outlook subscription push are disabled and the system will fall back to background polling alone. Set this to a high-entropy shared secret (>=32 chars) to enable real-time email push notifications. | variable=EMAIL_WEBHOOK_SECRET integration=Gmail / Outlook push webhook shared secret
+[2026-10-09T12:09:01.800Z] [INFO] Seeding core trade modifier categories...
+[2026-10-09T12:09:01.853Z] [INFO] [Collab] Takeoff collaboration WebSocket ready
+[2026-10-09T12:09:01.902Z] [INFO] Health score event listener registered
+[2026-10-09T12:09:01.904Z] [INFO] Started Gantt PDF health monitor | intervalMs=30000 disconnectThresholdMs=120000
+[2026-10-09T12:09:01.905Z] [INFO] Started Portfolio PDF health monitor | intervalMs=60000 unavailableThresholdMs=120000 availabilityProbeMs=300000
+[2026-10-09T12:09:01.993Z] [INFO] messagingBus: LISTEN active | podId=0be2460b-0150-47b9-b2b3-86484c5d646e
+[2026-10-09T12:09:02.003Z] [INFO] portalNotificationBus: LISTEN started
+[2026-10-09T12:09:02.082Z] [INFO] [migration] dot_* tables — already present, skipped
+[2026-10-09T12:09:02.547Z] [INFO] Job queue started
+[2026-10-09T12:09:02.563Z] [INFO] [migration] notifications.organization_id — already present, skipped
+[2026-10-09T12:09:02.598Z] [INFO] [migration] estimate_line_item_subcontractors — already present, skipped
+[2026-10-09T12:09:02.605Z] [INFO] [migration] estimate_line_items.photo_urls — already present, skipped
+[2026-10-09T12:09:02.608Z] [INFO] [migration] equipment depreciation columns — already present, skipped
+[2026-10-09T12:09:02.611Z] [INFO] Job queue handlers registered | handlers=["ai_takeoff_analyze","ai_document_analyze","ai_estimator_draft","pdf_tile_prerender","accounting_sync","bulk_export","plan_set_ingest"]
+[2026-10-09T12:09:02.616Z] [INFO] [migration] messages.is_field_note — already present, skipped
+[2026-10-09T12:09:02.617Z] [INFO] [migration] notification_type enum — all values present, skipped
+[2026-10-09T12:09:02.619Z] [INFO] [migration] notification_type_prefs.muted_until ensured
+[2026-10-09T12:09:02.620Z] [INFO] [migration] notifications.metadata ensured
+[2026-10-09T12:09:02.623Z] [INFO] [migration] integration_sync_state failure tracking columns ensured
+[2026-10-09T12:09:02.625Z] [INFO] [migration] integration_sync_state.exhausted_notified_at ensured
+[2026-10-09T12:09:02.629Z] [INFO] [migration] integration_sync_alert_mutes ensured
+[2026-10-09T12:09:02.634Z] [INFO] [migration] wage_decision_rate_changes ensured
+[2026-10-09T12:09:02.638Z] [INFO] [migration] wage_decision_rate_change_acknowledgements ensured
+[2026-10-09T12:09:02.643Z] [INFO] Core modifier categories: 0 inserted, 91 skipped
+[2026-10-09T12:09:02.643Z] [INFO] [migration] one_shot_job_runs ensured
+[2026-10-09T12:09:02.645Z] [INFO] [migration] sage_account_mappings ensured
+[2026-10-09T12:09:02.863Z] [INFO] [migration] tenant RLS policies ensured
+[2026-10-09T12:09:02.866Z] [INFO] [migration] estimate_item_category enum — all values present, skipped
+[2026-10-09T12:09:02.878Z] [INFO] [migration] passkey_credentials.rp_id — already present, skipped
+[2026-10-09T12:09:02.887Z] [INFO] [migration] equipment_repairs PM idempotency — applied
+[2026-10-09T12:09:02.890Z] [INFO] [migration] quantity_categories waste_factor/unit_cost — already present, skipped
+[2026-10-09T12:09:02.892Z] [INFO] [migration] takeoff_measurements deductions — already present, skipped
+[2026-10-09T12:09:02.929Z] [INFO] [migration] takeoff_measurements.ai_geometry — already present, skipped
+[2026-10-09T12:09:02.932Z] [INFO] [migration] takeoff_measurements.csi_division — already present, skipped
+[2026-10-09T12:09:02.953Z] [INFO] [migration] user_dashboard_permissions.can_view_safety — already present, skipped
+[2026-10-09T12:09:02.956Z] [INFO] [migration] user_dashboard_permissions.can_view_ai_summaries — already present, skipped
+[2026-10-09T12:09:02.958Z] [INFO] [migration] user_dashboard_permissions.can_view_compliance_dashboard — already present, skipped
+[2026-10-09T12:09:02.963Z] [INFO] [migration] user_dashboard_permissions.project_scope — already present, skipped
+[2026-10-09T12:09:02.966Z] [INFO] [migration] user_dashboard_permissions.financials_access — already present, skipped
+[2026-10-09T12:09:02.982Z] [INFO] [migration] hustler_delegates.financials_access — already present, skipped
+[2026-10-09T12:09:03.000Z] [INFO] [migration] organizations.peer_rating_anonymity_mode — already present, skipped
+[2026-10-09T12:09:03.003Z] [INFO] [migration] organizations.peer_rating_scope_mode — already present, skipped
+[2026-10-09T12:09:03.008Z] [INFO] [migration] user_dashboard_permissions.can_submit_peer_ratings — already present, skipped
+[2026-10-09T12:09:03.013Z] [INFO] [migration] user_dashboard_permissions.can_view_peer_ratings — already present, skipped
+[2026-10-09T12:09:03.016Z] [INFO] [migration] user_dashboard_permissions nullable — already applied, skipped
+[2026-10-09T12:09:03.017Z] [INFO] [migration] permission_presets table — already exists, skipped
+[2026-10-09T12:09:03.019Z] [INFO] [migration] access_requests table — already exists, skipped
+[2026-10-09T12:09:03.026Z] [INFO] [migration] ai_takeoff_suggestions — table ready, nothing to backfill
+[2026-10-09T12:09:03.029Z] [INFO] [migration] ai_estimator_provenance_tables — tables ready
+[2026-10-09T12:09:03.030Z] [INFO] [migration] lidar tables — already present, skipped
+[2026-10-09T12:09:03.035Z] [INFO] [migration] error_logs table — already present, skipped
+[2026-10-09T12:09:03.038Z] [INFO] [migration] scope modifier junction tables — already present, skipped
+[2026-10-09T12:09:03.045Z] [INFO] [migration] mobilization tables — already present, skipped
+[2026-10-09T12:09:03.046Z] [INFO] [migration] project_permits table — already present, skipped
+[2026-10-09T12:09:03.047Z] [INFO] [migration] material_tests table — already present, skipped
+[2026-10-09T12:09:03.047Z] [INFO] [migration] ppe_compliance_logs table — already present, skipped
+[2026-10-09T12:09:03.052Z] [INFO] [migration] project_reports table ready
+[2026-10-09T12:09:03.057Z] [INFO] [migration] social engagement columns — already present, skipped
+[2026-10-09T12:09:03.059Z] [INFO] [migration] email campaign tables — already present, skipped
+[2026-10-09T12:09:03.062Z] [INFO] [migration] workflow tables — already present, skipped
+[2026-10-09T12:09:03.066Z] [INFO] [migration] missing drizzle tables — already present, skipped
+[2026-10-09T12:09:03.071Z] [INFO] [migration] takeoff_stylus_telemetry_events table ready
+[2026-10-09T12:09:03.074Z] [INFO] [migration] geofence enhancements — already present, skipped
+[2026-10-09T12:09:03.085Z] [INFO] [migration] purchase_order_items expected_delivery_date — already present, skipped
+[2026-10-09T12:09:03.086Z] [INFO] [migration] crm_organisation_type enum — all values present, skipped
+[2026-10-09T12:09:03.101Z] [INFO] [migration] rate_change_signing_policy columns — applied
+[2026-10-09T12:09:03.104Z] [INFO] [migration] material_certifications submit columns — already present, skipped
+[2026-10-09T12:09:03.106Z] [INFO] [migration] heavy-civil enums — all values present, skipped
+[2026-10-09T12:09:03.109Z] [INFO] [migration] project_health_snapshots compliance_score — already present, skipped
+[2026-10-09T12:09:03.112Z] [INFO] [migration] heavy_civil_tables — all 8 tables already present, skipped
+[2026-10-09T12:09:03.215Z] [INFO] [migration] heavy_civil_document_columns — no legacy documents needed backfill
+[2026-10-09T12:09:03.243Z] [INFO] [migration] plan_documents_org_scope — no rows needed organization_id backfill
+[2026-10-09T12:09:03.400Z] [INFO] [migration] crm_enhancement_tables — ensured (quotes, line_items, tasks, assignment_rules, catalog_items, quote_templates, template_items, acceptance_tokens, lead_scoring_rules + opp columns)
+[2026-10-09T12:09:03.408Z] [INFO] [migration] email_accounts push subscription columns ready
+[2026-10-09T12:09:03.509Z] [INFO] [migration] crm_sequence_tables ready
+[2026-10-09T12:09:03.517Z] [INFO] [migration] user_settings table_density column ready
+[2026-10-09T12:09:03.523Z] [INFO] [migration] user_settings crm_birthday_digest_opt_out column ready
+[2026-10-09T12:09:03.530Z] [INFO] [migration] user_settings birthday_digest_weekday/hour columns ready
+[2026-10-09T12:09:03.534Z] [INFO] [migration] user_settings takeoff stylus prefs columns ready
+[2026-10-09T12:09:03.536Z] [INFO] [migration] user_settings label_sheet_template column ready
+[2026-10-09T12:09:03.594Z] [INFO] [migration] user_saved_views table ready
+[2026-10-09T12:09:03.648Z] [INFO] [migration] my_work_saved_views table ready
+[2026-10-09T12:09:03.705Z] [INFO] [migration] plan_pins table ready
+[2026-10-09T12:09:03.741Z] [INFO] [migration] plan_document_markups table ready
+[2026-10-09T12:09:03.744Z] [INFO] [migration] plan_markup_layers + visibility ready
+[2026-10-09T12:09:03.749Z] [INFO] [migration] project_email_distribution_lists table ready
+[2026-10-09T12:09:03.752Z] [INFO] [migration] project_log_email_schedules table ready
+[2026-10-09T12:09:03.756Z] [INFO] [migration] project_log_email_schedules attempt-tracking columns ready
+[2026-10-09T12:09:03.765Z] [INFO] [migration] project_log_email_schedules failure-notification columns ready
+[2026-10-09T12:09:03.766Z] [INFO] [migration] project_log_email_schedules consecutive_failure_count column ready
+[2026-10-09T12:09:03.768Z] [INFO] [migration] organizations.project_log_email_failure_threshold column ready
+[2026-10-09T12:09:03.769Z] [INFO] [migration] organizations.project_log_email_failures_digest_* columns ready
+[2026-10-09T12:09:03.770Z] [INFO] [migration] project_log_email_schedule_attempts table ready
+[2026-10-09T12:09:03.771Z] [INFO] [migration] rate_limit_state table ready
+[2026-10-09T12:09:03.773Z] [INFO] [migration] rate_limit_state counter columns ready
+[2026-10-09T12:09:03.774Z] [INFO] [migration] oauth_state table ready
+[2026-10-09T12:09:03.815Z] [INFO] [migration] crm_contact_timezone_backfill — scanned 0, updated 0 (org-state 0, contact-state 0)
+[2026-10-09T12:09:03.838Z] [INFO] [migration] users receives_job_metric_alert_emails column ready
+[2026-10-09T12:09:03.844Z] [INFO] [migration] users job_metric_alert_quiet_hours columns ready
+[2026-10-09T12:09:03.846Z] [INFO] [migration] users job_metric_alert_quiet_hours_digest columns ready
+[2026-10-09T12:09:03.854Z] [INFO] [migration] pending_contact_reassignment_notifications table — already present, ensured kind/PK shape
+[2026-10-09T12:09:03.878Z] [INFO] [migration] schedule_task_dependencies table — ensured
+[2026-10-09T12:09:03.907Z] [INFO] [migration] standalone takeoff tables ensured
+[2026-10-09T12:09:03.957Z] [INFO] [migration] status_page — tables ready
+[2026-10-09T12:09:03.983Z] [INFO] [migration] status_probe_daily backfill — nothing to backfill
+[2026-10-09T12:09:04.081Z] [INFO] [migration] crm_email_logging_tables — ensured
+[2026-10-09T12:09:04.093Z] [INFO] [migration] users.manager_id — already present, skipped
+[2026-10-09T12:09:04.108Z] [INFO] [migration] project template tables — created successfully
+[2026-10-09T12:09:04.161Z] [INFO] [migration] crm_call_tables — ensured
+[2026-10-09T12:09:04.172Z] [INFO] [migration] projects rollup columns — already present, skipped
+[2026-10-09T12:09:04.175Z] [INFO] [migration] gantt_pdf_alert_* tables — already present, skipped
+[2026-10-09T12:09:04.177Z] [INFO] [migration] portfolio_pdf_alert_* tables — already present, skipped
+[2026-10-09T12:09:04.183Z] [INFO] [migration] pdf_alert_* shared tables — already present, skipped
+[2026-10-09T12:09:04.184Z] [INFO] [migration] project_kpi_snapshots — already present, skipped
+[2026-10-09T12:09:04.187Z] [INFO] [migration] swppp_inspections status/resolved columns ready
+[2026-10-09T12:09:04.187Z] [INFO] [migration] swppp_inspections.last_overdue_notified_at ready
+[2026-10-09T12:09:04.190Z] [INFO] [migration] organizations.swppp_overdue_reminder_* columns ready
+[2026-10-09T12:09:04.191Z] [INFO] [migration] organizations.storage_quota_bytes column ready
+[2026-10-09T12:09:04.198Z] [INFO] [migration] rfis overdue + external assignee columns ready
+[2026-10-09T12:09:04.204Z] [INFO] [migration] submittal_reviews overdue + reviewer email columns ready
+[2026-10-09T12:09:04.206Z] [INFO] [migration] organizations.doc_overdue_reminder_* columns ready
+[2026-10-09T12:09:04.207Z] [INFO] [migration] subcontractor_portal_tokens.token_lookup_hash + index ready
+[2026-10-09T12:09:04.212Z] [INFO] [migration] crm_transcript_backfill_jobs table ready
+[2026-10-09T12:09:04.213Z] [INFO] [migration] crm_transcript_backfill_notification_settings table ready
+[2026-10-09T12:09:04.215Z] [INFO] [migration] crm_transcript_backfill_notifications table ready
+[2026-10-09T12:09:04.217Z] [INFO] [migration] crm_transcript_backfill_alert_deliveries table ready
+[2026-10-09T12:09:04.217Z] [INFO] [migration] crm_transcript_backfill_test_alerts table ready
+[2026-10-09T12:09:04.218Z] [INFO] [migration] users crm_alert_failure_fallback_* columns ready
+[2026-10-09T12:09:04.227Z] [INFO] [migration] users crm_contact_owner_filter / crm_org_owner_filter columns ready
+[2026-10-09T12:09:04.246Z] [INFO] [migration] crm_and_reporting_tables — ensured 14 tables (CRM forms/meetings/SLAs/automations/reports + integration api + safety + daily reports + job metrics + alert fallback)
+[2026-10-09T12:09:04.246Z] [INFO] [migration] crm_transcript_backfill_alert_resend_cooldowns table ready
+[2026-10-09T12:09:04.248Z] [INFO] [migration] certified_payroll_backfill — already completed, skipped
+[2026-10-09T12:09:04.249Z] [INFO] [migration] exhausted_sync_retry_alerts_backfill — already completed, skipped
+[2026-10-09T12:09:04.250Z] [INFO] [migration] restore_audit_backfill — already completed, skipped
+[2026-10-09T12:09:04.250Z] [INFO] [migration] scale_calibration_backfill — already completed, skipped
+[2026-10-09T12:09:04.253Z] [INFO] [migration] feature_flag_preset_applications table ready
+[2026-10-09T12:09:04.254Z] [INFO] [migration] feature_flag_manual_changes table ready
+[2026-10-09T12:09:04.256Z] [INFO] [migration] dot_pay_item_match_history table ready
+[2026-10-09T12:09:04.257Z] [INFO] [migration] dol_classification_mappings table ready
+[2026-10-09T12:09:04.258Z] [INFO] [migration] platform_incident_review tables ready
+[2026-10-09T12:09:04.262Z] [INFO] [migration] closeout_packages.checksum/completed_at — table ready
+[2026-10-09T12:09:04.264Z] [INFO] [ensureMobileSyncEventsTable] mobile_sync_events table ready
+[2026-10-09T12:09:04.316Z] [INFO] [migration] ai_estimator_chat_messages.attachments — column ready
+[2026-10-09T12:09:04.328Z] [INFO] [migration] takeoff_sheets tile columns — table ready
+[2026-10-09T12:09:04.333Z] [INFO] [migration] demo_requests table ready
+[2026-10-09T12:09:04.334Z] [INFO] [migration] demo_lead_crm_config table ready
+[2026-10-09T12:09:04.335Z] [INFO] [migration] integration_connection_status + notification_type — oauth reconnect enum values ready
+[2026-10-09T12:09:04.337Z] [INFO] [migration] support_ticket_replies — table ready
+[2026-10-09T12:09:04.344Z] [INFO] [migration] workflow_entity_type + approval_entity_type — workflow lifecycle enum values ready
+[2026-10-09T12:09:04.345Z] [INFO] [migration] website_page_type — CAREERS enum value ready
+[2026-10-09T12:09:04.362Z] [INFO] [migration] csi_scope_columns (ai_bid_document_analysis + standalone_takeoffs) — columns ready
+[2026-10-09T12:09:04.364Z] [INFO] [ensureOrgAiKeys] org_ai_keys table ready
+[2026-10-09T12:09:04.368Z] [INFO] [ensureAiActionAuditKeySource] ai_action_audit.key_source column ready
+[2026-10-09T12:09:04.368Z] [INFO] [migration] support_settings — table ready
+[2026-10-09T12:09:04.369Z] [INFO] [migration] support_holidays — table ready
+[2026-10-09T12:09:04.369Z] [INFO] [migration] audit_action enum — ESCALATE + AUTO_ASSIGN values ready
+[2026-10-09T12:09:04.374Z] [INFO] [migration] audit_log.user_id — already nullable, skipped
+[2026-10-09T12:09:04.375Z] [INFO] [migration] support_holidays seed — already present through 2029, skipped
+[2026-10-09T12:09:04.385Z] [INFO] [migration] estimates.ai_draft_benchmark_summary / ai_draft_overall_confidence — columns ready
+[2026-10-09T12:09:04.386Z] [INFO] [migration] estimate_benchmark_refreshes table — ensured
+[2026-10-09T12:09:04.394Z] [INFO] [migration] enrichment_log / enrichment_feedback / bid_outcomes — tables ready
+[2026-10-09T12:09:04.394Z] [INFO] [migrations] 175 checks complete in 2489ms — 0 applied, 175 up-to-date — breakdown: 80 CREATE_TABLE, 67 ADD_COLUMN, 16 ADD_ENUM, 12 ALTER_TABLE
+[2026-10-09T12:09:04.471Z] [INFO] [schema-drift] All 591 schema tables/columns present in DB — no drift detected (18 additional DB-only tables)
+[2026-10-09T12:09:04.723Z] [INFO] 12:09:04 PM [express] Integration status: livekit: NOT configured, twilio: NOT configured, openai: NOT configured, sendgrid: NOT configured, social_facebook: NOT configured, social_linkedin: NOT configured, social_twitter: NOT configured, social_tiktok: NOT configured, social_youtube: NOT configured, social_pinterest: NOT configured
+[2026-10-09T12:09:04.723Z] [INFO] 12:09:04 PM [express] Dev seed routes: ENABLED
+[2026-10-09T12:09:04.726Z] [INFO] 12:09:04 PM [express] serving on port 5000
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Resolved base URL: https://localhost:5000
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Gmail redirect URI: https://localhost:5000/api/email/oauth/gmail/callback (auto)
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Outlook redirect URI: https://localhost:5000/api/email/oauth/outlook/callback (auto)
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Outlook config: NOT configured
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Google login redirect URI: https://localhost:5000/api/auth/google/callback
+[2026-10-09T12:09:04.726Z] [INFO] [OAuth] Google integration redirect URI: https://localhost:5000/api/integrations/connections/:id/callback
+[2026-10-09T12:09:04.726Z] [INFO] [OcrProvider] Registered: TESSERACT
+[2026-10-09T12:09:04.726Z] [INFO] Background schedulers are DISABLED (development mode)
+[2026-10-09T12:09:04.726Z] [INFO]    Set ENABLE_SCHEDULERS=true to enable in dev, or use the manual trigger API
+[2026-10-09T12:09:04.726Z] [INFO]    POST /api/admin/jobs/:jobName/run — trigger any job on demand (Super Admin)
+[2026-10-09T12:09:05.149Z] [WARN] Portfolio PDF renderer (Chromium) unavailable — falling back to HTML export in non-production | error=browserType.launch: Executable doesn't exist at /opt/pw-browsers/chromium_headless_shell-1217/chrome-headless-shell-linux64/chrome-headless-shell
+╔════════════════════════════════════════════════════════════╗
+║ Looks like Playwright was just installed or updated.       ║
+║ Please run the following command to download new browsers: ║
+║                                                            ║
+║     npx playwright install                                 ║
+║                                                            ║
+║ <3 Playwright Team                                         ║
+╚════════════════════════════════════════════════════════════╝
+[2026-10-09T12:09:06.285Z] [INFO] 12:09:06 PM [express] GET /api/health 200 in 271ms | correlationId=5d3ba6f6-91d4-473c-b94e-8d1b91c1488c requestId=5d3ba6f6-91d4-473c-b94e-8d1b91c1488c
+Browserslist: browsers data (caniuse-lite) is 7 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+
+A PostCSS plugin did not pass the `from` option to `postcss.parse`. This may cause imported assets to be incorrectly transformed. If you've recently added a PostCSS plugin that raised this warning, please contact the package author to fix the issue.
+[2026-10-09T12:09:26.971Z] [INFO] [DOTSeed] Agencies: 0 inserted | Spec Books: 0 inserted | Pay Items: 57290 inserted
+[2026-10-09T12:09:55.636Z] [INFO] 12:09:55 PM [express] GET /api/auth/me 401 in 16ms :: {"error":"Authentication required"} | correlationId=0cd0adc6-2edf-4f46-969f-138fb22aec6e requestId=0cd0adc6-2edf-4f46-969f-138fb22aec6e
+[2026-10-09T12:09:55.792Z] [INFO] 12:09:55 PM [express] POST /api/auth/login 200 in 134ms :: {"user":{"id":"ee7074d1-fbbd-46ec-8a09-259… | correlationId=16d1b1e3-e673-4bfa-9afd-db9b132e08b5 requestId=16d1b1e3-e673-4bfa-9afd-db9b132e08b5
+[2026-10-09T12:09:55.841Z] [INFO] 12:09:55 PM [express] GET /api/auth/me 200 in 45ms :: {"user":{"id":"ee7074d1-fbbd-46ec-8a09-2592d413… | correlationId=4e00355a-7213-477a-97ad-3c7428f82db2 requestId=4e00355a-7213-477a-97ad-3c7428f82db2
+[2026-10-09T12:09:55.851Z] [INFO] 12:09:55 PM [express] GET /api/auth/me 401 in 2ms :: {"error":"Authentication required"} | correlationId=d27eb542-1b17-4b31-8d12-79b22b5ec9e0 requestId=d27eb542-1b17-4b31-8d12-79b22b5ec9e0
+[2026-10-09T12:09:55.937Z] [INFO] 12:09:55 PM [express] POST /api/auth/login 200 in 82ms :: {"user":{"id":"fbe64383-b83c-47bd-a3a7-0805… | correlationId=a82c2164-6457-4e47-b6fc-4bc5c0583f33 requestId=a82c2164-6457-4e47-b6fc-4bc5c0583f33
+[2026-10-09T12:09:55.972Z] [INFO] 12:09:55 PM [express] GET /api/auth/me 200 in 32ms :: {"user":{"id":"fbe64383-b83c-47bd-a3a7-08050afa… | correlationId=2ffc485d-bf61-4d55-91ac-8bfabba84d72 requestId=2ffc485d-bf61-4d55-91ac-8bfabba84d72
+[2026-10-09T12:09:55.980Z] [INFO] 12:09:55 PM [express] GET /api/auth/me 401 in 4ms :: {"error":"Authentication required"} | correlationId=9a13c68c-150f-46de-b622-047c4280a288 requestId=9a13c68c-150f-46de-b622-047c4280a288
+[2026-10-09T12:09:56.085Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 102ms :: {"user":{"id":"48c6af30-677f-46be-8846-373… | correlationId=d93747e0-7b59-48a6-9397-163d98c1f599 requestId=d93747e0-7b59-48a6-9397-163d98c1f599
+[2026-10-09T12:09:56.109Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 21ms :: {"user":{"id":"48c6af30-677f-46be-8846-373718c1… | correlationId=31080913-a0bc-424e-819f-4f710d6a35ad requestId=31080913-a0bc-424e-819f-4f710d6a35ad
+[2026-10-09T12:09:56.114Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=b0bfb6d9-b446-404e-85e4-61386bb5fcb3 requestId=b0bfb6d9-b446-404e-85e4-61386bb5fcb3
+[2026-10-09T12:09:56.196Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 80ms :: {"user":{"id":"ef36367e-fdbe-4d23-9143-70ce… | correlationId=8958b6d6-6d1b-4304-b6ae-7836eec13fe5 requestId=8958b6d6-6d1b-4304-b6ae-7836eec13fe5
+[2026-10-09T12:09:56.225Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 20ms :: {"user":{"id":"ef36367e-fdbe-4d23-9143-70cebeec… | correlationId=e2a0da18-9f32-4d12-a408-9e9050a2cfc6 requestId=e2a0da18-9f32-4d12-a408-9e9050a2cfc6
+[2026-10-09T12:09:56.228Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=8dc76332-f09d-4d5d-9abf-5fbc20704b61 requestId=8dc76332-f09d-4d5d-9abf-5fbc20704b61
+[2026-10-09T12:09:56.323Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 93ms :: {"user":{"id":"64d82b52-41fe-4a36-8f6f-868e… | correlationId=919433c8-fd0d-43ee-a8a3-e847c102a081 requestId=919433c8-fd0d-43ee-a8a3-e847c102a081
+[2026-10-09T12:09:56.351Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 24ms :: {"user":{"id":"64d82b52-41fe-4a36-8f6f-868e3fd6… | correlationId=2ab3dd1b-b13e-44c1-a204-b5ede21f7c17 requestId=2ab3dd1b-b13e-44c1-a204-b5ede21f7c17
+[2026-10-09T12:09:56.355Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=5f560ef4-4176-4770-a612-29e5060e4ab9 requestId=5f560ef4-4176-4770-a612-29e5060e4ab9
+[2026-10-09T12:09:56.458Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 101ms :: {"user":{"id":"733a6e26-e821-4223-919f-cbe… | correlationId=156171ec-52ed-4699-b6bd-bb099a9baf63 requestId=156171ec-52ed-4699-b6bd-bb099a9baf63
+[2026-10-09T12:09:56.479Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 18ms :: {"user":{"id":"733a6e26-e821-4223-919f-cbe15abd… | correlationId=d3d3c1d8-a499-40da-91ae-9180b7eb404f requestId=d3d3c1d8-a499-40da-91ae-9180b7eb404f
+[2026-10-09T12:09:56.483Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=23fb06dd-ec43-4263-8c8e-930c71a17ffd requestId=23fb06dd-ec43-4263-8c8e-930c71a17ffd
+[2026-10-09T12:09:56.571Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 84ms :: {"user":{"id":"f15e2d29-2dba-4539-a8ad-2f49… | correlationId=2829760f-7d12-4a26-a69f-2e6ce06d1308 requestId=2829760f-7d12-4a26-a69f-2e6ce06d1308
+[2026-10-09T12:09:56.593Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 21ms :: {"user":{"id":"f15e2d29-2dba-4539-a8ad-2f49394b… | correlationId=970c7ad3-a245-470d-8767-a185f505e811 requestId=970c7ad3-a245-470d-8767-a185f505e811
+[2026-10-09T12:09:56.596Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=0ddaae83-8496-47fd-b2c5-70a7260ae9aa requestId=0ddaae83-8496-47fd-b2c5-70a7260ae9aa
+[2026-10-09T12:09:56.675Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 77ms :: {"user":{"id":"cc7e33ad-b592-43ff-81a1-74e8… | correlationId=dcca39c8-2d82-4ede-ac64-e21a478e5913 requestId=dcca39c8-2d82-4ede-ac64-e21a478e5913
+[2026-10-09T12:09:56.702Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 23ms :: {"user":{"id":"cc7e33ad-b592-43ff-81a1-74e82d48… | correlationId=d7683afe-db8c-479d-afa4-87fb9465a4f0 requestId=d7683afe-db8c-479d-afa4-87fb9465a4f0
+[2026-10-09T12:09:56.705Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=627f8990-f017-46a3-8b85-78ccfa261f8e requestId=627f8990-f017-46a3-8b85-78ccfa261f8e
+[2026-10-09T12:09:56.798Z] [INFO] 12:09:56 PM [express] POST /api/auth/login 200 in 89ms :: {"user":{"id":"8009e4ab-3894-459e-ade9-2b77… | correlationId=d863d4dd-a16f-42a5-8fd4-6ef6e6fa0675 requestId=d863d4dd-a16f-42a5-8fd4-6ef6e6fa0675
+[2026-10-09T12:09:56.819Z] [INFO] 12:09:56 PM [express] GET /api/auth/me 200 in 19ms :: {"user":{"id":"8009e4ab-3894-459e-ade9-2b776f1f… | correlationId=c1eea466-d5bc-46e8-829e-bfc4f709b87f requestId=c1eea466-d5bc-46e8-829e-bfc4f709b87f
+[2026-10-09T12:10:05.937Z] [INFO] 12:10:05 PM [express] POST /api/auth/login 200 in 81ms :: {"user":{"id":"733a6e26-e821-4223-919f-cbe1… | correlationId=055c5b42-7053-49c7-bf5a-c0c52ca5e3cc requestId=055c5b42-7053-49c7-bf5a-c0c52ca5e3cc
+[2026-10-09T12:10:05.978Z] [INFO] 12:10:05 PM [express] GET /api/auth/me 200 in 25ms :: {"user":{"id":"733a6e26-e821-4223-919f-cbe15abd… | correlationId=6905ab9c-b5e2-4b8e-b5d6-c51cbc855551 requestId=6905ab9c-b5e2-4b8e-b5d6-c51cbc855551
+[2026-10-09T12:10:51.115Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 401 in 2ms :: {"error":"Authentication required"} | correlationId=a8bc961d-ce9c-43a7-b54c-5391258367f7 requestId=a8bc961d-ce9c-43a7-b54c-5391258367f7
+[2026-10-09T12:10:51.231Z] [INFO] 12:10:51 PM [express] POST /api/auth/login 200 in 105ms :: {"user":{"id":"7e9d5d2b-0d2b-4a35-8ab3-593… | correlationId=d405e9f2-a1b7-422d-93d5-6fd899538518 requestId=d405e9f2-a1b7-422d-93d5-6fd899538518
+[2026-10-09T12:10:51.259Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 200 in 20ms :: {"user":{"id":"7e9d5d2b-0d2b-4a35-8ab3-593d9567… | correlationId=af44a190-881f-47d2-9f95-8671a62b486f requestId=af44a190-881f-47d2-9f95-8671a62b486f
+[2026-10-09T12:10:51.264Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 401 in 1ms :: {"error":"Authentication required"} | correlationId=811c298b-b57f-4ecf-bdf2-bf88253f34b8 requestId=811c298b-b57f-4ecf-bdf2-bf88253f34b8
+[2026-10-09T12:10:51.345Z] [INFO] 12:10:51 PM [express] POST /api/auth/login 200 in 78ms :: {"user":{"id":"64d82b52-41fe-4a36-8f6f-868e… | correlationId=47a249db-7ede-4136-8301-47a9b7bda3fc requestId=47a249db-7ede-4136-8301-47a9b7bda3fc
+[2026-10-09T12:10:51.367Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 200 in 19ms :: {"user":{"id":"64d82b52-41fe-4a36-8f6f-868e3fd6… | correlationId=0ea82875-573c-4677-8cb4-b2c906333cef requestId=0ea82875-573c-4677-8cb4-b2c906333cef
+[2026-10-09T12:10:51.374Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 401 in 3ms :: {"error":"Authentication required"} | correlationId=329cc0b2-df96-4aa4-8b9f-7d96622d6d54 requestId=329cc0b2-df96-4aa4-8b9f-7d96622d6d54
+[2026-10-09T12:10:51.462Z] [INFO] 12:10:51 PM [express] POST /api/auth/login 200 in 86ms :: {"user":{"id":"ee7074d1-fbbd-46ec-8a09-2592… | correlationId=07807bdb-6a50-4e6a-baf8-6a3e14152f9f requestId=07807bdb-6a50-4e6a-baf8-6a3e14152f9f
+[2026-10-09T12:10:51.489Z] [INFO] 12:10:51 PM [express] GET /api/auth/me 200 in 20ms :: {"user":{"id":"ee7074d1-fbbd-46ec-8a09-2592d413… | correlationId=9d7442c9-c9bd-4daa-9d2e-0b4d6a140d84 requestId=9d7442c9-c9bd-4daa-9d2e-0b4d6a140d84
+[2026-10-09T12:10:51.526Z] [INFO] 12:10:51 PM [express] POST /api/crm/organisations 201 in 32ms :: {"id":"d4e1118a-7fcb-43a7-8963-74309… | correlationId=51613864-71a1-482e-aab3-51b6238581e9 requestId=51613864-71a1-482e-aab3-51b6238581e9
+[2026-10-09T12:10:51.562Z] [INFO] 12:10:51 PM [express] POST /api/crm/contacts 201 in 32ms :: {"id":"3261c57f-3c34-48cb-98ed-4a9799ba8e… | correlationId=5e41f489-d572-43f1-96c9-be6cf109a775 requestId=5e41f489-d572-43f1-96c9-be6cf109a775
+[2026-10-09T12:10:51.596Z] [INFO] CRM: scoring win probability for new opportunity | correlationId=1022933f-abb0-4859-b5a2-3f7adcc97a47 requestId=1022933f-abb0-4859-b5a2-3f7adcc97a47 opportunityId=0c1373d0-b568-47bc-8a01-4bf17cd338eb
+[2026-10-09T12:10:51.598Z] [INFO] 12:10:51 PM [express] POST /api/crm/opportunities 201 in 32ms :: {"id":"0c1373d0-b568-47bc-8a01-4bf17… | correlationId=1022933f-abb0-4859-b5a2-3f7adcc97a47 requestId=1022933f-abb0-4859-b5a2-3f7adcc97a47
+[2026-10-09T12:10:51.618Z] [INFO] 12:10:51 PM [express] GET /api/crm/opportunities/0c1373d0-b568-47bc-8a01-4bf17cd338eb 200 in 19ms :: … | correlationId=6cbddc81-0827-4fe7-8678-d3682c1ffe44 requestId=6cbddc81-0827-4fe7-8678-d3682c1ffe44
+[2026-10-09T12:10:51.623Z] [WARN] AI_PROVIDER_TAKEOFF=on but ANTHROPIC_API_KEY missing — using OpenAI | correlationId=1022933f-abb0-4859-b5a2-3f7adcc97a47 requestId=1022933f-abb0-4859-b5a2-3f7adcc97a47 orgId=94d44dae-7310-46fe-81c9-4f61145f21a4 featureKey=estimation.win_probability
+[2026-10-09T12:10:51.623Z] [ERROR] [Win Probability] AI scoring failed, using heuristic fallback: | correlationId=1022933f-abb0-4859-b5a2-3f7adcc97a47 requestId=1022933f-abb0-4859-b5a2-3f7adcc97a47
+  Error: OpenAI API key is missing. Set up Replit AI Integrations or provide OPENAI_API_KEY.
+  Error: OpenAI API key is missing. Set up Replit AI Integrations or provide OPENAI_API_KEY.
+    at getOpenAI (/home/user/SmartManageAI/server/ai/openaiClient.ts:16:13)
+    at Object.get (/home/user/SmartManageAI/server/ai/openaiClient.ts:29:13)
+    at OpenAIProvider.chatCompletion (/home/user/SmartManageAI/server/ai/providers/openaiProvider.ts:45:37)
+    at executeRoutedChat (/home/user/SmartManageAI/server/ai/providers/index.ts:225:36)
+    at routedChatCompletion (/home/user/SmartManageAI/server/ai/providers/index.ts:339:24)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Object.fn (/home/user/SmartManageAI/server/ai/winProbabilityService.ts:115:28)
+    at async governedAiCall (/home/user/SmartManageAI/server/services/aiGovernance.ts:242:34)
+    at async scoreWinProbability (/home/user/SmartManageAI/server/ai/winProbabilityService.ts:107:22)
+    at async <anonymous> (/home/user/SmartManageAI/server/events/listeners/crmEventListener.ts:12:7)
+    at async Promise.allSettled (index 1)
+    at async TypedEventBus.dispatch (/home/user/SmartManageAI/server/events/eventBus.ts:61:21)
+[2026-10-09T12:10:51.659Z] [INFO] 12:10:51 PM [express] POST /api/crm/opportunities/0c1373d0-b568-47bc-8a01-4bf17cd338eb/create-bid 201… | correlationId=329d9a5a-6f11-4077-b103-3fad28040e25 requestId=329d9a5a-6f11-4077-b103-3fad28040e25
+[2026-10-09T12:10:51.672Z] [INFO] [Estimate] Get-or-create bid estimate request: | correlationId=ad70ba73-620c-45bb-a695-28e746117caa requestId=ad70ba73-620c-45bb-a695-28e746117caa bidId=7f3717df-1007-4849-9019-d4805e7eb636 user=estimator@realtest.com
+[2026-10-09T12:10:51.685Z] [INFO] [Estimate] Creating bid estimate with version: 1 | correlationId=ad70ba73-620c-45bb-a695-28e746117caa requestId=ad70ba73-620c-45bb-a695-28e746117caa
+[2026-10-09T12:10:51.688Z] [INFO] [Estimate] Created bid estimate: eb5babbd-ee04-4459-9a67-6fde14865374 | correlationId=ad70ba73-620c-45bb-a695-28e746117caa requestId=ad70ba73-620c-45bb-a695-28e746117caa
+[2026-10-09T12:10:51.689Z] [INFO] 12:10:51 PM [express] POST /api/bids/7f3717df-1007-4849-9019-d4805e7eb636/estimate 201 in 27ms :: {"i… | correlationId=ad70ba73-620c-45bb-a695-28e746117caa requestId=ad70ba73-620c-45bb-a695-28e746117caa

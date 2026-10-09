@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-PLATFORM-ORG-LIST",
+  "title": "Role matrix: Platform org list",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:D HUSTLER:D MANAGER:D SUPERINTENDENT:D ESTIMATOR:D FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:26.009Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 200,
+   "ms": 20,
+   "resBody": "[binary 672 bytes application/json; charset=utf-8]",
+   "requestId": "34c36be4-2c36-435f-92cd-b7d3163ff66d"
+  },
+  {
+   "at": "2026-10-09T12:33:26.022Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 13,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "df37f1de-473d-4f9c-98ea-cc8506da3b19"
+  },
+  {
+   "at": "2026-10-09T12:33:26.035Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 13,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "bccc6228-a965-44f4-ae93-707af5f70778"
+  },
+  {
+   "at": "2026-10-09T12:33:26.056Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 21,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "ee25b890-d37b-4967-a140-5cdd0d5cf114"
+  },
+  {
+   "at": "2026-10-09T12:33:26.071Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 14,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "b8280a18-18e5-4143-a244-42259c9cf500"
+  },
+  {
+   "at": "2026-10-09T12:33:26.081Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "a71e20ae-43aa-4b9d-a301-ec8ba54441e6"
+  },
+  {
+   "at": "2026-10-09T12:33:26.091Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "54c3d6b9-549c-4605-8b94-e8d9ca83dc49"
+  },
+  {
+   "at": "2026-10-09T12:33:26.107Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 403,
+   "ms": 16,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "0ae710c4-7d88-4070-8c59-c25828c0e4f4"
+  },
+  {
+   "at": "2026-10-09T12:33:26.110Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/platform/organizations",
+   "status": 401,
+   "ms": 2,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "fa60ee71-a3e3-4d4d-b1f6-db017802c960"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"200\",\"ADMIN\":\"403\",\"HUSTLER\":\"403\",\"MANAGER\":\"403\",\"SUPERINTENDENT\":\"403\",\"ESTIMATOR\":\"403\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

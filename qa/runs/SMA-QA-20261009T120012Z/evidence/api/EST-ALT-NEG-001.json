@@ -1,0 +1,34 @@
+{
+ "meta": {
+  "id": "EST-ALT-NEG-001",
+  "title": "Duplicate alternate group code is rejected cleanly",
+  "module": "Estimating/Alternates",
+  "role": "ESTIMATOR",
+  "tenant": "RealTest Construction",
+  "req": "Defensible API contract: duplicate unique key -> 4xx with message, no internals",
+  "expected": "409/400 with readable error; no stack trace or SQL detail in response"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:15:20.880Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/alternate-groups",
+   "status": 500,
+   "ms": 15,
+   "reqBody": {
+    "code": "ALT-1",
+    "name": "dup",
+    "defaultIncluded": false
+   },
+   "resBody": {
+    "success": false,
+    "error": "Internal Server Error",
+    "requestId": "e5c71164-c03d-4711-be8d-b3fc86a96083",
+    "stack": "error: duplicate key value violates unique constraint \"estimate_alternate_groups_estimate_code_uniq\"\n    at /home/user/SmartManageAI/node_modules/pg/lib/client.js:545:17\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/home/user/SmartManageAI/node_modules/src/node-postgres/session.ts:104:19)\n    at async Layer.handle (/home/user/SmartManageAI/server/estimatePricingRoutes.ts:93:23)"
+   },
+   "requestId": "e5c71164-c03d-4711-be8d-b3fc86a96083"
+  }
+ ],
+ "notes": []
+}

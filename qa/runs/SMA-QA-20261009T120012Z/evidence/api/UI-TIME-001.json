@@ -1,0 +1,18 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "mode": "browser E2E (emulated mobile, simulated GPS; not physical device)",
+  "id": "UI-TIME-001",
+  "title": "Field worker clocks in/out on phone (390x844) with simulated geolocation",
+  "module": "UI/Time Clock",
+  "role": "FIELD_WORKER",
+  "req": "Prompt §5 Field time",
+  "expected": "Clock-in and clock-out controls reachable and work; shift recorded"
+ },
+ "calls": [],
+ "notes": [
+  "time-clock testids: tabs-time-clock,tab-clock,card-clock-control,select-project,button-clock-in,cell-project-4598fc37-4ef7-435d-9d70-3d704fc0968a,cell-clock-in-4598fc37-4ef7-435d-9d70-3d704fc0968a,cell-clock-out-4598fc37-4ef7-435d-9d70-3d704fc0968a,cell-project-c17a9ed8-a7ea-48e4-a733-4e3ce1575c04,cell-clock-in-c17a9ed8-a7ea-48e4-a733-4e3ce1575c04,cell-clock-out-c17a9ed8-a7ea-48e4-a733-4e3ce1575c04,cell-project-b048905d-0955-4e3c-84c1-d2212e210c97,cell-clock-in-b048905d-0955-4e3c-84c1-d2212e210c97,cell-clock-out-b048905d-0955-4e3c-84c1-d2212e210c97,cell-project-3d1f736a-40b3-4396-80b8-3cfd88761491,cell-clock-in-3d1f736a-40b3-4396-80b8-3cfd88761491,cell-clock-out-3d1f736a-40b3-4396-80b8-3cfd88761491,cell-project-1c35c6d3-e875-4055-b4c8-72db94dd00d9,cell-clock-in-1c35c6d3-e875-4055-b4c8-72db94dd00d9,cell-clock-out-1c35c6d3-e875-4055-b4c8-72db94dd00d9",
+  "clock-in button 316x52px",
+  "clock-in API 201; clock-out API 200"
+ ]
+}

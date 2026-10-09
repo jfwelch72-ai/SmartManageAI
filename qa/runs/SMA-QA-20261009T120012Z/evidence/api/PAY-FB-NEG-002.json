@@ -1,0 +1,99 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "module": "Progress Billing (FALLBACK)",
+  "role": "MANAGER + ADMIN",
+  "mode": "API integration (fallback seed)",
+  "id": "PAY-FB-NEG-002",
+  "title": "Overbilling: SOV line with completed > scheduled value",
+  "req": "Prompt §5 attempted overbilling",
+  "expected": "4xx or capped at scheduled value"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:28:33.976Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/sov",
+   "status": 201,
+   "ms": 26,
+   "reqBody": {
+    "projectId": "e0c237f0-1ff7-4794-876b-da42dd2e7c12",
+    "title": "SMA-QA-20261009T120012Z FB overbill probe",
+    "contractValue": "782052.11",
+    "retainagePercent": "10",
+    "lineItems": [
+     {
+      "lineNumber": 1,
+      "description": "[R11] General Conditions/Mobilization",
+      "scheduledValue": "58463.00",
+      "previouslyCompleted": "58463",
+      "thisPeriodCompleted": "10000"
+     }
+    ]
+   },
+   "resBody": {
+    "id": "e7a8a948-2759-43a7-b83c-b46ad00108ad",
+    "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+    "projectId": "e0c237f0-1ff7-4794-876b-da42dd2e7c12",
+    "sovNumber": "SOV-260014-004",
+    "title": "SMA-QA-20261009T120012Z FB overbill probe",
+    "description": null,
+    "contractValue": "782052.11",
+    "retainagePercent": "10.00",
+    "periodNumber": 4,
+    "periodStart": null,
+    "periodEnd": null,
+    "status": "DRAFT",
+    "approvedById": null,
+    "approvedAt": null,
+    "submittedAt": null,
+    "paidAt": null,
+    "totalScheduledValue": "58463.00",
+    "totalPreviouslyCompleted": "58463.00",
+    "totalThisPeriod": "10000.00",
+    "totalCompletedToDate": "68463.00",
+    "totalMaterialsStored": "0.00",
+    "totalRetainage": "6846.30",
+    "totalEarnedLessRetainage": "61616.70",
+    "pdfUrl": null,
+    "pdfGeneratedAt": null,
+    "createdById": "48c6af30-677f-46be-8846-373718c11e46",
+    "createdAt": "2026-10-09T12:28:33.966Z",
+    "updatedAt": "2026-10-09T12:28:33.970Z",
+    "lineItems": [
+     {
+      "id": "49cd0ac0-68fb-4988-854c-6be6bd2e9eb8",
+      "sovId": "e7a8a948-2759-43a7-b83c-b46ad00108ad",
+      "lineNumber": 1,
+      "itemCode": null,
+      "description": "[R11] General Conditions/Mobilization",
+      "category": null,
+      "scheduledValue": "58463.00",
+      "previouslyCompleted": "58463.00",
+      "thisPeriodCompleted": "10000.00",
+      "materialsStored": "0.00",
+      "totalCompletedAndStored": "68463.00",
+      "percentComplete": "100.00",
+      "balanceToFinish": "0.00",
+      "retainageAmount": "6846.30",
+      "estimateLineItemId": null,
+      "linkedChangeOrderId": null,
+      "organizationSowItemId": null,
+      "dotPayItemId": null,
+      "dotSpecBookId": null,
+      "payItemNumber": null,
+      "specSection": null,
+      "notes": null,
+      "createdAt": "2026-10-09T12:28:33.968Z",
+      "updatedAt": "2026-10-09T12:28:33.968Z"
+     }
+    ]
+   },
+   "requestId": "fee489c4-60fb-48ba-b863-b9f00f73b505"
+  }
+ ],
+ "notes": [
+  "status 201; line totalCompletedAndStored 68463.00 pct 100.00 balance 0.00; sov completedToDate 68463.00"
+ ]
+}

@@ -1,0 +1,29 @@
+{
+ "meta": {
+  "id": "FILE-NEG-001",
+  "title": "Upload: Empty file -> prevailing-wage import preview",
+  "module": "Uploads/Import",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "laborRateRoutes.ts:52-56 (5 MiB), 1168-1230",
+  "expected": "400 readable"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:55:27.776Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/labor-rates/prevailing-wage-rates/import-preview",
+   "status": 400,
+   "ms": 161,
+   "reqBody": "[multipart]",
+   "resBody": {
+    "error": "File must include a header row and at least one data row"
+   },
+   "requestId": "c75abc8d-78c0-4627-8857-44eba84f29ac"
+  }
+ ],
+ "notes": [
+  "400 {\"error\":\"File must include a header row and at least one data row\"}"
+ ]
+}

@@ -1,0 +1,121 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "TIME-002",
+  "title": "Clock-out with no active shift; approve open shift",
+  "module": "Time Clock",
+  "role": "FIELD_WORKER + SUPERINTENDENT",
+  "req": "timeClockRoutes.ts:632,1281-1287",
+  "expected": "clock-out 400; approving an open shift 400"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:19:32.171Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-clock/clock-out",
+   "status": 400,
+   "ms": 11,
+   "reqBody": {},
+   "resBody": {
+    "error": "No active shift found. Please clock in first."
+   },
+   "requestId": "d219b592-01b6-486b-a66d-9678d6cda638"
+  },
+  {
+   "at": "2026-10-09T12:19:32.188Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-clock/clock-in",
+   "status": 201,
+   "ms": 17,
+   "reqBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b"
+   },
+   "resBody": {
+    "id": "3d1f736a-40b3-4396-80b8-3cfd88761491",
+    "userId": "733a6e26-e821-4223-919f-cbe15abdba24",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "clockIn": "2026-10-09T12:19:32.180Z",
+    "clockOut": null,
+    "clockInLatitude": null,
+    "clockInLongitude": null,
+    "clockInAccuracy": null,
+    "clockOutLatitude": null,
+    "clockOutLongitude": null,
+    "clockOutAccuracy": null,
+    "costCode": null,
+    "notes": null,
+    "autoClockOut": false,
+    "geofenceStatus": "NO_GPS",
+    "clockOutGeofenceStatus": null,
+    "spoofingFlag": false,
+    "spoofingDetails": null,
+    "geofenceOverride": false,
+    "geofenceOverrideReason": null,
+    "approvalStatus": "PENDING",
+    "approvedById": null,
+    "approvedAt": null,
+    "totalHours": null,
+    "createdAt": "2026-10-09T12:19:32.181Z",
+    "updatedAt": "2026-10-09T12:19:32.181Z",
+    "geofenceWarning": null,
+    "accuracyWarning": null
+   },
+   "requestId": "f77081ba-4c45-4d90-a2e7-20a528b2da79"
+  },
+  {
+   "at": "2026-10-09T12:19:32.229Z",
+   "actor": "worker(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/time-clock/clock-out",
+   "status": 200,
+   "ms": 20,
+   "reqBody": {},
+   "resBody": {
+    "id": "3d1f736a-40b3-4396-80b8-3cfd88761491",
+    "userId": "733a6e26-e821-4223-919f-cbe15abdba24",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "clockIn": "2026-10-09T12:19:32.180Z",
+    "clockOut": "2026-10-09T12:19:32.217Z",
+    "clockInLatitude": null,
+    "clockInLongitude": null,
+    "clockInAccuracy": null,
+    "clockOutLatitude": null,
+    "clockOutLongitude": null,
+    "clockOutAccuracy": null,
+    "costCode": null,
+    "notes": null,
+    "autoClockOut": false,
+    "geofenceStatus": "NO_GPS",
+    "clockOutGeofenceStatus": "NO_GPS",
+    "spoofingFlag": false,
+    "spoofingDetails": null,
+    "geofenceOverride": false,
+    "geofenceOverrideReason": null,
+    "approvalStatus": "PENDING",
+    "approvedById": null,
+    "approvedAt": null,
+    "totalHours": "0.00",
+    "createdAt": "2026-10-09T12:19:32.181Z",
+    "updatedAt": "2026-10-09T12:19:32.217Z",
+    "geofenceWarning": null
+   },
+   "requestId": "66b68460-0c4b-44ce-a68d-9f00e5b67b99"
+  },
+  {
+   "at": "2026-10-09T12:19:32.208Z",
+   "actor": "super(SUPERINTENDENT)",
+   "method": "POST",
+   "url": "/api/time-clock/shifts/3d1f736a-40b3-4396-80b8-3cfd88761491/approve",
+   "status": 400,
+   "ms": 19,
+   "reqBody": {},
+   "resBody": {
+    "error": "Cannot approve shift that hasn't been clocked out"
+   },
+   "requestId": "5734df34-5a08-4968-9454-07fcd3236c08"
+  }
+ ],
+ "notes": []
+}

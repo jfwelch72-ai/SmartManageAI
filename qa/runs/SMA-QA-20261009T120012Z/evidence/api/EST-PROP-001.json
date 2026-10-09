@@ -1,0 +1,26 @@
+{
+ "meta": {
+  "id": "EST-PROP-001",
+  "title": "Generate proposal PDF with alternate ALT-1 INCLUDED (source state)",
+  "module": "Estimating/Proposal",
+  "role": "ESTIMATOR",
+  "tenant": "RealTest Construction",
+  "req": "estimatePricingRoutes.ts:662; proposalPdf.ts:78,164",
+  "expected": "Valid PDF; base subtotal $764,977.82; ALT-1 subtotal $17,074.29 marked INCLUDED; line items present"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:15:20.921Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 200,
+   "ms": 39,
+   "resBody": "[binary 5485 bytes application/pdf]",
+   "requestId": "e9b580a3-ca07-4ee4-a37d-ec01ebd976c2"
+  }
+ ],
+ "notes": [
+  "RealTest Construction\nProject Proposal\n\nSMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)\nReference: 260001\nPrepared for: SMA-QA-20261009T120012Z Crane Logistics demo/pads (SYNTHETIC)\nPrepared on: 10/9/2026\nPrepared by: Cost Estimator\n\n\n  Proposal Summary\n   Base bid                                                                          $764,977.82\n   Selected alternates                                                                $17,074.29\n   Allowances                                                                              $0.00\n   Contingencies                                                                           $0.00\n   TOTAL PROPOSAL                                                                    $782,052.11\n\n\nBASE BID — SCOPE OF WORK\nDescription                                                 Qty     Unit    Source                 Total\n[R11] General Conditions/Mobilization                       1       EA      —              $58,463.00\n[R13] Jeff Barker saw cut revised pricing                   1       lump    —              $35,447.06\n[R15] Cat 87-90 30,000lb w thumb x 2 for job per month      2       each    —              $33,000.00\n[R16] fuel for machines                                     1       lump    —               $3,428.57\n[R18] saw cut demo and haul off of 4 opeings per customer 4         hours   —                 $611.76\nrequest\n[R19] Jeff barker for 4 openings then cut into 3x3 piers 8\" 1       lump    —              $33,5"
+ ]
+}

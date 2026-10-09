@@ -1,0 +1,324 @@
+[
+ {
+  "rowIndex": 0,
+  "description": "TFR Construction LLC",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 1,
+  "description": "Job Name:Crane Logistics West Jefferson- Morgan Harbour Construction Tyler",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 2,
+  "description": "Job #: 00420",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 3,
+  "description": "Date: 5/19/26 bids Thursday am",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 4,
+  "description": "Description:demo mass interior concrete 162 each 7x7x24\" pads, new dock ftgs ax 4 each",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 5,
+  "description": "WORK ITEMS",
+  "quantity": 1,
+  "unit": "UNIT",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 6,
+  "description": "General Conditions/Mobilization",
+  "quantity": 1,
+  "unit": "EA",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 7,
+  "description": "GC Responsible for layout of new 162 ea 7x7 spread ftgs by other not TFR!!!",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 8,
+  "description": "Jeff Barker saw cut revised pricing",
+  "quantity": 1,
+  "unit": "lump",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 9,
+  "description": "Cat 87-90 30,000lb w thumb x 2 for job per month",
+  "quantity": 2,
+  "unit": "each",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 10,
+  "description": "fuel for machines",
+  "quantity": 1,
+  "unit": "lump",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 11,
+  "description": "saw cut demo and haul off of 4 opeings per customer request",
+  "quantity": 4,
+  "unit": "hours",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 12,
+  "description": "Jeff barker for 4 openings then cut into 3x3 piers 8\" thk",
+  "quantity": 1,
+  "unit": "lump",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 13,
+  "description": "haul and labor to load trucks",
+  "quantity": 0.15,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 14,
+  "description": "F70 spread ftgs x 162 each 7'x7'x2' 2' bof to pad at top of floor elevations",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 15,
+  "description": "haul spoils off site",
+  "quantity": 294,
+  "unit": "hours",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 16,
+  "description": "rebar lbs 31752 lbs includes 2% fluff",
+  "quantity": 31752,
+  "unit": "lbs",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 17,
+  "description": "3\" sbu chairs",
+  "quantity": 2200,
+  "unit": "lf",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 18,
+  "description": "25 each 3/4\"x8\" sds drill bits",
+  "quantity": 25,
+  "unit": "each",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 19,
+  "description": "concrete yards for spreadasftgs   5.44 yds per pad x 162 each",
+  "quantity": 1014,
+  "unit": "yards",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 20,
+  "description": "labor days demo  $678.83 labor only",
+  "quantity": 34,
+  "unit": "day",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 21,
+  "description": "labor days to pour spread ftgs  $238.00 each labor only for pour back",
+  "quantity": 9,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 22,
+  "description": "$589,826.00    $3640.90",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 23,
+  "description": "x 4 locations of new 16' wide x 18' tall oh doors now has 3'x3'x5' deep cl ftgs",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 24,
+  "description": "haul spoils off site",
+  "quantity": 11,
+  "unit": "hours",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 25,
+  "description": "rebar 24#6 verts with #4 ties 10\" oc",
+  "quantity": 2275,
+  "unit": "lbs",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 26,
+  "description": "50 lf 3\" sbu chairs",
+  "quantity": 50,
+  "unit": "lf",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 27,
+  "description": "concrete yards x 4 each 3'x3'x5' column ftgs at new openings",
+  "quantity": 15,
+  "unit": "yards",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 28,
+  "description": "labor for demo anmd pour back",
+  "quantity": 2.25,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 29,
+  "description": "mini ex day",
+  "quantity": 1,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 30,
+  "description": "fill in dock leveler area with concrete 3' thick x 374 sf",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 31,
+  "description": "concrete yards 374 sf x 36\" deep",
+  "quantity": 48,
+  "unit": "yards",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 32,
+  "description": "rebar dowels into existing lump sum #5 24\" oc x 16\" long",
+  "quantity": 1,
+  "unit": "lump",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 33,
+  "description": "skid steer days",
+  "quantity": 1,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 34,
+  "description": "forming material",
+  "quantity": 1,
+  "unit": "lump",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 35,
+  "description": "labor days   $22.91 per sf labor only",
+  "quantity": 2,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 36,
+  "description": "$25,355.71 =$67.80 per sf",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 37,
+  "description": "clean up days",
+  "quantity": 2,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 38,
+  "description": "concrete washout containment rental",
+  "quantity": 2,
+  "unit": "months",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 39,
+  "description": "alternate for install crackbond csr quick setting self leveling epoxy to patch edges",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 40,
+  "description": "144 22 oz cartridges",
+  "quantity": 144,
+  "unit": "each",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 41,
+  "description": "labor days",
+  "quantity": 1.2,
+  "unit": "days",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 42,
+  "description": "SALES TAX",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 43,
+  "description": "OVERHEAD & PROFIT",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 44,
+  "description": "SUBCONTRACTOR MARK UP",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ },
+ {
+  "rowIndex": 45,
+  "description": "Grand Total",
+  "quantity": 1,
+  "unit": "",
+  "payItemNumberHint": null
+ }
+]

@@ -1,0 +1,56 @@
+file,type,purpose,provenance,test_ids,related_records,sha256,bytes
+fixtures/estimate_reconciliation.xlsx,xlsx,"Cell-level mapping, row classification, independent expected results, source issues",DERIVED from source workbook,"EST-*, PRJ-*",,6605cce06a56ac999c96a76ea7e673025085afd54f30cd2fcad6dd76a829d56a,16748
+fixtures/expected_results.json,json,Independent expected estimate totals (precision + rounding),DERIVED,"EST-IMP-002, EST-CALC-001, EST-ALT-001",,4b9b02bda0fe8316913832042ffde6a3d9a20c06cef141ed5434968cd94bb156,548
+fixtures/normalized_import_00420.csv,csv,Deterministic normalized dataset (NOT a corrected estimate) used for EST-IMP-002 bulk load,DERIVED from source (no value changes),EST-IMP-002,eb5babbd-ee04-4459-9a67-6fde14865374,0cc850824a57948893ed94cbf0050e422d5260d76c09878f005b76ef1ffec56d,2227
+fixtures/scope_and_exclusions.pdf,pdf,Scope and exclusions,SYNTHETIC,"EST-NOTE-001, EST-PROP-*",260001,12b0421bcfa37653b1aa19ac6460c821b27616ad0f440b1b3e9149c1781e1100,2067
+fixtures/alternate_schedule.pdf,pdf,Alternate schedule,SYNTHETIC,"EST-ALT-001, EST-PROP-*",057560dd-1d2f-402d-ada8-5c9727063399,f9b49a9c15e7aec58c50e7756c271c8f0f12449c9e93464ba16fc5dead00779c,2008
+fixtures/award_notice.pdf,pdf,Award notice,SYNTHETIC,BID-AWD-001,260001,ee5d7a98147e6e9545dea919d45c4a1b40fedd54b8ab2b9c6b1f4f1c55ef1bbc,1959
+fixtures/test_prime_agreement.pdf,pdf,Test prime agreement,SYNTHETIC,CTR-EXEC-001,ec183248-1e59-4a49-be02-bddfcaf369c7,2dd4978acba2d65d6b7e4a14ae0280d19206f9e499e0805ed52302578176366e,1902
+fixtures/baseline_sov.xlsx,xlsx,Baseline schedule of values (= estimate line prices),DERIVED,PRJ-SOV-001,5902a27d-66ee-4be0-a3c9-ef2e8e86f141,954a4bb8faf691e571c3615f7aabde60c3b0420c770410af226118fdc5ec1e11,6252
+fixtures/cost_code_mapping.csv,csv,Cost-code mapping as seeded by award,SYNTHETIC,PRJ-BUD-001,,c104e2769aba8958d2f3b1832e2fdea86a4e593b6fd087e69f85fda7527d6f69,2616
+fixtures/project_contacts.csv,csv,Project contacts,SYNTHETIC,LC-CRM-001,,3e6e545f8d53d25f47c286544775f0bb0eb0a1aebe427ad39817478a6995acf5,252
+fixtures/work_calendar.csv,csv,Work calendar,SYNTHETIC,SCH-004,,7a1aad56c18162db81e69adb36ba9e6cec512e1fc4f5f1e54d8e445bf697c1be,103
+fixtures/task_schedule.csv,csv,Task schedule with dependencies/milestone (independent CPM),SYNTHETIC,"SCH-001, SCH-004",,075d49be67ffe1130482fb5a2f46b76436940e2dc65dfbd7a77dfb40087c5798,318
+fixtures/baseline_staffing.csv,csv,Baseline staffing (synthetic),SYNTHETIC,RES-001,,1b1703184eb792af7323cb48fc58ea64dba9b4e9d738486bc5a799cb26f7a4e5,151
+fixtures/equipment_roster.csv,csv,Equipment roster & cost rates (synthetic rates),SYNTHETIC,"RES-002, RES-003",,44f3d3f8e2ad669cfcb8061f138621527756ed231c4b9e0e6286685e0c2f6380,235
+fixtures/procurement_schedule.csv,csv,Procurement schedule,SYNTHETIC,PROC-001,,bf6c320e4ee65dbd65cfd69f769e4cb954f8eb11c14dcb80ac429885074db915,183
+fixtures/employee_roster.csv,csv,Employee roster & pay rules (synthetic),SYNTHETIC,"JC-001, TIME-*",,02add9a7f9efae0b862a4b46f639fc4dcd5570e3d70df689bbf8301db32c7607,200
+fixtures/subcontractor_roster.csv,csv,Subcontractor roster,SYNTHETIC,SUB-001,664de23d-e429-415e-a060-ec278f231290,1324a495b9ebb00444bb1e290316cd556cec689883ba241223154514c12ff378,97
+fixtures/vendor_quote.pdf,pdf,Vendor Quote — Fictional Rebar Supply Co,SYNTHETIC,PROC-001,3f0a8eb0-356b-4893-ab68-57d563617a61,033b7d9c20f6b8463039e25ae257ed066e3c058f9a16fac32413fbb3307bb038,1813
+fixtures/test_subcontract.pdf,pdf,Subcontract (fixture),SYNTHETIC,SUB-001,d4b494e6-b585-4a63-863d-2636feb107c4,189a9c0ae65b112a3b19274c8fab22477581c4e869d6bb7a53d0ce60e975e4f1,1814
+fixtures/purchase_order.pdf,pdf,Purchase Order PO-0001 (fixture),SYNTHETIC,PROC-001,73f67dee-919c-46c0-8120-c71265def770,906511855295a9b525469ace17f6f66d7de244daead865448d1b01cbc191b313,1763
+fixtures/delivery_ticket.pdf,pdf,Delivery Ticket DT-QA-0001,SYNTHETIC,PROC-001,73f67dee-919c-46c0-8120-c71265def770,b1368c642942c7af95206a75abd1cfe367579ffb6d62188d90a9503389b550b1,1744
+fixtures/supplier_invoice.pdf,pdf,Supplier Invoice INV-SMA-QA-20261009T120012Z-1,SYNTHETIC,PROC-001,60decbf0-9795-4903-b5e8-d1a6f0220307,36b9e7d99cb811ce4d935496ad60cc7af5598d52f45be6b4d25708b4040887ce,1762
+fixtures/daily_field_report.pdf,pdf,Daily Field Report 2026-07-20,SYNTHETIC,PROD-001,260001,9df1b2f59bf207692e10ec5c82415f3a6c2c06a16a2cac57e41a29dde573259f,1808
+fixtures/equipment_inspection_maintenance.pdf,pdf,Equipment Inspection & Maintenance,SYNTHETIC,RES-003,0ddd5d98-bd0a-4962-9be2-77106e55f93d,878003db280a3721c0dd829f79dd169e5c355f24cb93b8d88808f63456d0a430,1778
+fixtures/safety_checklist.pdf,pdf,Safety Checklist — saw cutting,SYNTHETIC,(no API run; see coverage),,83bb865fb3631655c5c42212c8ccd590f8f23f387567856029140df4145ea664,1789
+fixtures/delay_report.pdf,pdf,Delay Report,SYNTHETIC,(fixture only),,7e5aec681b2313828c896f6085129b578945917ea274458c2fa91cdd065fd28d,1758
+fixtures/rfi_and_response.pdf,pdf,RFI-001 & Response,SYNTHETIC,RFI-001,74fdd216-1fdd-44b4-9bf7-96393358494a,144835dc4bd3d460a88ebb966220455f54e4c1b30ca2d1412225f2fa5fe7c900,1782
+fixtures/submittal_and_revision.pdf,pdf,Submittal: Crackbond CSR product data,SYNTHETIC,SUBM-001,,fc5f25df7a1afd2002b6193033cf997c43f5f491f9cd233ad263b3ab64b62560,1773
+fixtures/change_request.pdf,pdf,Change Requests,SYNTHETIC,CO-001,"{""co1"": ""40e99887-a1f2-4aea-89b1-90196f015e69"", ""co2"": ""87cf84ce-216b-4dab-bc31-c2a6e536fb5f"", ""co3"": ""7d42334e-872e-4d02-b379-4ae01e9118ec""}",b9e3bc076d4ef79a2f5a6e1d3bcd3d76418412750d0769715fa88df5f0fe2b0a,1799
+fixtures/sub_progress_claim.pdf,pdf,Subcontractor Progress Claim #1,SYNTHETIC,SUB-001,9fd9290e-ed3f-443b-b778-72832978772e,e23e60c51c20104f2747c0a0b83303d06194b50f7f7ebe1a0bb828e00304e421,1790
+fixtures/completion_checklist.pdf,pdf,Completion Checklist,SYNTHETIC,CLOSE-001,,92467e1751d861d5444f4eda5a81516237fa720de2ccd82c56a2062b15511ac5,1784
+fixtures/test_warranty.pdf,pdf,Warranty (fixture),SYNTHETIC,CLOSE-001,,8188cc7e3bbaded3887ddd03ffa72ad2000db2df84118b2fc435b6fffa218811,1747
+fixtures/turnover_index.pdf,pdf,Turnover Index,SYNTHETIC,CLOSE-001,,8fa900eb011b0d562d0859dd7c4208e99a0ebcdf9f961a720daf72c4c58e0d8f,1785
+fixtures/final_report.pdf,pdf,Final Report,SYNTHETIC,LC-COMPLETE-001,,417eee8e5c7e04527d834a0d3e3ebb7c6e33b0309b59f17aedcc8389a76a63cd,1740
+fixtures/completion_certificate.pdf,pdf,Certificate of Completion (fixture),SYNTHETIC,LC-COMPLETE-001,,316e29db4b5de82ee8b217c6c51621f4401e18ae077b534970ca03cd0d631b30,1757
+fixtures/ai_injection_probe.pdf,pdf,Spec section with embedded instruction-like text,SYNTHETIC,AI-INJ-001,,82841c28fde3c6c5f134fb6b6152d7711ed5fa204818039f8cfb7ce0de4d3bfa,1909
+fixtures/time_entries.csv,csv,Time entries (synthetic),SYNTHETIC,JC-001,,472f42107655a8542ac8e9c2606888b17c9c44e1e4bb5a2375b7e84759d86609,74
+fixtures/production_entries.csv,csv,Production entries,SYNTHETIC,PROD-001,,2da09727196672b2ba1b673f2d45642727814caf348538f35af4f1af5bf72468,106
+fixtures/retainage_schedule.csv,csv,Retainage schedule,SYNTHETIC,"PAY-FB-*, RET-*",,5884172c85dcce38fe86f06c0ad2d5d2d88d2950f89655e930d60a1af1d31b08,105
+fixtures/punch_list.csv,csv,Punch list,SYNTHETIC,PUNCH-001,"69b02e23-8766-41be-a3ff-c60d48961bf5,0e8142f8-b813-4fc0-a85f-0b63770d23ad",f10d5d83febed24a894107af866ba7c44c6efb6cf0a8b0821a52468cb0892555,120
+fixtures/site_diagram.png,png,Synthetic site diagram,SYNTHETIC,(attachments blocked: object storage),,f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f,9125
+fixtures/as_built_demo.png,png,As-built demonstration attachment,SYNTHETIC,CLOSE-001,,f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f,9125
+fixtures/prevailing_wage_valid.csv,csv,Valid prevailing-wage import (positive),SYNTHETIC,FILE-POS-001,,cf8b4067da3a1e4af9cb9c79c37a6135dcede9c695dd91dc05dd3d4be5ae2417,117
+fixtures/prevailing_wage_valid.xlsx,xlsx,Valid prevailing-wage XLSX,SYNTHETIC,FILE-POS-002,,835029f447fdfc4d8c32d3283b631e8e5eb1f2759fce327940fe4a8f8ef4080b,4954
+fixtures/negative/empty.csv,csv,Empty file,SYNTHETIC negative,FILE-NEG-001,,e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855,0
+fixtures/negative/image_named.xlsx,xlsx,PNG bytes with .xlsx extension (wrong ext/MIME),SYNTHETIC negative,FILE-NEG-002,,f879107d91ea341f12f659d0d01fd74303a1fb458a8dea659ccee9f6862c810f,9125
+fixtures/negative/corrupt.xlsx,xlsx,Truncated XLSX (corrupt),SYNTHETIC negative,FILE-NEG-003,,baf7d4ebd8d24ac8bdf5e4994eb0b5ab041d2a38858867b7bb64a6ce8d2760b5,2477
+fixtures/negative/corrupt.pdf,pdf,Truncated PDF (corrupt),SYNTHETIC negative,(attachment uploads blocked),,ec9952db958219d93c0fde638f54710bf14883f06dc7d423b24d5fccba47c3d0,200
+fixtures/negative/missing_required_column.csv,csv,Missing required columns,SYNTHETIC negative,FILE-NEG-004,,46f12230e2a9a4ae2373c41d7e5df29eeffa2c3dacf83e24b868dd73aae9efb4,32
+fixtures/negative/invalid_values.csv,csv,Invalid date/number values,SYNTHETIC negative,FILE-NEG-005,,675d95266c1c49e08343104310de3f56727a55f1033e01c6395a1b41189969f0,108
+fixtures/negative/oversized_5MiB_plus.csv,csv,Bounded oversized file (limit 5 MiB + 256 KiB),SYNTHETIC negative,FILE-NEG-006,,79964af36f2e57b3ca46cbdebf1d970652df0873d59fe251b8c7a01351914c9d,5505027
+fixtures/negative/duplicate_of_valid.csv,csv,Duplicate document (same bytes as valid),SYNTHETIC negative,FILE-NEG-007,,cf8b4067da3a1e4af9cb9c79c37a6135dcede9c695dd91dc05dd3d4be5ae2417,117
+fixtures/schedule_expected_cpm.json,json,Independent CPM expectation,DERIVED/SYNTHETIC,SCH-004,,f63014c454e4140f84e9660b9fc024377085e2b35c57d03bd98b1aab7680bb6f,610
+fixtures/billing_expected.json,json,Independent G702 expectations (3 periods),DERIVED/SYNTHETIC,PAY-FB-*,,9b751c636f7b03e43f2217a9ede030c6a064d9caab1ea24d0bcb665b14bbde5d,1335
+fixtures/source/00420_Crane_Logistics_2nd_take_off_with_changes_(2).xlsx,xlsx,"ORIGINAL supplied estimate (immutable, chmod 444)",SOURCE (user-supplied),"EST-*, UI-IMP-001",,9f1dbbe3c15f411bfc316cae8bc097fca146811823b500de5cbf34ea908a7f7e,25892

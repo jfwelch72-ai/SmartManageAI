@@ -1,0 +1,19 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "mode": "browser E2E (Chromium 141 headless)",
+  "id": "UI-ROLE-001",
+  "title": "Field worker direct-URL navigation to financial screens",
+  "module": "UI/Authorization",
+  "role": "FIELD_WORKER",
+  "req": "docs/rbac-audit.md FIELD_WORKER: time clock, daily notes, active projects only",
+  "expected": "Financial pages show access-denied/redirect and no financial figures"
+ },
+ "calls": [],
+ "notes": [
+  "progress-billing: url=/progress-billing $values=0",
+  "bid-estimate: url=/bids/260001/estimate $values=0",
+  "project-financials: url=/projects/260001 $values=0",
+  "admin: url=/admin $values=0"
+ ]
+}

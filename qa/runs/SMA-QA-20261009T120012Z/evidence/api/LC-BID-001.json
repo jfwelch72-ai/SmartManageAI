@@ -1,0 +1,57 @@
+{
+ "meta": {
+  "id": "LC-BID-001",
+  "title": "Create bid from opportunity",
+  "module": "Bids",
+  "role": "MANAGER (sales@)",
+  "tenant": "RealTest Construction",
+  "req": "crmRoutes.ts:3011",
+  "expected": "Bid created DRAFT, linked to opportunity"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:10:51.659Z",
+   "actor": "sales(MANAGER)",
+   "method": "POST",
+   "url": "/api/crm/opportunities/0c1373d0-b568-47bc-8a01-4bf17cd338eb/create-bid",
+   "status": 201,
+   "ms": 39,
+   "reqBody": {
+    "name": "SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)",
+    "description": "QA run; source workbook 00420"
+   },
+   "resBody": {
+    "bid": {
+     "id": "7f3717df-1007-4849-9019-d4805e7eb636",
+     "name": "SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)",
+     "code": "260001",
+     "clientName": "SMA-QA-20261009T120012Z Crane Logistics demo/pads (SYNTHETIC)",
+     "clientContactName": null,
+     "clientContactEmail": null,
+     "clientContactPhone": null,
+     "bidAmount": null,
+     "dueDate": null,
+     "locationAddress": null,
+     "city": null,
+     "state": null,
+     "description": "QA run; source workbook 00420",
+     "estimatorId": "7e9d5d2b-0d2b-4a35-8ab3-593d9567ed45",
+     "gcOrganizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "ownerRepOrganizationId": null,
+     "status": "DRAFT",
+     "convertedToProjectId": null,
+     "crmOpportunityId": "0c1373d0-b568-47bc-8a01-4bf17cd338eb",
+     "aiWinProbability": 15,
+     "awardedAt": null,
+     "submittedAt": null,
+     "wageDecision": null,
+     "createdAt": "2026-10-09T12:10:51.653Z",
+     "updatedAt": "2026-10-09T12:10:51.653Z"
+    },
+    "opportunityId": "0c1373d0-b568-47bc-8a01-4bf17cd338eb"
+   },
+   "requestId": "329d9a5a-6f11-4077-b103-3fad28040e25"
+  }
+ ],
+ "notes": []
+}

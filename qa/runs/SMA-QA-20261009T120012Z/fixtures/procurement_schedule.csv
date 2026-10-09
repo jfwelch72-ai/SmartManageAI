@@ -1,0 +1,4 @@
+item,qty,unit,unitCost,neededBy,src
+Rebar #5/#6,31752,lbs,0.84,2026-07-01,R24
+"3"" SBU chairs",2200,lf,0.58,2026-07-01,R25
+Concrete,1014,yd,220,2026-07-20,R27 (qty under RFI-001)

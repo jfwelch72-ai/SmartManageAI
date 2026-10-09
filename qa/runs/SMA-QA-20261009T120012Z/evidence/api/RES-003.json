@@ -1,0 +1,288 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "RES-003",
+  "title": "Equipment usage: hour-log end < start and fuel negative rejected",
+  "module": "Equipment",
+  "role": "ADMIN",
+  "req": "equipmentRoutes.ts:3643,3979; defensible integrity",
+  "expected": "4xx for endingHours < startingHours; 4xx for gallons <= 0; valid log 201"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:20:51.060Z",
+   "actor": "admin(ADMIN)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 401,
+   "ms": 3,
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "78b24830-3fd8-4471-a1d4-5799436f740d"
+  },
+  {
+   "at": "2026-10-09T12:20:51.146Z",
+   "actor": "admin(ADMIN)",
+   "method": "POST",
+   "url": "/api/auth/login",
+   "status": 200,
+   "ms": 85,
+   "reqBody": {
+    "email": "admin@realtest.com",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "user": {
+     "id": "ee7074d1-fbbd-46ec-8a09-2592d41369d4",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Organization",
+     "lastName": "Admin",
+     "email": "admin@realtest.com",
+     "phone": "555-100-0002",
+     "role": "ADMIN",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.126Z",
+     "updatedAt": "2026-10-09T12:09:26.126Z"
+    }
+   },
+   "requestId": "d6bb15a1-410e-4ee6-90a5-7233f3ae4f4d"
+  },
+  {
+   "at": "2026-10-09T12:20:51.170Z",
+   "actor": "admin(ADMIN)",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 200,
+   "ms": 23,
+   "resBody": {
+    "user": {
+     "id": "ee7074d1-fbbd-46ec-8a09-2592d41369d4",
+     "organizationId": "94d44dae-7310-46fe-81c9-4f61145f21a4",
+     "managerId": null,
+     "firstName": "Organization",
+     "lastName": "Admin",
+     "email": "admin@realtest.com",
+     "phone": "555-100-0002",
+     "role": "ADMIN",
+     "isActive": true,
+     "emailVerified": false,
+     "failedLoginAttempts": 0,
+     "lockedUntil": null,
+     "oauthProvider": null,
+     "oauthProviderId": null,
+     "costRateRegular": null,
+     "costRateOvertime": null,
+     "birthdate": null,
+     "timezone": null,
+     "profileDescription": null,
+     "avatarUrl": null,
+     "tradeSpecialization": null,
+     "employmentType": null,
+     "emergencyContactName": null,
+     "emergencyContactPhone": null,
+     "emergencyContactAddress": null,
+     "emergencyContactEmail": null,
+     "roleLabel": null,
+     "walkthroughCompleted": true,
+     "walkthroughStep": 0,
+     "walkthroughStartedAt": null,
+     "receivesJobMetricAlertEmails": true,
+     "jobMetricAlertQuietHoursEnabled": false,
+     "jobMetricAlertQuietHoursStart": null,
+     "jobMetricAlertQuietHoursEnd": null,
+     "jobMetricAlertQuietHoursTimezone": null,
+     "jobMetricAlertQuietHoursWeekdays": null,
+     "jobMetricAlertQuietHoursDigestEnabled": true,
+     "jobMetricAlertQuietHoursLastDigestAt": null,
+     "jobMetricAlertQuietHoursDigestFormat": "full",
+     "jobMetricAlertQuietHoursDigestCsvEnabled": false,
+     "jobMetricAlertQuietHoursDigestMaxEvents": 100,
+     "jobMetricAlertQuietHoursDigestLocale": null,
+     "jobMetricAlertQuietHoursDigestTimeFormat": "12h",
+     "jobMetricAlertQuietHoursDigestShowWeekday": false,
+     "crmBackfillSummaryChannel": "email",
+     "crmBackfillSummaryOnFailureOnly": false,
+     "crmAlertFailureFallbackEnabled": true,
+     "crmAlertFailureFallbackMutedChannels": [],
+     "alertFailureEmailMode": "both",
+     "integrationSyncExhaustedEmailOptOut": false,
+     "plansToolbarLabeled": false,
+     "plansTourCompleted": false,
+     "crmContactOwnerFilter": null,
+     "crmOrgOwnerFilter": null,
+     "createdAt": "2026-10-09T12:09:26.126Z",
+     "updatedAt": "2026-10-09T12:09:26.126Z",
+     "isHustlerOwner": false
+    },
+    "organizationName": "RealTest Construction",
+    "organizationOnboardingStatus": "COMPLETED"
+   },
+   "requestId": "dbca653e-ee86-46b6-b184-78791921236b"
+  },
+  {
+   "at": "2026-10-09T12:20:51.194Z",
+   "actor": "admin(ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment/0ddd5d98-bd0a-4962-9be2-77106e55f93d/hour-logs",
+   "status": 500,
+   "ms": 21,
+   "reqBody": {
+    "date": "2026-06-02",
+    "startingHours": "1000",
+    "endingHours": "1008",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b"
+   },
+   "resBody": {
+    "success": false,
+    "error": "Internal Server Error",
+    "requestId": "d893a284-1b54-4feb-a9a6-ca0c343ccb50",
+    "stack": "error: null value in column \"week_start_date\" of relation \"equipment_hour_logs\" violates not-null constraint\n    at /home/user/SmartManageAI/node_modules/pg/lib/client.js:545:17\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/home/user/SmartManageAI/node_modules/src/node-postgres/session.ts:104:19)\n    at async Layer.handle (/home/user/SmartManageAI/server/equipmentRoutes.ts:3654:21)"
+   },
+   "requestId": "d893a284-1b54-4feb-a9a6-ca0c343ccb50"
+  },
+  {
+   "at": "2026-10-09T12:20:51.219Z",
+   "actor": "admin(ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment/0ddd5d98-bd0a-4962-9be2-77106e55f93d/hour-logs",
+   "status": 201,
+   "ms": 25,
+   "reqBody": {
+    "date": "2045-04-17",
+    "weekStartDate": "2045-04-17",
+    "weekEndDate": "2045-04-23",
+    "startingHours": "1000",
+    "endingHours": "1008",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b"
+   },
+   "resBody": {
+    "id": "d87dd1d5-773c-4270-b6ec-cb9f0555112b",
+    "equipmentId": "0ddd5d98-bd0a-4962-9be2-77106e55f93d",
+    "assignmentId": "b81673fa-3c5a-4592-9fe1-1e11d41c7413",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "weekStartDate": "2045-04-17",
+    "weekEndDate": "2045-04-23",
+    "startingHours": "1000.0",
+    "endingHours": "1008.0",
+    "hoursUsed": "8.0",
+    "submittedById": "ee7074d1-fbbd-46ec-8a09-2592d41369d4",
+    "submittedAt": "2026-10-09T12:20:51.214Z",
+    "notes": null,
+    "fuelUsed": null,
+    "createdAt": "2026-10-09T12:20:51.214Z",
+    "updatedAt": "2026-10-09T12:20:51.214Z"
+   },
+   "requestId": "095e9255-5bb4-4205-aa88-99325c9b4633"
+  },
+  {
+   "at": "2026-10-09T12:20:51.237Z",
+   "actor": "admin(ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment/0ddd5d98-bd0a-4962-9be2-77106e55f93d/hour-logs",
+   "status": 201,
+   "ms": 18,
+   "reqBody": {
+    "date": "2045-04-24",
+    "weekStartDate": "2045-04-24",
+    "weekEndDate": "2045-04-30",
+    "startingHours": "1008",
+    "endingHours": "990",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b"
+   },
+   "resBody": {
+    "id": "b2dd5465-a2c3-4310-bc53-76bd3e4c37fa",
+    "equipmentId": "0ddd5d98-bd0a-4962-9be2-77106e55f93d",
+    "assignmentId": "b81673fa-3c5a-4592-9fe1-1e11d41c7413",
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "weekStartDate": "2045-04-24",
+    "weekEndDate": "2045-04-30",
+    "startingHours": "1008.0",
+    "endingHours": "990.0",
+    "hoursUsed": "-18.0",
+    "submittedById": "ee7074d1-fbbd-46ec-8a09-2592d41369d4",
+    "submittedAt": "2026-10-09T12:20:51.233Z",
+    "notes": null,
+    "fuelUsed": null,
+    "createdAt": "2026-10-09T12:20:51.233Z",
+    "updatedAt": "2026-10-09T12:20:51.233Z"
+   },
+   "requestId": "630109b6-5947-409d-90e2-94174c9ee5f4"
+  },
+  {
+   "at": "2026-10-09T12:20:51.255Z",
+   "actor": "admin(ADMIN)",
+   "method": "POST",
+   "url": "/api/equipment/0ddd5d98-bd0a-4962-9be2-77106e55f93d/fuel-logs",
+   "status": 400,
+   "ms": 18,
+   "reqBody": {
+    "date": "2026-06-03",
+    "gallons": "-20",
+    "costPerGallon": "4.10"
+   },
+   "resBody": {
+    "error": "Validation failed",
+    "details": {
+     "gallons": [
+      "Gallons must be positive"
+     ],
+     "pricePerGallon": [
+      "Expected number, received nan"
+     ]
+    }
+   },
+   "requestId": "0767a224-f1de-4e03-b31b-a2fd439cffa5"
+  }
+ ],
+ "notes": [
+  "without weekStartDate -> 500 (500 = unvalidated NOT NULL column)",
+  "valid 201; reverse 201 {\"id\":\"b2dd5465-a2c3-4310-bc53-76bd3e4c37fa\",\"equipmentId\":\"0ddd5d98-bd0a-4962-9be2-77106e55f93d\",\"assignmentId\":\"b81673fa-3c5a-4592-9fe1-1e11d41c7413\",\"project; neg fuel 400"
+ ]
+}

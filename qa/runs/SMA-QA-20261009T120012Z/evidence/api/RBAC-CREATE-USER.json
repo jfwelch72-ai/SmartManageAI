@@ -1,0 +1,279 @@
+{
+ "meta": {
+  "id": "RBAC-CREATE-USER",
+  "title": "Role matrix: Create user",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:D SUPERINTENDENT:D ESTIMATOR:D FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:26.455Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 400,
+   "ms": 12,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Invalid input",
+    "details": [
+     {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": [
+       "email"
+      ],
+      "message": "Required"
+     },
+     {
+      "code": "too_small",
+      "minimum": 8,
+      "type": "string",
+      "inclusive": true,
+      "exact": false,
+      "message": "Password must be at least 8 characters",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one uppercase letter",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one number",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one special character",
+      "path": [
+       "password"
+      ]
+     }
+    ]
+   },
+   "requestId": "86f53002-71eb-487f-a26c-532072f9ecf3"
+  },
+  {
+   "at": "2026-10-09T12:33:26.467Z",
+   "actor": "admin@(ADMIN)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 400,
+   "ms": 12,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Invalid input",
+    "details": [
+     {
+      "code": "invalid_type",
+      "expected": "string",
+      "received": "undefined",
+      "path": [
+       "email"
+      ],
+      "message": "Required"
+     },
+     {
+      "code": "too_small",
+      "minimum": 8,
+      "type": "string",
+      "inclusive": true,
+      "exact": false,
+      "message": "Password must be at least 8 characters",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one uppercase letter",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one number",
+      "path": [
+       "password"
+      ]
+     },
+     {
+      "validation": "regex",
+      "code": "invalid_string",
+      "message": "Password must contain at least one special character",
+      "path": [
+       "password"
+      ]
+     }
+    ]
+   },
+   "requestId": "890e9006-eafd-42cb-a4aa-d196a9d9ff8d"
+  },
+  {
+   "at": "2026-10-09T12:33:26.477Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 10,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "85ce3a87-e065-4756-aa24-be90dcd31ae8"
+  },
+  {
+   "at": "2026-10-09T12:33:26.494Z",
+   "actor": "manager@(MANAGER)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 17,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "4d5ccee4-ef92-4c61-b7b8-6f291c4252cb"
+  },
+  {
+   "at": "2026-10-09T12:33:26.503Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 9,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "e1acd9cd-014b-4ad0-b227-a450af9112a9"
+  },
+  {
+   "at": "2026-10-09T12:33:26.514Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 11,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "248f0d08-9cf9-4483-b533-8f518d099249"
+  },
+  {
+   "at": "2026-10-09T12:33:26.523Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 8,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "d4e81601-b098-42ab-9b58-d97adfb96e0e"
+  },
+  {
+   "at": "2026-10-09T12:33:26.531Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 403,
+   "ms": 8,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Insufficient permissions"
+   },
+   "requestId": "ee4cabdf-8b89-487d-9485-77cbce7a44b5"
+  },
+  {
+   "at": "2026-10-09T12:33:26.534Z",
+   "actor": "anonymous",
+   "method": "POST",
+   "url": "/api/users",
+   "status": 401,
+   "ms": 3,
+   "reqBody": {
+    "firstName": "x",
+    "lastName": "y",
+    "email": "not-an-email",
+    "role": "FIELD_WORKER",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "25fc58c6-486d-4b95-9899-2bdf88f1d6e6"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"400\",\"ADMIN\":\"400\",\"HUSTLER\":\"403\",\"MANAGER\":\"403\",\"SUPERINTENDENT\":\"403\",\"ESTIMATOR\":\"403\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

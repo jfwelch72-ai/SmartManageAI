@@ -1,0 +1,30 @@
+sourceRow,description,quantity,unit,laborCost,materialCost,equipmentCost,subcontractCost,otherCost_as_consumables,profitAllocation,lineType
+11,General Conditions/Mobilization,1,EA,0,0,0,0,58463,0,BASE
+13,Jeff Barker saw cut revised pricing,1,lump,0,0,0,30130,0,5317.06,BASE
+15,"Cat 87-90 30,000lb w thumb x 2 for job per month",2,each,0,0,0,0,33000,0,BASE
+16,fuel for machines,1,lump,0,2400,0,0,0,1028.57,BASE
+18,saw cut demo and haul off of 4 opeings per customer request,4,hours,0,0,0,520,0,91.76,BASE
+19,"Jeff barker for 4 openings then cut into 3x3 piers 8"" thk",1,lump,0,0,0,28550,0,5038.24,BASE
+20,haul and labor to load trucks,0.15,days,450,0,0,0,0,192.86,BASE
+23,haul spoils off site,294,hours,0,0,0,38220,0,-38217,BASE
+24,rebar lbs 31752 lbs includes 2% fluff,31752,lbs,0,26671.68,0,0,0,11430.72,BASE
+25,"3"" sbu chairs",2200,lf,0,1276,0,0,0,546.86,BASE
+26,"25 each 3/4""x8"" sds drill bits",25,each,0,1050,0,0,0,450,BASE
+27,concrete yards for spreadasftgs   5.44 yds per pad x 162 each,1014,yards,0,223080,0,0,0,95605.71,BASE
+28,labor days demo  $678.83 labor only,34,day,102000,0,0,0,0,43714.29,BASE
+29,labor days to pour spread ftgs  $238.00 each labor only for pour back,9,days,27000,0,0,0,0,11571.43,BASE
+33,haul spoils off site,11,hours,0,0,0,1430,0,252.35,BASE
+34,"rebar 24#6 verts with #4 ties 10"" oc",2275,lbs,0,1911,0,0,0,819,BASE
+35,"50 lf 3"" sbu chairs",50,lf,0,29.0,0,0,0,12.43,BASE
+36,concrete yards x 4 each 3'x3'x5' column ftgs at new openings,15,yards,0,3300,0,0,0,1414.29,BASE
+37,labor for demo anmd pour back,2.25,days,6750,0,0,0,0,2892.86,BASE
+38,mini ex day,1,days,0,0,0,0,250,0,BASE
+43,"concrete yards 374 sf x 36"" deep",48,yards,0,10560,0,0,0,4525.71,BASE
+44,"rebar dowels into existing lump sum #5 24"" oc x 16"" long",1,lump,0,650,0,0,0,278.57,BASE
+45,skid steer days,1,days,0,0,0,0,250,0,BASE
+46,forming material,1,lump,0,350,0,0,0,150.0,BASE
+47,labor days   $22.91 per sf labor only,2,days,6000,0,0,0,0,2571.43,BASE
+50,clean up days,2,days,6000,0,0,0,0,2571.43,BASE
+52,concrete washout containment rental,2,months,0,1700,0,0,0,728.57,BASE
+56,144 22 oz cartridges,144,each,0,8352,0,0,0,3579.43,ALTERNATE
+57,labor days,1.2,days,3600,0,0,0,0,1542.86,ALTERNATE

@@ -1,0 +1,98 @@
+{
+ "meta": {
+  "id": "FILE-NEG-005",
+  "title": "Upload: Invalid numbers/dates -> prevailing-wage import preview",
+  "module": "Uploads/Import",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "laborRateRoutes.ts:52-56 (5 MiB), 1168-1230",
+  "expected": "400 or per-row errors"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:55:28.426Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/labor-rates/prevailing-wage-rates/import-preview",
+   "status": 200,
+   "ms": 174,
+   "reqBody": "[multipart]",
+   "resBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "projectName": "SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)",
+    "headersDetected": [
+     "Classification",
+     "Wage Rate",
+     "Fringe",
+     "Effective Date"
+    ],
+    "summary": {
+     "totalRows": 2,
+     "toCreate": 0,
+     "toUpdate": 0,
+     "withErrors": 2,
+     "classificationsToCreate": 0
+    },
+    "rows": [
+     {
+      "rowNumber": 2,
+      "rawClassification": "Cement Mason",
+      "classificationId": null,
+      "classificationName": null,
+      "wageRate": "-5.00",
+      "fringeHealthRate": "0.00",
+      "fringePensionRate": "0.00",
+      "fringeVacationRate": "0.00",
+      "fringeTrainingRate": "0.00",
+      "fringeRate": "0.00",
+      "totalRate": "-5.00",
+      "overtimeMultiplier": "1.5",
+      "effectiveDate": "2026-13-45",
+      "expirationDate": null,
+      "wageDecision": null,
+      "notes": null,
+      "action": "ERROR",
+      "existingId": null,
+      "errors": [
+       "Unknown classification \"Cement Mason\"",
+       "Invalid or missing wage rate"
+      ],
+      "createClassification": false,
+      "newClassificationName": null
+     },
+     {
+      "rowNumber": 3,
+      "rawClassification": "Laborer",
+      "classificationId": null,
+      "classificationName": null,
+      "wageRate": "0.00",
+      "fringeHealthRate": "0.00",
+      "fringePensionRate": "0.00",
+      "fringeVacationRate": "0.00",
+      "fringeTrainingRate": "0.00",
+      "fringeRate": "1.00",
+      "totalRate": "1.00",
+      "overtimeMultiplier": "1.5",
+      "effectiveDate": "",
+      "expirationDate": null,
+      "wageDecision": null,
+      "notes": null,
+      "action": "ERROR",
+      "existingId": null,
+      "errors": [
+       "Unknown classification \"Laborer\"",
+       "Invalid or missing wage rate",
+       "Missing effective date"
+      ],
+      "createClassification": false,
+      "newClassificationName": null
+     }
+    ]
+   },
+   "requestId": "645c5e17-a951-4f21-9a79-4ab1bac6b5df"
+  }
+ ],
+ "notes": [
+  "200 {\"projectId\":\"f58a8098-8b7a-4171-a93d-d9a3d56ae65b\",\"projectName\":\"SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)\",\"headersDetected\":[\"Classification\",\"Wage Rate\",\"Fringe\",\"Effective Date\"],\"summary\":{\"totalRows\":2,\"toCreate\":0,\"toUpdate\":0,\"withErrors\":2,\"classificationsToCreate\":0}"
+ ]
+}

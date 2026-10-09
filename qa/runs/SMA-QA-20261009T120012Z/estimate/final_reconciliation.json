@@ -1,0 +1,129 @@
+{
+ "runId": "SMA-QA-20261009T120012Z",
+ "generatedAt": "2026-10-09T12:31:51.897Z",
+ "note": "Values read from the running local app; independent expectations in brackets. Variances are reported, not forced to zero.",
+ "estimate": {
+  "workbookP120": 782052.0975,
+  "appSumOfRoundedLines": 782052.11,
+  "appAppliedTotalsGrandTotal": 623942.68,
+  "directCostO120": 623942.68
+ },
+ "award": {
+  "projectCode": "260001",
+  "status": "COMPLETE",
+  "contractAmount": 792552.11,
+  "budgetField": 623942.68
+ },
+ "changeOrders": {
+  "list": [
+   {
+    "number": "CO-006",
+    "status": "APPROVED",
+    "amount": -2000
+   },
+   {
+    "number": "CO-005",
+    "status": "REJECTED",
+    "amount": 5000
+   },
+   {
+    "number": "CO-004",
+    "status": "APPROVED",
+    "amount": 12500
+   },
+   {
+    "number": "CO-003",
+    "status": "APPROVED",
+    "amount": -2000
+   },
+   {
+    "number": "CO-002",
+    "status": "SUBMITTED",
+    "amount": 5000
+   },
+   {
+    "number": "CO-001",
+    "status": "APPROVED",
+    "amount": 12500
+   }
+  ],
+  "approvedNet": 21000
+ },
+ "contract": {
+  "number": "CTR-260001-001",
+  "status": "AMENDED",
+  "value": 792552.11,
+  "expected": "782052.11 + approved COs"
+ },
+ "sov": [
+  {
+   "number": "SOV-260001-004",
+   "period": 4,
+   "contractValue": 782052.11,
+   "linesSum": 803052.11,
+   "completedToDate": 0
+  },
+  {
+   "number": "SOV-260001-003",
+   "period": 3,
+   "contractValue": 782052.11,
+   "linesSum": 803052.11,
+   "completedToDate": 0
+  },
+  {
+   "number": "SOV-260001-002",
+   "period": 2,
+   "contractValue": 782052.11,
+   "linesSum": 803052.11,
+   "completedToDate": 0
+  },
+  {
+   "number": "SOV-260001-001",
+   "period": 1,
+   "contractValue": 782052.11,
+   "linesSum": 803052.11,
+   "completedToDate": 0
+  }
+ ],
+ "billingPrimary": "BLOCKED (SOV-PROG-001): no progress could be recorded; 4 DRAFT pay apps with $0 due exist from roll-forward/duplicate probes",
+ "billingFallback": {
+  "project": "260014",
+  "apps": "3 approved & paid; completed&stored 609,378.19; retainage held 60,937.82; FINAL release BLOCKED by RET-002"
+ },
+ "jobCostLedgerTotals": {
+  "costCode": "TOTAL",
+  "description": "Project Total",
+  "division": "",
+  "budgetedLabor": 151800,
+  "budgetedMaterial": 281329.68,
+  "budgetedSub": 98850,
+  "budgetedEquipment": 0,
+  "budgetedOther": 250072.43,
+  "budgetedTotal": 782052.11,
+  "committedPO": 26671.68,
+  "committedSub": 117360,
+  "committedTotal": 144031.68,
+  "actualLabor": 0,
+  "actualMaterial": 13335.84,
+  "actualSub": 0,
+  "actualEquipment": 0,
+  "actualTM": 0,
+  "actualOther": 0,
+  "actualTotal": 13335.84,
+  "remainingBudget": 768716.27,
+  "percentUsed": 1.71,
+  "forecast": 782052.11,
+  "etc": 877300.89,
+  "ffc": 890636.73,
+  "projectedVariance": -108584.62,
+  "forecastAdjustment": null,
+  "forecastAdjustmentNote": null,
+  "alertLevel": null
+ },
+ "variances": [
+  "Budget lines total 782052.11 vs direct cost 623942.68 (PRJ-BUD-001)",
+  "Contract 792552.11 vs 782052.11 + approved COs 21000 = 803052.11 (CO-003)",
+  "SOV-001 lines 803052.11 vs SOV.contractValue 782052.11 vs contract 792552.11 (CO-003)",
+  "Approved labor 8h@$45 not in ledger actualLabor=0 (JC-001)"
+ ]
+}

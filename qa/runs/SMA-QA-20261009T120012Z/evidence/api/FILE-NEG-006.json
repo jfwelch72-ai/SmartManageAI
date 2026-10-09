@@ -1,0 +1,32 @@
+{
+ "meta": {
+  "id": "FILE-NEG-006",
+  "title": "Upload: Oversized 5 MiB + 256 KiB (limit 5 MiB) -> prevailing-wage import preview",
+  "module": "Uploads/Import",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "laborRateRoutes.ts:52-56 (5 MiB), 1168-1230",
+  "expected": "413/400, no 500"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:55:28.632Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/labor-rates/prevailing-wage-rates/import-preview",
+   "status": 500,
+   "ms": 170,
+   "reqBody": "[multipart]",
+   "resBody": {
+    "success": false,
+    "error": "Internal Server Error",
+    "requestId": "1f5b0deb-3412-4637-bd86-af880580afeb",
+    "stack": "MulterError: File too large\n    at abortWithCode (/home/user/SmartManageAI/node_modules/multer/lib/make-middleware.js:85:22)\n    at FileStream.<anonymous> (/home/user/SmartManageAI/node_modules/multer/lib/make-middleware.js:155:11)\n    at FileStream.emit (node:events:519:28)\n    at SBMH.ssCb [as _cb] (/home/user/SmartManageAI/node_modules/busboy/lib/types/multipart.js:479:32)\n    at feed (/home/user/SmartManageAI/node_modules/streamsearch/lib/sbmh.js:248:10)\n    at SBMH.push (/home/user/SmartManageAI/node_modules/streamsearch/lib/sbmh.js:104:16)\n    at Multipart._write (/home/user/SmartManageAI/node_modules/busboy/lib/types/multipart.js:567:19)\n    at writeOrBuffer (node:internal/streams/writable:572:12)\n    at _write (node:internal/streams/writable:501:10)\n    at Writable.write (node:internal/streams/writable:510:10)\n    at IncomingMessage.ondata (node:internal/streams/readable:1009:22)\n    at IncomingMessage.emit (node:events:519:28)\n    at addChunk (node:internal/streams/readable:561:12)\n    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)\n    at Readable.push (node:internal/streams/readable:392:5)\n    at HTTPParser.parserOnBody (node:_http_common:134:24)\n    at HTTPParser.callbackTrampoline (node:internal/async_hooks:130:17)"
+   },
+   "requestId": "1f5b0deb-3412-4637-bd86-af880580afeb"
+  }
+ ],
+ "notes": [
+  "500 {\"success\":false,\"error\":\"Internal Server Error\",\"requestId\":\"1f5b0deb-3412-4637-bd86-af880580afeb\",\"stack\":\"MulterError: File too large\\n    at abortWithCode (/home/user/SmartManageAI/node_modules/multer/lib/make-middleware.js:85:22)\\n    at FileStream.<anonymous> (/home/user/SmartManageAI/node_mod"
+ ]
+}

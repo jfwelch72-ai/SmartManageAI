@@ -1,0 +1,13 @@
+FAIL     UI-SCREENS-PHONE390 Key screens render as MANAGER at phone390 390x844 :: project-detail 5xx: 500 GET /api/projects/260001/closeout/dashboard
+FAIL     UI-SCREENS-PHONE360 Key screens render as MANAGER at phone360 360x800 :: project-detail 5xx: 500 GET /api/projects/260001/closeout/dashboard
+FAIL     UI-EST-TOTAL-001 Bid estimate screen total shown to the estimator :: screen shows $782,052.11, $623,942.68
+FAIL     UI-IMP-001 Upload original 00420 workbook through Bid Tab Import dialog (real UI) :: locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByTestId('button-open-bid-tab-import')[22m
+
+FAIL     UI-TIME-001 Field worker clocks in/out on phone (390x844) with simulated geolocation :: locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for locator('[data-testid*="clock-in"]').first()[22m
+[2m    - locator resolved to <button disabled data-testid="button-clock-in" class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium focus-visible:outli
+PASS     UI-ROLE-001 Field worker direct-URL navigation to financial screens
+EXIT=0

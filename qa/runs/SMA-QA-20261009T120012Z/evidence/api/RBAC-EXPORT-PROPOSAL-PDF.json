@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-EXPORT-PROPOSAL-PDF",
+  "title": "Role matrix: Export proposal PDF",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:? ESTIMATOR:A FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:25.686Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 403,
+   "ms": 12,
+   "resBody": "[binary 33 bytes application/json; charset=utf-8]",
+   "requestId": "04f86971-0ec5-44bb-8617-146dc61e02b1"
+  },
+  {
+   "at": "2026-10-09T12:33:25.719Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 200,
+   "ms": 33,
+   "resBody": "[binary 5489 bytes application/pdf]",
+   "requestId": "840f92ce-24d2-4cbc-bec8-9951028ff1eb"
+  },
+  {
+   "at": "2026-10-09T12:33:25.734Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 403,
+   "ms": 14,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "11b14906-1f8d-462b-a83d-d3f2c6e4b94e"
+  },
+  {
+   "at": "2026-10-09T12:33:25.766Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 200,
+   "ms": 32,
+   "resBody": "[binary 5483 bytes application/pdf]",
+   "requestId": "a083c8c0-a131-428b-8e72-b91ca846ad0d"
+  },
+  {
+   "at": "2026-10-09T12:33:25.779Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 403,
+   "ms": 12,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "fe009c4c-5e84-4ace-8d91-f2fe53230fce"
+  },
+  {
+   "at": "2026-10-09T12:33:25.809Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 200,
+   "ms": 29,
+   "resBody": "[binary 5485 bytes application/pdf]",
+   "requestId": "8c4f7fef-6339-4177-87bc-4c5c9e701c4d"
+  },
+  {
+   "at": "2026-10-09T12:33:25.824Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 403,
+   "ms": 15,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "5205e53c-f6e6-4ab8-9f9b-6326db2af3d2"
+  },
+  {
+   "at": "2026-10-09T12:33:25.832Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 403,
+   "ms": 9,
+   "resBody": "[binary 36 bytes application/json; charset=utf-8]",
+   "requestId": "b70512b9-aa7c-4aea-9e9a-5dc4e7ac0b75"
+  },
+  {
+   "at": "2026-10-09T12:33:25.835Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 401,
+   "ms": 2,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "4e7c8f2e-5880-4691-889d-2e712fa12b42"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"403\",\"ADMIN\":\"200\",\"HUSTLER\":\"403\",\"MANAGER\":\"200\",\"SUPERINTENDENT\":\"403\",\"ESTIMATOR\":\"200\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

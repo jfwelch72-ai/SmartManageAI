@@ -1,0 +1,29 @@
+{
+ "meta": {
+  "id": "FILE-NEG-002",
+  "title": "Upload: PNG bytes named .xlsx -> prevailing-wage import preview",
+  "module": "Uploads/Import",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "laborRateRoutes.ts:52-56 (5 MiB), 1168-1230",
+  "expected": "400 'Could not parse'"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:55:27.934Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/labor-rates/prevailing-wage-rates/import-preview",
+   "status": 400,
+   "ms": 153,
+   "reqBody": "[multipart]",
+   "resBody": {
+    "error": "Could not parse file. Use CSV or XLSX."
+   },
+   "requestId": "97f4e2de-685e-4412-a4fc-cebbb4d43f4f"
+  }
+ ],
+ "notes": [
+  "400 {\"error\":\"Could not parse file. Use CSV or XLSX.\"}"
+ ]
+}

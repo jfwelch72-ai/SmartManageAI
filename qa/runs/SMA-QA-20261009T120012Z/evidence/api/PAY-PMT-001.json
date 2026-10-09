@@ -1,0 +1,69 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "id": "PAY-PMT-001",
+  "title": "Record payment receipt on approved pay app #1 (fixture only, no money moved); overpayment rejected",
+  "module": "Progress Billing/AR",
+  "role": "MANAGER",
+  "req": "aiaBillingRoutes.ts:539-600",
+  "expected": "Payment = currentDue accepted, status PAID; second payment 400"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:26:32.091Z",
+   "actor": "manager(MANAGER)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/undefined",
+   "status": 404,
+   "ms": 23,
+   "resBody": {
+    "error": "Pay application not found"
+   },
+   "requestId": "3b1a7e1c-bf56-49f8-b669-99995902a8ae"
+  },
+  {
+   "at": "2026-10-09T12:26:32.113Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications/undefined/record-payment",
+   "status": 400,
+   "ms": 21,
+   "reqBody": {
+    "amount": null,
+    "paymentReference": "QA-RECEIPT-0001 (SYNTHETIC, no funds)",
+    "paymentMethod": "OTHER"
+   },
+   "resBody": {
+    "error": "Validation failed",
+    "details": {
+     "formErrors": [],
+     "fieldErrors": {
+      "amount": [
+       "Payment amount must be positive"
+      ]
+     }
+    }
+   },
+   "requestId": "ea9ee023-05f7-47d3-9f55-67e390a0359a"
+  },
+  {
+   "at": "2026-10-09T12:26:32.128Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/aia-billing/pay-applications/undefined/record-payment",
+   "status": 404,
+   "ms": 15,
+   "reqBody": {
+    "amount": 1,
+    "paymentReference": "QA overpay probe"
+   },
+   "resBody": {
+    "error": "Not found"
+   },
+   "requestId": "64a16627-85b6-4355-8c6d-3b45a07829f1"
+  }
+ ],
+ "notes": [
+  "pay 400 {\"error\":\"Validation failed\",\"details\":{\"formErrors\":[],\"fieldErrors\":{\"amount\":[\"Payment amount must be positive\"]}}}; overpay 404 {\"error\":\"Not found\"}"
+ ]
+}

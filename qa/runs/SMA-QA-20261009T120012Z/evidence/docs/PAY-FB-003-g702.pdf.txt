@@ -1,0 +1,46 @@
+                                                      AIA DOCUMENT G702
+                                          APPLICATION AND CERTIFICATE FOR PAYMENT
+TO OWNER:                                                                   FROM CONTRACTOR:
+Fictional Owner (TEST)                                                      RealTest Construction (QA)
+
+
+VIA ARCHITECT:                                                              PROJECT:
+                                                                            SMA-QA-20261009T120012Z FALLBACK-BILLING (00420 SOV
+                                                                            copy; see SOV-PROG-001)
+
+APPLICATION NO: 3                        PERIOD TO: 08/31/2026              CONTRACT DATE:
+
+
+CONTRACTOR'S APPLICATION FOR PAYMENT
+ 1. ORIGINAL CONTRACT SUM                                                                                                 $782,052.11
+ 2. Net change by Change Orders                                                                                                 $0.00
+ 3. CONTRACT SUM TO DATE (Line 1 + 2)                                                                                     $782,052.11
+ 4. TOTAL COMPLETED & STORED TO DATE                                                                                      $609,378.19
+ 5. RETAINAGE (10%)                                                                                                        $60,937.82
+ 6. TOTAL EARNED LESS RETAINAGE (Line 4 - 5)                                                                              $548,440.37
+ 7. LESS PREVIOUS CERTIFICATES FOR PAYMENT                                                                                $370,317.52
+ 8. CURRENT PAYMENT DUE (Line 6 - 7)                                                                                      $178,122.85
+ 9. BALANCE TO FINISH, INCLUDING RETAINAGE (Line 3 - 4)                                                                   $172,673.92
+
+
+
+ARCHITECT'S CERTIFICATE FOR PAYMENT
+In accordance with the Contract Documents, based on on-site observations and the data comprising the
+application, the Architect certifies to the Owner that to the best of the Architect's knowledge,
+information and belief the Work has progressed as indicated, the quality of the Work is in accordance
+with the Contract Documents, and the Contractor is entitled to payment of the AMOUNT CERTIFIED.
+
+
+AMOUNT CERTIFIED: $178,122.85
+
+ARCHITECT:      By: ________________________________                                                 Date: ____________
+
+CONTRACTOR: By: ________________________________                                                     Date: ____________
+
+OWNER:          By: ________________________________                                                 Date: ____________
+
+
+
+
+                                                   Generated on 10/9/2026, 12:28:33 PM | Application #3
+

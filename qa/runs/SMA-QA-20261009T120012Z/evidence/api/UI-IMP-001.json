@@ -1,0 +1,17 @@
+{
+ "meta": {
+  "tenant": "RealTest Construction",
+  "mode": "browser E2E (Chromium 141 headless)",
+  "id": "UI-IMP-001",
+  "title": "Upload original 00420 workbook through Bid Tab Import dialog (real UI)",
+  "module": "UI/Estimating/Import",
+  "role": "ADMIN (ESTIMATOR cannot read feature flags — SMA-FLAG-001)",
+  "req": "Prompt §5 'upload workbook through actual UI'",
+  "expected": "Preview lists the 29 priced work items with costs; header/total rows excluded"
+ },
+ "calls": [],
+ "notes": [
+  "badges: total=\"46 rows\" importable=\"46 will import\"",
+  "has Grand Total row: false; shows any $: false"
+ ]
+}

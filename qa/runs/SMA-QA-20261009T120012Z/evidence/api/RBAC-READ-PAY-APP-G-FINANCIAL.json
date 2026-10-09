@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-READ-PAY-APP-G-FINANCIAL",
+  "title": "Role matrix: Read pay app G702 (financial)",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:A ESTIMATOR:A FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:25.085Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 31,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "77cce81d-1bb5-4e3c-84ed-768f286143c4"
+  },
+  {
+   "at": "2026-10-09T12:33:25.116Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 30,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "d9526b95-9087-4464-832a-4867a72d8f35"
+  },
+  {
+   "at": "2026-10-09T12:33:25.139Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 24,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "1578e3c0-74a4-44fb-8c03-e978497fa1e9"
+  },
+  {
+   "at": "2026-10-09T12:33:25.180Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 38,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "f23ef635-90c6-4bd1-8466-a7cd3e94f7ff"
+  },
+  {
+   "at": "2026-10-09T12:33:25.226Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 44,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "d392e103-2132-4884-a57a-9b31639addb1"
+  },
+  {
+   "at": "2026-10-09T12:33:25.252Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 200,
+   "ms": 26,
+   "resBody": "[binary 2820 bytes application/pdf]",
+   "requestId": "17763d52-6421-416d-bd4f-e12eb4bb9991"
+  },
+  {
+   "at": "2026-10-09T12:33:25.266Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 403,
+   "ms": 14,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "557d3fde-2f06-41c2-b6ce-4501ccf2d3dd"
+  },
+  {
+   "at": "2026-10-09T12:33:25.288Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 403,
+   "ms": 22,
+   "resBody": "[binary 58 bytes application/json; charset=utf-8]",
+   "requestId": "cfa9444a-4eb2-40a9-840c-9e8bdef8ae91"
+  },
+  {
+   "at": "2026-10-09T12:33:25.295Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/aia-billing/pay-applications/4f20280a-f989-4e48-b48b-0a28ed36d0a2/g702-pdf",
+   "status": 401,
+   "ms": 6,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "f5535667-ec5b-4239-914c-48fed18df26d"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"200\",\"ADMIN\":\"200\",\"HUSTLER\":\"200\",\"MANAGER\":\"200\",\"SUPERINTENDENT\":\"200\",\"ESTIMATOR\":\"200\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

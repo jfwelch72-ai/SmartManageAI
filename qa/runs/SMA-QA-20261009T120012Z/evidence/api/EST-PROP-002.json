@@ -1,0 +1,72 @@
+{
+ "meta": {
+  "id": "EST-PROP-002",
+  "title": "Generate proposal PDF with alternate ALT-1 EXCLUDED",
+  "module": "Estimating/Proposal",
+  "role": "ESTIMATOR",
+  "tenant": "RealTest Construction",
+  "req": "estimatePricingRoutes.ts:662; proposalPdf.ts:78,164",
+  "expected": "Valid PDF; base subtotal $764,977.82; ALT-1 subtotal $17,074.29 marked EXCLUDED; line items present"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:15:20.961Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/alternate-groups/057560dd-1d2f-402d-ada8-5c9727063399",
+   "status": 200,
+   "ms": 19,
+   "reqBody": {
+    "defaultIncluded": false
+   },
+   "resBody": {
+    "id": "057560dd-1d2f-402d-ada8-5c9727063399",
+    "estimateId": "eb5babbd-ee04-4459-9a67-6fde14865374",
+    "code": "ALT-1",
+    "name": "Crackbond CSR self-leveling (src rows 55-57)",
+    "description": null,
+    "defaultIncluded": false,
+    "displayOrder": 0,
+    "createdAt": "2026-10-09T12:12:13.053Z",
+    "updatedAt": "2026-10-09T12:15:20.958Z"
+   },
+   "requestId": "95e8d2dc-090a-47ab-9a31-763f29961363"
+  },
+  {
+   "at": "2026-10-09T12:15:20.997Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/export/proposal-pdf",
+   "status": 200,
+   "ms": 36,
+   "resBody": "[binary 5460 bytes application/pdf]",
+   "requestId": "72374bcf-08a7-4fa9-8ca2-d8370af6631e"
+  },
+  {
+   "at": "2026-10-09T12:15:21.013Z",
+   "actor": "estimator(ESTIMATOR)",
+   "method": "PATCH",
+   "url": "/api/estimates/eb5babbd-ee04-4459-9a67-6fde14865374/alternate-groups/057560dd-1d2f-402d-ada8-5c9727063399",
+   "status": 200,
+   "ms": 16,
+   "reqBody": {
+    "defaultIncluded": true
+   },
+   "resBody": {
+    "id": "057560dd-1d2f-402d-ada8-5c9727063399",
+    "estimateId": "eb5babbd-ee04-4459-9a67-6fde14865374",
+    "code": "ALT-1",
+    "name": "Crackbond CSR self-leveling (src rows 55-57)",
+    "description": null,
+    "defaultIncluded": true,
+    "displayOrder": 0,
+    "createdAt": "2026-10-09T12:12:13.053Z",
+    "updatedAt": "2026-10-09T12:15:21.010Z"
+   },
+   "requestId": "ce365186-b635-49ec-a9ba-c0ca92df8ada"
+  }
+ ],
+ "notes": [
+  "RealTest Construction\nProject Proposal\n\nSMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)\nReference: 260001\nPrepared for: SMA-QA-20261009T120012Z Crane Logistics demo/pads (SYNTHETIC)\nPrepared on: 10/9/2026\nPrepared by: Cost Estimator\n\n\n  Proposal Summary\n   Base bid                                                                          $764,977.82\n   Selected alternates                                                                     $0.00\n   Allowances                                                                              $0.00\n   Contingencies                                                                           $0.00\n   TOTAL PROPOSAL                                                                    $764,977.82\n\n\nBASE BID — SCOPE OF WORK\nDescription                                                 Qty     Unit    Source                 Total\n[R11] General Conditions/Mobilization                       1       EA      —              $58,463.00\n[R13] Jeff Barker saw cut revised pricing                   1       lump    —              $35,447.06\n[R15] Cat 87-90 30,000lb w thumb x 2 for job per month      2       each    —              $33,000.00\n[R16] fuel for machines                                     1       lump    —               $3,428.57\n[R18] saw cut demo and haul off of 4 opeings per customer 4         hours   —                 $611.76\nrequest\n[R19] Jeff barker for 4 openings then cut into 3x3 piers 8\" 1       lump    —              $33,5"
+ ]
+}

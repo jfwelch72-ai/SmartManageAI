@@ -1,0 +1,106 @@
+{
+ "meta": {
+  "id": "RBAC-READ-PRIME-CONTRACT-LIST",
+  "title": "Role matrix: Read prime contract list",
+  "module": "Authorization",
+  "role": "all 8 roles + anonymous",
+  "tenant": "RealTest Construction",
+  "req": "docs/rbac-audit.md §1 role definitions; route guards",
+  "expected": "SUPER_ADMIN:A ADMIN:A HUSTLER:? MANAGER:A SUPERINTENDENT:? ESTIMATOR:? FIELD_WORKER:D VENDOR:D anon:D"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:33:25.314Z",
+   "actor": "superadmin@(SUPER_ADMIN)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 200,
+   "ms": 17,
+   "resBody": "[binary 854 bytes application/json; charset=utf-8]",
+   "requestId": "5809108f-fdee-4ffe-80cb-b72d9c9b4b5d"
+  },
+  {
+   "at": "2026-10-09T12:33:25.342Z",
+   "actor": "admin@(ADMIN)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 200,
+   "ms": 28,
+   "resBody": "[binary 854 bytes application/json; charset=utf-8]",
+   "requestId": "45a1870f-5473-4b71-ab57-ca419f1d172c"
+  },
+  {
+   "at": "2026-10-09T12:33:25.359Z",
+   "actor": "hustler@(HUSTLER)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 403,
+   "ms": 17,
+   "resBody": "[binary 25 bytes application/json; charset=utf-8]",
+   "requestId": "1fd9faa9-931e-4bc5-b036-3dc4fc65e2ce"
+  },
+  {
+   "at": "2026-10-09T12:33:25.379Z",
+   "actor": "manager@(MANAGER)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 200,
+   "ms": 19,
+   "resBody": "[binary 854 bytes application/json; charset=utf-8]",
+   "requestId": "cca7df6a-bbec-444c-b791-ed5a9ef3df6a"
+  },
+  {
+   "at": "2026-10-09T12:33:25.402Z",
+   "actor": "super@(SUPERINTENDENT)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 200,
+   "ms": 23,
+   "resBody": "[binary 854 bytes application/json; charset=utf-8]",
+   "requestId": "d9635bfc-1321-41d8-b3da-fe0824b8e925"
+  },
+  {
+   "at": "2026-10-09T12:33:25.418Z",
+   "actor": "estimator@(ESTIMATOR)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 403,
+   "ms": 15,
+   "resBody": "[binary 59 bytes application/json; charset=utf-8]",
+   "requestId": "71147e08-d701-4a3b-8238-9d1a5584b098"
+  },
+  {
+   "at": "2026-10-09T12:33:25.428Z",
+   "actor": "worker@(FIELD_WORKER)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 59 bytes application/json; charset=utf-8]",
+   "requestId": "18fc8625-d70b-4632-900d-1233e7d532eb"
+  },
+  {
+   "at": "2026-10-09T12:33:25.438Z",
+   "actor": "vendor@(VENDOR)",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 403,
+   "ms": 10,
+   "resBody": "[binary 59 bytes application/json; charset=utf-8]",
+   "requestId": "67857680-b0b0-47ff-92e8-1c024962cec8"
+  },
+  {
+   "at": "2026-10-09T12:33:25.441Z",
+   "actor": "anonymous",
+   "method": "GET",
+   "url": "/api/contracts?projectId=f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+   "status": 401,
+   "ms": 3,
+   "resBody": "[binary 35 bytes application/json; charset=utf-8]",
+   "requestId": "c6e53f84-73bc-4054-b8d7-99b7dd62583b"
+  }
+ ],
+ "notes": [
+  "{\"SUPER_ADMIN\":\"200\",\"ADMIN\":\"200\",\"HUSTLER\":\"403\",\"MANAGER\":\"200\",\"SUPERINTENDENT\":\"200\",\"ESTIMATOR\":\"403\",\"FIELD_WORKER\":\"403\",\"VENDOR\":\"403\",\"ANON\":\"401\"}"
+ ]
+}

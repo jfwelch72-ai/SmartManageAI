@@ -1,0 +1,70 @@
+{
+ "meta": {
+  "id": "FILE-POS-002",
+  "title": "Upload: Valid XLSX -> prevailing-wage import preview",
+  "module": "Uploads/Import",
+  "role": "MANAGER",
+  "tenant": "RealTest Construction",
+  "req": "laborRateRoutes.ts:52-56 (5 MiB), 1168-1230",
+  "expected": "200 preview"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:55:27.613Z",
+   "actor": "manager(MANAGER)",
+   "method": "POST",
+   "url": "/api/labor-rates/prevailing-wage-rates/import-preview",
+   "status": 200,
+   "ms": 197,
+   "reqBody": "[multipart]",
+   "resBody": {
+    "projectId": "f58a8098-8b7a-4171-a93d-d9a3d56ae65b",
+    "projectName": "SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)",
+    "headersDetected": [
+     "Classification",
+     "Wage Rate",
+     "Fringe",
+     "Effective Date"
+    ],
+    "summary": {
+     "totalRows": 1,
+     "toCreate": 0,
+     "toUpdate": 0,
+     "withErrors": 1,
+     "classificationsToCreate": 0
+    },
+    "rows": [
+     {
+      "rowNumber": 2,
+      "rawClassification": "Cement Mason",
+      "classificationId": null,
+      "classificationName": null,
+      "wageRate": "38.50",
+      "fringeHealthRate": "0.00",
+      "fringePensionRate": "0.00",
+      "fringeVacationRate": "0.00",
+      "fringeTrainingRate": "0.00",
+      "fringeRate": "12.10",
+      "totalRate": "50.60",
+      "overtimeMultiplier": "1.5",
+      "effectiveDate": "2026-06-01",
+      "expirationDate": null,
+      "wageDecision": null,
+      "notes": null,
+      "action": "ERROR",
+      "existingId": null,
+      "errors": [
+       "Unknown classification \"Cement Mason\""
+      ],
+      "createClassification": false,
+      "newClassificationName": null
+     }
+    ]
+   },
+   "requestId": "0190b286-9037-42d2-91f0-2dd13ab4a53e"
+  }
+ ],
+ "notes": [
+  "200 {\"projectId\":\"f58a8098-8b7a-4171-a93d-d9a3d56ae65b\",\"projectName\":\"SMA-QA-20261009T120012Z Crane Logistics West Jefferson (00420)\",\"headersDetected\":[\"Classification\",\"Wage Rate\",\"Fringe\",\"Effective Date\"],\"summary\":{\"totalRows\":1,\"toCreate\":0,\"toUpdate\":0,\"withErrors\":1,\"classificationsToCreate\":0}"
+ ]
+}

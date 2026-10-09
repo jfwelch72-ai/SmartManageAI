@@ -1,0 +1,506 @@
+{
+ "phone390:dashboard": [
+  {
+   "id": "aria-input-field-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "aria-valid-attr-value",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:projects": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 14
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:project-detail": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "aria-valid-attr-value",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 16
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:project-schedule": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:project-financials": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 5
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:bid-estimate": [
+  {
+   "id": "aria-input-field-name",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 63
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:progress-billing": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "scrollable-region-focusable",
+   "impact": "serious",
+   "nodes": 1
+  }
+ ],
+ "phone390:time-clock": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:equipment": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 7
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:crm": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 7
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone390:dispatch-board": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 5
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "scrollable-region-focusable",
+   "impact": "serious",
+   "nodes": 1
+  }
+ ],
+ "phone360:dashboard": [
+  {
+   "id": "aria-input-field-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "aria-valid-attr-value",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:projects": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 14
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:project-detail": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "aria-valid-attr-value",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 16
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:project-schedule": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:project-financials": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 5
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:bid-estimate": [
+  {
+   "id": "aria-input-field-name",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 3
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 63
+  },
+  {
+   "id": "label",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:progress-billing": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 2
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "scrollable-region-focusable",
+   "impact": "serious",
+   "nodes": 1
+  }
+ ],
+ "phone360:time-clock": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 4
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:equipment": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 7
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:crm": [
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 7
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 3
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  }
+ ],
+ "phone360:dispatch-board": [
+  {
+   "id": "aria-progressbar-name",
+   "impact": "serious",
+   "nodes": 1
+  },
+  {
+   "id": "button-name",
+   "impact": "critical",
+   "nodes": 5
+  },
+  {
+   "id": "color-contrast",
+   "impact": "serious",
+   "nodes": 2
+  },
+  {
+   "id": "meta-viewport",
+   "impact": "critical",
+   "nodes": 1
+  },
+  {
+   "id": "scrollable-region-focusable",
+   "impact": "serious",
+   "nodes": 1
+  }
+ ]
+}

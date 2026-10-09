@@ -1,0 +1,111 @@
+{
+ "meta": {
+  "id": "AUTH-004",
+  "title": "Password reset via captured test sink",
+  "module": "Authentication",
+  "role": "FIELD_WORKER (equipment@)",
+  "tenant": "RealTest Construction",
+  "mode": "API integration (EMAIL_TRANSPORT=noop outbox)",
+  "req": "workforceRoutes.ts:1010-1150",
+  "expected": "Reset email captured; token works once; old password rejected; new password works; token reuse rejected"
+ },
+ "calls": [
+  {
+   "at": "2026-10-09T12:34:32.786Z",
+   "actor": "anon-reset",
+   "method": "GET",
+   "url": "/api/auth/me",
+   "status": 401,
+   "ms": 3,
+   "resBody": {
+    "error": "Authentication required"
+   },
+   "requestId": "1de760f8-eb42-488a-8fcb-f2d073d76038"
+  },
+  {
+   "at": "2026-10-09T12:34:32.791Z",
+   "actor": "anon-reset",
+   "method": "DELETE",
+   "url": "/api/dev/email-outbox",
+   "status": 204,
+   "ms": 5,
+   "resBody": "",
+   "requestId": "a07621e8-e263-4185-be99-43abc48bbc9d"
+  },
+  {
+   "at": "2026-10-09T12:34:32.802Z",
+   "actor": "anon-reset",
+   "method": "POST",
+   "url": "/api/auth/forgot-password",
+   "status": 200,
+   "ms": 11,
+   "reqBody": {
+    "email": "dispatcher@realtest.com"
+   },
+   "resBody": {
+    "message": "If an account with that email exists, a password reset link has been sent."
+   },
+   "requestId": "bffa7b3a-7492-47e2-b76d-6d60dd8ab183"
+  },
+  {
+   "at": "2026-10-09T12:34:32.808Z",
+   "actor": "anon-reset",
+   "method": "GET",
+   "url": "/api/dev/email-outbox",
+   "status": 200,
+   "ms": 3,
+   "resBody": {
+    "outbox": [
+     {
+      "to": [
+       "dispatcher@realtest.com"
+      ],
+      "from": "SmartManageAI <noreply@smartmanageai.com>",
+      "subject": "Password Reset Request - SmartManageAI",
+      "html": "\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Password Reset Request</title>\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f5f5f5; margin: 0; padding: 20px;\">\n  <div style=\"max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.1);\">\n    <div style=\"background-color: #1a365d; padding: 24px; text-align: center;\">\n      <h1 style=\"color: #ffffff; margin: 0; font-size: 24px;\">Password Reset Request</h1>\n    </div>\n    <div style=\"padding: 32px 24px;\">\n      <p style=\"color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;\">\n        Hi Fleet,\n      </p>\n      <p style=\"color: #333333; font-size: 16px; line-height: 1.6; margin: 0 0 16px;\">\n        We received a request to reset your password. Click the button below to create a new password:\n      </p>\n      <div style=\"text-align: center; margin: 32px 0;\">\n        <a href=\"https://undefined.undefined.repl.co/reset-password?token=[REDACTED]\" style=\"display: inline-block; background-color: #2563eb; color: #ffffff; text-decoration: none; padding: 14px 32px; border-radius: 6px; font-size: 16px; font-weight: 600;\">\n          Reset Password\n        </a>\n      </div>\n      <p style=\"color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;\">\n        This link will expire in <strong>30 minutes</strong> for security reasons.\n      </p>\n      <p style=\"color: #666666; font-size: 14px; line-height: 1.6; margin: 0 0 16px;\">\n        If you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.\n      </p>\n      <hr style=\"border: none; border-top: 1px solid #e5e5e5; margin: 24px 0;\">\n      <p style=\"color: #999999; font-size: 12px; line-height: 1.6; margin: 0;\">\n        If the button doesn't work, copy and paste this link into your browser:<br>\n        <a href=\"https://undefined.undefined.repl.co/reset-password?token=[REDACTED]\" style=\"color: #2563eb; word-break: break-all;\">https://undefined.undefined.repl.co/reset-password?token=[REDACTED]</a>\n      </p>\n    </div>\n    <div style=\"background-color: #f9fafb; padding: 16px 24px; text-align: center;\">\n      <p style=\"color: #999999; font-size: 12px; margin: 0;\">\n        SmartManageAI Construction Management Platform\n      </p>\n    </div>\n  </div>\n</body>\n</html>\n",
+      "text": "\nHi Fleet,\n\nWe received a request to reset your password. Click the link below to create a new password:\n\nhttps://undefined.undefined.repl.co/reset-password?token=[REDACTED]\n\nThis link will expire in 30 minutes for security reasons.\n\nIf you didn't request a password reset, you can safely ignore this email. Your password will remain unchanged.\n\n---\nSmartManageAI Construction Management Platform\n",
+      "source": "sendgrid",
+      "capturedAt": "2026-10-09T12:34:32.799Z"
+     }
+    ]
+   },
+   "requestId": "0b8af1df-1244-4f5c-b750-0565c4dc969e"
+  },
+  {
+   "at": "2026-10-09T12:34:32.905Z",
+   "actor": "anon-reset",
+   "method": "POST",
+   "url": "/api/auth/reset-password",
+   "status": 200,
+   "ms": 96,
+   "reqBody": {
+    "token": "[REDACTED]",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "message": "Password has been reset successfully. Please login with your new password."
+   },
+   "requestId": "b1c7063c-fd45-4609-a724-9824dabf780d"
+  },
+  {
+   "at": "2026-10-09T12:34:32.913Z",
+   "actor": "anon-reset",
+   "method": "POST",
+   "url": "/api/auth/reset-password",
+   "status": 400,
+   "ms": 8,
+   "reqBody": {
+    "token": "[REDACTED]",
+    "password": "[REDACTED]"
+   },
+   "resBody": {
+    "error": "Invalid or expired reset token"
+   },
+   "requestId": "3792f46a-4cd5-42b2-a704-639608fe8cb9"
+  }
+ ],
+ "notes": [
+  "forgot 200; outbox 200 1 msgs; token found",
+  "reset 200; reuse 400; old pw login 401; new pw login 200. NOTE: dispatcher@realtest.com password changed by this test (local only)."
+ ]
+}

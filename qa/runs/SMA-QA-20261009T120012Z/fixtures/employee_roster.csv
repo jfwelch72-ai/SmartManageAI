@@ -1,0 +1,3 @@
+email,role,costRateRegular,costRateOT,pay rule (SYNTHETIC)
+worker@realtest.com,FIELD_WORKER,45.0,67.5,OT >40h/wk at 1.5x
+super@realtest.com,SUPERINTENDENT,62.0,93.0,salaried-equivalent (synthetic)

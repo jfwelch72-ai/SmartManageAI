@@ -1,0 +1,4 @@
+code,name,type,hourly,daily,source
+QA-EX-*,Cat excavator w/ thumb,HEAVY_EQUIPMENT,95,760,src R15 (priced as Other in estimate)
+QA-MINI,Mini excavator,HEAVY_EQUIPMENT,40,250,src R38
+QA-SKID,Skid steer,HEAVY_EQUIPMENT,40,250,src R45

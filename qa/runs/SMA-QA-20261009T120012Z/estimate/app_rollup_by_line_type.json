@@ -1,0 +1,24 @@
+{
+ "baseSubtotal": 764977.8200000001,
+ "allowanceSubtotal": 0,
+ "contingencySubtotal": 0,
+ "alternates": [
+  {
+   "group": {
+    "id": "057560dd-1d2f-402d-ada8-5c9727063399",
+    "estimateId": "eb5babbd-ee04-4459-9a67-6fde14865374",
+    "code": "ALT-1",
+    "name": "Crackbond CSR self-leveling (src rows 55-57)",
+    "description": null,
+    "defaultIncluded": true,
+    "displayOrder": 0,
+    "createdAt": "2026-10-09T12:12:13.053Z",
+    "updatedAt": "2026-10-09T12:14:49.004Z"
+   },
+   "subtotal": 17074.29,
+   "lineCount": 2
+  }
+ ],
+ "totalIfAllAlternatesIncluded": 782052.1100000001,
+ "totalWithDefaultAlternates": 782052.1100000001
+}

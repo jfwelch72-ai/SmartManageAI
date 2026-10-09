@@ -1,0 +1,72 @@
+                                                                   AIA DOCUMENT G703 - CONTINUATION SHEET
+                       Application No: 2         Period To: 07/31/2026   Project: SMA-QA-20261009T120012Z FALLBACK-BILLING (00420 SOV copy; see SOV-PROG-001)
+
+#    Pay Item / Code       Description of Work                           Scheduled Value   From Previous    This Period   Materials   Total Completed   % Comp      Balance    Retainage
+                                                                                                                            Stored
+1    -                     [R11] General Conditions/Mobilizat...             $58,463.00      $58,463.00          $0.00       $0.00        $58,463.00    100.0%         $0.00    $5,846.30
+
+2    -                     [R13] Jeff Barker saw cut revised ...             $35,447.06      $17,723.53     $17,723.53       $0.00        $35,447.06    100.0%         $0.00    $3,544.71
+
+3    -                     [R15] Cat 87-90 30,000lb w thumb x...             $33,000.00           $0.00          $0.00       $0.00             $0.00      0.0%    $33,000.00       $0.00
+
+4    -                     [R16] fuel for machines                             $3,428.57       $1,714.29         $0.00       $0.00         $1,714.29     50.0%     $1,714.28     $171.43
+
+5    -                     [R18] saw cut demo and haul off of...                $611.76           $0.00          $0.00       $0.00             $0.00      0.0%      $611.76        $0.00
+
+6    -                     [R19] Jeff barker for 4 openings t...             $33,588.24           $0.00          $0.00       $0.00             $0.00      0.0%    $33,588.24       $0.00
+
+7    -                     [R20] haul and labor to load truck...                $642.86           $0.00          $0.00       $0.00             $0.00      0.0%      $642.86        $0.00
+
+8    -                     [R23] haul spoils off site                             $3.00           $0.00          $0.00       $0.00             $0.00      0.0%         $3.00       $0.00
+
+9    -                     [R24] rebar lbs 31752 lbs includes...             $38,102.40           $0.00     $38,102.40       $0.00        $38,102.40    100.0%         $0.00    $3,810.24
+
+10   -                     [R25] 3" sbu chairs                                 $1,822.86          $0.00          $0.00    $1,822.86        $1,822.86    100.0%         $0.00     $182.29
+
+11   -                     [R26] 25 each 3/4"x8" sds drill bi...               $1,500.00          $0.00          $0.00       $0.00             $0.00      0.0%     $1,500.00       $0.00
+
+12   -                     [R27] concrete yards for spreadasf...            $318,685.71           $0.00    $159,342.86       $0.00       $159,342.86     50.0%   $159,342.85   $15,934.29
+
+13   -                     [R28] labor days demo $678.83 lab...             $145,714.29      $58,285.72     $58,285.72       $0.00       $116,571.44     80.0%    $29,142.85   $11,657.14
+
+14   -                     [R29] labor days to pour spread ft...             $38,571.43           $0.00          $0.00       $0.00             $0.00      0.0%    $38,571.43       $0.00
+
+15   -                     [R33] haul spoils off site                          $1,682.35          $0.00          $0.00       $0.00             $0.00      0.0%     $1,682.35       $0.00
+
+16   -                     [R34] rebar 24#6 verts with #4 tie...               $2,730.00          $0.00          $0.00       $0.00             $0.00      0.0%     $2,730.00       $0.00
+
+17   -                     [R35] 50 lf 3" sbu chairs                             $41.43           $0.00          $0.00       $0.00             $0.00      0.0%       $41.43        $0.00
+
+18   -                     [R36] concrete yards x 4 each 3'x3...               $4,714.29          $0.00          $0.00       $0.00             $0.00      0.0%     $4,714.29       $0.00
+
+19   -                     [R37] labor for demo anmd pour bac...               $9,642.86          $0.00          $0.00       $0.00             $0.00      0.0%     $9,642.86       $0.00
+
+20   -                     [R38] mini ex day                                    $250.00           $0.00          $0.00       $0.00             $0.00      0.0%      $250.00        $0.00
+
+21   -                     [R43] concrete yards 374 sf x 36" ...             $15,085.71           $0.00          $0.00       $0.00             $0.00      0.0%    $15,085.71       $0.00
+
+22   -                     [R44] rebar dowels into existing l...                $928.57           $0.00          $0.00       $0.00             $0.00      0.0%      $928.57        $0.00
+
+23   -                     [R45] skid steer days                                $250.00           $0.00          $0.00       $0.00             $0.00      0.0%      $250.00        $0.00
+
+24   -                     [R46] forming material                               $500.00           $0.00          $0.00       $0.00             $0.00      0.0%      $500.00        $0.00
+
+25   -                     [R47] labor days $22.91 per sf l...                 $8,571.43          $0.00          $0.00       $0.00             $0.00      0.0%     $8,571.43       $0.00
+
+26   -                     [R50] clean up days                                 $8,571.43          $0.00          $0.00       $0.00             $0.00      0.0%     $8,571.43       $0.00
+
+27   -                     [R56] 144 22 oz cartridges                        $11,931.43           $0.00          $0.00       $0.00             $0.00      0.0%    $11,931.43       $0.00
+
+28   -                     [R57] labor days                                    $5,142.86          $0.00          $0.00       $0.00             $0.00      0.0%     $5,142.86       $0.00
+#    Pay Item / Code   Description of Work                     Scheduled Value     From Previous          This Period       Materials    Total Completed   % Comp       Balance      Retainage
+                                                                                                                              Stored
+29   -                 [R52] concrete washout containment...         $2,428.57             $0.00               $0.00             $0.00            $0.00      0.0%      $2,428.57         $0.00
+
+
+                       GRAND TOTAL                               $782,052.11       $136,186.54         $273,454.51        $1,822.86       $411,463.91      52.6%    $370,588.20    $41,146.40
+
+
+
+
+                                                                AIA G703 Continuation Sheet | Generated 10/9/2026, 12:28:33 PM
+
